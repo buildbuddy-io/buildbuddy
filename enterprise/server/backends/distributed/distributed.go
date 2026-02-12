@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -105,6 +106,7 @@ type peerInfo struct {
 	zone        string
 }
 
+// TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
@@ -358,9 +360,9 @@ func (t *teeReadCloser) Close() error {
 		if err := t.cwc.Commit(); err != nil {
 			log.Infof("Error committing write to local cache: %s", err)
 		}
-		if err := t.cwc.Close(); err != nil {
-			log.Infof("Error closing local cache writer: %s", err)
-		}
+	}
+	if err := t.cwc.Close(); err != nil {
+		log.Infof("Error closing local cache writer: %s", err)
 	}
 	return err
 }
@@ -375,7 +377,6 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	// Don't store contents for encrypted users/groups in the lookaside cache
 	// to avoid cache inconsistencies between the group's cache and the
 	// lookaside cache.
-	// TODO(go/b/5175): treat non-default-partition contents this way too.
 	if authutil.EncryptionEnabled(ctx, c.authenticator) {
 		return "", false
 	}
@@ -384,13 +385,27 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
-		if rn, err := digest.ACResourceNameFromProto(r); err == nil {
-			return rn.ActionCacheString(), true
+		partition, err := c.local.Partition(ctx, r.GetInstanceName())
+		if err != nil {
+			return "", false
 		}
+		s, err := digest.ActionCacheString(r)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "ActionCacheString_failed_in_lookasideKey", "ActionCacheString failed: %v", err)
+			return "", false
+		}
+		return partition + "/" + s, true
 	} else if r.GetCacheType() == rspb.CacheType_CAS {
-		if rn, err := digest.CASResourceNameFromProto(r); err == nil {
-			return rn.DownloadString(), true
+		partition, err := c.local.Partition(ctx, r.GetInstanceName())
+		if err != nil {
+			return "", false
 		}
+		s, err := digest.CASDownloadString(r)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "CASDownloadString_failed_in_lookasideKey", "CASDownloadString failed: %v", err)
+			return "", false
+		}
+		return partition + "/" + s, true
 	}
 	return "", false
 }
@@ -487,10 +502,10 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
 	buffer := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		c.setLookasideEntry(lookasideKey, buffer.Bytes())
 		return nil
-	}
+	})
 	return wc, nil
 }
 
@@ -512,13 +527,13 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 
 	c := io.MultiWriter(a, b)
 	cwc := ioutil.NewCustomCommitWriteCloser(c)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		if err := a.Commit(); err != nil {
 			return err
 		}
 		return b.Commit()
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		var firstErr error
 		if err := a.Close(); err != nil {
 			firstErr = err
@@ -527,7 +542,7 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 			firstErr = err
 		}
 		return firstErr
-	}
+	})
 	return cwc
 }
 
@@ -825,9 +840,9 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
 			readCloser = rc
-		} else if r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r) {
-			// AC entries are can be updated, so we don't want to hold on to an
-			// old version.
+		} else if cacheable && (r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)) {
+			// AC entries can be updated, so we don't want to hold on to an old
+			// version.
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
 			}
@@ -841,6 +856,9 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// return it to the caller.
 		rc, err := c.distributedProxy.RemoteReader(ctx, peer, r, offset, limit)
 		if err != nil {
+			if localWriter != nil {
+				localWriter.Close()
+			}
 			return nil, err
 		}
 		readCloser = rc
@@ -899,7 +917,24 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	if exists, err := c.remoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, rn, 0, 0)
+	if rn.GetDigest().GetSizeBytes() > 100 && c.SupportsCompressor(repb.Compressor_ZSTD) {
+		// If the file is large enough and we support ZSTD, then the source will
+		// have it compressed, and we want to store it compressed. 100 is the
+		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
+		rn.Compressor = repb.Compressor_ZSTD
+	}
+	// Don't use [Cache.remoteReader] here, because we don't want to check the
+	// lookaside or local caches when backfilling. If they had this digest, we
+	// wouldn't be backfilling it, because we wouldn't have even attempted to
+	// read from a remote peer.
+	//
+	// Also, we don't want to write to those caches during a backfill, because
+	// the backfill was triggered by either:
+	// 1) A FindMissing/Contains call, which doesn't write to those caches, so
+	//	  we shouldn't either, since the blob might never be read from this node.
+	// 2) A Get/Read call, which would have already written to those caches if
+	//    appropriate.
+	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -1534,6 +1569,10 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 	return mwc, nil
 }
 
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	return c.local.Partition(ctx, remoteInstanceName)
+}
+
 // SupportsCompressor Distributed compression should only be enabled if all peers support compression
 //
 // To safely roll out compression to distributed caches:
@@ -1547,4 +1586,8 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 		return c.local.SupportsCompressor(compressor)
 	}
 	return false
+}
+
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return c.local.RegisterAtimeUpdater(updater)
 }

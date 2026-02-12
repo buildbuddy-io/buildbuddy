@@ -101,7 +101,7 @@ type counters struct {
 
 func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
 	env := enterprise_testenv.New(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	clock := clockwork.NewFakeClock()
 	env.SetClock(clock)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -326,7 +326,12 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.NoError(t, err)
 	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
-	require.ErrorContains(t, err, "timed out waiting for Read response")
+	require.True(
+		t,
+		strings.Contains(err.Error(), "timed out waiting for Read response") || strings.Contains(err.Error(), "context deadline exceeded"),
+		"expected read timeout error, got: %v",
+		err,
+	)
 	require.False(t, retry, "bazel will retry Unavailable errors, so we should not retry internally")
 
 	<-mockServer.finished

@@ -19,5 +19,8 @@ exports_files(srcs = glob(["*.css"]))
 ts_library(
     name = "alert_service",
     srcs = ["alert_service.ts"],
-    deps = ["//:node_modules/rxjs"],
+    deps = [
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
+    ],
 )

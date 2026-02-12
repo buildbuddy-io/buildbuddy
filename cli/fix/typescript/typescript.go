@@ -1,10 +1,11 @@
 package typescript
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
 	"log"
+	"os"
 	"path"
 	"regexp"
 	"sort"
@@ -33,6 +34,7 @@ const (
 	packageFileName     = "package.json"
 	tsFileExtension     = ".ts"
 	tsxFileExtension    = ".tsx"
+	disableMode         = "disable"
 )
 
 var dynamicImportPattern = regexp.MustCompile("(?ms)import\\s*\\(\\s*(['\"`]([^'\"`]+)['\"`])\\s*\\)")
@@ -79,7 +81,7 @@ func (t *TS) Kinds() map[string]rule.KindInfo {
 // files.
 func (t *TS) Loads() []rule.LoadInfo {
 	return []rule.LoadInfo{
-		rule.LoadInfo{
+		{
 			Name:    tsProjectImportPath,
 			Symbols: []string{tsProjectRuleName},
 		},
@@ -100,8 +102,13 @@ func (t *TS) Loads() []rule.LoadInfo {
 // Any non-fatal errors this function encounters should be logged using
 // log.Print.
 func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
+	config := args.Config.Exts[languageName].(tsConfig)
+	if config.Mode == "disable" {
+		return language.GenerateResult{}
+	}
+
 	rules := make([]*rule.Rule, 0)
-	imports := make([]interface{}, 0)
+	imports := make([]any, 0)
 
 	for _, baseName := range args.RegularFiles {
 		if !strings.HasSuffix(baseName, tsFileExtension) && !strings.HasSuffix(baseName, tsxFileExtension) {
@@ -112,12 +119,12 @@ func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 		rules = append(rules, r)
 		filePath := path.Join(args.Dir, baseName)
 
-		data, err := ioutil.ReadFile(filePath)
+		data, err := os.ReadFile(filePath)
 		if err != nil {
 			log.Fatalf("Error reading %s: %v", filePath, err)
 		}
 		ruleImports := make([]string, 0)
-		tree := t.parser.Parse(nil, data)
+		tree, _ := t.parser.ParseCtx(context.Background(), nil, data)
 		for i := 0; i < int(tree.RootNode().ChildCount()); i++ {
 			child := tree.RootNode().Child(i)
 			if child.Type() == "import_statement" {
@@ -186,11 +193,14 @@ func (t *TS) Embeds(r *rule.Rule, from label.Label) []label.Label {
 // language.GenerateResult.Imports. Resolve generates a "deps" attribute (or
 // the appropriate language-specific equivalent) for each import according to
 // language-specific rules and heuristics.
-func (t *TS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports interface{}, from label.Label) {
+func (t *TS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports any, from label.Label) {
+	config := c.Exts[languageName].(tsConfig)
+	if config.Mode == disableMode {
+		return
+	}
+
 	importStrings := imports.([]string)
 	typeImports := []string{}
-
-	config := c.Exts[languageName].(tsConfig)
 
 	for i, importString := range importStrings {
 		if isNPMImport(importString) {
@@ -254,7 +264,7 @@ func (t *TS) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
 // interpret. Gazelle prints errors for directives that are not recoginized by
 // any Configurer.
 func (t *TS) KnownDirectives() []string {
-	return []string{}
+	return []string{languageName}
 }
 
 // Configure modifies the configuration using directives and other information
@@ -273,18 +283,31 @@ func (t *TS) Configure(c *config.Config, rel string, f *rule.File) {
 		c.Exts[languageName] = tsConfig{}
 	}
 	tsConfig := c.Exts[languageName].(tsConfig)
+	defer func() {
+		c.Exts[languageName] = tsConfig
+	}()
+	if f != nil {
+		for _, d := range f.Directives {
+			switch d.Key {
+			case languageName:
+				if d.Value == disableMode {
+					tsConfig.Mode = disableMode
+				}
+			}
+		}
+	}
 	packagePath := path.Join(c.RepoRoot, rel, packageFileName)
-	data, err := ioutil.ReadFile(packagePath)
+	data, err := os.ReadFile(packagePath)
 	if err != nil {
 		return
 	}
 	if err := json.Unmarshal(data, &tsConfig.PackageJSON); err != nil {
 		log.Fatalf("failed to parse %s: %v", packagePath, err)
 	}
-	c.Exts[languageName] = tsConfig
 }
 
 type tsConfig struct {
+	Mode        string
 	PackageJSON struct {
 		Dependencies    map[string]string `json:"dependencies"`
 		DevDependencies map[string]string `json:"devDependencies"`

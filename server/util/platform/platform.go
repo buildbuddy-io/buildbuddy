@@ -62,6 +62,7 @@ const (
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
 	containerRegistryBypassPropertyName   = "container-registry-bypass"
+	useOCIFetcherPropertyName             = "use-oci-fetcher"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
@@ -102,6 +103,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	PersistentVolumesPropertyName           = "persistent-volumes"
+	execrootPathPropertyName                = "execroot-path"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -120,6 +122,17 @@ const (
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
+
+	// Whether external network access should be enabled. Valid values are:
+	// - "off": no network access
+	// - "external": network access via a network namespace routed thru the host
+	//
+	// By default, this property is not set. If it is set, its value always
+	// applies (even if "dockerNetwork" is set). If this property is not set,
+	// the isolated action's network settings will be applied from the
+	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
+	// will have "external" network access (for backwards compatibility).
+	networkPropertyName = "network"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -170,10 +183,10 @@ const (
 const (
 	// Every run will save a snapshot.
 	AlwaysSaveSnapshot = "always"
-	// Default. Only the first run on a non-default ref will save a snapshot.
+	// Only the first run on a non-default ref will save a snapshot.
 	// All runs on default refs will save a snapshot.
 	OnlySaveFirstNonDefaultSnapshot = "first-non-default-ref"
-	// Will only save a snapshot on a non-default ref if there are no
+	// Default. Will only save a snapshot on a non-default ref if there are no
 	// snapshots available. If there is a fallback default snapshot, still will not save
 	// a snapshot.
 	// All runs on default refs will save a snapshot.
@@ -215,6 +228,8 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	ExecrootPath              string
+	Network                   string
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -317,6 +332,10 @@ type Properties struct {
 	// This property can only be used by server admins, otherwise the execution
 	// request will be rejected.
 	ContainerRegistryBypass bool
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }
 
 type PersistentVolume struct {
@@ -479,6 +498,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
+		Network:                   stringProp(m, networkPropertyName, ""),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
@@ -503,6 +524,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
 		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 	}, nil
@@ -766,4 +788,26 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 func Retryable(task *repb.ExecutionTask) bool {
 	v := FindEffectiveValue(task, RetryPropertyName)
 	return v == "true" || v == ""
+}
+
+func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
+	// The network platform property takes precedence and values are renamed
+	// for backwards compatibility.
+	if network == "off" {
+		return "none", nil
+	} else if network == "external" {
+		return "bridge", nil
+	} else if network != "" {
+		return "", status.InvalidArgumentErrorf(
+			"Unsupported network property value: %s", network)
+	}
+
+	if dockerNetwork == "" || dockerNetwork == "off" ||
+		dockerNetwork == "none" || dockerNetwork == "bridge" ||
+		dockerNetwork == "host" {
+		return dockerNetwork, nil
+	}
+
+	return "", status.InvalidArgumentErrorf(
+		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }

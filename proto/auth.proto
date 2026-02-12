@@ -3,10 +3,19 @@ syntax = "proto3";
 
 package auth;
 
+enum JWTSigningMethod {
+  UNKNOWN = 0; // Defaults to HS256
+  HS256 = 1;
+  ES256 = 2;
+}
+
 // Most Authentication information (API key, source IP) is passed via headers.
 message AuthenticateRequest {
   // The subdomain to which the request was sent.
   optional string subdomain = 1;
+
+  // The signing method to use for the returned JWT.
+  optional JWTSigningMethod jwt_signing_method = 2;
 }
 
 message AuthenticateResponse {
@@ -21,15 +30,10 @@ message GetPublicKeysResponse {
 }
 
 message PublicKey {
-  // The RSA-256 public key. For example:
+  // The ES256 public key. For example:
   // -----BEGIN PUBLIC KEY-----
-  // MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo
-  // 4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u
-  // +qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh
-  // kd3qqGElvW/VDL5AaWTg0nLVkjRo9z+40RQzuVaE8AkAFmxZzow3x+VJYKdjykkJ
-  // 0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg
-  // cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbc
-  // mwIDAQAB
+  // MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERAO9/by7nWrH/SG49clP0r21DnuK
+  // cmrxBLfEqQL12N+j/rxasGFNrgQsp76UkWk3iJqcLFg8YOUZ/fjCn4+epA==
   // -----END PUBLIC KEY-----
   //
   // More info JWTs, signing, and keys at http://jwt.io

@@ -653,7 +653,7 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 		RedisTarget: redisTarget,
 	})
 	userMap := testauth.TestUsers("US1", "GR1", "US2", "GR2")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(userMap))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, userMap))
 	return env
 }
 

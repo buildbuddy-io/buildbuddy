@@ -120,7 +120,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "16"
+	GuestAPIVersion = "17"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -242,6 +242,33 @@ var (
 	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
+
+// Derives the desired Firecracker NetworkMode from the provided network and
+// init-dockerd platform properties enum.
+func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
+	if network == "external" || network == "" {
+		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
+	}
+	if network == "off" {
+		if initDockerd {
+			return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+		}
+		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
+	}
+	return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
+}
+
+// networkingEnabled returns true if the VM has any networking capability.
+func networkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode != fcpb.NetworkMode_NETWORK_MODE_OFF
+}
+
+// externalNetworkingEnabled returns true if the VM can access external networks.
+func externalNetworkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode == fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED || mode == fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+}
 
 func init() {
 	// Configure firecracker request timeout (default: 500ms).
@@ -400,11 +427,11 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	bundle := vmsupport_bundle.Get()
 	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get initrd runfile path: %w", err)
 	}
 	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
 
 	var guestKernelPath6_1 string
@@ -413,49 +440,49 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if vmlinux6_1RunfilePath != "" {
 		vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("get vmlinux 6.1 runfile path: %w", err)
 		}
 		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("put vmlinux 6.1 into build root dir: %w", err)
 		}
 		guestKernelPath6_1 = p
 		d, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compute digest for vmlinux 6.1: %w", err)
 		}
 		guestKernelDigest6_1 = d
 	}
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get vmlinux 5.15 runfile path: %w", err)
 	}
 	guestKernelPath5_15, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation5_15, buildRootDir, 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("put vmlinux 5.15 into build root dir: %w", err)
 	}
 	// TODO: when running as root, these should come from the bundle instead of
 	// $PATH, since we don't need to rely on the user having configured special
 	// perms on these binaries.
 	firecrackerPath, err := exec.LookPath("firecracker")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up firecracker in PATH: %w", err)
 	}
 	jailerPath, err := exec.LookPath("jailer")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up jailer in PATH: %w", err)
 	}
 	guestKernelDigest5_15, err := digest.ComputeForFile(guestKernelPath5_15, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for vmlinux 5.15: %w", err)
 	}
 	firecrackerDigest, err := digest.ComputeForFile(firecrackerPath, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for firecracker: %w", err)
 	}
 	hostKernelVersion, err := getHostKernelVersion()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get host kernel version: %w", err)
 	}
 	guestKernelImagePath := guestKernelPath5_15
 	guestKernelVersion := guestKernelDigest5_15.GetHash()
@@ -547,12 +574,17 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if numCPUs > firecrackerMaxCPU {
 		numCPUs = firecrackerMaxCPU
 	}
+
+	networkMode, err := networkMode(args.Props.Network, args.Props.InitDockerd)
+	if err != nil {
+		return nil, err
+	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
 		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:  true,
+		NetworkMode:       networkMode,
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
@@ -567,11 +599,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupParent:           args.CgroupParent,
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
-		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -586,7 +618,7 @@ func parseDNSOverrides() (string, error) {
 		return "", nil
 	}
 	for _, o := range *dnsOverrides {
-		if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
+		if o.HostnameToOverride == "" {
 			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
 		}
 		// Ensure hostnames end with '.' so they are not resolved as relative names.
@@ -659,15 +691,14 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot      string               // the root dir the jailer will work in
-	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
-	cgroupParent    string               // parent cgroup path (root-relative)
-	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
-	blockDevice     *block_io.Device     // block device for cgroup IO settings
-	machine         *fcclient.Machine    // the firecracker machine object.
-	vmLog           *VMLog
-	env             environment.Env
-	resolver        *oci.Resolver
+	jailerRoot     string               // the root dir the jailer will work in
+	cgroupParent   string               // parent cgroup path (root-relative)
+	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice    *block_io.Device     // block device for cgroup IO settings
+	machine        *fcclient.Machine    // the firecracker machine object.
+	vmLog          *VMLog
+	env            environment.Env
+	resolver       *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -681,6 +712,8 @@ type FirecrackerContainer struct {
 		conn *grpc.ClientConn
 		err  error
 	}
+
+	useOCIFetcher bool
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -692,8 +725,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
 	}
-	if opts.VMConfiguration.InitDockerd && !opts.VMConfiguration.EnableNetworking {
-		return nil, status.FailedPreconditionError("InitDockerd set to true but EnableNetworking set to false. EnableNetworking must also be set to true to pass dockerd configuration over MMDS.")
+	if opts.VMConfiguration.InitDockerd && !networkingEnabled(opts.VMConfiguration.NetworkMode) {
+		return nil, status.FailedPreconditionError("InitDockerd set to true but NetworkMode set to OFF. Networking must be enabled to pass dockerd configuration over MMDS.")
 	}
 
 	vmLog, err := NewVMLog(vmLogTailBufSize)
@@ -728,7 +761,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:         opts.ContainerImage,
 		user:                   opts.User,
 		actionWorkingDir:       opts.ActionWorkingDirectory,
-		cpuWeightMillis:        opts.CPUWeightMillis,
 		cgroupParent:           opts.CgroupParent,
 		networkPool:            opts.NetworkPool,
 		cgroupSettings:         &scpb.CgroupSettings{},
@@ -739,6 +771,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		loader:                 loader,
 		vmLog:                  vmLog,
 		cancelVmCtx:            func(err error) {},
+		useOCIFetcher:          opts.UseOCIFetcher,
 	}
 
 	if opts.CgroupSettings != nil {
@@ -1038,6 +1071,15 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd.SavedSnapshotVersionNumber++
 	vmd.LastExecutedTask = c.getVMTask()
 
+	if *log.LogLevel == "debug" {
+		encoded, err := json.Marshal(vmd)
+		if err == nil {
+			log.CtxDebugf(ctx, "Caching snapshot with VM metadata: %s", string(encoded))
+		} else {
+			log.CtxDebugf(ctx, "Error marshalling VM metadata: %s", err)
+		}
+	}
+
 	// We always use a local manifest if it exists, so only write one if
 	// we don't want to prioritize reading a remote manifest.
 	readPolicy, err := snapshotReadPolicy(c.task)
@@ -1116,15 +1158,12 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
-	} else if remoteSavePolicy == platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
-		return !c.hasRemoteSnapshot(ctx, c.loader)
+	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 	}
 
-	// By default (applies if save policy is unset or invalid) or if
-	// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
-	// only save a remote snapshot if a remote snapshot for the primary git branch key
-	// doesn't already exist.
-	return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable,
+	return !c.hasRemoteSnapshot(ctx, c.loader)
 }
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
@@ -1251,14 +1290,21 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
 
+	metrics.SnapshotSourceCount.With(prometheus.Labels{
+		metrics.ChunkSource: snap.GetManifestFetchSource().String(),
+	}).Inc()
+
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
+		log.CtxWarningf(ctx, "No VM metadata found in snapshot")
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
 		snap.SetVMMetadata(md)
+	} else if snap.GetVMMetadata().GetLastExecutedTask() == nil {
+		log.CtxWarningf(ctx, "No last executed task found in snapshot metadata")
 	}
 	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
@@ -1574,7 +1620,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"tsc=reliable",
 		"ipv6.disable=1",
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
 	}
 
@@ -1589,7 +1635,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableLogging {
 		initArgs = append(initArgs, "-enable_logging")
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
 	if vmConfig.InitDockerd {
@@ -1679,7 +1725,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		},
 	}...)
 
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
 			{
 				StaticConfiguration: &fcclient.StaticNetworkConfiguration{
@@ -1801,20 +1847,25 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
-	if !c.vmConfig.EnableNetworking {
+	if !networkingEnabled(c.vmConfig.NetworkMode) {
 		return nil
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.networkPool != nil {
+	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
+
+	// Pooled networks have external network access enabled. Only use them if
+	// that's the VM's configured state.
+	// TODO: add a pool for 'network=false' (if this bottlenecks).
+	if c.networkPool != nil && externalNetworking {
 		if network := c.networkPool.Get(ctx); network != nil {
 			c.network = network
 			return nil
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, externalNetworking)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}
@@ -2107,7 +2158,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// enabled and will fail if it isn't set, so make sure to always set it,
 	// even if it's empty.
 	metadata := map[string]string{}
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
 	if c.vmConfig.InitDockerd {
@@ -2437,7 +2488,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// after boot.
 	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		stage = "update_balloon"
-		if err := c.updateBalloon(ctx, 0); err != nil {
+		if _, err := c.updateBalloon(ctx, 0); err != nil {
 			result.Error = status.WrapError(err, "deflate balloon")
 			return result
 		}
@@ -2445,7 +2496,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2567,7 +2618,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher)
 	if err != nil {
 		return err
 	}
@@ -2796,7 +2847,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
-			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
+			return status.WrapErrorf(err, "reclaiming memory with the balloon failed, not saving snapshot for key %v", c.SnapshotKeySet().GetWriteKey())
 		}
 	}
 
@@ -2842,8 +2893,15 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+			if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+				log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
+			}
 			return err
 		}
+	}
+
+	if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+		log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
 	}
 
 	// Finish cleaning up VM resources
@@ -2854,8 +2912,73 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) error {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+		return nil
+	}
+
+	chunkedStores := make(map[string]*copy_on_write.COWStore, 0)
+	if c.rootStore != nil {
+		chunkedStores[rootDriveID] = c.rootStore
+	}
+	if c.scratchStore != nil {
+		chunkedStores[scratchDriveID] = c.scratchStore
+	}
+	if c.memoryStore != nil {
+		chunkedStores[memoryChunkDirName] = c.memoryStore
+	}
+
+	for name, store := range chunkedStores {
+		chunks := store.SortedChunks()
+		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
+		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
+		var dirtyBytes, dirtyChunkCount int64
+		for _, chunk := range chunks {
+			chunkSrc := chunk.Source()
+			chunkSourceCounter[chunkSrc]++
+
+			chunkSize, err := chunk.SizeBytes()
+			if err != nil {
+				return status.WrapError(err, "chunk size")
+			}
+
+			bytesReadPerSource[chunkSrc] += chunkSize
+			dirty := store.Dirty(chunk.Offset)
+			if dirty {
+				dirtyBytes += chunkSize
+				dirtyChunkCount++
+			}
+		}
+
+		var chunkSrcLog string
+		for chunkSrc, count := range chunkSourceCounter {
+			sourceLabel := snaputil.ChunkSourceLabel(chunkSrc)
+			bytesRead := bytesReadPerSource[chunkSrc]
+			metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Observe(float64(count) / float64(len(chunks)))
+			metrics.COWSnapshotBytesRead.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Add(float64(bytesReadPerSource[chunkSrc]))
+			chunkSrcLog += fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel)
+		}
+
+		metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
+		metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Add(float64(dirtyBytes))
+
+		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog)
+	}
+	return nil
+}
+
 // reclaimMemoryWithBalloon attempts to decrease memory snapshot size by expanding
-// the memory balloon to 90% of available memory.
+// the memory balloon to 80% of available memory.
 func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2867,46 +2990,50 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 		metrics.Stage: "balloon_memory_reclaim",
 	}).Dec()
 
-	// Drop the page cache to free up more memory for the balloon.
-	// The balloon will only allocate free memory.
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
 	}
 	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
+	// Read available memory in the guest to determine the target balloon size.
+	// /proc/meminfo reports amounts in KiB, and we're converting to MiB.
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
+		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
 	}
 	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
 
-	stats, err := c.machine.GetBalloonStats(ctx)
+	availableMemMB, err := strconv.ParseFloat(strings.TrimSpace(string(res.Stdout)), 32)
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "failed to parse available memory %s", string(res.Stdout))
 	}
-	availableMemMB := stats.AvailableMemory / 1e6
-	balloonSizeMB := int64(float64(availableMemMB) * .9)
-	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
+	balloonTargetMB := int64(float64(availableMemMB) * .8)
+	if _, err := c.updateBalloon(ctx, balloonTargetMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
 	}
-	if err := c.updateBalloon(ctx, 0); err != nil {
+	balloonSizeMB, err := c.updateBalloon(ctx, 0)
+	if err != nil {
 		return status.WrapError(err, "deflate balloon")
+	} else if balloonSizeMB > int64(float64(availableMemMB)*0.2) {
+		// If the balloon was unable to deflate, something is likely broken in the VM and the runner shouldn't
+		// be reused, or workloads will have less memory than expected.
+		return fmt.Errorf("failed to deflate balloon, stalled at %d MB. vmlog: %s", balloonSizeMB, c.vmLog.Tail())
 	}
 	return nil
 }
 
 // Best effort update the balloon to the target size.
-func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) error {
+func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	start := time.Now()
 	err := c.machine.UpdateBalloon(ctx, targetSizeMib)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	var currentBalloonSize int64
@@ -2915,19 +3042,19 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 	}()
 
 	// Wait for the balloon to reach its target size.
-	pollInterval := 300 * time.Millisecond
+	pollInterval := 1 * time.Second
 	slowCount := 0
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		lastBalloonSize := currentBalloonSize
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
-			return nil
+			return currentBalloonSize, nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
-			return nil
+			return currentBalloonSize, nil
 		}
 
 		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
@@ -2936,7 +3063,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 				// If the rate of inflation is consistently slow or stops, just stop early.
 				// Give the balloon a second chance in case there is resource contention
 				// that temporarily slows the balloon inflation.
-				return nil
+				return currentBalloonSize, nil
 			}
 		} else {
 			slowCount = 0
@@ -2944,7 +3071,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return currentBalloonSize, nil
 		case <-time.After(pollInterval):
 		}
 	}

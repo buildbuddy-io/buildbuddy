@@ -179,6 +179,7 @@ var (
 	triggerEvent          = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL         = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
 	pushedBranch          = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	pushedTag             = flag.String("pushed_tag", "", "Tag name of the commit to be checked out, if triggered by a tag push.")
 	commitSHA             = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
@@ -1038,9 +1039,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// wait until we've initialized the repo.
 	// Note that this has to happen after the BuildMetadata event is published.
 	publishedWorkspaceStatus := false
-	if *commitSHA == "" {
-		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
-	} else {
+	if *commitSHA != "" {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
 			return nil
 		}
@@ -1050,6 +1049,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	backendLog.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
+	// Remove any existing artifacts from previous workflow invocations
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+		return err
+	}
 	if !*skipAutomaticCheckout {
 		if err := ws.setup(ctx); err != nil {
 			return status.WrapError(err, "failed to set up git repo")
@@ -1288,6 +1291,7 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 				{Key: "BUILD_USER", Value: buildUser},
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
+				{Key: "GIT_TAG", Value: *pushedTag},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
 				// Note: COMMIT_SHA may not actually reflect the current state
 				// of the repo since we merge the target branch before running
@@ -1742,10 +1746,6 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
-	// Remove any existing artifacts from previous workflow invocations
-	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
-		return err
-	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
@@ -1813,8 +1813,8 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if *pushedBranch == "" && *commitSHA == "" {
-		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
+	if *pushedBranch == "" && *pushedTag == "" && *commitSHA == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch`, `pushed_tag`, or `commit_sha` to be set")
 	}
 
 	if err := ws.config(ctx); err != nil {
@@ -1858,6 +1858,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
@@ -1922,7 +1927,11 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 
 	refToFetch := *commitSHA
 	if refToFetch == "" {
-		refToFetch = *pushedBranch
+		if *pushedBranch != "" {
+			refToFetch = *pushedBranch
+		} else if *pushedTag != "" {
+			refToFetch = *pushedTag
+		}
 	}
 
 	// If the merge commit has not been generated, fetch the full history
@@ -1939,9 +1948,13 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 			writeCommandSummary(ws.log, "Git does not support fetching non-HEAD commits by default."+
 				" You must set the `uploadpack.allowAnySHA1InWant`"+
 				" config option in the repo that is being fetched.")
-			if refToFetch != *pushedBranch && *pushedBranch != "" {
-				writeCommandSummary(ws.log, "Attempting to fetch the branch with --depth=0 instead...")
-				refToFetch = *pushedBranch
+			branchOrTag := *pushedBranch
+			if branchOrTag == "" {
+				branchOrTag = *pushedTag
+			}
+			if refToFetch != branchOrTag && branchOrTag != "" {
+				writeCommandSummary(ws.log, "Attempting to fetch the ref with --depth=0 instead...")
+				refToFetch = branchOrTag
 				fetchDepth = 0
 				return ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth)
 			}
@@ -1962,7 +1975,13 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 	checkoutLocalBranchName := *pushedBranch
 	checkoutRef := *commitSHA
 	if checkoutRef == "" {
-		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+		if *pushedBranch != "" {
+			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+		} else {
+			// For tag pushes (or any case without a branch), use
+			// FETCH_HEAD which points to the ref that was just fetched.
+			checkoutRef = "FETCH_HEAD"
+		}
 	}
 
 	if checkoutLocalBranchName != "" {
@@ -1971,7 +1990,7 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 			return err
 		}
 	} else {
-		if _, err := git(ctx, ws.log, "checkout", checkoutRef); err != nil {
+		if _, err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
 			return err
 		}
 	}

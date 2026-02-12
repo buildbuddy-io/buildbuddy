@@ -33,6 +33,12 @@ const (
 
 	// Max number of workers to run in parallel when fetching chunks.
 	numReadWorkers = 16
+
+	DefaultTerminalLineLength = 300
+	// Number of log lines to buffer before flushing them.
+	// This is used for progress logs that are live-updated. We only want to flush
+	// the finalized logs.
+	DefaultTerminalLinesBuffered = 10
 )
 
 var (
@@ -57,6 +63,14 @@ func GetEventLogPubSubChannel(invocationID string) string {
 	return fmt.Sprintf("eventlog/%s/updates", invocationID)
 }
 
+func GetRunLogPathFromInvocationId(invocationId string) string {
+	return invocationId + "/chunks/log/runlog"
+}
+
+func GetRunLogPubSubChannel(invocationId string) string {
+	return fmt.Sprintf("runlog/%s/updates", invocationId)
+}
+
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	// TODO(zoey): this function is way too long; split it up.
@@ -68,21 +82,40 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
-	if inv.LastChunkId == "" {
-		// This invocation does not have chunked event logs; return an empty
-		// response to indicate that to the client.
-		return &elpb.GetEventLogChunkResponse{}, nil
+	var eventLogPath string
+	var inProgress bool
+	var scanFromChunkId string
+	switch req.GetType() {
+	case elpb.LogType_RUN_LOG:
+		if inv.RunStatus == int64(inspb.OverallStatus_UNKNOWN_OVERALL_STATUS) {
+			// This invocation does not have run logs; return an empty
+			// response to indicate that to the client.
+			return &elpb.GetEventLogChunkResponse{}, nil
+		}
+		eventLogPath = GetRunLogPathFromInvocationId(req.InvocationId)
+		inProgress = inv.RunStatus == int64(inspb.OverallStatus_IN_PROGRESS)
+		scanFromChunkId = "0"
+	default:
+		// TODO: Have clients specifically request this type of build log
+		if inv.LastChunkId == "" {
+			// This invocation does not have chunked event logs; return an empty
+			// response to indicate that to the client.
+			return &elpb.GetEventLogChunkResponse{}, nil
+		}
+		eventLogPath = GetEventLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
+		inProgress = inv.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+		scanFromChunkId = inv.LastChunkId
 	}
 
-	invocationInProgress := inv.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
-	eventLogPath := GetEventLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
 
-	// Get the id of the last chunk on disk after the last id stored in the db
-	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
-
+	// Check that expected logs exist.
+	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, scanFromChunkId)
 	// TODO(zoey): this should check for the status.NotFoundError, as that is the
 	// only one we can handle. Any other errors are real errors.
+	//
+	// If expected logs aren't in chunkstore, check whether they just haven't been written yet, for
+	// in progress builds, vs. they will never exist and we should exit early.
 	if err != nil {
 		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 			// The last chunk id recorded in the invocation table is wrong; the only
@@ -94,7 +127,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		}
 
 		// No chunks have been written for this invocation
-		if invocationInProgress {
+		if inProgress {
 			// If the invocation is in progress and the chunk requested is not on
 			// disk, check the cache to see if the live chunk is being requested.
 			liveChunk := &elpb.LiveEventLogChunk{}
@@ -150,7 +183,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			// disk when we populated lastChunkIndex above. We should check to see if
 			// the client requested the chunk cached in redis, and return it if they
 			// did.
-			if invocationInProgress {
+			if inProgress {
 				// If the invocation is in progress and the chunk requested is not on
 				// disk, check the cache to see if the live chunk is being requested.
 				liveChunk := &elpb.LiveEventLogChunk{}
@@ -187,7 +220,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				Buffer:          []byte{},
 				PreviousChunkId: chunkstore.ChunkIndexAsStringId(lastChunkIndex),
 			}
-			if invocationInProgress {
+			if inProgress {
 				// If out-of-bounds and the invocation is in-progress, set NextChunkId
 				// to the id of the next chunk to be written.
 				rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(lastChunkIndex + 1)

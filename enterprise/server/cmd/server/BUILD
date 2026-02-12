@@ -52,6 +52,7 @@ go_library(
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/iprules",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/ociregistry",
         "//enterprise/server/quota",
         "//enterprise/server/registry",

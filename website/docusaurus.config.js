@@ -192,8 +192,8 @@ module.exports = {
           position: "left",
           type: "dropdown",
           items: [
-            { label: "GitHub", href: "https://github.com/buildbuddy-io/buildbuddy" },
-            { label: "Community", href: "http://community.buildbuddy.io/" },
+            { label: "GitHub", to: "https://github.com/buildbuddy-io/buildbuddy" },
+            { label: "Community", to: "http://community.buildbuddy.io/" },
             { label: "Security", href: "/security" },
             { label: "Plugins", href: "/plugins" },
             { label: "Team", href: "/team" },
@@ -225,13 +225,13 @@ module.exports = {
           position: "left",
         },
         {
-          href: "https://app.buildbuddy.io/",
+          to: "https://app.buildbuddy.io/",
           target: "_self",
           label: "Login",
           position: "right",
         },
         {
-          href: "https://app.buildbuddy.io/",
+          to: "https://app.buildbuddy.io/",
           target: "_self",
           label: "Sign up",
           position: "right",
@@ -279,12 +279,12 @@ module.exports = {
             },
             {
               label: "Get Started",
-              href: "https://app.buildbuddy.io",
+              to: "https://app.buildbuddy.io",
               target: "_self",
             },
             {
               label: "Login",
-              href: "https://app.buildbuddy.io/",
+              to: "https://app.buildbuddy.io/",
               target: "_self",
             },
           ],
@@ -339,7 +339,7 @@ module.exports = {
             },
             {
               label: "Report an Issue",
-              href: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+              to: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
             },
             {
               label: "Privacy Policy",
@@ -358,19 +358,19 @@ module.exports = {
           items: [
             {
               label: "Slack",
-              href: "http://community.buildbuddy.io/",
+              to: "http://community.buildbuddy.io/",
             },
             {
               label: "Twitter",
-              href: "https://twitter.com/buildbuddy",
+              to: "https://twitter.com/buildbuddy",
             },
             {
               label: "LinkedIn",
-              href: "http://linkedin.com/company/buildbuddy",
+              to: "http://linkedin.com/company/buildbuddy",
             },
             {
               label: "GitHub",
-              href: "https://github.com/buildbuddy-io",
+              to: "https://github.com/buildbuddy-io",
             },
           ],
         },

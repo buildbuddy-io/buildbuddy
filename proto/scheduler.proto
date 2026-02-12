@@ -437,6 +437,15 @@ message EnqueueTaskReservationResponse {
   string task_id = 1;
 }
 
+// CancelTaskReservationRequest may be sent from the scheduler to the executor
+// to cancel a task reservation previously enqueued with EnqueueTaskReservation.
+// The scheduler only sends these messages if the executor sets
+// supports_proactive_cancellation in the node registration request.
+message CancelTaskReservationRequest {
+  // The ID of the task to cancel.
+  string task_id = 1;
+}
+
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
 }
@@ -485,6 +494,10 @@ message RegisterAndStreamWorkResponse {
 
   // How long to backoff if a AskForMoreWorkRequest was sent.
   AskForMoreWorkResponse ask_for_more_work_response = 4;
+
+  // Request to cancel a task reservation previously enqueued with
+  // EnqueueTaskReservationRequest.
+  CancelTaskReservationRequest cancel_task_reservation_request = 5;
 }
 
 service Scheduler {
@@ -570,6 +583,11 @@ message ExecutionNode {
 
   // The Xcode SDKs installed on this executor.
   repeated string xcode_sdks = 17;
+
+  // Whether the executor supports proactive task cancellation, which allows
+  // cancelling queued requests for tasks that have already been completed by
+  // another executor.
+  bool supports_proactive_cancellation = 18;
 }
 
 message GetExecutionNodesRequest {

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	_ "embed"
@@ -23,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
@@ -216,7 +218,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), cmd, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -261,6 +263,39 @@ func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSyste
 	return nil
 }
 
+// validateWorkingDirectoryInTree checks that the given working directory path
+// exists as a directory in the input tree. This enforces the REAPI spec
+// requirement that working_directory "must be a directory which exists in the
+// input tree."
+func validateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value, workingDir string) error {
+	_, dirMap, err := dirtools.DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return status.WrapError(err, "failed to build directory map from input tree")
+	}
+
+	// Walk the tree path segment by segment starting from root.
+	current := tree.GetRoot()
+	segments := strings.Split(workingDir, "/")
+	for _, seg := range segments {
+		found := false
+		for _, dirNode := range current.GetDirectories() {
+			if dirNode.GetName() == seg {
+				next, ok := dirMap[digest.NewKey(dirNode.GetDigest())]
+				if !ok {
+					return status.FailedPreconditionErrorf("working_directory %q not found in input tree", workingDir)
+				}
+				current = next
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.FailedPreconditionErrorf("working_directory %q does not exist in the input tree", workingDir)
+		}
+	}
+	return nil
+}
+
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) error {
 	ws.mu.Lock()
@@ -272,6 +307,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	execReq := ws.task.GetExecuteRequest()
+
+	// The REAPI spec requires working_directory to be a directory that
+	// already exists in the input tree. Validate this against the tree.
+	if wd := ws.task.GetCommand().GetWorkingDirectory(); wd != "" {
+		if err := validateWorkingDirectoryInTree(layout.Inputs, execReq.GetDigestFunction(), wd); err != nil {
+			return err
+		}
+	}
+
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
@@ -280,7 +325,6 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	execReq := ws.task.GetExecuteRequest()
 	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
 	if err != nil {
 		return status.WrapErrorf(err, "could not create tree fetcher")
@@ -433,7 +477,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		// cache and hard links across filesystems are not possible.
 		addToFileCache := ws.vfs == nil
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result, addToFileCache)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, executeResponse.Result, addToFileCache)
 		return err
 	})
 	var logsMu sync.Mutex
@@ -583,20 +627,26 @@ func (ws *Workspace) Clean() error {
 	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
 		outputPaths := slices.Concat(cmd.GetOutputFiles(), cmd.GetOutputDirectories(), cmd.GetOutputPaths())
+		workingDir := cmd.GetWorkingDirectory()
 		for _, outputPath := range outputPaths {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), outputPath)); err != nil && !os.IsNotExist(err) {
+			// Resolve output path relative to working directory, since
+			// output paths in the command are relative to working_directory
+			// but ws.Inputs and the filesystem are relative to the
+			// workspace root.
+			fullOutputPath := filepath.Join(workingDir, outputPath)
+			if err := os.RemoveAll(filepath.Join(ws.Path(), fullOutputPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
 			// If the output path was a directory, we need to delete any known
 			// input files which lived under that output directory.
 			for inputKey := range ws.Inputs {
-				if fspath.IsParent(outputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
+				if fspath.IsParent(fullOutputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
 					delete(ws.Inputs, inputKey)
 				}
 			}
 			// In case this output path previously pointed to an input file,
 			// delete it from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, fspath.NewKey(outputPath, ws.Opts.CaseInsensitive))
+			delete(ws.Inputs, fspath.NewKey(fullOutputPath, ws.Opts.CaseInsensitive))
 		}
 		return nil
 	}

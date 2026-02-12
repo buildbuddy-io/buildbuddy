@@ -26,7 +26,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "container-image": "docker://gcr.io/YOUR:IMAGE",
     },
 )
@@ -64,6 +64,8 @@ the appropriate credentials for the container registry):
 For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
 token using the command-line tool for your cloud provider.
 
+#### Google Container Registry (GCR)
+
 To generate a short-lived token for GCR (Google Container Registry),
 the username must be `_dcgcloud_token` and the token can be generated with
 `gcloud auth print-access-token`:
@@ -72,6 +74,40 @@ the username must be `_dcgcloud_token` and the token can be generated with
 --remote_exec_header=x-buildbuddy-platform.container-registry-username=_dcgcloud_token
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
 ```
+
+#### Google Artifact Registry
+
+For Artifact Registry (registries like `LOCATION-docker.pkg.dev`), the username must be
+`oauth2accesstoken` and the token can be generated with `gcloud auth print-access-token`:
+
+```bash
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=oauth2accesstoken
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
+```
+
+If you need to use a specific service account, generate the token via impersonation, e.g.
+`gcloud auth print-access-token --impersonate-service-account ACCOUNT`.
+The impersonating identity must have `roles/iam.serviceAccountTokenCreator`, and the service
+account must have Artifact Registry read access. See
+[Configure authentication to Artifact Registry for Docker](https://cloud.google.com/artifact-registry/docs/docker/authentication).
+
+If you already have Docker configured with a credential helper, you can reuse its output.
+The helper prints a `Username` and `Secret` (token), which can be passed directly to
+the remote exec headers:
+
+```bash
+# gcloud credential helper (docker-credential-gcloud)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcloud get
+
+# standalone helper (docker-credential-gcr)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcr get
+```
+
+The username is helper-specific (for example `_dcgcloud_token` from `docker-credential-gcloud`
+and `_dcgcr_2_0_0_token` from `docker-credential-gcr`), so prefer the helper output rather
+than hard-coding values.
+
+#### Amazon Elastic Container Registry (ECR)
 
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
 and a short-lived token can be generated with `aws ecr get-login-password --region REGION`
@@ -82,6 +118,8 @@ and a short-lived token can be generated with `aws ecr get-login-password --regi
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
 
+#### Amazon Public Elastic Container Registry (ECR Public)
+
 Amazon Public ECR is distinct from Amazon ECR and uses a different command to generate
 short-lived tokens: `aws ecr-public get-login-password --region REGION`:
 
@@ -89,6 +127,8 @@ short-lived tokens: `aws ecr-public get-login-password --region REGION`:
 --remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr-public get-login-password --region REGION)"
 ```
+
+#### Other Registries and long-lived credentials
 
 Some cloud providers may also allow the use of long-lived tokens, which
 can also be used in remote headers. For example, GCR allows setting a
@@ -116,7 +156,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "Pool": "my-gpu-pool",
     },
 )
@@ -136,7 +176,7 @@ For instructions on how to deploy custom executor pools, see the [RBE Executor P
 
 ## Target level execution properties
 
-If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
+If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs. In this case, you probably want to set the properties for only a subset of a targets's actions. The most common use case is setting properties for just tests by adding the `test.` prefix.
 
 ```python title="BUILD"
 go_test(
@@ -144,7 +184,7 @@ go_test(
     srcs = ["memory_hogging_test.go"],
     embed = [":go_default_library"],
     exec_properties = {
-        "Pool": "high-memory-pool",
+        "test.Pool": "high-memory-pool",
     },
 )
 ```
@@ -318,6 +358,19 @@ The following execution properties provide more customization.
   the container. The default is the user set on the image.
   If setting to a non-root user, you may also need to set
   `nonroot-workspace` to `true`.
+- `network`: controls the network access available in the VM/container.
+  Permitted values are:
+  - `off`: The container/VM has no external network access. It does have access
+    to the localhost network. This is the default setting for `oci`, `podman`,
+    `docker`, and `sandbox` containers.
+  - `external`: The container/VM is allocated its own network namespace through
+    which it can communicate with the internet via the host. This is the default
+    setting for `firecracker` VMs.
+  - `host`: The container has no network isolation and runs in the same
+    networking environment as the host executor, as well as any other containers
+    that are spawned by the executor which are also running with `"host"`
+    network mode. This setting is not available in BuildBuddy cloud or for
+    Firecracker VMs.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is
@@ -328,12 +381,14 @@ just a historical artifact.)
 - `dockerRunAsRoot`: when set to `true`, forces the container to run as
   root, even the image specification specifies a non-root `USER`.
   Available options are `true` and `false`. Defaults to `false`.
-- `dockerNetwork`: determines which network mode should be used. For
-  `sandbox` isolation, this determines whether the network is enabled or
-  not. Available options are `off` and `bridge`. The default is `bridge`,
-  but we strongly recommend setting this to `off` for faster runner
-  startup time. The latest version of the BuildBuddy toolchain does this
-  for you automatically.
+- `dockerNetwork`: Deprecated, please prefer `network`. Determines network
+  access for `oci`, `podman`, `docker`, and `sandbox` containers. This value has
+  no effect for `firecracker` VMs or if `network` is specified. Permitted values
+  are:
+  - `off`: The container has no network access, not even to the host.
+  - `bridge`: The container can communicate with the internet via the host. This
+    is the default setting.
+    Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
 
 ### Runner secrets
 

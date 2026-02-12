@@ -31,7 +31,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker interfaces.GossipListener) *gossip.GossipManager {
-	node, err := gossip.New("name-"+addr, addr, seeds)
+	node, err := gossip.NewWithArgs("name-"+addr, addr, seeds)
 	require.NoError(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)

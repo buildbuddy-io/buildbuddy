@@ -6,7 +6,7 @@ package cache.service;
 
 option go_package = "cache_service";
 
-service CacheService {
+service Cache {
   rpc GetMetadata(cache.GetCacheMetadataRequest)
       returns (cache.GetCacheMetadataResponse);
 }

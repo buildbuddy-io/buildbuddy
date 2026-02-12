@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -111,22 +112,20 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 		log.CtxWarningf(ctx, "Missing execution metadata for manifest %s@%s", repo, hash)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
-	aux := meta.GetAuxiliaryMetadata()
-	if aux == nil || len(aux) != 1 {
-		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest %s@%s", repo, hash)
-		return nil, status.InternalErrorf("missing auxiliary metadata for manifest %s@%s", repo, hash)
-	}
-	any := aux[0]
-	var mc ocipb.OCIManifestContent
-	err = any.UnmarshalTo(&mc)
+	mc := &ocipb.OCIManifestContent{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(meta, mc)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
 		log.CtxWarningf(ctx, "Error unmarshalling manifest content %s@%s: %s", repo, hash, err)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest %s@%s: %s", repo, hash, err)
 	}
+	if !ok {
+		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
+		return nil, status.InternalErrorf("missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
+	}
 	manifestHit(ctx, repo, hash, originalRef)
-	return &mc, nil
+	return mc, nil
 }
 
 func manifestACKey(repo gcrname.Repository, refhash gcr.Hash) (*digest.ACResourceName, error) {

@@ -4,6 +4,9 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -12,6 +15,17 @@ const (
 	// the source of truth and skip remote reads and writes.
 	// By default, the remote app cache is the source of truth.
 	SkipRemoteKey = "proxy_skip_remote"
+)
+
+var (
+	// The gRPC headers that should be forwarded by the Cache Proxy.
+	HeadersToPropagate = []string{
+		authutil.APIKeyHeader,
+		authutil.ContextTokenStringKey,
+		usageutil.ClientHeaderName,
+		usageutil.OriginHeaderName,
+		authutil.ClientIdentityHeaderName,
+		bazel_request.RequestMetadataKey}
 )
 
 func SkipRemote(ctx context.Context) bool {

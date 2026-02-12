@@ -141,7 +141,7 @@ func (d *DiskBlobStore) Writer(ctx context.Context, blobName string) (interfaces
 	}
 	zw := util.NewCompressWriter(fw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
-	cwc.CommitFn = func(int64) error {
+	cwc.SetCommitFn(func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
 			if writerCloseErr := fw.Close(); writerCloseErr != nil {
 				log.Errorf("Error encountered when closing FileWriter for %s: %s", blobName, err)
@@ -149,7 +149,7 @@ func (d *DiskBlobStore) Writer(ctx context.Context, blobName string) (interfaces
 			return compresserCloseErr
 		}
 		return fw.Commit()
-	}
-	cwc.CloseFn = fw.Close
+	})
+	cwc.SetCloseFn(fw.Close)
 	return cwc, nil
 }

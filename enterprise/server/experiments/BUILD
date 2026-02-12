@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:group_go_proto",
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/bazel_request",
@@ -15,6 +16,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/region",
         "//server/util/statusz",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
@@ -27,6 +29,7 @@ go_test(
     srcs = ["experiments_test.go"],
     deps = [
         ":experiments",
+        "//proto:group_go_proto",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
@@ -34,6 +37,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/random",
+        "//server/util/testing/flags",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_open_feature_go_sdk//openfeature/testing",

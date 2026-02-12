@@ -46,6 +46,10 @@ export default class RootComponent extends React.Component {
     errorService.register();
   }
 
+  componentWillUnmount() {
+    this.state.preferences.cleanup();
+  }
+
   handlePathChange() {
     if (this.state.path != window.location.pathname) {
       faviconService.setDefaultFavicon();
@@ -66,8 +70,13 @@ export default class RootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
     let showSetup = !invocationId && !compareInvocationIds;
+    const classNames = ["root"];
+    if (this.state.preferences.denseModeEnabled) classNames.push("dense");
+    const darkMode = this.state.preferences.darkModeEnabled;
+    if (darkMode) classNames.push("dark");
+    document.documentElement.classList.toggle("dark", darkMode);
     return (
-      <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
+      <div className={classNames.join(" ")}>
         <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">

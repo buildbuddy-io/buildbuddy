@@ -1,4 +1,4 @@
-import { ArrowDownCircle, FileCode } from "lucide-react";
+import { ArrowDownCircle, FileCode, FileImageIcon, FileVideoIcon, LucideProps } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -8,6 +8,7 @@ import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import rpcService from "../service/rpc_service";
 import { getFileDigest } from "../util/cache";
+import { isImageExtension, isVideoExtension, parseExtension } from "../util/file_types";
 
 interface Props {
   name: string;
@@ -81,6 +82,17 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   }
 
   makeArtifactViewUri(baseUri: string, outputFilename: string, encodedZipData?: string): string {
+    const extension = parseExtension(outputFilename);
+
+    // Show images and videos with the browser; show other files with the Code component.
+    if (isImageExtension(extension) || isVideoExtension(extension)) {
+      return rpcService.getBytestreamUrl(baseUri, this.props.invocationId, {
+        filename: outputFilename,
+        zip: encodedZipData,
+        view: true,
+      });
+    }
+
     let params: Record<string, string> = {
       bytestream_url: baseUri,
       invocation_id: this.props.invocationId,
@@ -146,9 +158,12 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                     {output.name}
                   </TextLink>
                   {output.uri?.startsWith("bytestream://") && (
-                    <a className="artifact-view" href={this.makeArtifactViewUri(output.uri, output.name)}>
-                      <FileCode /> View
-                    </a>
+                    <TextLink
+                      className="artifact-view"
+                      href={this.makeArtifactViewUri(output.uri, output.name)}
+                      target="_blank">
+                      <FileExtensionIcon extension={parseExtension(output.name)} /> View
+                    </TextLink>
                   )}
                   <DigestComponent digest={getFileDigest(output) ?? {}} />
                 </div>
@@ -180,4 +195,16 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       </div>
     );
   }
+}
+
+/** Returns an appropriate icon based on the file extension. */
+function FileExtensionIcon({ extension, ...rest }: { extension: string } & LucideProps) {
+  const ext = parseExtension(extension);
+  if (isImageExtension(ext)) {
+    return <FileImageIcon {...rest} />;
+  }
+  if (isVideoExtension(ext)) {
+    return <FileVideoIcon {...rest} />;
+  }
+  return <FileCode {...rest} />;
 }

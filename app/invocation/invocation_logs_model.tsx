@@ -21,6 +21,8 @@ export default class InvocationLogsModel {
   // Length of the log prefix which has already been persisted. The remainder of
   // the log is considered "live" and may be updated on subsequent fetches.
   private stableLogLength = 0;
+  // Whether we've received an empty nextChunkId, indicating the log stream is complete.
+  private complete = false;
 
   // Polling-based state
   private responseSubscription?: Subscription;
@@ -29,10 +31,14 @@ export default class InvocationLogsModel {
   // Server-stream based state
   private stream?: Cancelable;
 
-  constructor(private invocationId: string) {}
+  constructor(
+    private invocationId: string,
+    private logType: eventlog.LogType = eventlog.LogType.BUILD_LOG
+  ) {}
 
   startFetching() {
     this.stopFetching();
+    this.complete = false;
     if (capabilities.config.streamingHttpEnabled && capabilities.config.invocationLogStreamingEnabled) {
       this.streamLogs();
     } else {
@@ -59,6 +65,10 @@ export default class InvocationLogsModel {
     return Boolean(this.responseSubscription);
   }
 
+  isComplete(): boolean {
+    return this.complete;
+  }
+
   private streamLogs() {
     let chunkId = "";
     this.stream = streamWithRetry(
@@ -68,6 +78,7 @@ export default class InvocationLogsModel {
           invocationId: this.invocationId,
           chunkId,
           minLines: MIN_LINES,
+          type: this.logType,
         });
       },
       {
@@ -92,6 +103,7 @@ export default class InvocationLogsModel {
           invocationId: this.invocationId,
           chunkId,
           minLines: MIN_LINES,
+          type: this.logType,
         })
       )
     ).subscribe({
@@ -125,8 +137,9 @@ export default class InvocationLogsModel {
     // Empty next chunk ID means the invocation is complete and we've reached
     // the end of the log.
     if (!response.nextChunkId) {
+      this.complete = true;
       this.responseSubscription = undefined;
-      // Notify of change to `isFetching` state.
+      // Notify of change to `isFetching` and `isComplete` state.
       this.onChange.next();
       return;
     }

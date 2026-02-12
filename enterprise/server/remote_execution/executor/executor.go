@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -538,6 +539,11 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 }
 
 func validateCommand(cmd *repb.Command) error {
+	if wd := cmd.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	for _, pathList := range [][]string{
 		cmd.GetOutputFiles(),
 		cmd.GetOutputDirectories(),

@@ -162,10 +162,10 @@ func TestCAS() {
 		assertEqual(0, len(findResp.GetMissingBlobDigests()), "expected 0 missing blobs after upload")
 
 		batchReadReq := &repb.BatchReadBlobsRequest{
-			InstanceName:   *instanceName,
-			DigestFunction: repb.DigestFunction_SHA256,
-			Digests:        digests,
-			AcceptableCompressors:[]repb.Compressor_Value{compressor},
+			InstanceName:          *instanceName,
+			DigestFunction:        repb.DigestFunction_SHA256,
+			Digests:               digests,
+			AcceptableCompressors: []repb.Compressor_Value{compressor},
 		}
 
 		batchReadResp, err := cachetools.BatchReadBlobs(ctx, casClient, batchReadReq)

@@ -9,8 +9,10 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -44,6 +46,9 @@ const (
 
 	// Temporary directory under the filecache root.
 	tmpDir = "_tmp"
+
+	// Threshold at which to log when the trash collection is backing up.
+	trashCollectionLogThreshold = 8
 )
 
 var (
@@ -82,6 +87,13 @@ type fileCache struct {
 	lock        sync.Mutex
 	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
+	// Directories that are marked for deletion and are waiting for the last
+	// user to unlock the directory. The key is the directory path.
+	awaitingDeletion map[string]*entry
+	trashList        []string
+	trashCh          chan struct{}
+	closed           chan struct{}
+	wg               sync.WaitGroup
 
 	linkFromFileCacheLatency prometheus.Observer
 	linkIntoFileCacheLatency prometheus.Observer
@@ -90,7 +102,7 @@ type fileCache struct {
 	requestCounter           map[bool]prometheus.Counter
 }
 
-// entry is used to hold a value in the evictList
+// entry is used to hold a value in the LRU.
 type entry struct {
 	// addedAtUsec is the time that the file was added to the file cache, in
 	// microseconds since the Unix epoch.
@@ -98,6 +110,10 @@ type entry struct {
 	// sizeBytes is the file size as reported by the original FileNode metadata
 	// when the file was added to the file cache.
 	sizeBytes int64
+
+	// directoryHandle contains a non-nil directory handle if this entry
+	// represents an external directory.
+	directoryHandle *directoryHandle
 }
 
 func sizeFn(v *entry) int64 {
@@ -105,16 +121,74 @@ func sizeFn(v *entry) int64 {
 }
 
 func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
+	// Note: this returned function will get called with the filecache lock
+	// held. This is because all LRU operations (Add/Contains etc.) are done
+	// with the lock held, and LRU operations are the only operations that can
+	// trigger eviction, and eviction is triggered synchronously as part of the
+	// LRU operation.
 	return func(key string, v *entry, reason lru.EvictionReason) {
-		fp := filecachePath(rootDir, key)
-		if err := syscall.Unlink(fp); err != nil {
-			log.Errorf("Failed to unlink filecache entry %q: %s", fp, err)
+		if v.directoryHandle != nil {
+			if err := tryMoveDirToTrash(v); err != nil {
+				log.Errorf("Failed to trash directory %q: %s", v.directoryHandle.path, err)
+			}
+		} else {
+			fp := filecachePath(rootDir, key)
+			if err := syscall.Unlink(fp); err != nil {
+				log.Errorf("Failed to unlink filecache entry %q: %s", fp, err)
+			}
 		}
 		if reason == lru.SizeEviction {
 			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
 			metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
 		}
 	}
+}
+
+type directoryHandle struct {
+	path      string
+	filecache *fileCache
+	refCount  int
+}
+
+func tryMoveDirToTrash(e *entry) error {
+	// Note: we don't need to acquire the filecache lock here, because this func
+	// should only be getting called via the evictFn, as part of an LRU
+	// operation, so the filecache lock should already be held.
+
+	dir := e.directoryHandle
+
+	if dir.refCount > 0 {
+		// Can't delete this directory since it's in use.
+		// Mark it for later deletion.
+		dir.filecache.awaitingDeletion[e.directoryHandle.path] = e
+		return nil
+	}
+
+	// No one is using the dir - we can safely move to trash.
+	return dir.moveToTrash()
+}
+
+// unlock releases the directoryHandle reference and moves it to trash if it
+// was awaiting deletion.
+func (h *directoryHandle) unlock() {
+	// This func is called externally, whenever the caller of
+	// TrackExternalDirectory is done with it. So we need to grab the filecache
+	// lock here as we're mutating some filecache state.
+	h.filecache.lock.Lock()
+	defer h.filecache.lock.Unlock()
+
+	h.refCount--
+	if _, ok := h.filecache.awaitingDeletion[h.path]; ok && h.refCount == 0 {
+		if err := h.moveToTrash(); err != nil {
+			log.Errorf("Failed to move directory to trash (path: %q): %s", h.path, err)
+		} else {
+			delete(h.filecache.awaitingDeletion, h.path)
+		}
+	}
+}
+
+func (h *directoryHandle) moveToTrash() error {
+	return h.filecache.trash(h.path)
 }
 
 // NewFileCache constructs an fileCache with maxSize that will cache files
@@ -141,6 +215,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		rootDir:                  rootDir,
 		l:                        l,
 		dirScanDone:              make(chan struct{}),
+		awaitingDeletion:         make(map[string]*entry),
+		closed:                   make(chan struct{}),
 		linkFromFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_filecache"}),
 		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
 		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
@@ -149,6 +225,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 			true:  metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel}),
 			false: metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel}),
 		},
+		trashCh: make(chan struct{}, 1),
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -157,11 +234,68 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		return nil, status.WrapErrorf(err, "failed to create filecache temp dir")
 	}
 	go c.scanDir()
+	c.wg.Go(c.handleTrashNotifications)
 	return c, nil
+}
+
+// Close stops the background goroutine that cleans up trash and waits for it
+// to exit.
+func (c *fileCache) Close() error {
+	close(c.closed)
+	c.wg.Wait()
+	return nil
 }
 
 func (c *fileCache) TempDir() string {
 	return filepath.Join(c.rootDir, tmpDir)
+}
+
+func (c *fileCache) handleTrashNotifications() {
+	for {
+		select {
+		case <-c.closed:
+			return
+		case <-c.trashCh:
+		}
+
+		c.lock.Lock()
+		trashList := c.trashList
+		c.trashList = nil
+		c.lock.Unlock()
+
+		// To get some visibility when trash collection is backing up,
+		// log when the list gets longer than a certain threshold.
+		if len(trashList) > trashCollectionLogThreshold {
+			log.Infof("Removing %d directories from trash", len(trashList))
+		}
+
+		for _, path := range trashList {
+			if err := os.RemoveAll(path); err != nil {
+				log.Errorf("Failed to remove trash directory %q: %s", path, err)
+			}
+		}
+	}
+}
+
+// trash moves the path to the TempDir and marks it for asynchronous background
+// removal.
+func (c *fileCache) trash(path string) error {
+	trashDir := c.TempDir()
+	dst := filepath.Join(trashDir, ".trash-"+strconv.Itoa(rand.Intn(1e18))+"-"+filepath.Base(path))
+	if err := os.Rename(path, dst); err != nil {
+		return err
+	}
+	c.trashList = append(c.trashList, dst)
+
+	// Notify the background worker. A non-blocking send here is sufficient
+	// because the worker drains the trash list completely each time it sees a
+	// notification.
+	select {
+	case c.trashCh <- struct{}{}:
+	default:
+	}
+
+	return nil
 }
 
 func filecachePath(rootDir, key string) string {
@@ -257,6 +391,10 @@ func (c *fileCache) scanDir() {
 
 	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
 	close(c.dirScanDone)
+}
+
+func externalDirectoryKey(path string) string {
+	return "external:" + path
 }
 
 func groupSpecificKey(groupID string, node *repb.FileNode) string {
@@ -413,6 +551,103 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 	return nil
 }
 
+// TrackExternalDirectory atomically (1) tracks the given directory path using
+// the filecache, making it subject to LRU eviction, and (2) acquires a lock
+// preventing the directory from being evicted until the returned unlock
+// function is called. The caller MUST call the unlock function when the
+// directory is no longer actively being used, otherwise it will never be
+// evicted.
+//
+// After calling this function, ONLY the filecache may delete the directory; the
+// directory must not be deleted by any other means. If this is respected, then
+// this function provides the following guarantees:
+//
+// Guarantee 1: If the given path does not exist, then it is not currently being
+// tracked by the filecache, and calling this function will return NotFound.
+// Note: callers should be aware of potential race conditions, where goroutines
+// may concurrently be creating the directory, and manage their own
+// locking/singleflighting if needed.
+//
+// Guarantee 2: If this function succeeds (returns a nil error), then the
+// directory already exists, is being tracked by the filecache, and is protected
+// from deletion until the unlock function is called.
+//
+// The caller is responsible for providing the directory size estimate. This
+// allows using cheaply computed size estimated, such as the OCI layer tarball
+// size, which is "close enough" to the on-disk size of the extracted layer
+// tarball.
+//
+// For now, this function does NOT move the directory into the filecache
+// directory. This means that callers must perform their own initial directory
+// scan if needed, calling this function to manually add each directory to be
+// tracked. Usually, after calling this function during the initial scan, the
+// `unlock` function should be called immediately, in order to make the
+// directory eligible for eviction.
+//
+// Eviction is implemented by moving the file into the filecache temp dir and
+// asynchronously deleting all of its contents. This means that the given path
+// MUST be located on the same filesystem as the filecache. This renaming
+// approach ensures that eviction is both fast and atomic (the atomicity
+// property is required to uphold the invariants described above).
+func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error) {
+	path = filepath.Clean(path)
+	key := externalDirectoryKey(path)
+
+	e, err := c.initExternalDirectoryEntry(key, path, size)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.directoryHandle.unlock, nil
+}
+
+func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64) (*entry, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// Need to check that the directory exists, with the lock held, before
+	// creating an LRU entry. Otherwise, invariants cannot be guaranteed.
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.NotFoundErrorf("path %q does not exist: %s", path, err)
+		}
+		return nil, status.UnavailableErrorf("stat %q: %s", path, err)
+	}
+
+	e, ok := c.l.Get(key)
+	if !ok {
+		// If the entry is waiting for deletion then move it back to the LRU to
+		// guarantee it doesn't get deleted until the unlock func is called.
+		e, ok = c.awaitingDeletion[path]
+		if ok {
+			delete(c.awaitingDeletion, path)
+			success := c.l.Add(key, e)
+			if !success {
+				return nil, status.InternalErrorf("could not add key %s to filecache lru", key)
+			}
+		} else {
+			// No existing entry was found in the LRU or awaitingDeletion -
+			// create a new entry.
+			e = &entry{
+				addedAtUsec: time.Now().UnixMicro(),
+				sizeBytes:   size,
+				directoryHandle: &directoryHandle{
+					path:      path,
+					filecache: c,
+					refCount:  0, // incremented below
+				},
+			}
+			success := c.l.Add(key, e)
+			if !success {
+				return nil, status.InternalErrorf("could not add key %s to filecache lru", key)
+			}
+		}
+	}
+
+	e.directoryHandle.refCount++
+	return e, nil
+}
+
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
 	k := key(ctx, node)
 
@@ -456,18 +691,16 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	if err != nil {
 		return 0, err
 	}
-	f, err := os.Create(tmp)
-	if err != nil {
-		return 0, status.InternalErrorf("filecache temp file creation failed: %s", err)
-	}
 	defer func() {
-		if err := os.Remove(tmp); err != nil {
+		if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Warningf("Failed to remove filecache temp file: %s", err)
 		}
 	}()
-	n, err = f.Write(b)
-	if err != nil {
-		return n, err
+	// TODO(sluongng): should we use
+	//   os.FileMode(node.GetNodeProperties().GetUnixMode().GetValue())
+	// here instead of 0o666?
+	if err := os.WriteFile(tmp, b, 0o666); err != nil {
+		return 0, status.InternalErrorf("filecache temp file write failed: %s", err)
 	}
 	if err := c.AddFile(ctx, node, tmp); err != nil {
 		return 0, err

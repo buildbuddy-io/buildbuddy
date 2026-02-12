@@ -16,7 +16,7 @@
   animation: rotate 2s linear infinite;
   width: inherit;
   height: inherit;
-  background-image: url("/image/loader.svg");
+  background-image: var(--spinner-image);
   background-size: cover;
 }
 

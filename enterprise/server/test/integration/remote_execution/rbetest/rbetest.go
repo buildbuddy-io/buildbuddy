@@ -20,12 +20,20 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -37,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -50,6 +59,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -75,7 +85,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	crand "crypto/rand"
+
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -246,7 +259,6 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	} else {
 		envOpts.RedisClient = testredis.Start(t).Client()
 	}
-
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	auth := enterprise_testauth.Configure(t, testEnv)
 	// Init with some random groups/users.
@@ -368,13 +380,32 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	env.SetTaskRouter(router)
 	err = tasksize.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up TaskSizer")
-	executionServer, err := execution_server.NewExecutionServer(env)
-	require.NoError(t, err, "could not set up ExecutionServer")
-	env.SetRemoteExecutionService(executionServer)
 
 	olapDBHandle := testolapdb.NewHandle()
 	env.SetOLAPDBHandle(olapDBHandle)
 	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
+	err = redis_execution_collector.Register(env.TestEnv)
+	require.NoError(t, err, "could not set up ExecutionCollector")
+	executionServer, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err, "could not set up ExecutionServer")
+	env.SetRemoteExecutionService(executionServer)
+
+	// Configure customer-managed encryption keys (enabled if set per-group)
+	kmsDir := testfs.MakeTempDir(t)
+	masterKey := make([]byte, 32)
+	groupKey := make([]byte, 32)
+	_, err = crand.Read(masterKey)
+	require.NoError(t, err)
+	_, err = crand.Read(groupKey)
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, kmsDir, map[string]string{
+		"masterKey": string(masterKey),
+		"groupKey":  string(groupKey),
+	})
+	flags.Set(t, "keystore.master_key_uri", "local-insecure-kms://masterKey")
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	require.NoError(t, kms.Register(env.TestEnv))
+	require.NoError(t, crypter_service.Register(env.TestEnv))
 
 	if opts.EnvModifier != nil {
 		opts.EnvModifier(env.TestEnv)
@@ -382,6 +413,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
+	env.SetSchedulerService(scheduler)
+
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, false)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
@@ -392,9 +425,6 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*remoteExec=*/ true,
 		/*zstd=*/ true,
 	)
-
-	err = redis_execution_collector.Register(env.TestEnv)
-	require.NoError(t, err, "could not set up ExecutionCollector")
 
 	server := &BuildBuddyServer{
 		t:                       t,
@@ -428,6 +458,8 @@ func (s *BuildBuddyServer) start() {
 
 	// Configure services needed by remote execution.
 
+	require.NotNil(s.t, s.env.GetAuthenticator())
+	authpb.RegisterAuthServiceServer(grpcServer, auth_service.New(s.env.GetAuthenticator()))
 	s.env.SetSchedulerService(s.schedulerServer)
 	scpb.RegisterSchedulerServer(grpcServer, s.schedulerServer)
 	repb.RegisterExecutionServer(grpcServer, s.executionServer)
@@ -694,6 +726,11 @@ func (e *Executor) ShutdownTaskScheduler() {
 	e.taskScheduler.Shutdown(ctx)
 }
 
+// QueueLength returns the current number of tasks in the executor's queue.
+func (e *Executor) QueueLength() int {
+	return e.taskScheduler.QueueLength()
+}
+
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
 }
@@ -923,6 +960,72 @@ func (r *Env) waitForExecutorRegistration() {
 	}
 
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+}
+
+type CacheProxy struct {
+	t    testing.TB
+	env  *testenv.TestEnv
+	port int
+	conn *grpc_client.ClientConnPool
+}
+
+func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
+	return bspb.NewByteStreamClient(cp.conn)
+}
+
+func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
+	return repb.NewContentAddressableStorageClient(cp.conn)
+}
+
+func (r *Env) AddCacheProxy() *CacheProxy {
+	appConn := r.appProxyConn
+	port := testport.FindFree(r.t)
+	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+
+	grpcServerConfig := grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
+			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
+		},
+		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
+			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
+		},
+	}
+
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
+	require.NoError(r.t, err)
+	proxyEnv.SetAuthenticator(authenticator)
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	require.NoError(r.t, atime_updater.Register(proxyEnv))
+
+	// Register the internal (BS & CAS) gRPC servers.
+	localBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(r.t, err)
+	proxyEnv.SetLocalByteStreamServer(localBSS)
+	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(proxyEnv)
+	require.NoError(r.t, err)
+	proxyEnv.SetLocalCASServer(localCAS)
+
+	// Set up the proxy services and gRPC server.
+	s, err := grpc_server.New(proxyEnv, port, false, grpcServerConfig)
+	require.NoError(r.t, err)
+	require.NoError(r.t, capabilities_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, action_cache_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, byte_stream_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, content_addressable_storage_server_proxy.Register(proxyEnv))
+	repb.RegisterActionCacheServer(s.GetServer(), proxyEnv.GetActionCacheServer())
+	bspb.RegisterByteStreamServer(s.GetServer(), proxyEnv.GetByteStreamServer())
+	repb.RegisterContentAddressableStorageServer(s.GetServer(), proxyEnv.GetCASServer())
+	repb.RegisterCapabilitiesServer(s.GetServer(), proxyEnv.GetCapabilitiesServer())
+	require.NoError(r.t, s.Start())
+
+	// Finally, create the client connection.
+	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
+	require.NoError(r.t, err)
+	return &CacheProxy{t: r.t, env: proxyEnv, conn: conn}
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
@@ -1319,8 +1422,6 @@ type TestRunnerOverrides struct {
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
-	err := ocifetcher.RegisterClient(env.(*testenv.TestEnv))
-	require.NoError(t, err)
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}

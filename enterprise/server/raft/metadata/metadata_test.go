@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -38,6 +38,7 @@ import (
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	guuid "github.com/google/uuid"
 )
 
 var (
@@ -47,14 +48,14 @@ var (
 type testConfig struct {
 	env    *testenv.TestEnv
 	ta     *testauth.TestAuthenticator
-	config *metadata.Config
+	config *config.ServerConfig
 }
 
 func getTestConfigs(t *testing.T, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
-			ta:     testauth.NewTestAuthenticator(userMap),
+			ta:     testauth.NewTestAuthenticator(t, userMap),
 			env:    testenv.GetTestEnv(t),
 			config: getCacheConfig(t),
 		}
@@ -68,14 +69,19 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T) *metadata.Config {
-	return &metadata.Config{
-		RootDir:         testfs.MakeTempDir(t),
-		Hostname:        "127.0.0.1",
-		ListenAddr:      "127.0.0.1",
-		HTTPPort:        testport.FindFree(t),
-		GRPCPort:        testport.FindFree(t),
-		LogDBConfigType: store.SmallMemLogDBConfigType,
+func getCacheConfig(t *testing.T) *config.ServerConfig {
+	id, err := guuid.NewRandom()
+	require.NoError(t, err)
+	httpPort := testport.FindFree(t)
+	grpcPort := testport.FindFree(t)
+	return &config.ServerConfig{
+		NHID:              id.String(),
+		RootDir:           testfs.MakeTempDir(t),
+		RaftAddr:          fmt.Sprintf("127.0.0.1:%d", httpPort),
+		GRPCAddr:          fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		GRPCListeningAddr: fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		LogDBConfigType:   config.SmallMemLogDBConfigType,
+		FileStorer:        filestore.New(),
 		Partitions: []disk.Partition{
 			{
 				ID:           constants.DefaultPartitionID,
@@ -134,7 +140,7 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 }
 
 func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)
@@ -163,9 +169,9 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
-		gs, err := gossip.New("name-"+lN, lN, joinList)
+		gs, err := gossip.NewWithArgs(config.config.NHID, lN, joinList)
 		require.NoError(t, err)
-		config.env.SetGossipService(gs)
+		config.config.GossipManager = gs
 		eg.Go(func() error {
 			n, err := metadata.New(config.env, config.config)
 			if err != nil {

@@ -108,7 +108,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
@@ -139,7 +139,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, resolver, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
 	})
 	return imageDir, err
 }
@@ -155,12 +155,12 @@ func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, conta
 	return nil
 }
 
-func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}
@@ -182,8 +182,8 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}

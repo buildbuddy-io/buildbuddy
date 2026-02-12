@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -110,7 +111,11 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	flags.Set(t, "remote_execution.default_pool_name", "defaultPoolName")
 	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "sharedGroupID")
 
-	err := execution_server.Register(env)
+	err := tasksize.Register(env)
+	require.NoError(t, err)
+	err = redis_execution_collector.Register(env)
+	require.NoError(t, err)
+	err = execution_server.Register(env)
 	require.NoError(t, err)
 	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
 	s, err := NewSchedulerServerWithOptions(env, &opts.options)
@@ -131,7 +136,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
 
-	ta := testauth.NewTestAuthenticator(testUsers)
+	ta := testauth.NewTestAuthenticator(t, testUsers)
 	env.SetAuthenticator(ta)
 	s.enableUserOwnedExecutors = opts.userOwnedEnabled
 
@@ -306,7 +311,8 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 		}
 	}
 }`)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
@@ -361,7 +367,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 		}
 	}
 }`)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)

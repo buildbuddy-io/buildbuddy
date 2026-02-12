@@ -342,3 +342,27 @@ func TestPersistentVolumes(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_ExecrootPath(t *testing.T) {
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue string
+	}{
+		{"", ""},
+		{"/", "/"},
+		{"/custom-execroot", "/custom-execroot"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "execroot-path", Value: testCase.rawValue},
+		}}
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
+		assert.Equal(t, testCase.expectedValue, platformProps.ExecrootPath)
+	}
+
+	// Empty case
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	assert.Equal(t, "", platformProps.ExecrootPath)
+}

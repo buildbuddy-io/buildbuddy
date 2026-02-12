@@ -15,7 +15,6 @@ import EditOrgComponent from "../org/edit_org";
 import OrgJoinRequests from "../org/org_join_requests";
 import OrgMembersComponent from "../org/org_members";
 import OrgUserListsComponent from "../org/org_user_lists";
-import QuotaComponent from "../quota/quota";
 import SecretsComponent from "../secrets/secrets";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import GitHubLink from "./github_link";
@@ -42,8 +41,6 @@ enum TabId {
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
   PersonalGitHubLink = "personal/github",
-
-  ServerQuota = "server/quota",
 }
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
@@ -192,18 +189,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
               </div>
-              {this.props.user.canCall("getNamespace") && capabilities.config.quotaManagementEnabled && (
-                <>
-                  <div className="settings-tab-group-header">
-                    <div className="settings-tab-group-title">Server settings</div>
-                  </div>
-                  <div className="settings-tab-group">
-                    <SettingsTab id={TabId.ServerQuota} activeTabId={activeTabId}>
-                      Quota
-                    </SettingsTab>
-                  </div>
-                </>
-              )}
             </div>
             <div className="settings-content">
               {activeTabId === "personal/preferences" && (
@@ -215,6 +200,46 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   <FilledButton className="settings-button" onClick={() => this.props.preferences.toggleDenseMode()}>
                     {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </FilledButton>
+                  {capabilities.config.darkModeEnabled && (
+                    <>
+                      <div className="settings-option-title">Theme</div>
+                      <div className="settings-option-description">
+                        Choose between light and dark mode for the BuildBuddy UI.
+                      </div>
+                      <div className="settings-option-warning">
+                        <AlertCircle className="icon" />
+                        <span>
+                          Dark mode is experimental.{" "}
+                          <a
+                            href="https://github.com/buildbuddy-io/buildbuddy/issues/new?template=bug_report.md"
+                            target="_blank"
+                            rel="noopener noreferrer">
+                            Report issues
+                          </a>
+                        </span>
+                      </div>
+                      <div className="settings-button-group" role="group" aria-label="Theme selection">
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "light" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("light")}
+                          aria-pressed={this.props.preferences.themePreference === "light"}>
+                          Light
+                        </FilledButton>
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "system" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("system")}
+                          aria-pressed={this.props.preferences.themePreference === "system"}>
+                          System
+                        </FilledButton>
+                        <FilledButton
+                          className={`settings-button ${this.props.preferences.themePreference === "dark" ? "selected" : ""}`}
+                          onClick={() => this.props.preferences.setTheme("dark")}
+                          aria-pressed={this.props.preferences.themePreference === "dark"}>
+                          Dark
+                        </FilledButton>
+                      </div>
+                    </>
+                  )}
                   <div className="settings-option-title">Log viewer theme</div>
                   <div className="settings-option-description">
                     The log viewer theme allows you to switch between a light and dark log viewer.
@@ -334,9 +359,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     )}
                   {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
                     <SecretsComponent path={this.props.path} search={this.props.search} />
-                  )}
-                  {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
-                    <QuotaComponent path={this.props.path} search={this.props.search} />
                   )}
                   {activeTabId == TabId.OrgCacheEncryption && (
                     <>

@@ -2,7 +2,12 @@ package claims
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -10,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -28,7 +34,7 @@ import (
 
 const (
 	// Maximum number of entries in JWT -> Claims cache.
-	claimsCacheSize = 10_00
+	claimsCacheSize = 1_000
 
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
@@ -36,19 +42,93 @@ const (
 )
 
 var (
-	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
-	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
+	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing HMAC-SHA256-signed JWT tokens.", flag.Secret)
+	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, HMAC-SHA256-signed JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 
+	jwtES256PrivateKey    = flag.String("auth.jwt_es256_private_key", "", "PEM-encoded private key used to sign ES256-signed JWTs.", flag.Secret)
+	newJWTES256PrivateKey = flag.String("auth.new_jwt_es256_private_key", "", "PEM-encoded private key used to sign new ES256-signed JWTs during key rotation.", flag.Secret)
+
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+
+	reparseJWTs = flag.Bool("auth.reparse_jwts", true, "Whether to permit re-parsing JWTs or not.")
 )
 
 var (
 	// Generic permission denied error.
 	errPermissionDenied = status.PermissionDeniedError("permission denied")
+
+	es256PrivateKey *ecdsa.PrivateKey
+	es256PublicKeys []string = []string{}
+
+	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
 )
+
+func Init() error {
+	es256PrivateKey = nil
+	es256PublicKeys = []string{}
+
+	if *newJWTES256PrivateKey == "" && *jwtES256PrivateKey == "" {
+		return nil
+	}
+
+	var newPrivateKey *ecdsa.PrivateKey
+	var oldPrivateKey *ecdsa.PrivateKey
+	var newPublicKey string
+	var oldPublicKey string
+	var err error
+
+	// Make both public keys available so that clients can verify JWTs during
+	// app rollouts.
+	if *newJWTES256PrivateKey != "" {
+		newPrivateKey, newPublicKey, err = getES256KeyPair(*newJWTES256PrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	if *jwtES256PrivateKey != "" {
+		oldPrivateKey, oldPublicKey, err = getES256KeyPair(*jwtES256PrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	es256PrivateKey = oldPrivateKey
+	if *signUsingNewJwtKey {
+		if newPrivateKey == nil {
+			return status.InvalidArgumentError("Requested signing with new ES256 private key, but no new private key was specified.")
+		}
+		es256PrivateKey = newPrivateKey
+	}
+
+	if newPublicKey != "" {
+		es256PublicKeys = append(es256PublicKeys, newPublicKey)
+	}
+	if oldPublicKey != "" {
+		es256PublicKeys = append(es256PublicKeys, oldPublicKey)
+	}
+
+	return nil
+}
+
+func getES256KeyPair(key string) (*ecdsa.PrivateKey, string, error) {
+	privateKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(key))
+	if err != nil {
+		return nil, "", err
+	}
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return nil, "", err
+	}
+	encodedPublicKey := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+	return privateKey, string(encodedPublicKey), nil
+}
 
 type Claims struct {
 	jwt.StandardClaims
@@ -145,18 +225,28 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func ParseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
+		return nil, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			switch token.Method {
+			case jwt.SigningMethodHS256:
+				return []byte(key), nil
+			case jwt.SigningMethodES256:
+				return jwt.ParseECPublicKeyFromPEM([]byte(key))
+			default:
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Method.Alg())
+			}
 		})
 		if err == nil {
 			return claims, nil
@@ -224,11 +314,11 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
-	authDB := env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
+	userDB := env.GetUserDB()
+	if userDB == nil {
+		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := authDB.LookupUserFromSubID(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +389,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
+	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
@@ -310,6 +401,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
+			groupStatus = g.Group.Status
 			capabilities = g.Capabilities
 		}
 	}
@@ -321,23 +413,39 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
+		GroupStatus:            groupStatus,
 	}, nil
 }
 
-func AssembleJWT(c *Claims) (string, error) {
+func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	token := jwt.NewWithClaims(method, c)
+	if method == jwt.SigningMethodHS256 {
+		return assembleHS256JWT(token)
+	} else if method == jwt.SigningMethodES256 {
+		return assembleES256JWT(token)
+	}
+	return "", status.InternalError("Unsupported JWT signing method")
+}
+
+func assembleHS256JWT(token *jwt.Token) (string, error) {
 	key := *jwtKey
 	if *newJwtKey != "" && *signUsingNewJwtKey {
 		key = *newJwtKey
 	}
-	tokenString, err := token.SignedString([]byte(key))
-	return tokenString, err
+	return token.SignedString([]byte(key))
+}
+
+func assembleES256JWT(token *jwt.Token) (string, error) {
+	if es256PrivateKey == nil {
+		return "", status.UnimplementedError("ES256-signed JWTs are unsupported")
+	}
+	return token.SignedString(es256PrivateKey)
 }
 
 // Returns a context containing auth state for the provided Claims and auth
@@ -348,7 +456,7 @@ func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Conte
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := AssembleJWT(c)
+	tokenString, err := AssembleJWT(c, jwt.SigningMethodHS256)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -375,7 +483,15 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
+		if !*reparseJWTs {
+			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
+		}
+		caller := "unknown"
+		if _, file, line, ok := runtime.Caller(1); ok {
+			caller = fmt.Sprintf("%s:%d", file, line)
+		}
+		reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -443,26 +559,36 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
-// and verified JWT claims.
+// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
+// keys for verifying JWTs.
+type KeyProvider func(ctx context.Context) ([]string, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+	if *newJwtKey != "" {
+		// Try the new key first.
+		return []string{*newJwtKey, *jwtKey}, nil
+	}
+	return []string{*jwtKey}, nil
+}
+
+// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
-// The JWTs used with this cache should have Expiration times rounded down to
-// the nearest minute, so that their cache key doesn't change as often and can
-// therefore be cached for longer.
-type ClaimsCache struct {
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
 	lru interfaces.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
-// an error if there's an error constructing the cache.
-//
-// Note: this function can return (nil, nil)!
-func NewClaimsCache() (*ClaimsCache, error) {
+func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return nil, nil
+		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
@@ -473,10 +599,14 @@ func NewClaimsCache() (*ClaimsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
+	if c.ttl <= 0 {
+		return parseClaims(ctx, token, c.keyProvider)
+	}
+
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -487,7 +617,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -497,4 +627,8 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	c.mu.Unlock()
 
 	return claims, nil
+}
+
+func GetES256PublicKeys() []string {
+	return es256PublicKeys
 }

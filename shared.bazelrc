@@ -22,6 +22,7 @@ common --check_direct_dependencies=error
 
 # Enable proto toolchain resolution to use pre-built protoc.
 common --incompatible_enable_proto_toolchain_resolution
+common --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
 
 # Sanitize environment variables to avoid cache misses.
 common --incompatible_strict_action_env
@@ -88,6 +89,8 @@ common --experimental_use_validation_aspect=true
 # We have many tests that can fill up the console with cached results.
 # If you prefer to see cached results, set this to 'short' in user.bazelrc file.
 common --test_summary=terse
+
+common --downloader_config=bazel_downloader.cfg
 
 common:race --@io_bazel_rules_go//go/config:race
 
@@ -203,7 +206,7 @@ common:bzlmod-target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:
 common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platform:linux_arm64
+common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal

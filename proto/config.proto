@@ -193,6 +193,9 @@ message FrontendConfig {
 
   // Whether action result origin metadata is recorded and can be displayed.
   bool action_result_origin_enabled = 64;
+
+  // Whether dark mode UI is enabled.
+  bool dark_mode_enabled = 65;
 }
 
 message Region {

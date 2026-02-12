@@ -115,7 +115,8 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 func addClientIPToContext(ctx context.Context) context.Context {
 	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
 	if len(hdrs) == 0 {
-		return ctx
+		// No proxy header; use direct connection peer address.
+		return addPeerIPToContext(ctx)
 	}
 
 	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
@@ -123,6 +124,11 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		return ctx
 	}
 
+	// X-Forwarded-For header is present but not trusted. Fall back to peer.
+	return addPeerIPToContext(ctx)
+}
+
+func addPeerIPToContext(ctx context.Context) context.Context {
 	if p, ok := peer.FromContext(ctx); ok {
 		ap, err := netip.ParseAddrPort(p.Addr.String())
 		if err != nil {
@@ -131,7 +137,6 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		}
 		return context.WithValue(ctx, clientip.ContextKey, ap.Addr().String())
 	}
-
 	return ctx
 }
 

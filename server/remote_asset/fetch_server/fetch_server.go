@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -104,9 +105,6 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 }
 
 func checkPreconditions(env environment.Env) error {
-	if env.GetBuildBuddyServiceClient() == nil {
-		return status.FailedPreconditionError("missing BuildBuddyServiceClient")
-	}
 	if env.GetByteStreamClient() == nil {
 		return status.FailedPreconditionError("missing ByteStreamClient")
 	}
@@ -360,11 +358,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
-	//
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146
-	// Fix this metadata GRPC to use a GRPC that hits the correct cache when the routing_service is enabled.
-	// For now, we will always fetch metadata from the remote cache.
-	md, err := p.env.GetBuildBuddyServiceClient().GetCacheMetadata(ctx, &cachepb.GetCacheMetadataRequest{
+	md, err := getCacheClient(p.env).GetMetadata(ctx, &cachepb.GetCacheMetadataRequest{
 		ResourceName: cacheRN.ToProto(),
 	})
 	if err != nil {
@@ -520,4 +514,12 @@ func getCASClient(env environment.Env) repb.ContentAddressableStorageClient {
 		casClient = env.GetLocalContentAddressableStorageClient()
 	}
 	return casClient
+}
+func getCacheClient(env environment.Env) cspb.CacheClient {
+	cacheClient := env.GetCacheClient()
+	// If there is a local cache server, use it instead of the remote one.
+	if env.GetLocalCacheClient() != nil {
+		cacheClient = env.GetLocalCacheClient()
+	}
+	return cacheClient
 }

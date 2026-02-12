@@ -38,12 +38,50 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdOutErrMaxSize          = flag.Uint64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
 	// Regexp matching a string consisting solely of digits (0-9).
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
+
+func LimitStdOutErrWriter(w io.Writer) io.Writer {
+	if *StdOutErrMaxSize == 0 {
+		return w
+	}
+	return &limitWriter{w: w, limit: *StdOutErrMaxSize}
+}
+
+// limitWriter limits the number of bytes written to it.
+// It returns a ResourceExhausted error if a write occurs that would exceed the limit.
+// Before returning a ResourceExhausted error, it writes as many bytes as possible before the limit would be reached.
+type limitWriter struct {
+	w     io.Writer
+	limit uint64
+
+	n uint64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 || lw.limit == 0 {
+		return lw.w.Write(p)
+	}
+	pSize := uint64(len(p))
+	totalRequested := lw.n + pSize
+	if lw.n >= lw.limit {
+		// n could have been increased from a previous write and reached limit
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+
+	writeSize := min(pSize, lw.limit-lw.n)
+	n, err := lw.w.Write(p[:writeSize])
+	lw.n += uint64(n)
+	if err == nil && writeSize < pSize {
+		return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+	return n, err
+}
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {

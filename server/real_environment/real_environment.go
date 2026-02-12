@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -96,6 +97,9 @@ type RealEnv struct {
 	listenAddr                           string
 	buildbuddyServer                     interfaces.BuildBuddyServer
 	buildBuddyServiceClient              bbspb.BuildBuddyServiceClient
+	cacheServer                          cspb.CacheServer
+	cacheClient                          cspb.CacheClient
+	localCacheClient                     cspb.CacheClient
 	sslService                           interfaces.SSLService
 	quotaManager                         interfaces.QuotaManager
 	buildEventServer                     pepb.PublishBuildEventServer
@@ -135,10 +139,10 @@ type RealEnv struct {
 	registryService                      interfaces.RegistryService
 	pubsub                               interfaces.PubSub
 	clock                                clockwork.Clock
-	atimeUpdater                         interfaces.AtimeUpdater
 	cpuLeaser                            interfaces.CPULeaser
 	ociRegistry                          interfaces.OCIRegistry
 	ociFetcherClient                     ofpb.OCIFetcherClient
+	ociFetcherServer                     ofpb.OCIFetcherServer
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
@@ -541,6 +545,27 @@ func (r *RealEnv) SetBuildBuddyServiceClient(bb bbspb.BuildBuddyServiceClient) {
 	r.buildBuddyServiceClient = bb
 }
 
+func (r *RealEnv) GetCacheServer() cspb.CacheServer {
+	return r.cacheServer
+}
+func (r *RealEnv) SetCacheServer(cs cspb.CacheServer) {
+	r.cacheServer = cs
+}
+
+func (r *RealEnv) GetCacheClient() cspb.CacheClient {
+	return r.cacheClient
+}
+func (r *RealEnv) SetCacheClient(c cspb.CacheClient) {
+	r.cacheClient = c
+}
+
+func (r *RealEnv) GetLocalCacheClient() cspb.CacheClient {
+	return r.localCacheClient
+}
+func (r *RealEnv) SetLocalCacheClient(localCacheClient cspb.CacheClient) {
+	r.localCacheClient = localCacheClient
+}
+
 func (r *RealEnv) GetSSLService() interfaces.SSLService {
 	return r.sslService
 }
@@ -780,14 +805,6 @@ func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
 	r.scimService = val
 }
 
-func (r *RealEnv) GetGossipService() interfaces.GossipService {
-	return r.gossipService
-}
-
-func (r *RealEnv) SetGossipService(g interfaces.GossipService) {
-	r.gossipService = g
-}
-
 func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
 	return r.commandRunner
 }
@@ -831,13 +848,6 @@ func (r *RealEnv) SetClock(clock clockwork.Clock) {
 	r.clock = clock
 }
 
-func (r *RealEnv) GetAtimeUpdater() interfaces.AtimeUpdater {
-	return r.atimeUpdater
-}
-func (r *RealEnv) SetAtimeUpdater(updater interfaces.AtimeUpdater) {
-	r.atimeUpdater = updater
-}
-
 func (r *RealEnv) GetCPULeaser() interfaces.CPULeaser {
 	return r.cpuLeaser
 }
@@ -857,6 +867,13 @@ func (r *RealEnv) GetOCIFetcherClient() ofpb.OCIFetcherClient {
 }
 func (r *RealEnv) SetOCIFetcherClient(c ofpb.OCIFetcherClient) {
 	r.ociFetcherClient = c
+}
+
+func (r *RealEnv) GetOCIFetcherServer() ofpb.OCIFetcherServer {
+	return r.ociFetcherServer
+}
+func (r *RealEnv) SetOCIFetcherServer(s ofpb.OCIFetcherServer) {
+	r.ociFetcherServer = s
 }
 
 func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {

@@ -24,7 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
@@ -53,13 +53,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 
 	"google.golang.org/grpc"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -112,8 +112,6 @@ var (
 
 func init() {
 	grpc.EnableTracing = false
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
 }
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv, appBundleFS fs.FS) {
@@ -200,10 +198,6 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	}
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
-
-	if err := gossip.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
-	}
 
 	collector, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	if err != nil {
@@ -307,6 +301,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if scheduler := env.GetSchedulerService(); scheduler != nil {
 		scpb.RegisterSchedulerServer(grpcServer, scheduler)
 	}
+	if cacheServer := env.GetCacheServer(); cacheServer != nil {
+		cspb.RegisterCacheServer(grpcServer, cacheServer)
+	}
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
@@ -349,6 +346,9 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	if env.GetCASServer() != nil {
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	}
+	if env.GetCacheServer() != nil {
+		env.SetCacheClient(cspb.NewCacheClient(conn))
+	}
 	return nil
 }
 
@@ -357,30 +357,10 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Printf("Error raising open files limit: %s", err)
-	}
-
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
-
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
+// RegisterLocalServersAndClients registers core gRPC service implementations
+// (BuildBuddy server, build event server, remote cache servers, etc.) and then
+// sets up local gRPC clients that point back at them.
+func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -405,6 +385,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := push_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := cache_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := registerLocalGRPCClients(env); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -413,6 +396,31 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+}
+
+func StartAndRunServices(env *real_environment.RealEnv) {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if err := rlimit.MaxRLimit(); err != nil {
+		log.Printf("Error raising open files limit: %s", err)
+	}
+
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {
@@ -440,6 +448,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 

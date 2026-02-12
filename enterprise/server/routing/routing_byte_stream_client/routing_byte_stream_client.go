@@ -31,9 +31,9 @@ var (
 type RoutingByteStreamClient struct {
 	acClient     map[string]bspb.ByteStreamClient
 	router       interfaces.CacheRoutingService
-	copyOp       batch_operator.DigestOperator
-	readOp       batch_operator.DigestOperator
-	readVerifyOp batch_operator.DigestOperator
+	copyOp       interfaces.DigestOperator
+	readOp       interfaces.DigestOperator
+	readVerifyOp interfaces.DigestOperator
 }
 
 func New(env environment.Env) (bspb.ByteStreamClient, error) {
@@ -109,7 +109,7 @@ func (r *RoutingByteStreamClient) Read(ctx context.Context, req *bspb.ReadReques
 
 type wrappedWriteStream struct {
 	ctx context.Context
-	op  batch_operator.DigestOperator
+	op  interfaces.DigestOperator
 	rn  *digest.CASResourceName
 	bspb.ByteStream_WriteClient
 	success bool

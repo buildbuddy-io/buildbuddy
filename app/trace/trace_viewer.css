@@ -24,28 +24,29 @@
 
 .trace-viewer .panel-container {
   border-radius: 2px;
-  border: 2px solid #eee;
+  border: 2px solid var(--color-trace-border);
   box-sizing: border-box;
+  background: var(--color-white);
 }
 
 .trace-viewer .panel::-webkit-scrollbar-thumb {
-  background: #bdbdbd;
+  background: var(--color-trace-scrollbar-thumb);
   border-radius: 1px;
 }
 .trace-viewer .panel::-webkit-scrollbar-thumb:hover {
-  background: #9e9e9e;
+  background: var(--color-gray-500);
 }
 .trace-viewer .panel::-webkit-scrollbar-thumb:active {
-  background: #757575;
+  background: var(--color-gray-600);
 }
 .trace-viewer .panel::-webkit-scrollbar-corner {
-  background: #e0e0e0;
+  background: var(--color-trace-scrollbar-corner);
 }
 
 .trace-viewer .panel::-webkit-scrollbar {
   width: var(--scrollbar-size);
   height: var(--scrollbar-size);
-  background: #fafafa;
+  background: var(--color-trace-scrollbar-bg);
 }
 
 .trace-viewer .panel-controls {
@@ -61,15 +62,15 @@
   -webkit-appearance: none;
   padding: 0;
   outline: none;
-  background: rgba(250, 250, 250, 0.6);
+  background: var(--color-trace-button-bg);
   backdrop-filter: blur(3px);
   border-radius: 4px;
-  color: #616161;
+  color: var(--color-trace-button-text);
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px var(--color-shadow-lg);
   transition: 70ms ease-out;
   border: 1px solid transparent;
   box-sizing: border-box;
@@ -81,13 +82,13 @@
 }
 
 .trace-viewer .button:focus {
-  border: 1px solid #64b5f6;
+  border: 1px solid var(--color-trace-button-focus);
 }
 
 .trace-viewer .button:active {
-  background: #f5f5f5;
-  border: 1px solid #757575;
-  color: black;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-gray-600);
+  color: var(--color-trace-button-active-text);
 }
 
 .trace-viewer .icon-button {
@@ -101,22 +102,23 @@
 }
 
 .trace-viewer-hovercard {
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
+  background: var(--color-hovercard-bg);
+  box-shadow: 0 1px 3px var(--color-trace-hovercard-shadow);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;
   backdrop-filter: blur(3px);
   max-width: calc(min(640px, 100vw));
   word-break: break-all;
+  color: var(--color-hovercard-text);
 }
 
 .trace-viewer-hovercard .data {
-  color: #000;
+  color: var(--color-hovercard-text);
 }
 
 .trace-viewer-hovercard.no-block-hovered {
-  color: #888;
+  color: var(--color-hovercard-muted);
 }
 
 .trace-viewer-hovercard .hovercard-title {
@@ -125,14 +127,14 @@
 }
 
 .trace-viewer-hovercard .hovercard-details {
-  color: #888;
+  color: var(--color-hovercard-muted);
 }
 
 .trace-viewer-hovercard .duration {
   font-size: 14px;
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
   margin-bottom: 4px;
 }
 
@@ -141,7 +143,7 @@
 }
 
 .trace-viewer .zoom-factor {
-  background: rgba(255, 240, 130, 0.6);
+  background: var(--color-trace-zoom-factor-bg);
   padding: 6px 8px;
   margin-right: 4px;
   font-variant-numeric: tabular-nums;

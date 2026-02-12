@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -108,6 +109,8 @@ type Env interface {
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
+	GetCacheClient() cspb.CacheClient
+	GetLocalCacheClient() cspb.CacheClient
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
 	GetCapabilitiesServer() repb.CapabilitiesServer
@@ -130,7 +133,6 @@ type Env interface {
 	GetServerNotificationService() interfaces.ServerNotificationService
 	GetGCPService() interfaces.GCPService
 	GetSCIMService() interfaces.SCIMService
-	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
 	GetSnapshotService() interfaces.SnapshotService
@@ -138,7 +140,6 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
-	GetAtimeUpdater() interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer

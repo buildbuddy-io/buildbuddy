@@ -7,11 +7,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -28,13 +30,19 @@ func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
 }
 
+func requireClaimsEqual(t *testing.T, expected *claims.Claims, actual *claims.Claims) {
+	expected.StandardClaims.ExpiresAt = 0
+	actual.StandardClaims.ExpiresAt = 0
+	require.Equal(t, expected, actual)
+}
+
 func TestJWT(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 func TestInvalidJWTKey(t *testing.T) {
@@ -58,7 +66,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 
 	// Get JWT signed using new key.
 	testContext = contextWithUnverifiedJWT(c)
@@ -66,7 +74,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err = claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 type fakeAPIKeyGroup struct {
@@ -118,10 +126,15 @@ func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 }
 
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
+	require.NoError(t, claims.Init())
 	ctx := context.Background()
 	baseGroupID := "GR9000"
 	caps := capabilities.AnonymousUserCapabilities
-	akg := &fakeAPIKeyGroup{groupID: baseGroupID, capabilities: capabilities.ToInt(caps)}
+	akg := &fakeAPIKeyGroup{
+		groupID:      baseGroupID,
+		capabilities: capabilities.ToInt(caps),
+		groupStatus:  grpb.Group_ENTERPRISE_GROUP_STATUS,
+	}
 	c, err := claims.APIKeyGroupClaims(ctx, akg)
 	require.NoError(t, err)
 	expectedBaseMembership := &interfaces.GroupMembership{
@@ -131,6 +144,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, baseGroupID, c.GetGroupID())
 	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
+	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, c.GetGroupStatus())
 
 	// Should be able to set group ID to the base group ID via request context which should yield same results
 	// as before.
@@ -154,6 +168,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 		groupID:       baseGroupID,
 		childGroupIDs: []string{childGroupID},
 		capabilities:  capabilities.ToInt(caps),
+		groupStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
 	}
 
 	// Regular call should return the parent group as the effective group.
@@ -167,6 +182,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID)
 	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, c.GetGroupStatus())
 
 	// Should be able to change the effective group ID to the child group using the request context.
 	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: childGroupID})
@@ -231,11 +247,12 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "auth.admin_group_id", adminGroupID)
+			require.NoError(t, claims.Init())
 
 			ctx := t.Context()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
 			env := testenv.GetTestEnv(t)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				"US1", adminGroupID,
 				"US2", nonAdminGroupID,
 			))
@@ -255,4 +272,185 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGroupStatusPropagation(t *testing.T) {
+	require.NoError(t, claims.Init())
+	statuses := []grpb.Group_GroupStatus{
+		grpb.Group_UNKNOWN_GROUP_STATUS,
+		grpb.Group_FREE_TIER_GROUP_STATUS,
+		grpb.Group_ENTERPRISE_GROUP_STATUS,
+		grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+		grpb.Group_BLOCKED_GROUP_STATUS,
+	}
+
+	for _, status := range statuses {
+		t.Run(grpb.Group_GroupStatus_name[int32(status)], func(t *testing.T) {
+			ctx := context.Background()
+			akg := &fakeAPIKeyGroup{
+				groupID:      "GR1234",
+				capabilities: capabilities.ToInt(capabilities.AnonymousUserCapabilities),
+				groupStatus:  status,
+			}
+
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			require.NoError(t, err)
+			require.Equal(t, status, c.GetGroupStatus())
+		})
+	}
+}
+
+func TestAssembleJWT_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	// Verify it's actually an ES256 token by parsing the header
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &claims.Claims{})
+	require.NoError(t, err)
+	require.Equal(t, "ES256", token.Method.Alg())
+}
+
+func TestAssembleJWT_ES256_UsesNewKeyWhenSet(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
+
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
+	flags.Set(t, "auth.sign_using_new_jwt_key", true)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	// Verify the JWT was indeed signed with keyPair2
+	pubKey, err := jwt.ParseECPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (interface{}, error) {
+		return pubKey, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+}
+
+func TestAssembleJWT_ES256_NoPrivateKey(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123"}
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.Error(t, err)
+}
+
+func TestAssembleJWT_UnsupportedSigningMethod(t *testing.T) {
+	c := &claims.Claims{UserID: "US123"}
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Unsupported JWT signing method")
+}
+
+func TestGetES256PublicKeys_NoKeys(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetES256PublicKeys()
+	require.Empty(t, keys)
+}
+
+func TestGetES256PublicKeys_OnlyOldKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetES256PublicKeys()
+	require.Len(t, keys, 1)
+}
+
+func TestGetES256PublicKeys_OnlyNewKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetES256PublicKeys()
+	require.Len(t, keys, 1)
+}
+
+func TestGetES256PublicKeys_BothKeys(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	keys := claims.GetES256PublicKeys()
+	require.Len(t, keys, 2)
+}
+
+func TestParseClaims_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	parsedClaims, err := parser.Parse(t.Context(), tokenString)
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+	require.Equal(t, "GR456", parsedClaims.GroupID)
+}
+
+func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	_, err = parser.Parse(t.Context(), "not-a-valid-jwt")
+	require.Error(t, err)
+
+	_, err = parser.Parse(t.Context(), "header.payload")
+	require.Error(t, err)
+}
+
+func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{keyPair.PublicKeyPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	// Create an HS256-signed JWT
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	hs256Token, err := token.SignedString([]byte("some-secret-key"))
+	require.NoError(t, err)
+
+	// Parsing should fail because the parser is configured with ES256 public keys
+	_, err = parser.Parse(t.Context(), hs256Token)
+	require.Error(t, err)
 }

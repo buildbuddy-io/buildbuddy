@@ -225,7 +225,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	start := pu.clock.Now()
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
@@ -567,7 +567,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		lbls := prometheus.Labels{metrics.PartitionID: p.ID, metrics.CacheNameLabel: constants.CacheName}
 		partitionLabel := prometheus.Labels{metrics.PartitionID: p.ID}
 		metricSet := metricSet{
-			cachePartitionSizeBytes:     metrics.DiskCachePartitionCapacityBytes.With(lbls),
+			cachePartitionSizeBytes:     metrics.DiskCachePartitionSizeBytes.With(lbls),
 			cachePartitionCapacityBytes: metrics.DiskCachePartitionCapacityBytes.With(lbls),
 			gcsDeleteDropped:            metrics.RaftGCSDeleteDropped.With(partitionLabel),
 			cacheEvictionAgeMsec:        metrics.DiskCacheEvictionAgeMsec.With(lbls),

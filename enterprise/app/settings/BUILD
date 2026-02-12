@@ -26,7 +26,6 @@ ts_library(
         "//enterprise/app/org:org_join_requests",
         "//enterprise/app/org:org_members",
         "//enterprise/app/org:org_user_lists",
-        "//enterprise/app/quota",
         "//enterprise/app/secrets",
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
@@ -126,6 +125,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/components/button",

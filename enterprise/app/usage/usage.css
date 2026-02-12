@@ -66,10 +66,10 @@
 
 .usage-page .usage-value-subcategory {
   text-align: right;
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .usage-page .usage-resource-subcategory {
   margin-left: 24px;
-  color: #757575;
+  color: var(--color-text-label);
 }

@@ -106,6 +106,29 @@ func TestBazelHelp(t *testing.T) {
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
 
+func TestHelpWithoutHomeEnv(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	cmd := testcli.Command(t, ws, "--help")
+
+	// Keep USERPROFILE empty and set HOME to a temp dir so we don't inherit
+	// user-specific rc files from the test harness environment.
+	homeDir := t.TempDir()
+	configDir := t.TempDir()
+	cacheDir := t.TempDir()
+	env := make([]string, 0, len(os.Environ())+4)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "USERPROFILE=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") || strings.HasPrefix(kv, "XDG_CACHE_HOME=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = append(env, "HOME="+homeDir, "USERPROFILE=", "XDG_CONFIG_HOME="+configDir, "XDG_CACHE_HOME="+cacheDir)
+
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", string(stdout), string(stderr))
+	require.Contains(t, string(stdout), "Usage: bb <command> <options> ...")
+}
+
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)

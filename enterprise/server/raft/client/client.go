@@ -27,6 +27,8 @@ import (
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -96,7 +98,16 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 		return rfspb.NewApiClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialSimple("grpc://" + peer)
+
+	// Use a backoff config allows for fast-reconnect during server rollout.
+	conn, err := grpc_client.DialSimple("grpc://"+peer, grpc.WithConnectParams(grpc.ConnectParams{
+		Backoff: backoff.Config{
+			BaseDelay:  100 * time.Millisecond,
+			Multiplier: 1.6,
+			Jitter:     0.2,
+			MaxDelay:   1 * time.Second,
+		},
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -319,11 +330,12 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 
-	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) (returnedErr error) {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
 		defer func() {
+			tracing.RecordErrorToSpan(spn, returnedErr)
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
 				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,

@@ -46,6 +46,7 @@ go_test(
         "//enterprise/server/clientidentity",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/testregistry",
+        "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",

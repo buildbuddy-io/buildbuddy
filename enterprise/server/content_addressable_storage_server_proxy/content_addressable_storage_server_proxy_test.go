@@ -13,16 +13,20 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -383,7 +387,6 @@ func testGetTree(t *testing.T, withCaching bool) {
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
@@ -554,9 +557,6 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	ctx := testContext()
 	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
-	// The atime update runs background goroutines that can interfere with
-	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -638,15 +638,122 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 	}
 }
 
+func TestSpliceBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.split_splice_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	conn, requestCount, _ := runRemoteCASS(ctx, remoteEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	chunk1 := []byte("chunk1data")
+	chunk2 := []byte("chunk2data")
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	update(ctx, proxy, map[*repb.Digest]string{
+		chunk1Digest: string(chunk1),
+		chunk2Digest: string(chunk2),
+	}, t)
+
+	blobData := append(chunk1, chunk2...)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	requestCount.Store(0)
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	spliceResp, err := proxy.SpliceBlob(ctx, spliceReq)
+	require.NoError(t, err)
+	require.Equal(t, blobDigest.Hash, spliceResp.BlobDigest.Hash)
+	require.Equal(t, int32(1), requestCount.Load())
+}
+
+func TestSplitBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.split_splice_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+	remote := repb.NewContentAddressableStorageClient(conn)
+
+	chunk1 := []byte("chunk1")
+	chunk2 := []byte("chunk2")
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	update(ctx, remote, map[*repb.Digest]string{
+		chunk1Digest: string(chunk1),
+		chunk2Digest: string(chunk2),
+	}, t)
+
+	blobData := append(chunk1, chunk2...)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	_, err = remote.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+
+	splitResp, err := proxy.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(splitResp.ChunkDigests))
+	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
+	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
+}
+
 func BenchmarkGetTree(b *testing.B) {
 	flags.Set(b, "cache_proxy.enable_get_tree_caching", true)
 
 	ctx := testContext()
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
-	// The atime update runs background goroutines that can interfere with
-	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)

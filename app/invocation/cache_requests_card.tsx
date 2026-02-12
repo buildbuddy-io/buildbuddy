@@ -576,6 +576,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // or if there is an invalid result
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
+    // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146): This metadata request should be routed to the cache client for the cache proxy if applicable.
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
 
     service
@@ -585,6 +586,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             digest: digest,
             cacheType: scorecardResult.cacheType,
             instanceName: remoteInstanceName,
+            compressor: scorecardResult.compressor,
+            digestFunction: this.props.model.getDigestFunction(),
           }),
         })
       )

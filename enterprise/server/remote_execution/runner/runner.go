@@ -77,6 +77,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	ociWarmupDefaultImages    = flag.Bool("executor.oci.warmup_default_images", true, "Whether to warmup the default oci images or not.")
 	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
@@ -937,13 +938,22 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 		defer cancel()
-		_ = ws.Remove(ctx)
+		if err := ws.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+		}
 	}()
 	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
 		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
 		return err
 	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		if err := c.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup container: %s", err)
+		}
+	}()
 
 	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
@@ -1000,7 +1010,10 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			})
 		}
 
-		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+		if (isolation == platform.OCIContainerType) && !*ociWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.PodmanContainerType) && !*podmanWarmupDefaultImages {
 			continue
 		}
 

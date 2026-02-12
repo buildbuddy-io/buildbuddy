@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -151,7 +150,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	const (
 		expectedHash    = "e912813410cb1506d27205227d9d184b985bdf047d0a8625677ace008c05eb7c"
-		expectedVersion = "16"
+		expectedVersion = "17"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -178,8 +177,6 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	flags.Set(t, "executor.network_lock_directory", "/tmp/buildbuddy/networking/locks")
 
 	env := testenv.GetTestEnv(t)
-	err = ocifetcher.RegisterClient(env)
-	require.NoError(t, err)
 
 	// Use a permissive image cache authenticator to avoid registry requests.
 	env.SetImageCacheAuthenticator(testcontainer.PermissiveImageCacheAuthenticator())
@@ -243,7 +240,6 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 		proxyEnv := testenv.GetTestEnv(t)
 		proxyEnv.SetActionCacheClient(acClient)
 		proxyEnv.SetByteStreamClient(bsClient)
-		proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 		runProxyServers(ctx, proxyEnv, t)
 
 		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
@@ -357,7 +353,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -404,7 +400,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -444,7 +440,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
 		ctx := context.Background()
 		env := getTestEnv(ctx, t, envOpts{})
-		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 		rootDir := testfs.MakeTempDir(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -455,7 +451,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:            1,
 				MemSizeMb:          memorySize,
-				EnableNetworking:   false,
+				NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 				ScratchDiskSizeMb:  100,
 				GuestKernelVersion: cfg.GuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
@@ -557,7 +553,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	cfg := getExecutorConfig(t)
 
@@ -576,7 +572,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: cfg,
@@ -621,7 +617,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:           1,
 				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-				EnableNetworking:  false,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 				ScratchDiskSizeMb: 100,
 			},
 			ExecutorConfig: cfg,
@@ -688,7 +684,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: cfg,
@@ -713,7 +709,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	cfg := getExecutorConfig(t)
 
@@ -732,7 +728,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: cfg,
@@ -773,7 +769,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:           1,
 				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-				EnableNetworking:  false,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 				ScratchDiskSizeMb: 100,
 			},
 			ExecutorConfig: cfg,
@@ -852,7 +848,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			cfg := getExecutorConfig(t)
 
-			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 			filecacheRoot := testfs.MakeTempDir(t)
 			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
 			require.NoError(t, err)
@@ -893,7 +889,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 					VMConfiguration: &fcpb.VMConfiguration{
 						NumCpus:           1,
 						MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-						EnableNetworking:  false,
+						NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 						ScratchDiskSizeMb: 100,
 					},
 					ExecutorConfig:      cfg,
@@ -1035,7 +1031,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 			// Both "executors" should use the same remote cache, but have different
 			// local filecaches.
 			env := getTestEnv(ctx, t, envOpts{})
-			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
 			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
@@ -1082,7 +1078,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:           1,
 					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-					EnableNetworking:  false,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 					ScratchDiskSizeMb: 100,
 				},
 				ExecutorConfig: cfg,
@@ -1184,7 +1180,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 			// Both "executors" should use the same remote cache, but have different
 			// local filecaches.
 			env := getTestEnv(ctx, t, envOpts{})
-			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
 			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
@@ -1241,7 +1237,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:           1,
 					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-					EnableNetworking:  false,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 					ScratchDiskSizeMb: 100,
 				},
 				ExecutorConfig: cfg,
@@ -1285,7 +1281,7 @@ func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	// Set up a task with remote snapshot sharing enabled.
 	task := &repb.ExecutionTask{
@@ -1354,7 +1350,7 @@ func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	defaultBranch := "main"
 	mergeQueueBranch := "gh-readonly-queue/main/abc"
@@ -1460,7 +1456,7 @@ func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	// Set up a task with only local snapshotting enabled.
 	task := &repb.ExecutionTask{
@@ -1567,7 +1563,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	cfg := getExecutorConfig(t)
 
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
 	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
 	require.NoError(t, err)
@@ -1581,7 +1577,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            1,
 			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:   false,
+			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb:  100,
 			GuestKernelVersion: cfg.GuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
@@ -1643,7 +1639,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 	ctx := context.Background()
 
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -1653,8 +1649,8 @@ func TestFirecrackerBalloon(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            2,
-			MemSizeMb:          500,
-			EnableNetworking:   true,
+			MemSizeMb:          2000,
+			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb:  500,
 			GuestKernelVersion: cfg.GuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
@@ -1691,17 +1687,19 @@ func TestFirecrackerBalloon(t *testing.T) {
 	})
 
 	cmd := &repb.Command{
-		// Write a 350MB file of random data.
-		// This will dirty memory in the VM before the data gets written to disk.
-		Arguments: []string{"sh", "-c", `
-dd if=/dev/urandom of=/tmp/bigfile bs=1M count=350
+		// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
+		Arguments: []string{"bash", "-c", `
+set -eo pipefail
+mkdir /tmp/randomdata && mount -t tmpfs -o size=1700M tmpfs /tmp/randomdata
+dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=1600
 free -h
-		`},
+`},
 	}
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
 	// Try pause, unpause, exec several times.
 	for i := 1; i <= 4; i++ {
@@ -1728,7 +1726,7 @@ func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.Reset()
 
 		env := getTestEnv(ctx, t, envOpts{})
-		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 		rootDir := testfs.MakeTempDir(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -1739,7 +1737,7 @@ func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:            2,
 				MemSizeMb:          500,
-				EnableNetworking:   true,
+				NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 				ScratchDiskSizeMb:  500,
 				GuestKernelVersion: cfg.GuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
@@ -1851,7 +1849,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -1954,7 +1952,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -1972,6 +1970,47 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+}
+
+func TestFirecrackerRunWithoutNetwork(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	flags.Set(t, "executor.network_stats_enabled", true)
+
+	// Make sure the container can't send packets to the internet when
+	// NetworkMode is LOCAL.
+	googleDNS := "8.8.8.8"
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W1", googleDNS}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	// Ping should fail because external network is disabled.
+	assert.NotEqual(t, 0, res.ExitCode)
+	// Note: some bytes are sent (the ping request) and received (ICMP reject).
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
@@ -1998,7 +2037,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2060,7 +2099,7 @@ func TestFirecrackerRunWithNetworkPooling(t *testing.T) {
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:           1,
 				MemSizeMb:         1000,
-				EnableNetworking:  true,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 				ScratchDiskSizeMb: 100,
 			},
 			ExecutorConfig: getExecutorConfig(t),
@@ -2202,7 +2241,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         1000,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2275,9 +2314,9 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:          1,
-			MemSizeMb:        2500,
-			EnableNetworking: false,
+			NumCpus:     1,
+			MemSizeMb:   2500,
+			NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF,
 			// Request 0 disk; implementation should ensure the disk is at least as big
 			// as is required to run a NOP command. Otherwise, users might have to
 			// keep on top of our min disk requirements which is not really feasible.
@@ -2327,7 +2366,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			InitDockerd:       true,
 			ScratchDiskSizeMb: 100,
 		},
@@ -2380,7 +2419,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			InitDockerd:       true,
 			ScratchDiskSizeMb: 100,
 			EnableDockerdTcp:  true,
@@ -2426,7 +2465,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2520,7 +2559,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:           1,
 					MemSizeMb:         2500,
-					EnableNetworking:  true,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 					InitDockerd:       true,
 					ScratchDiskSizeMb: 100,
 				},
@@ -2596,7 +2635,7 @@ func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -2689,7 +2728,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -2705,7 +2744,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			ScratchDiskSizeMb: 4000, // 4 GB
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			InitDockerd:       true,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2798,7 +2837,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -2809,7 +2848,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			InitDockerd:       true,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 1000,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2897,7 +2936,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2945,7 +2984,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -3018,7 +3057,7 @@ func TestFirecrackerLargeResult(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         2500,
-			EnableNetworking:  false,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -3162,7 +3201,7 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 			// value).
 			NumCpus:           1,
 			MemSizeMb:         500,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 200,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -3251,14 +3290,14 @@ func TestFirecrackerStressIO(t *testing.T) {
 	)
 	// VM configuration
 	const (
-		cpus       = 4
-		memoryMB   = 800
-		scratchMB  = 800
-		dockerd    = false
-		networking = false
+		cpus      = 4
+		memoryMB  = 800
+		scratchMB = 800
+		dockerd   = false
 	)
+	networkMode := fcpb.NetworkMode_NETWORK_MODE_OFF
 
-	if dockerize && (!dockerd || !networking) {
+	if dockerize && (!dockerd || networkMode == fcpb.NetworkMode_NETWORK_MODE_OFF) {
 		require.FailNow(t, "dockerize option requires dockerd and networking")
 	}
 
@@ -3293,7 +3332,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 				MemSizeMb:         memoryMB,
 				ScratchDiskSizeMb: scratchMB,
 				InitDockerd:       dockerd,
-				EnableNetworking:  networking,
+				NetworkMode:       networkMode,
 			},
 		}
 		c, err := firecracker.NewContainer(ctx, te, &repb.ExecutionTask{}, opts)
@@ -3422,7 +3461,7 @@ func TestBazelBuild(t *testing.T) {
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           6,
 			MemSizeMb:         8000,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb: 20_000,
 		},
 		ExecutorConfig: getExecutorConfig(t),

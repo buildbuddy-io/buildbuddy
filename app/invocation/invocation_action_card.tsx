@@ -1,4 +1,15 @@
-import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  Download,
+  File,
+  FileQuestion,
+  FileSymlink,
+  Folder,
+  History,
+  Info,
+  MoreVertical,
+} from "lucide-react";
 import React, { ReactElement } from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
@@ -25,6 +36,7 @@ import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
@@ -1076,7 +1088,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
             <div className="content">
               {executionId && (
                 <>
-                  <div className="title">Execution details</div>
+                  <div className="action-header">
+                    <div className="title">Execution details</div>
+                    {this.state.execution?.targetLabel && this.state.execution?.actionMnemonic && (
+                      <OutlinedButton
+                        className="view-history-button"
+                        onClick={() =>
+                          router.navigateTo(
+                            getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
+                          )
+                        }>
+                        <History className="icon" />
+                        <span>View history</span>
+                      </OutlinedButton>
+                    )}
+                  </div>
                   <div className="details">
                     {this.state.execution?.targetLabel && (
                       <div className="action-section">
@@ -1523,4 +1549,20 @@ function timestampToUnixSeconds(timestamp: ITimestamp): number {
 function parseActionDigestHashFromExecutionId(executionId: string): string | undefined {
   const parts = executionId.split("/");
   return parts[parts.length - 2];
+}
+
+function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string {
+  if (!targetLabel || !actionMnemonic) {
+    return "";
+  }
+  const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
+  return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
+}
+
+export function encodeTargetLabelUrlParam(targetLabel: string): string {
+  return `e2|${targetLabel.length}|${targetLabel}`;
+}
+
+export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -493,6 +495,10 @@ func (fc *fakeFilecache) TempDir() string {
 	panic("unimplemented")
 }
 
+func (fc *fakeFilecache) TrackExternalDirectory(ctx context.Context, path string, sizeBytes int64) (unlock func(), err error) {
+	return func() {}, nil
+}
+
 type fakeBytestreamClient struct {
 	mu        *sync.Mutex
 	data      map[string][]byte
@@ -779,9 +785,37 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			err = ul.Wait()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "concurrent mutation detected")
-			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
+			assert.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
 		})
 	}
+}
+
+func TestBatchCASUploader_DedupesUploads(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 128)
+	df := rn.GetDigestFunction()
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df)
+
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	stats := ul.Stats()
+	require.Equal(t, int64(1), stats.UploadedObjects)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), stats.UploadedBytes)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), stats.DuplicateBytes)
+
+	data, err := te.GetCache().Get(ctx, rn)
+	require.NoError(t, err)
+	assert.Equal(t, buf, data)
 }
 
 func TestUploadWriterAndGetBlob(t *testing.T) {
@@ -1088,4 +1122,67 @@ func TestUploadWriter_CancelContext(t *testing.T) {
 	_, err = uw.Write(buf[half:])
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
+}
+
+func TestUploadFromReaderWithCompression(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		readerCompression repb.Compressor_Value
+		targetCompression repb.Compressor_Value
+	}{
+		{
+			name:              "IDENTITY reader to IDENTITY target",
+			readerCompression: repb.Compressor_IDENTITY,
+			targetCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:              "IDENTITY reader to ZSTD target",
+			readerCompression: repb.Compressor_IDENTITY,
+			targetCompression: repb.Compressor_ZSTD,
+		},
+		{
+			name:              "ZSTD reader to IDENTITY target",
+			readerCompression: repb.Compressor_ZSTD,
+			targetCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:              "ZSTD reader to ZSTD target",
+			readerCompression: repb.Compressor_ZSTD,
+			targetCompression: repb.Compressor_ZSTD,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, localGRPClis)
+			go runServer()
+
+			ctx := context.Background()
+			rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+
+			var readerData []byte
+			if tc.readerCompression == repb.Compressor_ZSTD {
+				readerData = compression.CompressZstd(nil, buf)
+			} else {
+				readerData = buf
+			}
+
+			uploadRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			if tc.targetCompression == repb.Compressor_ZSTD {
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			}
+
+			d, uploadedBytes, err := cachetools.UploadFromReaderWithCompression(
+				ctx, te.GetByteStreamClient(), uploadRN, bytes.NewReader(readerData), tc.readerCompression)
+			require.NoError(t, err)
+			require.NotNil(t, d)
+			require.Greater(t, uploadedBytes, int64(0))
+
+			getRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			out := &bytes.Buffer{}
+			err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), getRN, out)
+			require.NoError(t, err)
+			require.Equal(t, buf, out.Bytes(), "downloaded blob should match original")
+		})
+	}
 }

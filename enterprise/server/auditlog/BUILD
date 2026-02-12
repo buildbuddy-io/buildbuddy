@@ -14,6 +14,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/capabilities",
+        "//server/util/claims",
         "//server/util/clickhouse/schema",
         "//server/util/clientip",
         "//server/util/db",

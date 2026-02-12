@@ -230,11 +230,6 @@ func TestRedactEnvVar(t *testing.T) {
 			expected: "--repo_env=FOO=<REDACTED>",
 		},
 		{
-			name:     "fallback when missing VAR portion",
-			input:    "--test_env=foobar",
-			expected: "--test_env=<REDACTED>",
-		},
-		{
 			name:     "multiline quoted var assignment",
 			input:    "--client_env=\"FOO=bar\nbaz\"",
 			expected: "--client_env=FOO=<REDACTED>",
@@ -243,6 +238,31 @@ func TestRedactEnvVar(t *testing.T) {
 			name:     "no equals sign",
 			input:    "--host_action_env",
 			expected: "--host_action_env",
+		},
+		{
+			name:     "empty var value",
+			input:    "--action_env=FOO=",
+			expected: "--action_env=FOO=",
+		},
+		{
+			name:     "inherit var",
+			input:    "--action_env=FOO",
+			expected: "--action_env=FOO",
+		},
+		{
+			name:     "clear var",
+			input:    "--repo_env==FOO",
+			expected: "--repo_env==FOO",
+		},
+		{
+			name:     "boolean value",
+			input:    "--repo_env=REPIN=TRUE",
+			expected: "--repo_env=REPIN=TRUE",
+		},
+		{
+			name:     "boolean-like value",
+			input:    "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+			expected: "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

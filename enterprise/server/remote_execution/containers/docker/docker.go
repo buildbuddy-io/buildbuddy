@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/docker/api/types/registry"
@@ -31,12 +32,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	dockerclient "github.com/docker/docker/client"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dti "github.com/docker/docker/api/types/image"
-	gstatus "google.golang.org/grpc/status"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -117,11 +118,16 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := &DockerOptions{
 		ForceRoot:               args.Props.DockerForceRoot,
 		DockerInit:              args.Props.DockerInit,
 		DockerUser:              args.Props.DockerUser,
-		DockerNetwork:           args.Props.DockerNetwork,
+		DockerNetwork:           network,
 		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
@@ -215,10 +221,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	effectiveCwd := filepath.Join(workDir, command.GetWorkingDirectory())
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		workDir,
+		effectiveCwd,
 	)
 	if err != nil {
 		result.Error = err
@@ -608,7 +615,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	cfg := dockercontainer.ExecOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
-		WorkingDir:   r.workDir,
+		WorkingDir:   filepath.Join(r.workDir, command.GetWorkingDirectory()),
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  stdio.Stdin != nil,

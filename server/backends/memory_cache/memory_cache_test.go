@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
@@ -25,7 +26,7 @@ var (
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 	return te
 }
 
@@ -362,4 +363,42 @@ func TestLRU(t *testing.T) {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
+}
+
+type fakeAtimeUpdater struct {
+	calls atomic.Int32
+}
+
+func (f *fakeAtimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	f.calls.Add(1)
+	return true
+}
+
+func (f *fakeAtimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	f.calls.Add(1)
+	return true
+}
+
+func TestAtimeUpdater(t *testing.T) {
+	mc, err := memory_cache.NewMemoryCache(int64(1_000))
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t)
+
+	updater := &fakeAtimeUpdater{}
+	mc.RegisterAtimeUpdater(updater)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, mc.Set(ctx, r, buf))
+
+	// Make sure .Contains() triggers an atime update
+	ok, err := mc.Contains(ctx, r)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.EqualValues(t, 1, updater.calls.Load())
+
+	// Make sure .Get() triggers an atime update
+	_, err = mc.Get(ctx, r)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, updater.calls.Load())
 }

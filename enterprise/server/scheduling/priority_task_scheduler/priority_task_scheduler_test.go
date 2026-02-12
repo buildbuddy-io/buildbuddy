@@ -2,6 +2,8 @@ package priority_task_scheduler
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -38,15 +40,16 @@ func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb
 }
 
 func TestTaskQueue_SingleGroup(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 	require.Equal(t, 0, q.Len())
-	require.Nil(t, q.Peek())
+	require.Nil(t, q.Peek(ctx))
 
-	q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0))
 	require.Equal(t, 1, q.Len())
 
 	// Peeking should return the reservation but not remove it.
-	req := q.Peek()
+	req := q.Peek(ctx)
 	require.Equal(t, "1", req.GetTaskId())
 	require.Equal(t, 1, q.Len())
 
@@ -57,14 +60,14 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 
 	// Queue should be empty.
 	require.Equal(t, 0, q.Len())
-	require.Nil(t, q.Peek())
+	require.Nil(t, q.Peek(ctx))
 
-	q.Enqueue(newTaskReservationRequest("2", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("3", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("4", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("2", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("3", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("4", testGroupID1, 0))
 	// Enqueue task "1" last but give it the highest priority so it gets
 	// dequeued first.
-	q.Enqueue(newTaskReservationRequest("1", testGroupID1, -1000))
+	q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, -1000))
 
 	require.Equal(t, "1", q.Dequeue().GetTaskId())
 	require.Equal(t, "2", q.Dequeue().GetTaskId())
@@ -73,19 +76,20 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 }
 
 func TestTaskQueue_MultipleGroups(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
 	// First group has 3 task reservations.
-	q.Enqueue(newTaskReservationRequest("group1Task1", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("group1Task2", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("group1Task3", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task1", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task2", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task3", testGroupID1, 0))
 	// Second group has 1 task reservation.
-	q.Enqueue(newTaskReservationRequest("group2Task1", testGroupID2, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group2Task1", testGroupID2, 0))
 	// Third group has 2 task reservations.
 	// group3Task1 is enqueued last, but has higher priority so it should be
 	// dequeued first.
-	q.Enqueue(newTaskReservationRequest("group3Task2", testGroupID3, 0))
-	q.Enqueue(newTaskReservationRequest("group3Task1", testGroupID3, -1000))
+	q.Enqueue(ctx, newTaskReservationRequest("group3Task2", testGroupID3, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group3Task1", testGroupID3, -1000))
 
 	require.Equal(t, "group1Task1", q.Dequeue().GetTaskId())
 	require.Equal(t, "group2Task1", q.Dequeue().GetTaskId())
@@ -97,10 +101,11 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 }
 
 func TestTaskQueue_DedupesTasks(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
-	require.True(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
-	require.False(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
+	require.True(t, q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0)))
+	require.False(t, q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0)))
 
 	require.Equal(t, 1, q.Len())
 	require.Equal(t, "1", q.Dequeue().GetTaskId())
@@ -402,6 +407,51 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 
 	// Make sure the local enqueue timestamp looks correct.
 	require.Equal(t, startTime, task.ScheduledTask.GetWorkerQueuedTimestamp().AsTime())
+}
+
+func TestRemoveTaskFromQueue(t *testing.T) {
+	ctx := t.Context()
+	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
+	// after dequeueing the remaining tasks, we should only dequeue the tasks
+	// that were not cancelled.
+	for range 10 {
+		q := newTaskQueue(clockwork.NewRealClock())
+
+		// Enqueue a bunch of tasks, with various group IDs to make sure we're
+		// also exercising the per-group queueing logic.
+		const numTasks = 32
+		var taskIDs []string
+		for taskIDInt := range numTasks {
+			taskID := fakeTaskID(fmt.Sprintf("%d", taskIDInt))
+			taskIDs = append(taskIDs, taskID)
+			groupIDInt := rand.Intn(3)
+			q.Enqueue(ctx, &scpb.EnqueueTaskReservationRequest{
+				TaskId: taskID,
+				SchedulingMetadata: &scpb.SchedulingMetadata{
+					TaskGroupId: fmt.Sprintf("GR%d", groupIDInt),
+				},
+			})
+		}
+
+		// Pick a few random tasks to cancel, and remove them from the list of
+		// expected task IDs.
+		for range 3 {
+			i := rand.Intn(len(taskIDs))
+			canceledTaskID := taskIDs[i]
+			taskIDs = append(taskIDs[:i], taskIDs[i+1:]...)
+			q.DequeueAt(q.FindTask(canceledTaskID))
+		}
+
+		// Dequeue the remaining tasks and make sure they are the ones that were
+		// not cancelled.
+		var dequeuedTaskIDs []string
+		for range taskIDs {
+			task := q.Dequeue()
+			dequeuedTaskIDs = append(dequeuedTaskIDs, task.GetTaskId())
+		}
+		require.Nil(t, q.Dequeue())
+		require.ElementsMatch(t, taskIDs, dequeuedTaskIDs)
+	}
 }
 
 func fakeTaskID(label string) string {

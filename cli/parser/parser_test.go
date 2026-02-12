@@ -743,3 +743,69 @@ func TestCommonPositionalArgument(t *testing.T) {
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }
+
+func TestBazelrcLexing(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE": "",
+		".bazelrc":  "common targetwitha#",
+	})
+
+	args := []string{
+		"build",
+	}
+
+	expectedExpandedArgs := []string{
+		"--ignore_all_rc_files",
+		"build",
+		"targetwitha#",
+	}
+	parsedArgs, err := ParseArgs(args)
+	require.NoError(t, err)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
+
+	require.NoError(t, err, "error expanding %s", args)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+}
+
+func TestGetRemoteHeaderVal(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		headerKey string
+		expected  string
+	}{
+		{
+			name:      "Multiple headers",
+			args:      []string{"build", "//...", "--remote_header=unrelated-header-key=XXXXX", "--remote_header=x-buildbuddy-api-key=abc123"},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "abc123",
+		},
+		{
+			name:      "Header not set",
+			args:      []string{"build", "//...", "--remote_header=x-buildbuddy-api-key=abc123"},
+			headerKey: "unrelated-header-key",
+			expected:  "",
+		},
+		{
+			name:      "No remote headers",
+			args:      []string{"build", "//..."},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "",
+		},
+		{
+			name:      "Returns last value set",
+			args:      []string{"build", "--remote_header=x-buildbuddy-api-key=first", "--remote_header=x-buildbuddy-api-key=second"},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "second",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsedArgs, err := ParseArgs(tc.args)
+			require.NoError(t, err)
+
+			result := GetRemoteHeaderVal(parsedArgs, tc.headerKey)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}

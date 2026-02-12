@@ -10,6 +10,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// 4KiB cluster size is the default for both NTFS and ReFS(DevDrive)
+// References:
+//
+//	https://techcommunity.microsoft.com/blog/filecab/cluster-size-recommendations-for-refs-and-ntfs/425960
+//	https://learn.microsoft.com/en-us/windows-server/storage/file-server/ntfs-overview#support-for-large-volumes
+const clusterSize = int64(4096)
+
 func GetDirUsage(path string) (*DirUsage, error) {
 	cwd, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -34,6 +41,17 @@ func EstimatedFileDiskUsage(info os.FileInfo) (int64, error) {
 	if !info.Mode().IsRegular() {
 		return 0, status.InvalidArgumentError("not a regular file")
 	}
-	// TODO: figure out something better for Windows.
-	return info.Size(), nil
+	// Windows doesn't expose allocated file blocks via os.FileInfo in a
+	// cross-platform way. Use a coarse estimate by rounding up to a typical
+	// filesystem allocation unit size (4KiB).
+	//
+	// This is intentionally conservative enough for cache eviction logic which
+	// should account for size-on-disk rather than logical content size.
+	size := info.Size()
+	if size <= 0 {
+		return 0, nil
+	}
+	clusterCount := (size + clusterSize - 1) / clusterSize
+	sizeOnDisk := clusterCount * clusterSize
+	return sizeOnDisk, nil
 }

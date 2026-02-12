@@ -42,14 +42,13 @@ const (
 	// uploadBufSizeBytes controls the size of the buffers used for uploading
 	// to bytestream.Write. This means it also controls the payload size for
 	// each WriteRequest. https://github.com/grpc/grpc.github.io/issues/371
-	// that 16KiB-64KiB payloads work best, but our experiments and benchmarks
-	// show that 128KiB works best. Values bigger and slower than that are both
-	// slower. Values bigger than that allocate more bytes, and values smaller
-	// than that allocate the same number of bytes but with more allocations.
-	uploadBufSizeBytes = 128 * 1024
+	// claims that 16KiB-64KiB payloads work best, but our experiments and
+	// benchmarks show that 256KB works best. This should be slightly smaller
+	// than 2^N, to allow for proto and gRPC overhead.
+	uploadBufSizeBytes = 256 * 1000 // 256 KB
 	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
 	minSizeBytesToCompress = 100
-	// batchUploadLimitBytes controls how big an object or batch can be in a
+	// BatchUploadLimitBytes controls how big an object or batch can be in a
 	// BatchUploadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// upload using the bytestream.Write api.
 	BatchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
@@ -255,7 +254,12 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+// uploadFromReader uploads data to the CAS. The readerCompression parameter
+// specifies the compression format of the data in the reader. If readerCompression
+// is IDENTITY and target is ZSTD, the data will be compressed. If readerCompression
+// is ZSTD and target is IDENTITY, the target is changed to ZSTD to avoid unnecessary
+// decompression (the server accepts both formats per the Remote Execution API spec).
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -269,13 +273,19 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
 	var rc io.ReadCloser = io.NopCloser(in)
-	if r.GetCompressor() == repb.Compressor_ZSTD {
+	if rnCompression := r.GetCompressor(); readerCompression == repb.Compressor_IDENTITY && rnCompression == repb.Compressor_ZSTD {
+		// Need to compress the data.
 		reader, err := compression.NewZstdCompressingReader(rc, uploadBufPool, bufSize)
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
+	} else if readerCompression == repb.Compressor_ZSTD && rnCompression == repb.Compressor_IDENTITY {
+		// Upload as compressed instead of decompressing.
+		r = digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+		r.SetCompressor(repb.Compressor_ZSTD)
 	}
+	// If readerCompression == rnCompression, no transformation is needed.
 	defer rc.Close()
 
 	buf := uploadBufPool.Get(bufSize)
@@ -317,7 +327,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
-		if rs, ok := in.(io.ReadSeeker); ok && status.IsDataLossError(err) {
+		if rs, ok := in.(io.ReadSeeker); ok && status.IsInvalidArgumentError(err) {
 			if err := checkConcurrentMutation(r.GetDigest(), r.GetDigestFunction(), rs); err != nil {
 				return nil, 0, retry.NonRetryableError(status.WrapError(err, "check for concurrent mutation during upload"))
 			}
@@ -331,13 +341,13 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
 		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.InvalidArgumentErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
 		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.InvalidArgumentErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	}
 
@@ -350,15 +360,26 @@ type uploadRetryResult = struct {
 }
 
 // UploadFromReader attempts to read all bytes from the `in` `Reader` until encountering an EOF
-// and write all those bytes to the CAS.
+// and write all those bytes to the CAS. Data in `in` should be uncompressed.
 // If the input Reader is also a Seeker, UploadFromReader will retry the upload until success.
 //
 // On success, it returns the digest of the uploaded blob and the number of bytes confirmed uploaded.
 // If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
 // On error, it returns the number of bytes uploaded before the error (and the error).
 // UploadFromReader confirms that the expected number of bytes have been written to the CAS
-// and returns a DataLossError if not.
+// and returns an InvalidArgumentError if not.
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+	return UploadFromReaderWithCompression(ctx, bsClient, r, in, repb.Compressor_IDENTITY)
+}
+
+// UploadFromReaderWithCompression uploads data to the CAS, specifying the
+// compression format of the data in the reader. If the reader format differs
+// from the target compression in the resource name, the data will be compressed
+// or decompressed as needed. If both formats are the same, no transformation
+// is applied. Only IDENTITY and ZSTD formats are supported.
+// If the input Reader is also a Seeker, UploadFromReaderWithCompression will retry
+// the upload until success.
+func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
 	if retryable {
@@ -366,7 +387,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return uploadRetryResult{digest: nil, uploadedBytes: 0}, retry.NonRetryableError(err)
 			}
-			d, u, err := uploadFromReader(ctx, bsClient, r, in)
+			d, u, err := uploadFromReader(ctx, bsClient, r, in, readerCompression)
 			return uploadRetryResult{
 				digest:        d,
 				uploadedBytes: u,
@@ -374,7 +395,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		})
 		return result.digest, result.uploadedBytes, err
 	} else {
-		return uploadFromReader(ctx, bsClient, r, in)
+		return uploadFromReader(ctx, bsClient, r, in, readerCompression)
 	}
 }
 
@@ -717,7 +738,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 			return err
 		}
 		for i, fileResponse := range rsp.GetResponses() {
-			if fileResponse.GetStatus().GetCode() == int32(gcodes.DataLoss) && i < len(req.GetRequests()) {
+			if fileResponse.GetStatus().GetCode() == int32(gcodes.InvalidArgument) && i < len(req.GetRequests()) {
 				// If there is a hash mismatch, re-hash the uncompressed payload
 				// to check whether a concurrent mutation occurred after we
 				// computed the original digest.
@@ -769,7 +790,7 @@ func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.Di
 		return status.DataLossErrorf("recompute digest: %s", err)
 	}
 	if !digest.Equal(computedDigest, originalDigest) {
-		return status.DataLossErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
+		return status.InvalidArgumentErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
 	}
 	return nil
 }

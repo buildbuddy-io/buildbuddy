@@ -1212,7 +1212,7 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 		return nil, err
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(fw)
-	cwc.CommitFn = func(totalBytesWritten int64) error {
+	cwc.SetCommitFn(func(totalBytesWritten int64) error {
 		record, err := makeRecordFromPath(k, k.FullPath())
 		if err != nil {
 			return err
@@ -1222,10 +1222,22 @@ func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interface
 		p.lruAdd(record)
 		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Observe(float64(totalBytesWritten))
 		return nil
-	}
+	})
 	return cwc, nil
+}
+
+func (c *DiskCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	partition, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	return partition.id, nil
 }
 
 func (c *DiskCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
+}
+
+func (c *DiskCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("disk_cache.RegisterAtimeUpdater() unsupported")
 }

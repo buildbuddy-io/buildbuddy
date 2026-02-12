@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -218,7 +217,7 @@ func newTestEnv(t *testing.T) *real_environment.RealEnv {
 	for i := 0; i < 10; i++ {
 		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
 	}
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(userGroups...)))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers(userGroups...)))
 	return env
 }
 
@@ -242,8 +241,6 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	if cfg.PoolOptions == nil {
 		cfg.PoolOptions = &PoolOptions{}
 	}
-	err := ocifetcher.RegisterClient(env)
-	require.NoError(t, err)
 	cacheRoot := testfs.MakeTempDir(t)
 	p, err := NewPool(env, cacheRoot, cfg.PoolOptions)
 	require.NoError(t, err)

@@ -377,12 +377,12 @@ func UnpackOperation(op *longrunningpb.Operation) (*Response, error) {
 	return msg, nil
 }
 
-// AuxiliaryMetadata searches for auxiliary metadata for a type matching the
-// full name of the given proto message descriptor. If one is found, it
-// unmarshals the type into the given message.
+// FindFirstAuxiliaryMetadata searches for the first auxiliary metadata entry
+// with a type matching the full name of the given proto message descriptor. If
+// one is found, it unmarshals the type into the given message.
 // It returns whether the type was found as well as whether there was an error
 // unmarshaling.
-func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bool, err error) {
+func FindFirstAuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bool, err error) {
 	typeURL := "type.googleapis.com/" + string(pb.ProtoReflect().Descriptor().FullName())
 	for _, m := range md.GetAuxiliaryMetadata() {
 		if m.TypeUrl == typeURL {

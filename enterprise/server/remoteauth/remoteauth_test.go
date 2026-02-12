@@ -6,23 +6,35 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
 
 type fakeAuthService struct {
+	lastAuthRequest *authpb.AuthenticateRequest
+
 	nextJwt map[string]string
 	nextErr map[string]error
+
+	publicKeys      []string
+	publicKeysErr   error
+	publicKeysCalls int
 
 	mu sync.Mutex
 }
@@ -30,8 +42,12 @@ type fakeAuthService struct {
 func (a *fakeAuthService) Reset() *fakeAuthService {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.nextErr = map[string]error{}
+	a.lastAuthRequest = nil
 	a.nextJwt = map[string]string{}
+	a.nextErr = map[string]error{}
+	a.publicKeys = nil
+	a.publicKeysErr = nil
+	a.publicKeysCalls = 0
 	return a
 }
 
@@ -52,6 +68,7 @@ func (a *fakeAuthService) setNextErr(t *testing.T, sub string, err error) {
 func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.lastAuthRequest = req
 	if a.nextErr[req.GetSubdomain()] != nil {
 		err := a.nextErr[req.GetSubdomain()]
 		a.nextErr[req.GetSubdomain()] = nil
@@ -62,8 +79,44 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
 
+func (a *fakeAuthService) setPublicKeys(keys []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.publicKeys = keys
+	a.publicKeysErr = nil
+}
+
+func (a *fakeAuthService) setPublicKeysErr(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.publicKeys = nil
+	a.publicKeysErr = err
+}
+
+func (a *fakeAuthService) getLastAuthRequest() *authpb.AuthenticateRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastAuthRequest
+}
+
 func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
-	return &authpb.GetPublicKeysResponse{}, status.UnimplementedError("GetPublicKeys unimplemented")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.publicKeysCalls++
+	if a.publicKeysErr != nil {
+		return nil, a.publicKeysErr
+	}
+	resp := &authpb.GetPublicKeysResponse{}
+	for _, key := range a.publicKeys {
+		resp.PublicKeys = append(resp.PublicKeys, &authpb.PublicKey{Key: &key})
+	}
+	return resp, nil
+}
+
+func (a *fakeAuthService) getPublicKeysCalls() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.publicKeysCalls
 }
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
@@ -71,14 +124,16 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 		nextErr: map[string]error{},
 		nextJwt: map[string]string{},
 	}
+	fakeAuthService.setPublicKeys(claims.GetES256PublicKeys())
 	te := testenv.GetTestEnv(t)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
-	authenticator, err := newRemoteAuthenticator(conn)
+	authenticator, err := NewWithTarget(te, conn)
 	require.NoError(t, err)
+	t.Cleanup(authenticator.Stop)
 	return authenticator, &fakeAuthService
 }
 
@@ -101,6 +156,14 @@ func validJwt(t *testing.T, uid string) string {
 	require.True(t, ok)
 	require.NotEqual(t, "", jwt)
 	return jwt
+}
+
+func validES256Jwt(t *testing.T, uid string) string {
+	c := &claims.Claims{UserID: uid}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEqual(t, "", tokenString)
+	return tokenString
 }
 
 func TestAuthenticatedGRPCContext(t *testing.T) {
@@ -205,4 +268,171 @@ func TestSubdomains(t *testing.T) {
 	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
+}
+
+func setupExperimentProvider(t *testing.T, flagValue bool) interfaces.ExperimentFlagProvider {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"auth.remote.use_es256_jwts": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"default": flagValue,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	return fp
+}
+
+func TestUseES256SignedJWTs(t *testing.T) {
+	ctx := t.Context()
+
+	// Test with nil experiment provider and flag disabled (default)
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	require.False(t, useES256SignedJWTs(ctx, nil))
+
+	// Test with nil experiment provider and flag enabled
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	require.True(t, useES256SignedJWTs(ctx, nil))
+
+	// Test with experiment provider returning false and flag disabled
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	provider := setupExperimentProvider(t, false)
+	require.False(t, useES256SignedJWTs(ctx, provider))
+
+	// Test with experiment provider returning true and flag disabled
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	provider = setupExperimentProvider(t, true)
+	require.True(t, useES256SignedJWTs(ctx, provider))
+
+	// Test with experiment provider returning false and flag enabled (flag takes precedence)
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	provider = setupExperimentProvider(t, false)
+	require.True(t, useES256SignedJWTs(ctx, provider))
+}
+
+func TestAuthenticateRequestsES256WhenEnabled(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	authenticator, fakeAuth := setup(t)
+
+	fooJwt := validES256Jwt(t, "foo")
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+	fakeAuth.setNextJwt(t, "", fooJwt)
+	ctx := contextWithApiKey(t, "foo")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+
+	req := fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.Equal(t, authpb.JWTSigningMethod_ES256, req.GetJwtSigningMethod())
+}
+
+func TestAuthenticateDoesNotRequestES256WhenDisabled(t *testing.T) {
+	// Disable ES256 flag
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	authenticator, fakeAuth := setup(t)
+
+	fooJwt := validJwt(t, "foo")
+	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
+	ctx := contextWithApiKey(t, "foo")
+	authenticator.AuthenticatedGRPCContext(ctx)
+
+	// Verify the request did not include ES256 signing method
+	req := fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.Equal(t, authpb.JWTSigningMethod_UNKNOWN, req.GetJwtSigningMethod())
+}
+
+func TestES256KeysCached(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.remote.key_refresh_interval", time.Hour)
+	authenticator, fakeAuth := setup(t)
+
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// Perform the first authentication; keys must be available.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+	publicKeysCallsAfterFirstAuth := fakeAuth.getPublicKeysCalls()
+
+	// Second authentication with a different API key should use cached keys.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "bar"))
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
+	user, err = authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", user.GetUserID())
+	require.Equal(t, publicKeysCallsAfterFirstAuth, fakeAuth.getPublicKeysCalls())
+}
+
+func TestES256KeysBackgroundRefresh(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.remote.key_refresh_interval", 10*time.Millisecond)
+	_, fakeAuth := setup(t)
+	initial := fakeAuth.getPublicKeysCalls()
+	require.Greater(t, initial, 0)
+
+	// Creation should've triggered a key fetch
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// Ensure a background refresh occurs.
+	require.Eventually(t, func() bool {
+		return fakeAuth.getPublicKeysCalls() > initial
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestES256KeysBackgroundRefreshError(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.remote.key_refresh_interval", 10*time.Millisecond)
+	authenticator, fakeAuth := setup(t)
+
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// First authentication fetches keys synchronously.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "foo"))
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+	initialCalls := fakeAuth.getPublicKeysCalls()
+
+	// Make background refreshes fail.
+	fakeAuth.setPublicKeysErr(status.InternalError("server error"))
+	require.Eventually(t, func() bool {
+		return fakeAuth.getPublicKeysCalls() > initialCalls
+	}, time.Second, 5*time.Millisecond)
+
+	// Restore working keys so the fake service doesn't interfere further.
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// Authentication should still work because the old cached keys are
+	// preserved on background refresh failure.
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "bar"))
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
+	user, err = authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", user.GetUserID())
 }

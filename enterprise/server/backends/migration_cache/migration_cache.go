@@ -915,12 +915,12 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	}
 	if conf.asyncDestWrites {
 		w := ioutil.NewCustomCommitWriteCloser(srcWriter)
-		w.CommitFn = func(int64) error {
+		w.SetCommitFn(func(int64) error {
 			// This is only called when the source writer is successfully committed.
 			// We will force a write to the destination cache in the background.
 			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 			return nil
-		}
+		})
 		return w, nil
 	}
 
@@ -1218,10 +1218,35 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
+func (mc *MigrationCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	srcPartition, err := mc.defaultConfigDoNotUseDirectly.src.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	destPartition, err := mc.defaultConfigDoNotUseDirectly.dest.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	if srcPartition == "" {
+		return destPartition, nil
+	}
+	if destPartition == "" {
+		return srcPartition, nil
+	}
+	return srcPartition + "/" + destPartition, nil
+}
+
 // Compression should only be enabled during a migration if both the source and destination caches support the
 // compressor, in order to reduce complexity around trying to double read/write compressed bytes to one cache and
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
 		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
+}
+
+func (mc *MigrationCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	if err := mc.defaultConfigDoNotUseDirectly.src.RegisterAtimeUpdater(updater); err != nil {
+		return err
+	}
+	return mc.defaultConfigDoNotUseDirectly.dest.RegisterAtimeUpdater(updater)
 }

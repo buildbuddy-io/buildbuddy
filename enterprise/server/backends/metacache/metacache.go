@@ -394,7 +394,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.CommitFn = func(bytesWritten int64) error {
+	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := c.opts.Clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
 			FileRecord:         fileRecord,
@@ -410,7 +410,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 		return fn(md)
-	}
+	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
 	shouldEncrypt, err := c.encryptionEnabled(ctx)
@@ -821,6 +821,11 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interface
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
 }
 
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	_, partitionID := c.lookupGroupAndPartitionID(ctx, remoteInstanceName)
+	return partitionID, nil
+}
+
 // SupportsCompressor returns whether the cache supports storing data compressed
 // with the given compressor.
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
@@ -842,4 +847,8 @@ func (c *Cache) recordMetrics(method string, err error, start time.Time) {
 		metrics.CacheNameLabel: c.opts.Name,
 		metrics.CacheMethod:    method,
 	}).Observe(float64(c.opts.Clock.Since(start).Microseconds()))
+}
+
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("metacache.RegisterAtimeUpdater() unsupported")
 }

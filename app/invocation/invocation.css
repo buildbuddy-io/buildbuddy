@@ -24,7 +24,7 @@
 
 .input-tree {
   width: 200px;
-  border: 1px solid #eee;
+  border: 1px solid var(--color-border-primary);
   border-radius: 4px;
   padding: 6px 4px 4px 14px;
   flex-shrink: 0;
@@ -38,9 +38,9 @@
 }
 
 .input-tree-node .input-tree-node-size {
-  background-color: #eee;
+  background-color: var(--color-bg-hover);
   border-radius: 4px;
-  color: #000;
+  color: var(--color-tree-node-size-text);
   margin-left: 8px;
   padding: 0 8px;
   white-space: nowrap;
@@ -59,7 +59,7 @@
 }
 
 .input-tree-node-children {
-  border-left: 1px solid #ccc;
+  border-left: 1px solid var(--color-gray-400-alt);
   padding-left: 8px;
   margin-left: 8px;
 }
@@ -88,7 +88,7 @@
   display: grid;
   grid-template-columns: auto max-content;
 
-  --border-color: #eee;
+  --border-color: var(--color-border-primary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
 }
@@ -114,7 +114,7 @@
 }
 
 .invocation-targets-card .target-row:hover > * {
-  background: #f5f5f5;
+  background: var(--color-bg-tertiary);
 }
 
 .invocation-targets-card .target-row:not(:last-child) > * {
@@ -146,13 +146,13 @@
   display: flex;
   gap: 8px;
   font-weight: 600;
-  color: #212121;
+  color: var(--color-text-primary);
 }
 
 .invocation-targets-card .target-cache-status {
   border-radius: 16px;
-  color: #212121ad;
-  background: #eee;
+  color: var(--color-text-primary-translucent);
+  background: var(--color-bg-hover);
   line-height: 1;
   flex-shrink: 0;
 
@@ -165,7 +165,7 @@
 }
 
 .invocation-targets-card .root-cause-badge {
-  background: #eee;
+  background: var(--color-bg-hover);
   flex-shrink: 0;
   padding: 0 8px;
   border-radius: 16px;
@@ -174,7 +174,7 @@
 
 .invocation-targets-card .target-duration {
   padding-left: 8px;
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .invocation-flaky-chip-alignment-hack {
@@ -208,7 +208,7 @@
 }
 
 .invocation-error-card .error-contents {
-  background: #fafafa;
+  background: var(--color-bg-secondary);
   border-radius: 8px;
   padding: 8px 16px;
   max-height: 360px;
@@ -222,7 +222,7 @@
 }
 
 .file-name:hover {
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .file-name .digest-component {
@@ -272,7 +272,7 @@
 }
 
 .cache-requests-card .controls .separator {
-  border-left: 1px solid #eee;
+  border-left: 1px solid var(--color-border-primary);
   align-self: stretch;
 }
 
@@ -310,7 +310,7 @@
 }
 
 .cache-requests-card .caption {
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .cache-requests-card .group-title {
@@ -318,7 +318,7 @@
   align-items: baseline;
   width: 100%;
   box-sizing: border-box;
-  background: #eee;
+  background: var(--color-bg-hover);
 }
 
 .cache-requests-card .group-title > * {
@@ -326,7 +326,7 @@
 }
 
 .cache-requests-card .target-id {
-  background: #f5f5f5;
+  background: var(--color-bg-tertiary);
 }
 
 .cache-requests-card .group-contents {
@@ -334,7 +334,7 @@
 }
 
 .cache-requests-card .results-table {
-  border: 1px solid #eee;
+  border: 1px solid var(--color-border-primary);
   border-radius: 4px;
   position: relative;
 }
@@ -347,7 +347,7 @@
   bottom: 0;
   z-index: 1;
 
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--color-overlay-light-strong);
   backdrop-filter: grayscale(100%);
 }
 
@@ -361,7 +361,7 @@
 }
 
 .cache-requests-card .column-headers {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .cache-requests-card .results-list,
@@ -371,7 +371,7 @@
 }
 
 .cache-requests-card .results-list > :nth-child(2n + 1) {
-  background: #fafafa;
+  background: var(--color-bg-secondary);
 }
 
 .cache-requests-card .results-list > .row {
@@ -393,7 +393,7 @@
 }
 
 .cache-requests-card :is(.results-list .row, .column-headers.row) > div:not(:first-child) {
-  border-left: 1px solid #eee;
+  border-left: 1px solid var(--color-border-primary);
 }
 
 .cache-requests-card .digest-column {
@@ -434,13 +434,13 @@
   padding: 4px;
   margin: -2px;
   border-radius: 8px;
-  stroke: #2196f3;
+  stroke: var(--color-status-info);
   cursor: pointer;
 }
 
 .cache-requests-card .download-button:hover {
-  stroke: #03a9f4;
-  background: #eee;
+  stroke: var(--color-light-blue-500);
+  background: var(--color-bg-hover);
 }
 
 .cache-requests-card .name-column {
@@ -485,15 +485,15 @@
 }
 
 .cache-requests-card .compressed-size-column .icon {
-  stroke: #bdbdbd;
+  stroke: var(--color-gray-400);
 }
 
 .cache-requests-card .compressed-size-column.uncompressed {
-  color: #bdbdbd;
+  color: var(--color-gray-400);
 }
 
 .cache-requests-card .icon.green {
-  stroke: #4caf50;
+  stroke: var(--color-green-500);
 }
 
 .cache-requests-card .results-list div.waterfall-column {
@@ -515,7 +515,7 @@
 }
 
 .cache-requests-card .waterfall-bar {
-  background-color: #2196f3;
+  background-color: var(--color-status-info);
   border-radius: 2px;
   min-width: var(--min-bar-width);
   height: 8px;
@@ -531,11 +531,11 @@
 }
 
 .cache-requests-card .waterfall-gridlines > :first-child {
-  border-left: 1px solid #eee;
+  border-left: 1px solid var(--color-border-primary);
 }
 
 .cache-requests-card .waterfall-gridlines > div:not(:last-child) {
-  border-right: 1px solid #f5f5f5;
+  border-right: 1px solid var(--color-bg-tertiary);
 }
 
 .cache-requests-card .waterfall-gridlines > div {
@@ -548,10 +548,10 @@
 
 .cache-requests-card-hovercard {
   margin: 12px;
-  background: rgba(255, 255, 255, 1);
+  background: var(--color-cache-hovercard-bg);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px var(--color-shadow-strong);
   font-size: 14px;
   backdrop-filter: blur(3px);
   display: flex;
@@ -559,10 +559,11 @@
 
 .cache-result-hovercard {
   margin: 12px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--color-cache-hovercard-bg);
+  color: var(--color-cache-hovercard-text);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px var(--color-shadow-light);
   font-size: 14px;
   backdrop-filter: blur(3px);
 
@@ -577,12 +578,12 @@
 
 .cache-result-hovercard .compression-savings.positive,
 .cache-requests-card .compression-savings.positive {
-  color: #43a047;
+  color: var(--color-green-600);
 }
 
 .cache-result-hovercard .compression-savings.negative,
 .cache-requests-card .compression-savings.negative {
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .link-repo-modal {
@@ -607,7 +608,7 @@
 .popup.cache-miss-popup .title {
   font-weight: 600;
   font-size: 15px;
-  background: white;
+  background: var(--color-bg-primary);
   padding: 4px;
 }
 
@@ -642,7 +643,7 @@
 .action-title {
   font-weight: 700;
   font-size: 18px;
-  color: #212121;
+  color: var(--color-text-primary);
 }
 
 .action-header {
@@ -657,7 +658,7 @@
 .action-section {
   display: flex;
   margin-bottom: 16px;
-  color: #212121;
+  color: var(--color-text-primary);
 }
 
 .action-header {
@@ -677,6 +678,18 @@
   margin-right: 4px;
 }
 
+.action-header .view-history-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -16px;
+}
+
+.action-header .view-history-button .icon {
+  width: 16px;
+  height: 16px;
+}
+
 .action-section > div {
   flex-grow: 1;
 }
@@ -693,15 +706,15 @@
 }
 
 .action-section .platform-property-overridden * {
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .action-section .platform-property-note {
-  color: #757575;
+  color: var(--color-text-label);
 }
 
 .action-section .grpc-status-error {
-  color: #d32f2f;
+  color: var(--color-red-700);
 }
 
 .action-section .server-log-title {
@@ -731,12 +744,12 @@
 .cache-subtitle {
   margin-bottom: 24px;
   margin-top: 4px;
-  color: #888;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 .cache-details {
-  color: #888;
+  color: var(--color-text-secondary);
   display: flex;
   flex-wrap: wrap;
 }
@@ -792,7 +805,7 @@
   margin-right: 8px;
   margin-top: 3px;
   display: block;
-  background-color: #eee;
+  background-color: var(--color-bg-hover);
 }
 
 .cache-chart-label .compressed-size {
@@ -801,11 +814,11 @@
 }
 
 .cache-chart-label .size-savings.positive {
-  color: #388e3c;
+  color: var(--color-green-700);
 }
 
 .cache-chart-label .size-savings.negative {
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .header {
@@ -822,19 +835,19 @@
 }
 
 .download-color-swatch {
-  background-color: #03a9f4;
+  background-color: var(--color-light-blue-500);
 }
 
 .upload-color-swatch {
-  background-color: #3f51b5;
+  background-color: var(--color-indigo-500);
 }
 
 .cache-hit-color-swatch {
-  background-color: #4caf50;
+  background-color: var(--color-green-500);
 }
 
 .cache-miss-color-swatch {
-  background-color: #f44336;
+  background-color: var(--color-status-error);
 }
 
 .no-cache-stats {
@@ -874,7 +887,7 @@
 }
 
 .filled-button.invocation-ask-button {
-  background-color: #2196f3;
+  background-color: var(--color-status-info);
 }
 
 .invocation-share-dialog .row {
@@ -897,7 +910,7 @@
 
 .invocation-share-dialog .visibility-explanation {
   margin-top: 8px;
-  color: #333;
+  color: var(--color-form-help-text);
 }
 
 .invocation-share-dialog select {
@@ -913,14 +926,14 @@
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: #e1f5fe;
+  background: var(--color-banner-info-bg);
 }
 
 .invocation-share-dialog .error-message {
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: #ffebee;
+  background: var(--color-status-error-bg);
 }
 
 .invocation-share-dialog-footer .loading-message {
@@ -933,7 +946,7 @@
 
 .invocation-execution-row {
   display: flex;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
   padding: 16px 0;
   position: relative;
 }
@@ -943,11 +956,11 @@
 }
 
 .invocation-execution-row:last-child {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .invocation-execution-row:hover {
-  background: #fafafa;
+  background: var(--color-bg-secondary);
 }
 
 .invocation-execution-row-image {
@@ -984,7 +997,7 @@
 
 .invocation-execution-row .command-snippet {
   font-size: 12px;
-  color: #757575;
+  color: var(--color-text-label);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -994,7 +1007,7 @@
 }
 
 .invocation-execution-row .status {
-  color: #000;
+  color: var(--color-hovercard-text);
   display: flex;
   gap: 8px;
   margin-bottom: 2px;
@@ -1005,7 +1018,7 @@
 }
 
 .invocation-execution-row .status-name.error {
-  color: #f44336;
+  color: var(--color-status-error);
 }
 
 .invocation-execution-row .invocation-execution-row-stats {
@@ -1013,7 +1026,7 @@
   flex-wrap: wrap;
   gap: 0 8px;
 
-  color: #757575;
+  color: var(--color-text-label);
   font-size: 12px;
 }
 
@@ -1050,12 +1063,12 @@
   margin-left: -4px;
   margin-right: 8px;
 
-  --illustration-color: #ddd;
+  --illustration-color: var(--color-gray-300-alt);
 }
 
 .base-button:hover .comparison-buffer-illustration,
 .comparison-buffer-illustration.buffered {
-  --illustration-color: #212121;
+  --illustration-color: var(--color-text-primary);
 }
 
 .comparison-buffer-icon {
@@ -1103,7 +1116,7 @@
 
 .invocation-delete-dialog .error-description {
   margin-top: 16px;
-  background: #ffebee;
+  background: var(--color-red-50);
   padding: 16px;
   border-radius: 8px;
 }
@@ -1145,25 +1158,25 @@
   width: 16px;
   height: 16px;
   cursor: pointer;
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .metadata-title {
   font-weight: 600;
-  color: #212121;
+  color: var(--color-text-primary);
   margin-bottom: 2px;
 }
 
 .metadata-title:not(:first-child),
 .snapshot-id-container {
   margin-top: 8px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-primary);
   padding-top: 8px;
 }
 
 .metadata-detail {
   font-weight: 300;
-  color: #444;
+  color: var(--color-text-emphasis);
   display: flex;
   justify-content: space-between;
 }
@@ -1182,13 +1195,13 @@
 
 .invalidate-button {
   font-weight: bold;
-  color: #d32f2f;
+  color: var(--color-red-700);
   text-decoration: underline;
   cursor: default;
 }
 
 .invalidate-button:hover {
-  color: #af2626;
+  color: var(--color-red-900-alt);
 }
 
 .snapshot-more-button {
@@ -1196,12 +1209,12 @@
 }
 
 .prop-name {
-  color: #212121;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .prop-value .detail {
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .action-list .expected-output {
@@ -1214,7 +1227,7 @@
   }
 
   .expected-output-label {
-    color: #444;
+    color: var(--color-text-emphasis);
   }
 }
 
@@ -1229,7 +1242,7 @@
   }
 
   .expected-output-label {
-    color: #444;
+    color: var(--color-text-emphasis);
   }
 }
 
@@ -1241,8 +1254,8 @@
 .state-page button.impersonate-button,
 .stage-page button.impersonate-button:hover {
   margin-top: 8px;
-  background-color: #ffc107;
-  color: black;
+  background-color: var(--color-amber-500);
+  color: var(--color-text-on-light-bg);
 }
 
 .state-page button.request-button {
@@ -1254,7 +1267,7 @@
 }
 
 .state-page .error-text {
-  color: #d32f2f;
+  color: var(--color-red-700);
 }
 
 .workflow-rerun-button > :not(:last-child) {
@@ -1286,16 +1299,16 @@
 
 .invocation-query-graph-card {
   padding: 0;
-  background: #fafafa;
+  background: var(--color-bg-secondary);
   box-shadow:
-    0px 1px 4px rgba(0, 0, 0, 0.2),
-    0px 1px 6px rgba(0, 0, 0, 0.1);
+    0px 1px 4px var(--color-shadow-lg),
+    0px 1px 6px var(--color-shadow-sm);
 }
 
 .invocation-query-graph-card:hover {
   box-shadow:
-    0px 2px 6px rgba(0, 0, 0, 0.2),
-    0px 1px 10px rgba(0, 0, 0, 0.1);
+    0px 2px 6px var(--color-shadow-lg),
+    0px 1px 10px var(--color-shadow-sm);
 }
 
 svg.invocation-query-graph {
@@ -1304,17 +1317,17 @@ svg.invocation-query-graph {
 }
 
 svg.invocation-query-graph .nodes {
-  fill: #fff;
-  stroke: #212121;
+  fill: var(--color-white);
+  stroke: var(--color-gray-900);
   stroke-width: 4px;
 }
 svg.invocation-query-graph .nodes text {
-  fill: #000;
+  fill: var(--color-black);
 }
 
 svg.invocation-query-graph path {
-  stroke: #212121;
-  fill: #212121;
+  stroke: var(--color-gray-900);
+  fill: var(--color-gray-900);
   stroke-width: 2px;
 }
 
@@ -1349,7 +1362,7 @@ svg.invocation-query-graph .nodes rect {
 
 .invocation-query-graph-summary-card .summary-explanation {
   margin-bottom: 8px;
-  color: #616161;
+  color: var(--color-gray-700);
 }
 
 .invocation-query-graph-summary-card .summary-table {
@@ -1362,7 +1375,7 @@ svg.invocation-query-graph .nodes rect {
 .invocation-query-graph-summary-card .summary-numeric-value {
   font-weight: 600;
   min-width: 48px;
-  color: #212121;
+  color: var(--color-text-primary);
   text-align: right;
 }
 
@@ -1402,16 +1415,16 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .child-invocation-card.status-succeeded {
-  --status-color: #8bc34a;
+  --status-color: var(--color-status-success);
 }
 .child-invocation-card.status-failed {
-  --status-color: #f44336;
+  --status-color: var(--color-status-error);
 }
 .child-invocation-card.status-in-progress {
-  --status-color: #03a9f4;
+  --status-color: var(--color-status-in-progress);
 }
 .child-invocation-card:is(.status-queued, .status-not-run) {
-  --status-color: #3f51b5;
+  --status-color: var(--color-indigo-500);
 }
 
 .child-invocation-card {
@@ -1424,7 +1437,7 @@ svg.invocation-query-graph .nodes rect {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: white;
+  background: var(--color-bg-primary);
 }
 
 .child-invocation-card.status-failed {
@@ -1437,7 +1450,7 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .child-invocation-card .duration {
-  color: #616161;
+  color: var(--color-gray-700);
 }
 
 .child-invocation-card:is(.status-not-run, .status-queued) :is(.duration, .command) {
@@ -1451,7 +1464,7 @@ svg.invocation-query-graph .nodes rect {
 
 .child-invocation-card.clickable:hover {
   box-shadow: var(--shadow-4);
-  background: #fafafa;
+  background: var(--color-bg-secondary);
 }
 
 .child-invocation-card .icon {
@@ -1474,18 +1487,18 @@ svg.invocation-query-graph .nodes rect {
   border-radius: 4px;
   max-width: 300px;
   overflow: clip;
-  background: #bbdefb;
+  background: var(--color-blue-100);
 }
 
 .timing.card .progress-label {
   margin-bottom: 4px;
   font-size: 13px;
-  color: #616161;
+  color: var(--color-gray-700);
 }
 
 .timing.card .progress-bar-inner {
   height: 100%;
-  background: #2196f3;
+  background: var(--color-blue-500);
   transform-origin: left;
 }
 
@@ -1513,7 +1526,7 @@ svg.invocation-query-graph .nodes rect {
 
 .target-more-buttons svg {
   height: 16px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-icon-subtle);
 }
 
 .invocation-compare-button-container-mini {

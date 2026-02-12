@@ -103,8 +103,6 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
-
-	defaultTerminalLineLength = 300
 )
 
 var (
@@ -197,11 +195,20 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
 		bufferedEvents:              make([]*inpb.InvocationEvent, 0),
-		requestedTerminalColumns:    defaultTerminalLineLength,
+		requestedTerminalColumns:    eventlog.DefaultTerminalLineLength,
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
+		groupIDForMetrics:           b.getGroupIDForMetrics(ctx),
 	}, nil
+}
+
+func (b *BuildEventHandler) getGroupIDForMetrics(ctx context.Context) string {
+	userInfo, err := b.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return userInfo.GetGroupID()
 }
 
 func (b *BuildEventHandler) Stop() {
@@ -807,6 +814,8 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 	switch buildEvent := obe.GetEvent().GetEvent().(type) {
 	case *bepb.BuildEvent_BazelEvent:
 		return buildEvent.BazelEvent.UnmarshalTo(out)
+	case *bepb.BuildEvent_ExperimentalBuildToolEvent:
+		// TODO(sluongng): implement support for generic build tool events (i.e. BuckEvent)
 	}
 	return fmt.Errorf("Not a bazel event %s", obe)
 }
@@ -835,6 +844,7 @@ type EventChannel struct {
 	logWriter                        *eventlog.EventLogWriter
 	onClose                          func()
 	attempt                          uint64
+	groupIDForMetrics                string
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -939,14 +949,6 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 	return "unknown"
 }
 
-func (e *EventChannel) getGroupIDForMetrics() string {
-	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return userInfo.GetGroupID()
-}
-
 func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationCount.With(prometheus.Labels{
@@ -960,7 +962,7 @@ func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	}).Observe(float64(ti.DurationUsec))
 	metrics.InvocationDurationUsExported.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
-		metrics.GroupID:               e.getGroupIDForMetrics(),
+		metrics.GroupID:               e.groupIDForMetrics,
 	}).Observe(float64(ti.DurationUsec))
 }
 
@@ -1235,7 +1237,15 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 					return err
 				}
 			}
-			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...)); err != nil && err != context.Canceled {
+			n, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...))
+			if err == nil {
+				if n > 0 {
+					metrics.EventLogBytesWritten.With(map[string]string{
+						metrics.EventName: "build_log",
+						metrics.GroupID:   e.groupIDForMetrics,
+					}).Add(float64(n))
+				}
+			} else if err != context.Canceled {
 				log.CtxWarningf(e.ctx, "Failed to write build logs for event: %s", err)
 			}
 			// Don't store the log in the protostream if we're

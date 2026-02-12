@@ -104,6 +104,7 @@ var (
 		"remote_downloader_header",
 		"bes_header",
 	}
+	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
 )
 
 func init() {
@@ -120,6 +121,10 @@ func init() {
 	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
 	// Capture group 1: --flag_name= (without the env var name)
 	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
+
+	for _, header := range headerOptionNames {
+		headerOptionRegexes[header] = regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -265,8 +270,7 @@ func redactBuildBuddyAPIKeys(txt string) string {
 }
 
 func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	for header, regex := range headerOptionRegexes {
 		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
 	}
 	return txt
@@ -327,9 +331,19 @@ func redactEnvVarPayload(payload string) string {
 func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
+		varValue := value[len(varName)+1:]
+		// Keep values unredacted that are clearly safe and potentially useful
+		// for debugging.
+		if varValue == "" ||
+			varValue == "0" || varValue == "1" ||
+			strings.EqualFold(varValue, "true") || strings.EqualFold(varValue, "false") {
+			return varName + "=" + varValue
+		}
 		return varName + "=" + redactedPlaceholder
 	}
-	return redactedPlaceholder
+	// Don't redact --action_env=FOO (inherit FOO) and --action_env==FOO (unset
+	// FOO). Environment variable names are not expected to be sensitive.
+	return value
 }
 
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag
@@ -341,30 +355,26 @@ func redactEnvVarAssignment(value string) string {
 // `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
 func RedactEnvVar(flag string) string {
 	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	return flag
 }
 
-// redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
+// redactEnvVarFlagAndAssignment rewrites an env var flag prefix plus payload so the payload
 // becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
 // placeholder. Example input: "--client_env=" as the prefix with
 // `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
-func redactEnvVarValue(flagName, value string) string {
-	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
-		varName := assignment[1]
-		return flagName + varName + "=" + redactedPlaceholder
-	}
-	return flagName + redactedPlaceholder
+func redactEnvVarFlagAndAssignment(flagName, value string) string {
+	return flagName + redactEnvVarAssignment(value)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {

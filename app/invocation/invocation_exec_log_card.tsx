@@ -22,6 +22,8 @@ interface Props {
   model: InvocationModel;
   search: URLSearchParams;
   filter: string;
+  /** Optional target label to filter executions by (exact match). */
+  targetLabel?: string;
 }
 
 interface State {
@@ -55,8 +57,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
     const invocationStatusChanged =
       this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
+    const targetLabelChanged = this.props.targetLabel !== prevProps.targetLabel;
 
-    if (invocationIdChanged || invocationStatusChanged) {
+    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged) {
       clearTimeout(this.timeoutRef);
       this.timeoutRef = undefined;
       this.fetchExecution();
@@ -71,6 +74,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
+    if (this.props.targetLabel) {
+      request.executionLookup.targetLabel = this.props.targetLabel;
+    }
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
     rpcService.service
       .getExecution(request)

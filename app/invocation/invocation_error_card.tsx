@@ -12,6 +12,7 @@ const debugMessage =
 
 interface Props {
   model: InvocationModel;
+  dark?: boolean;
 }
 
 interface State {
@@ -151,7 +152,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     }
 
     return (
-      <div className="invocation-error-card card card-failure">
+      <div className={`invocation-error-card card card-failure ${this.props.dark ? "dark" : "light-terminal"}`}>
         <AlertCircle className="icon red" />
         <div className="content">
           <div className="title">{this.getTitle(this.state.model)}</div>
@@ -159,7 +160,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
           <div className="details">
             <TerminalComponent
               value={this.getBodyText(this.state.model)}
-              lightTheme
+              lightTheme={!this.props.dark}
               scrollTop
               bottomControls
               defaultWrapped

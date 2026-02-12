@@ -15,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
@@ -42,7 +44,10 @@ func Register(env *real_environment.RealEnv) error {
 		if err != nil {
 			return err
 		}
-		provider = flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithHost(host), flagd.WithPort(uint16(intPort)))
+		provider, err = flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithHost(host), flagd.WithPort(uint16(intPort)))
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
@@ -111,8 +116,11 @@ type Option func(*Options)
 //   - group_id: this as used as the target key (default ID) and also provided
 //     as an attribute. Parsed from claims.
 //   - user_id: Parsed from claims.
+//   - group_status: The group's status as a string (e.g., "FREE_TIER_GROUP_STATUS",
+//     "ENTERPRISE_GROUP_STATUS"). Parsed from claims.
 //   - invocation_id: Parsed from the bazel request metadata, if set.
 //   - action_id: Parsed from the bazel request metadata, if set.
+//   - region: Parsed from app.region, if set.
 //
 // The fields allow enabling features at the group level (default), or by
 // user, invocation, or action. Care should be taken to not enable experiments
@@ -127,6 +135,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		options.targetingKey = claims.GetExperimentTargetingGroupID()
 		options.attributes["group_id"] = claims.GetExperimentTargetingGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
+		if status := claims.GetGroupStatus(); status != grpb.Group_UNKNOWN_GROUP_STATUS {
+			options.attributes["group_status"] = grpb.Group_GroupStatus_name[int32(status)]
+		}
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	if iid := rmd.GetToolInvocationId(); len(iid) > 0 {
@@ -140,6 +151,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if targetID := rmd.GetTargetId(); targetID != "" {
 		options.attributes["target_id"] = targetID
+	}
+	if currentRegion := region.ConfiguredAppRegion(); currentRegion != "" {
+		options.attributes["region"] = currentRegion
 	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {

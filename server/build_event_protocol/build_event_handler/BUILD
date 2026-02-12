@@ -80,6 +80,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testusage",
         "//server/util/authutil",
         "//server/util/protofile",
         "//server/util/testing/flags",

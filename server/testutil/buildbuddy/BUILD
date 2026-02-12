@@ -14,5 +14,8 @@ go_library(
         "buildbuddyRunfilePath": "$(rlocationpath //server/cmd/buildbuddy)",
         "localConfigRunfilePath": "$(rlocationpath //config:buildbuddy.local.yaml)",
     },
-    deps = ["//server/testutil/app"],
+    deps = [
+        "//server/testutil/app",
+        "//server/testutil/testfs",
+    ],
 )

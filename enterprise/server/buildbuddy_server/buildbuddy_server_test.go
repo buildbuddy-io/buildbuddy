@@ -46,6 +46,7 @@ func TestCreateGroup(t *testing.T) {
 
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "app.restrict_multi_group_to_enterprise", true)
 
 	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
 	require.NoError(t, err)
@@ -54,6 +55,21 @@ func TestCreateGroup(t *testing.T) {
 	parentGroup.SamlIdpMetadataUrl = "https://some/saml/url"
 	parentGroup.URLIdentifier = "foo"
 	_, err = te.GetUserDB().UpdateGroup(userCtx, &parentGroup)
+	require.NoError(t, err)
+
+	// Set up server admin and update group status to enterprise
+	flags.Set(t, "auth.admin_group_id", parentGroup.GroupID)
+	adminRole, err := role.ToProto(role.Admin)
+	require.NoError(t, err)
+	err = te.GetUserDB().UpdateGroupUsers(userCtx, parentGroup.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: "US1"},
+			Role:   adminRole,
+		},
+	})
+	require.NoError(t, err)
+	userCtx = authUserCtx(ctx, te, t, "US1")
+	err = te.GetUserDB().UpdateGroupStatus(userCtx, parentGroup.GroupID, grpb.Group_ENTERPRISE_GROUP_STATUS)
 	require.NoError(t, err)
 
 	adminKey, err := te.GetAuthDB().CreateAPIKey(
@@ -92,6 +108,76 @@ func TestCreateGroup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, parentGroup.SamlIdpMetadataUrl, g.SamlIdpMetadataUrl)
 	require.False(t, g.IsParent)
+}
+
+func TestCreateGroup_StatusRestrictions(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		status      grpb.Group_GroupStatus
+		shouldAllow bool
+	}{
+		{"FreeTier", grpb.Group_FREE_TIER_GROUP_STATUS, false},
+		{"Blocked", grpb.Group_BLOCKED_GROUP_STATUS, false},
+		{"Unknown", grpb.Group_UNKNOWN_GROUP_STATUS, true},
+		{"EnterpriseTrial", grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS, true},
+		{"Enterprise", grpb.Group_ENTERPRISE_GROUP_STATUS, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := enterprise_testenv.New(t)
+			enterprise_testauth.Configure(t, te)
+			auth := te.GetAuthenticator()
+			te.SetAuthenticator(auth)
+			ctx := context.Background()
+
+			flags.Set(t, "app.create_group_per_user", true)
+			flags.Set(t, "app.no_default_user_group", true)
+			flags.Set(t, "app.restrict_multi_group_to_enterprise", true)
+
+			err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
+			require.NoError(t, err)
+			userCtx := authUserCtx(ctx, te, t, "US1")
+			group := getGroup(t, userCtx, te).Group
+			group.URLIdentifier = "test-group"
+			_, err = te.GetUserDB().UpdateGroup(userCtx, &group)
+			require.NoError(t, err)
+
+			flags.Set(t, "auth.admin_group_id", group.GroupID)
+			adminRole, err := role.ToProto(role.Admin)
+			require.NoError(t, err)
+			err = te.GetUserDB().UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+				{
+					UserId: &uidpb.UserId{Id: "US1"},
+					Role:   adminRole,
+				},
+			})
+			require.NoError(t, err)
+			userCtx = authUserCtx(ctx, te, t, "US1")
+			err = te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, tc.status)
+			require.NoError(t, err)
+
+			adminKey, err := te.GetAuthDB().CreateAPIKey(
+				userCtx, group.GroupID, "admin",
+				[]cappb.Capability{cappb.Capability_ORG_ADMIN},
+				0, /*=expiresIn*/
+				false /*=visibleToDevelopers*/)
+			require.NoError(t, err)
+			adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
+
+			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+			require.NoError(t, err)
+
+			_, err = server.CreateGroup(adminKeyCtx, &grpb.CreateGroupRequest{
+				Name:          "test",
+				UrlIdentifier: "test",
+			})
+			if tc.shouldAllow {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "enterprise account is required")
+			}
+		})
+	}
 }
 
 func TestSetGroupStatus(t *testing.T) {

@@ -945,13 +945,24 @@ https://app.buildbuddy.io/api/v1/Run
 rpc Run(RunRequest) returns (RunResponse);
 ```
 
-### Example cURL request
+### Example cURL requests
 
 ```bash
+# Run commands in a git repository
 curl -d '{
-    "repo”: "git@github.com:buildbuddy-io/buildbuddy.git",
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
     "branch":"main",
     "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+```bash
+# Run commands in an empty directory (no git repo)
+curl -d '{
+    "steps": [{"run": "echo hello world"}]
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -962,14 +973,15 @@ https://app.buildbuddy.io/api/v1/Run
 
 ```protobuf
 message RunRequest {
-  // URL of the repo the remote workspace should be initialized for
+  // URL of the repo the remote workspace should be initialized for.
   // Ex. "https://github.com/some-user/acme"
+  // If not provided, commands will run in an empty directory.
   string repo = 1;
 
-  // Git refs to configure the remote git workspace (at least one of `branch` or
-  // `commit_sha` must be set). If only `branch` is set, will run from the tip
-  // of the branch. If only `commit_sha` is set, reporting will not contain the
-  // branch name.
+  // Git refs to configure the remote git workspace. At least one of `branch` or
+  // `commit_sha` must be set when `repo` is provided. If only `branch` is set,
+  // will run from the tip of the branch. If only `commit_sha` is set, reporting
+  // will not contain the branch name.
   string branch = 2;
   string commit_sha = 3;
 

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -281,18 +282,9 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 	assert.NotContains(t, string(txt), "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
-type FakeUsageTracker struct {
-	invocations int64
-}
-
-func (t *FakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, usage *tables.UsageCounts) error {
-	t.invocations += usage.Invocations
-	return nil
-}
-
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -320,7 +312,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -362,7 +354,7 @@ func TestAuthenticatedHandleEventWithOptionlessStartedEvent(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -406,7 +398,7 @@ func TestAuthenticatedHandleEventWithRedactedStartedEvent(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["USER1"])
 	testUUID, err := uuid.NewRandom()
@@ -450,7 +442,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -498,7 +490,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 
 func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -532,7 +524,7 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 
 func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -568,7 +560,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 
 func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -624,7 +616,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 
 func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -779,9 +771,9 @@ PRIVATEKEYDATA
 
 func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ut := &FakeUsageTracker{}
+	ut := testusage.NewTracker()
 	te.SetUsageTracker(ut)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -798,7 +790,15 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
 
 	// Send another started event for good measure; we should still only count 1
 	// invocation since it's the same stream.
@@ -806,12 +806,21 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
+	// Totals should remain the same (1 invocation total)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -861,7 +870,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 
 func TestFinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -909,7 +918,7 @@ func TestFinishedFinalize(t *testing.T) {
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -954,7 +963,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 
 func TestUnfinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -997,7 +1006,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 
 func TestRetryOnComplete(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1075,7 +1084,7 @@ func TestRetryOnComplete(t *testing.T) {
 
 func TestRetryOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1186,7 +1195,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 
 func TestRetryTwiceOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1370,7 +1379,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 
 func TestRetryOnOldDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1510,7 +1519,7 @@ func TestBuildStatusReporting(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)
@@ -1644,7 +1653,7 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: test.enableReportingForRepo}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)
@@ -1762,7 +1771,7 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)

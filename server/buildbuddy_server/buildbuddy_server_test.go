@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -37,7 +39,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -99,7 +104,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 
 func TestGetInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
@@ -136,7 +141,7 @@ func TestGetInvocation(t *testing.T) {
 func TestGetInvocation_FetchChildren(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	require.NoError(t, err)
@@ -190,7 +195,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 
 func TestSearchInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 
 	// Search Service is enterprise-only
@@ -213,7 +218,7 @@ func TestSearchInvocation(t *testing.T) {
 
 func TestUpdateInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
 	te.GetDBHandle().NewQuery(context.Background(), "create_invocation").Create(&tables.Group{GroupID: group1, SharingEnabled: true})
 
@@ -251,7 +256,7 @@ func TestUpdateInvocation(t *testing.T) {
 
 func TestDeleteInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
@@ -290,7 +295,7 @@ func TestDeleteInvocation(t *testing.T) {
 func TestFileDownloadEndpoint(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
 	err := buildbuddy_server.Register(te)
 	require.NoError(t, err)
@@ -419,4 +424,143 @@ func TestFileDownloadEndpoint(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestWriteEventLog(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	kvStore, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	te.SetKeyValStore(kvStore)
+
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
+	require.NoError(t, err)
+	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	// Create an invocation that is generating run logs.
+	iid, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+		InvocationId: iid,
+		Status:       inspb.OverallStatus_IN_PROGRESS,
+	})
+	require.NoError(t, err)
+
+	// Write event logs
+	stream, err := client.WriteEventLog(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 1\n"),
+	})
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 2\n"),
+	})
+	require.NoError(t, err)
+
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// Make sure we can read back the logs.
+	getLogStream, err := client.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: iid,
+		Type:         elpb.LogType_RUN_LOG,
+	})
+	require.NoError(t, err)
+
+	data, err := getLogStream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "Line 1\nLine 2\n", string(data.GetBuffer()))
+}
+
+func TestWriteEventLog_ServerTimeout(t *testing.T) {
+	// Use a short timeout for testing
+	originalTimeout := buildbuddy_server.WriteEventLogTimeout
+	buildbuddy_server.WriteEventLogTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { buildbuddy_server.WriteEventLogTimeout = originalTimeout })
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	kvStore, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	te.SetKeyValStore(kvStore)
+
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
+	require.NoError(t, err)
+
+	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	// Create an invocation
+	iid, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+		InvocationId: iid,
+		Status:       inspb.OverallStatus_IN_PROGRESS,
+	})
+	require.NoError(t, err)
+
+	// Open stream and send one message, but don't close the stream
+	stream, err := client.WriteEventLog(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 1\n"),
+	})
+	require.NoError(t, err)
+
+	// Wait until the server timeout has been exceeded.
+	time.Sleep(600 * time.Millisecond)
+
+	// The server should return a deadline exceeded error
+	_, err = stream.CloseAndRecv()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "DeadlineExceeded")
+
+	// Make sure we can read back the logs that were written before the timeout.
+	getLogStream, err := client.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: iid,
+		Type:         elpb.LogType_RUN_LOG,
+	})
+	require.NoError(t, err)
+
+	data, err := getLogStream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "Line 1\n", string(data.GetBuffer()))
 }

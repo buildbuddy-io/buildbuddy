@@ -212,6 +212,10 @@ message ExecutionLookup {
   // Optional execution ID. Only the specific execution with this ID will be
   // returned.
   string execution_id = 3;
+
+  // Optional target label filter. Only executions for this target will be
+  // returned (exact match). Ex: "//foo/bar:baz"
+  string target_label = 4;
 }
 
 message GetExecutionRequest {

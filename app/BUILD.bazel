@@ -43,6 +43,7 @@ ts_library(
 genrule(
     name = "style",
     srcs = [
+        "//app/root:colors.css",
         "//app/root:root.css",
         "//app/alert:alert.css",
         "//app/picker:picker.css",

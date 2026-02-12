@@ -31,10 +31,10 @@ var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", fals
 
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
+	localCache         interfaces.Cache
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -47,10 +47,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CASServerProxy, error) {
-	atimeUpdater := env.GetAtimeUpdater()
-	if atimeUpdater == nil {
-		return nil, fmt.Errorf("An AtimeUpdater is required to enable the ContentAddressableStorageServerProxy")
-	}
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable the ContentAddressableStorageServerProxy")
@@ -65,33 +61,86 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	}
 	proxy := CASServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
-		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
+		localCache:         env.GetCache(),
 	}
 	return &proxy, nil
 }
 
-func recordMetrics(op, status string, digestsPerStatus, bytesPerStatus map[string]int) {
+type cacheMetrics struct {
+	digestsPerStatusAndCompressor map[string]map[string]int
+	bytesPerStatusAndCompressor   map[string]map[string]int
+}
+
+func newCacheMetrics() *cacheMetrics {
+	return &cacheMetrics{
+		digestsPerStatusAndCompressor: map[string]map[string]int{
+			metrics.HitStatusLabel:         map[string]int{},
+			metrics.MissStatusLabel:        map[string]int{},
+			metrics.UncacheableStatusLabel: map[string]int{},
+		},
+		bytesPerStatusAndCompressor: map[string]map[string]int{
+			metrics.HitStatusLabel:         map[string]int{},
+			metrics.MissStatusLabel:        map[string]int{},
+			metrics.UncacheableStatusLabel: map[string]int{},
+		},
+	}
+}
+
+func (m *cacheMetrics) addUpdateMetrics(requests []*repb.BatchUpdateBlobsRequest_Request) *cacheMetrics {
+	status := metrics.MissStatusLabel
+	for _, request := range requests {
+		compressor := request.GetCompressor().String()
+		m.digestsPerStatusAndCompressor[status][compressor]++
+		m.bytesPerStatusAndCompressor[status][compressor] += len(request.Data)
+	}
+	return m
+}
+
+func (m *cacheMetrics) addReadMetrics(status string, responses []*repb.BatchReadBlobsResponse_Response) *cacheMetrics {
+	for _, response := range responses {
+		compressor := response.GetCompressor().String()
+		m.digestsPerStatusAndCompressor[status][compressor]++
+		m.bytesPerStatusAndCompressor[status][compressor] += len(response.Data)
+	}
+	return m
+}
+
+func (m *cacheMetrics) addGetTreeMetrics(digests, bytes int) *cacheMetrics {
+	status := metrics.MissStatusLabel
+	compressor := repb.Compressor_IDENTITY.String()
+	m.digestsPerStatusAndCompressor[status][compressor] += digests
+	m.bytesPerStatusAndCompressor[status][compressor] += bytes
+	return m
+}
+
+func recordMetrics(op, status string, cm *cacheMetrics) {
 	metrics.ContentAddressableStorageProxiedRequests.With(
 		prometheus.Labels{
 			metrics.CASOperation:       op,
 			metrics.CacheHitMissStatus: status,
 		}).Inc()
-	for status, count := range digestsPerStatus {
-		metrics.ContentAddressableStorageProxiedDigests.With(
-			prometheus.Labels{
-				metrics.CASOperation:       op,
-				metrics.CacheHitMissStatus: status,
-			}).Add(float64(count))
+	for status, digestsPerCompressor := range cm.digestsPerStatusAndCompressor {
+		for compressor, count := range digestsPerCompressor {
+			metrics.ContentAddressableStorageProxiedDigests.With(
+				prometheus.Labels{
+					metrics.CASOperation:       op,
+					metrics.CacheHitMissStatus: status,
+					metrics.CompressionType:    compressor,
+				}).Add(float64(count))
+		}
 	}
-	for status, bytes := range bytesPerStatus {
-		metrics.ContentAddressableStorageProxiedBytes.With(
-			prometheus.Labels{
-				metrics.CASOperation:       op,
-				metrics.CacheHitMissStatus: status,
-			}).Add(float64(bytes))
+	for status, bytesPerCompressor := range cm.bytesPerStatusAndCompressor {
+		for compressor, bytes := range bytesPerCompressor {
+			metrics.ContentAddressableStorageProxiedBytes.With(
+				prometheus.Labels{
+					metrics.CASOperation:       op,
+					metrics.CacheHitMissStatus: status,
+					metrics.CompressionType:    compressor,
+				}).Add(float64(bytes))
+		}
 	}
 }
 
@@ -117,12 +166,7 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	recordMetrics(
-		"BatchUpdateBlobs",
-		metrics.MissStatusLabel,
-		map[string]int{metrics.MissStatusLabel: len(req.Requests)},
-		map[string]int{metrics.MissStatusLabel: bytesInRequest(req)},
-	)
+	recordMetrics("BatchUpdateBlobs", metrics.MissStatusLabel, newCacheMetrics().addUpdateMetrics(req.Requests))
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		return s.remote.BatchUpdateBlobs(ctx, req)
@@ -180,9 +224,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			recordMetrics(
 				"BatchReadBlobs",
 				metrics.MissStatusLabel,
-				map[string]int{metrics.MissStatusLabel: len(req.Digests)},
-				map[string]int{metrics.MissStatusLabel: bytesInResponse(resp)},
-			)
+				newCacheMetrics().addReadMetrics(metrics.MissStatusLabel, resp.GetResponses()))
 			return s.batchReadBlobsRemote(ctx, req)
 		}
 		localResp = resp
@@ -193,17 +235,10 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			mergedDigests = append(mergedDigests, resp.Digest)
 		}
 	}
-	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
 
-	digestsInLocalResp := len(mergedResp.Responses)
-	bytesInLocalResp := bytesInResponse(&mergedResp)
+	cacheMetrics := newCacheMetrics().addReadMetrics(metrics.HitStatusLabel, mergedResp.GetResponses())
 	if len(mergedResp.Responses) == len(req.Digests) {
-		recordMetrics(
-			"BatchReadBlobs",
-			metrics.HitStatusLabel,
-			map[string]int{metrics.HitStatusLabel: digestsInLocalResp},
-			map[string]int{metrics.HitStatusLabel: bytesInLocalResp},
-		)
+		recordMetrics("BatchReadBlobs", metrics.HitStatusLabel, cacheMetrics)
 		return &mergedResp, nil
 	}
 
@@ -247,24 +282,11 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	}
 
 	if remoteOnly {
-		recordMetrics(
-			"BatchReadBlobs",
-			metrics.UncacheableStatusLabel,
-			map[string]int{metrics.UncacheableStatusLabel: len(mergedResp.Responses)},
-			map[string]int{metrics.UncacheableStatusLabel: bytesInResponse(&mergedResp)},
-		)
+		cacheMetrics.addReadMetrics(metrics.UncacheableStatusLabel, mergedResp.Responses)
+		recordMetrics("BatchReadBlobs", metrics.UncacheableStatusLabel, cacheMetrics)
 	} else {
-		recordMetrics(
-			"BatchReadBlobs",
-			metrics.PartialStatusLabel,
-			map[string]int{
-				metrics.HitStatusLabel:  digestsInLocalResp,
-				metrics.MissStatusLabel: len(req.Digests) - digestsInLocalResp,
-			},
-			map[string]int{
-				metrics.HitStatusLabel:  bytesInLocalResp,
-				metrics.MissStatusLabel: bytesInResponse(&mergedResp) - bytesInLocalResp,
-			})
+		cacheMetrics.addReadMetrics(metrics.MissStatusLabel, remoteResp.Responses)
+		recordMetrics("BatchReadBlobs", metrics.PartialStatusLabel, cacheMetrics)
 	}
 	return &mergedResp, nil
 }
@@ -299,7 +321,6 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 	return readResp, nil
 }
 
-// TODO(iain): record per-byte metrics here as well as above.
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	if proxy_util.SkipRemote(stream.Context()) {
 		return status.UnimplementedError("Skip remote not implemented")
@@ -315,11 +336,8 @@ func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream 
 	digests := 0
 	bytes := 0
 	defer func() {
-		recordMetrics(
-			"GetTree",
-			metrics.MissStatusLabel,
-			map[string]int{metrics.MissStatusLabel: digests},
-			map[string]int{metrics.MissStatusLabel: bytes})
+		recordMetrics("GetTree", metrics.MissStatusLabel,
+			newCacheMetrics().addGetTreeMetrics(digests, bytes))
 	}()
 	remoteStream, err := s.remote.GetTree(stream.Context(), req)
 	if err != nil {
@@ -391,9 +409,23 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not supported for skipping remote")
+	}
+
+	return s.remote.SpliceBlob(ctx, req)
 }
 
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SplitBlob RPC is not supported for skipping remote")
+	}
+
+	return s.remote.SplitBlob(ctx, req)
 }

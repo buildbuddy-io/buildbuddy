@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/tables",
+        "//server/usage/sku",
         "//server/util/alert",
         "//server/util/bazel_request",
         "//server/util/claims",

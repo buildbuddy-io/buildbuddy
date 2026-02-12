@@ -26,7 +26,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -102,7 +104,7 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	r := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
@@ -120,7 +122,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
-	env.SetUsageTracker(&fakeUsageTracker{})
+	env.SetUsageTracker(testusage.NewTracker())
 
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
@@ -195,6 +197,88 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
+func TestDispatch_RecordsClientIP(t *testing.T) {
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	const testClientIP = "192.168.1.100"
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	ctx = context.WithValue(ctx, clientip.ContextKey, testClientIP)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.NoError(t, err)
+
+	exec, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, testClientIP, exec.GetClientIp())
+}
+
+func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		wd      string
+		wantErr bool
+	}{
+		{name: "empty", wd: "", wantErr: false},
+		{name: "valid_subdir", wd: "src/main", wantErr: false},
+		{name: "path_traversal", wd: "../escape", wantErr: true},
+		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
+		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
+		{name: "dot_dot_only", wd: "..", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			cmd := &repb.Command{
+				Arguments:        []string{"test"},
+				WorkingDirectory: tc.wd,
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			taskID := arn.NewUploadString()
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
@@ -222,7 +306,8 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
   }
 }
 `)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
@@ -441,22 +526,6 @@ func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
 	require.Equal(t, int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS), inv.InvocationStatus)
 }
 
-type usage struct {
-	labels tables.UsageLabels
-	counts tables.UsageCounts
-}
-
-type fakeUsageTracker struct {
-	interfaces.UsageTracker
-
-	usages []usage
-}
-
-func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
-	ut.usages = append(ut.usages, usage{*labels, *counts})
-	return nil
-}
-
 func TestExecuteAndPublishOperation(t *testing.T) {
 	durationUsec := (5 * time.Second).Microseconds()
 	for _, test := range []publishTest{
@@ -553,7 +622,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
@@ -744,6 +813,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
 	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
+		// Trim the aux metadata before comparing
+		cachedActionResult.GetExecutionMetadata().AuxiliaryMetadata = nil
 		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
@@ -757,19 +828,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
 	// Should also have recorded usage.
-	ut := env.GetUsageTracker().(*fakeUsageTracker)
-	var executionUsages []usage
-	for _, u := range ut.usages {
-		if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
-			executionUsages = append(executionUsages, u)
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
 		}
 	}
-	assert.Equal(t, []usage{
-		{
-			labels: tables.UsageLabels{Client: "executor"},
-			counts: test.expectedExecutionUsage,
-		},
-	}, executionUsages)
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, "group1", foundExecutorUsage.GroupID)
+	assert.Equal(t, test.expectedExecutionUsage.LinuxExecutionDurationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+	assert.Equal(t, test.expectedExecutionUsage.SelfHostedLinuxExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedLinuxExecutionDurationUsec)
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -903,7 +973,7 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	env, conn, _ := setupEnv(t)
 	ctx := context.Background()
 
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -994,8 +1064,191 @@ func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealE
 	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
+func uploadActionWithCommand(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command) *digest.CASResourceName {
+	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
+	require.NoError(t, err)
+	action.CommandDigest = cd
+	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
+	require.NoError(t, err)
+	return digest.NewCASResourceName(ad, instanceName, df)
+}
+
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
+}
+
+func makeAuxAny(t *testing.T, props []*repb.Platform_Property) *anypb.Any {
+	auxMd := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{
+			Properties: props,
+		},
+	}
+	auxAny, err := anypb.New(auxMd)
+	require.NoError(t, err)
+	return auxAny
+}
+
+func TestRedactCachedExecuteResponse(t *testing.T) {
+	for _, test := range []struct {
+		name                      string
+		response                  *repb.ExecuteResponse
+		inputProperties           []*repb.Platform_Property
+		expectedAuxiliaryMetadata []*anypb.Any
+	}{
+		{
+			name:     "nil response",
+			response: nil,
+		},
+		{
+			name:     "no execution metadata",
+			response: &repb.ExecuteResponse{},
+		},
+		{
+			name: "no auxiliary metadata",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{},
+				},
+			},
+		},
+		{
+			name: "redacts password property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-password", Value: "secret123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts username property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-username", Value: "admin"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "case insensitive redaction",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "PASSWORD", Value: "secret1"},
+				{Name: "UserName", Value: "admin"},
+				{Name: "ENV-OVERRIDES", Value: "KEY=val"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "PASSWORD", Value: "<REDACTED>"},
+					{Name: "UserName", Value: "<REDACTED>"},
+					{Name: "ENV-OVERRIDES", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "preserves non-sensitive properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "mixed properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "container-registry-password", Value: "secret"},
+				{Name: "container-registry-username", Value: "admin"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "redacts multiple auxiliary metadata entries",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						AuxiliaryMetadata: []*anypb.Any{
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret1"},
+							}),
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret2"},
+							}),
+						},
+					},
+				},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			var rsp *repb.ExecuteResponse
+
+			if test.response != nil {
+				rsp = test.response
+			} else if test.inputProperties != nil {
+				auxMd := &espb.ExecutionAuxiliaryMetadata{
+					PlatformOverrides: &repb.Platform{
+						Properties: test.inputProperties,
+					},
+				}
+				auxAny, err := anypb.New(auxMd)
+				require.NoError(t, err)
+				rsp = &repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							AuxiliaryMetadata: []*anypb.Any{auxAny},
+						},
+					},
+				}
+			}
+
+			execution_server.RedactCachedExecuteResponse(ctx, rsp)
+
+			if test.expectedAuxiliaryMetadata != nil {
+				require.Empty(t, cmp.Diff(
+					test.expectedAuxiliaryMetadata,
+					rsp.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata(),
+					protocmp.Transform(),
+				))
+			}
+		})
+	}
 }

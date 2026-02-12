@@ -31,25 +31,25 @@ single_version_override(
 bazel_dep(name = "rules_webtesting")
 archive_override(
     module_name = "rules_webtesting",
-    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    integrity = "sha256-aVW/XWEzpcgbNRb9cnAdnp7wAzQrUffBTjbcExPLyY8=",
     patch_strip = 1,
     patches = [
         "//buildpatches/bazel_dep:rules_webtesting.patch",
     ],
-    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
+    strip_prefix = "rules_webtesting-e09c04b7d4d1e91ac1cd6f08283246d350c65379",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/e09c04b7d4d1e91ac1cd6f08283246d350c65379.tar.gz",
     ],
 )
 
 bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
 archive_override(
     module_name = "rules_docker",
-    integrity = "sha256-OCnau34lu1O2Ioi/r1wo1/LshUAYzLlpUo0FxOhTTRM=",
-    strip_prefix = "rules_docker-deebe7813c821e073c18ee47c86af06564988b7a",
+    integrity = "sha256-FxaQsDpYJdra159x9pKBHzsf58hrS2VWFYqyn6aiKlM=",
+    strip_prefix = "rules_docker-0f218e517183d5f5de9126c9a894fe7ca510054b",
     # This is BuildBuddy fork of rules_docker with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
-    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/deebe7813c821e073c18ee47c86af06564988b7a.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/0f218e517183d5f5de9126c9a894fe7ca510054b.tar.gz"],
 )
 
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
@@ -62,16 +62,7 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
 )
 
-bazel_dep(name = "toolchains_protoc", version = "0.6.0")  # must come BEFORE protobuf so the toolchain registration wins
-bazel_dep(name = "protobuf", repo_name = "com_google_protobuf")
-
-# TODO(tyler-french): remove once https://github.com/protocolbuffers/protobuf/pull/19679 is included in a protobuf release.
-archive_override(
-    module_name = "protobuf",
-    integrity = "sha256-escvR0NBkLeowzVsjSbTzVsopPtU3f5+gESVq5puD2Y=",
-    strip_prefix = "protobuf-4986a7722460e3163f37c98da1cb47f52c6406e1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/4986a7722460e3163f37c98da1cb47f52c6406e1.tar.gz"],
-)
+bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
 
 ## Regular bazel_deps
 
@@ -81,16 +72,18 @@ bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
 bazel_dep(name = "aspect_rules_js", version = "2.1.3")
 bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.6.3")
-bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "bazel_worker_api", version = "0.0.9")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "redis", version = "5.0.4")
-bazel_dep(name = "rules_cc", version = "0.2.14")
+bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
-bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_python", version = "1.6.3")
-bazel_dep(name = "rules_python_gazelle_plugin", version = "1.6.3")
+bazel_dep(name = "rules_python", version = "1.8.1")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.1")
+bazel_dep(name = "rules_uv", version = "0.89.2")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 
@@ -98,7 +91,7 @@ bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 # Keep up-to-date with
 # - docs/rbe-setup.md
 # - docs/rbe-github-actions.md
-# - tools/dev_qa.py
+# - tools/dev_qa_test/BUILD
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 bazel_dep(name = "toolchains_musl", version = "0.1.27")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.5")

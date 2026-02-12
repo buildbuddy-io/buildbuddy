@@ -151,7 +151,7 @@ func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeC
 
 func setup(t testing.TB) (interfaces.Authenticator, batch_operator.BatchDigestOperator, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
 	env.SetAuthenticator(authenticator)
 	cas, casClient := runFakeCAS(context.Background(), env, t)
 	env.SetContentAddressableStorageClient(casClient)

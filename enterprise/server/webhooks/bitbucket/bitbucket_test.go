@@ -38,6 +38,30 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	}, data)
 }
 
+func TestParseRequest_ValidTagPushEvent_Success(t *testing.T) {
+	req := webhookRequest(t, "repo:push", test_data.PushTagEvent)
+
+	data, err := bitbucket.NewProvider().ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:     "push",
+		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		PushedTag:     "v1.0.0",
+		SHA:           "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
+		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+	}, data)
+}
+
+func TestParseRequest_DeletionEvent_ReturnsNil(t *testing.T) {
+	req := webhookRequest(t, "repo:push", test_data.DeleteBranchEvent)
+
+	data, err := bitbucket.NewProvider().ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Nil(t, data)
+}
+
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pullrequest:updated", test_data.PullRequestEvent)
 

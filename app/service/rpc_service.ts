@@ -156,29 +156,41 @@ class RpcService {
     };
   }
 
-  getDownloadUrl(params: Record<string, string>): string {
+  getDownloadUrl(params: Record<string, string>, view = false): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
-    return `/file/download?${new URLSearchParams({
+    return `/file/${view ? "view" : "download"}?${new URLSearchParams({
       ...params,
       request_context: encodedRequestContext,
     })}`;
   }
 
-  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
+  getBytestreamUrl(
+    bytestreamURL: string,
+    invocationId: string,
+    { filename = "", zip = "", view = false } = {}
+  ): string {
     const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
       invocation_id: invocationId,
     };
     if (filename) params.filename = filename;
     if (zip) params.z = zip;
-    return this.getDownloadUrl(params);
+    return this.getDownloadUrl(params, view);
   }
 
-  downloadLog(invocationId: string, attempt: number) {
+  downloadBuildLog(invocationId: string, attempt: number) {
     const params: Record<string, string> = {
       invocation_id: invocationId,
       attempt: attempt.toString(),
       artifact: "buildlog",
+    };
+    window.open(this.getDownloadUrl(params));
+  }
+
+  downloadRunLog(invocationId: string) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      artifact: "runlog",
     };
     window.open(this.getDownloadUrl(params));
   }

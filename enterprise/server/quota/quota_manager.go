@@ -22,6 +22,7 @@ import (
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 var (
@@ -37,7 +38,7 @@ const (
 )
 
 var (
-	errBlocked = status.UnavailableError("There was an issue with your request. Please contact support.")
+	errBlocked = status.UnavailableError("there was an issue with your request - please contact support at https://buildbuddy.io/contact")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -74,7 +75,6 @@ func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 
 	c, err := claims.ClaimsFromContext(ctx)
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get claims from context: %s", err)
 		return nil
 	}
 
@@ -131,7 +131,7 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 
 type namespace struct {
 	name         string
-	bucketsByKey map[string]Bucket
+	bucketsByKey sync.Map // map[string]Bucket
 }
 
 type bucketConfig struct {
@@ -201,10 +201,10 @@ func createGCRABucket(env environment.Env, config *bucketConfig) (Bucket, error)
 	}
 
 	rateLimiter, err := throttled.NewGCRARateLimiterCtx(store, quota)
-	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
 	if err != nil {
 		return nil, status.InternalErrorf("unable to create GCRARateLimiter: %s", err)
 	}
+	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
 
 	return &rateLimitedBucket{
 		config:      config,
@@ -229,9 +229,9 @@ func (qm *QuotaManager) createNamespaceWithBucket(env environment.Env, name stri
 	}
 
 	ns := &namespace{
-		name:         name,
-		bucketsByKey: map[string]Bucket{key: bucket},
+		name: name,
 	}
+	ns.bucketsByKey.Store(key, bucket)
 	return ns, nil
 }
 
@@ -252,7 +252,7 @@ func (qm *QuotaManager) loadQuotasFromFlagd(ctx context.Context, key, nsString s
 
 	if nsInterface, ok := qm.namespaces.Load(nsString); ok {
 		ns := nsInterface.(*namespace)
-		if _, ok := ns.bucketsByKey[key]; ok {
+		if _, exists := ns.bucketsByKey.Load(key); exists {
 			return nil
 		}
 	}
@@ -301,9 +301,10 @@ func (qm *QuotaManager) mergeIntoNamespace(ns *namespace) {
 	}
 
 	existing := existingInterface.(*namespace)
-	for k, v := range ns.bucketsByKey {
-		existing.bucketsByKey[k] = v
-	}
+	ns.bucketsByKey.Range(func(k, v interface{}) bool {
+		existing.bucketsByKey.Store(k, v)
+		return true
+	})
 }
 
 func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
@@ -313,18 +314,27 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	}
 
 	ns := nsInterface.(*namespace)
-	if b, ok := ns.bucketsByKey[key]; ok {
-		return b
+	if b, ok := ns.bucketsByKey.Load(key); ok {
+		return b.(Bucket)
 	}
 
 	return nil
 }
 
-func (qm *QuotaManager) reloadNamespaces() error {
+func (qm *QuotaManager) reloadNamespaces() {
 	qm.namespaces.Range(func(key, value interface{}) bool {
 		qm.namespaces.Delete(key)
 		return true
 	})
+}
+
+func (qm *QuotaManager) ReloadBucketsAndNotify(ctx context.Context) error {
+	qm.reloadNamespaces()
+	if sns := qm.env.GetServerNotificationService(); sns != nil {
+		if err := sns.Publish(ctx, &snpb.ReloadQuotaBuckets{}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -335,9 +345,20 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 		go func() {
 			defer unsubscribe()
 			for range flagdChanges {
-				if err := qm.reloadNamespaces(); err != nil {
-					alert.UnexpectedEvent("quota-cannot-reload", "quota manager failed to reload configs after flagd change: %s", err)
+				qm.reloadNamespaces()
+			}
+		}()
+	}
+
+	if sns := qm.env.GetServerNotificationService(); sns != nil {
+		go func() {
+			for msg := range sns.Subscribe(&snpb.ReloadQuotaBuckets{}) {
+				_, ok := msg.(*snpb.ReloadQuotaBuckets)
+				if !ok {
+					alert.UnexpectedEvent("reset_group_quota_buckets_invalid_proto_type", "received proto type %T", msg)
+					continue
 				}
+				qm.reloadNamespaces()
 			}
 		}()
 	}

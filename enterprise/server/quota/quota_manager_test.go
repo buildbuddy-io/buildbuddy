@@ -2,11 +2,13 @@ package quota
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -63,7 +65,7 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 func TestQuotaFlagdBuckets(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
 
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
@@ -109,9 +111,10 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 		},
 	}
 	provider := memprovider.NewInMemoryProvider(flags)
-	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	domain := t.Name()
+	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider(domain)
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -139,7 +142,7 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 func TestLoadQuotasFromFlagd(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
 
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
@@ -174,9 +177,10 @@ func TestLoadQuotasFromFlagd(t *testing.T) {
 		},
 	}
 	provider := memprovider.NewInMemoryProvider(flags)
-	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	domain := t.Name()
+	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-	fp, err := experiments.NewFlagProvider("test")
+	fp, err := experiments.NewFlagProvider(domain)
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
@@ -314,6 +318,68 @@ func TestBucketRowFromMap(t *testing.T) {
 	}
 }
 
+func TestConcurrentBucketAccess(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	testUsers := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
+
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetAuthDB(adb)
+	udb, err := userdb.NewUserDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetUserDB(udb)
+
+	flags := map[string]memprovider.InMemoryFlag{
+		bucketQuotaExperimentName: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "custom",
+			Variants: map[string]any{
+				"custom": map[string]any{
+					"rpc:/test.Service/Method": map[string]any{
+						"maxRate": map[string]any{
+							"numRequests": int64(100),
+							"periodUsec":  int64(60000000),
+						},
+						"maxBurst": int64(50),
+					},
+				},
+			},
+		},
+	}
+	provider := memprovider.NewInMemoryProvider(flags)
+	domain := t.Name()
+	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
+
+	fp, err := experiments.NewFlagProvider(domain)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	qm, err := newQuotaManager(env, createTestBucket)
+	require.NoError(t, err)
+
+	const numGoroutines = 10
+	const numIterations = 100
+
+	done := make(chan bool)
+	for i := 0; i < numGoroutines; i++ {
+		keyID := i
+		go func() {
+			defer func() { done <- true }()
+			key := fmt.Sprintf("key%d", keyID)
+			for j := 0; j < numIterations; j++ {
+				qm.loadQuotasFromFlagd(ctx, key, "rpc:/test.Service/Method")
+				qm.findBucket("rpc:/test.Service/Method", key)
+			}
+		}()
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+}
+
 func TestCheckGroupBlocked(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
@@ -331,9 +397,10 @@ func TestCheckGroupBlocked(t *testing.T) {
 			},
 		}
 		provider := memprovider.NewInMemoryProvider(flags)
-		require.NoError(t, openfeature.SetProviderAndWait(provider))
+		domain := t.Name()
+		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider("test")
+		fp, err := experiments.NewFlagProvider(domain)
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -361,9 +428,10 @@ func TestCheckGroupBlocked(t *testing.T) {
 			},
 		}
 		provider := memprovider.NewInMemoryProvider(flags)
-		require.NoError(t, openfeature.SetProviderAndWait(provider))
+		domain := t.Name()
+		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider("test")
+		fp, err := experiments.NewFlagProvider(domain)
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -388,9 +456,10 @@ func TestCheckGroupBlocked(t *testing.T) {
 			},
 		}
 		provider := memprovider.NewInMemoryProvider(flags)
-		require.NoError(t, openfeature.SetProviderAndWait(provider))
+		domain := t.Name()
+		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider("test")
+		fp, err := experiments.NewFlagProvider(domain)
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -415,9 +484,10 @@ func TestCheckGroupBlocked(t *testing.T) {
 			},
 		}
 		provider := memprovider.NewInMemoryProvider(flags)
-		require.NoError(t, openfeature.SetProviderAndWait(provider))
+		domain := t.Name()
+		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider("test")
+		fp, err := experiments.NewFlagProvider(domain)
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -441,9 +511,10 @@ func TestCheckGroupBlocked(t *testing.T) {
 			},
 		}
 		provider := memprovider.NewInMemoryProvider(flags)
-		require.NoError(t, openfeature.SetProviderAndWait(provider))
+		domain := t.Name()
+		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
 
-		fp, err := experiments.NewFlagProvider("test")
+		fp, err := experiments.NewFlagProvider(domain)
 		require.NoError(t, err)
 		env.SetExperimentFlagProvider(fp)
 
@@ -457,4 +528,22 @@ func TestCheckGroupBlocked(t *testing.T) {
 		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
 		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
 	})
+}
+
+func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	env := testenv.GetTestEnv(t)
+	env.SetDefaultRedisClient(redisHandle.Client())
+
+	overflowConfig := &bucketConfig{
+		namespace:          "test-namespace",
+		name:               "test-bucket-overflow",
+		numRequests:        1,
+		periodDurationUsec: 1e16, // will overflow when converted to nanoseconds
+		maxBurst:           0,
+	}
+
+	// make sure this doesn't panic
+	_, err := createGCRABucket(env, overflowConfig)
+	require.ErrorContains(t, err, "unable to create GCRARateLimiter: invalid RateQuota throttled.RateQuota")
 }

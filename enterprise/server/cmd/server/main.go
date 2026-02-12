@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
@@ -139,7 +140,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetRunnerService(runnerService)
 
-	auth_service.Register(env)
+	if err = auth_service.Register(env); err != nil {
+		log.Fatalf("Error setting up auth service: %s", err)
+	}
 	hit_tracker_service.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})
@@ -321,6 +324,12 @@ func main() {
 	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	libmain.RegisterLocalServersAndClients(realEnv)
+
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

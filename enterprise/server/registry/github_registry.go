@@ -21,11 +21,13 @@ func parseGithubRequest(path string) (string, string, string, string) {
 	urlParts := strings.Split(path, "/")
 	repo := urlParts[2]
 	version := urlParts[3]
-	versionParts := strings.Split(version, "+")
-	owner := strings.TrimPrefix(versionParts[0], "github.")
-	tag := "master"
-	if len(versionParts) > 1 {
-		tag = versionParts[1]
+
+	// Format: {tag}-github.{owner} (e.g., "v1.0.0-github.buildbuddy-io")
+	parts := strings.SplitN(version, "-github.", 2)
+	tag := parts[0]
+	owner := ""
+	if len(parts) == 2 {
+		owner = parts[1]
 	}
 	return repo, owner, version, tag
 }

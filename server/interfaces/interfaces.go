@@ -304,8 +304,15 @@ type Cache interface {
 	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
+	// Returns the partition ID for the given context and remote instance name.
+	Partition(ctx context.Context, remoteInstanceName string) (string, error)
+
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+
+	// Registers an external (to the cache) atime updater that's called whenever
+	// the cache updates the atime of an artifact.
+	RegisterAtimeUpdater(updater DigestOperator) error
 }
 
 type StoppableCache interface {
@@ -466,7 +473,6 @@ type AuthDB interface {
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
-	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 
 	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
 	// group. It is only to be used in situations where the user has a
@@ -544,6 +550,7 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error
@@ -836,7 +843,11 @@ type WebhookData struct {
 	// Ex: "my-cool-feature"
 	PushedBranch string
 
-	// SHA is the commit SHA of the branch that was pushed.
+	// PushedTag is the name of the tag that was pushed, if applicable.
+	// Ex: "v1.0.0"
+	PushedTag string
+
+	// SHA is the commit SHA of the branch or tag that was pushed.
 	SHA string
 
 	// TargetRepoURL is the canonical URL of the repo containing the TargetBranch.
@@ -903,6 +914,16 @@ type FileCache interface {
 	// The written data is verified using the specified hash function and not
 	// added to the cache unless the hash matches.
 	Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (CommittedWriteCloser, error)
+
+	// TrackExternalDirectory tracks a pre-existing directory using the
+	// filecache and locks it, protecting it from eviction until unlocked. It
+	// returns NotFound if the dir does not exist. The dir is not moved to the
+	// filecache directory, so the caller must manually re-track during executor
+	// startup. The filecache takes sole responsibility for deleting the
+	// directory.
+	//
+	// See filecache.go for more details.
+	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
 
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
@@ -1383,6 +1404,11 @@ type QuotaManager interface {
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
 	Allow(ctx context.Context, namespace string, quantity int64) error
+
+	// Reloads the quota buckets, but does not reset their state. This would
+	// remove a bucket that longer applies to a group. It will send a notification
+	// so that other servers also reload.
+	ReloadBucketsAndNotify(ctx context.Context) error
 }
 
 // A Metadater implements the Metadata() method and returns a StorageMetadata
@@ -1722,14 +1748,14 @@ type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
 
-type AtimeUpdater interface {
-	// Enqueues atime updates for the provided instanceName, digestFunction,
-	// and set of digests provided. Returns true if the updates were
+type DigestOperator interface {
+	// Enqueues digests for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the digests were
 	// successfully enqueued, false if not.
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
 
-	// Enqueues atime updates for the provided resource name. Returns true if
-	// the update was successfully enqueued, false if not.
+	// Enqueues the digest for the provided resource name. Returns true if
+	// the digest was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 

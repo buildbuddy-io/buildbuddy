@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -29,12 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -81,10 +77,6 @@ http:
    client:
       allow_localhost: true
 `
-
-func init() {
-	vtprotocodec.Register()
-}
 
 // RegisterLocalGRPCServer registers a local gRPC server to the environment and
 // returns the server.
@@ -217,13 +209,4 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	hit_tracker.Register(te)
 
 	return te
-}
-
-type NoOpAtimeUpdater struct{}
-
-func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) bool {
-	return true
-}
-func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ *digest.CASResourceName) bool {
-	return true
 }

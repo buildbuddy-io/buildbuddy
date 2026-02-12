@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -189,9 +190,19 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if err != nil {
 		return nil, err
 	}
+	containerName, err := generateContainerName()
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
+	}
+
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 
 	return &podmanCommandContainer{
 		env:               p.env,
+		name:              containerName,
 		podmanVersion:     p.podmanVersion,
 		cgroupPaths:       p.cgroupPaths,
 		image:             args.Props.ContainerImage,
@@ -203,7 +214,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			ForceRoot:          args.Props.DockerForceRoot,
 			Init:               args.Props.DockerInit,
 			User:               args.Props.DockerUser,
-			Network:            args.Props.DockerNetwork,
+			Network:            network,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,
@@ -278,12 +289,12 @@ func addUserArgs(args []string, options *PodmanOptions) []string {
 	return args
 }
 
-func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
+func (c *podmanCommandContainer) getPodmanRunArgs(workDir, cwd string) []string {
 	args := []string{
 		"--hostname",
 		"localhost",
 		"--workdir",
-		workDir,
+		cwd,
 		"--name",
 		c.name,
 		"--cidfile",
@@ -359,19 +370,13 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
-	containerName, err := generateContainerName()
-	c.name = containerName
-	if err != nil {
-		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
-		return result
-	}
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, filepath.Join(workDir, command.GetWorkingDirectory()))
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
@@ -399,7 +404,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
-		if err = c.killContainerIfRunning(ctx); err != nil {
+		if err := c.killContainerIfRunning(ctx); err != nil {
 			log.Warningf("Failed to shut down podman container: %s", err)
 		}
 	}
@@ -440,14 +445,9 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 }
 
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
-	containerName, err := generateContainerName()
-	if err != nil {
-		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
-	}
-	c.name = containerName
 	c.workDir = workDir
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, workDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
@@ -455,7 +455,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 
-	if err = createResult.Error; err != nil {
+	if err := createResult.Error; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
 	}
 
@@ -475,6 +475,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
+	podmanRunArgs = append(podmanRunArgs, "--workdir", filepath.Join(c.workDir, cmd.GetWorkingDirectory()))
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}

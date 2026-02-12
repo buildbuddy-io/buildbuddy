@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_go_proto",
+        "//proto:cache_service_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -34,11 +35,14 @@ go_test(
     deps = [
         ":fetch_server",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:cache_service_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/buildbuddy_server",
+        "//server/cache_server",
         "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/testutil/testenv",

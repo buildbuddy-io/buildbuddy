@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -110,6 +111,17 @@ func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.En
 
 func getGroupRole(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.GroupRole {
 	tu, err := env.GetUserDB().GetUser(ctx)
+	require.NoError(t, err)
+	for _, gr := range tu.Groups {
+		if gr.Group.GroupID == groupID {
+			return gr
+		}
+	}
+	return nil
+}
+
+func getGroupRoleByUserID(t *testing.T, ctx context.Context, env environment.Env, userID string, groupID string) *tables.GroupRole {
+	tu, err := env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
 	require.NoError(t, err)
 	for _, gr := range tu.Groups {
 		if gr.Group.GroupID == groupID {
@@ -279,6 +291,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 
 	selfOwnedGroup := u.Groups[0].Group
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, selfOwnedGroup.Status, "self-owned group should have FREE_TIER_GROUP_STATUS")
 
 	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
@@ -364,6 +377,59 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, groupUser.Role, "second user should have the role developer")
 
+}
+
+func TestCreateUser_GroupHasOnlyUserListMembers(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "app.add_user_to_domain_group", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// US1 creates a group and becomes admin (first user in domain group).
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	group1 := getGroup(t, ctx1, env)
+	group1ID := group1.GroupID
+
+	// Create a user list, add US2 to it, and assign to the group.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: group1ID, Name: "list1"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Remove US1 from the group. Now the group has no direct members
+	// but has US2 via the user list.
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US1"},
+	}})
+	require.NoError(t, err)
+
+	// US3 has the same domain as US1, so InsertUser will auto-join
+	// them to the domain group. Because the group already has members
+	// (via user list), US3 should get the default role, not admin.
+	createUser(t, ctx, env, "US3", "org1.io")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+
+	gr := getGroupRole(t, ctx3, env, group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_DEVELOPER_ROLE, *gr.Role,
+		"user created into a group with existing user-list members should get the default role, not admin")
 }
 
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
@@ -452,6 +518,92 @@ func TestCreateGroup(t *testing.T) {
 	require.Len(t, groupUsers, 1)
 	gu := groupUsers[0]
 	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
+}
+
+func TestCreateGroup_StatusInheritance(t *testing.T) {
+	testCases := []struct {
+		name           string
+		urlID          string
+		parentStatus   grpb.Group_GroupStatus
+		expectedStatus grpb.Group_GroupStatus
+	}{
+		{
+			name:           "UNKNOWN -> UNKNOWN",
+			urlID:          "test-unknown",
+			parentStatus:   grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "FREE_TIER -> FREE_TIER (inherit)",
+			urlID:          "test-free",
+			parentStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE -> UNKNOWN",
+			urlID:          "test-ent",
+			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE_TRIAL -> UNKNOWN",
+			urlID:          "test-trial",
+			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		},
+		{
+			name:           "BLOCKED -> BLOCKED (inherit)",
+			urlID:          "test-blocked",
+			parentStatus:   grpb.Group_BLOCKED_GROUP_STATUS,
+			expectedStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			flags.Set(t, "app.create_group_per_user", true)
+			flags.Set(t, "app.no_default_user_group", true)
+			udb := env.GetUserDB()
+			ctx := context.Background()
+
+			// Create a test user.
+			createUser(t, ctx, env, "US1", "org1.io")
+			ctx1 := authUserCtx(ctx, env, t, "US1")
+
+			// Get their group, update to correct status.
+			group := getGroup(t, ctx1, env).Group
+			if group.URLIdentifier == "" {
+				group.URLIdentifier = strings.ToLower(group.GroupID + "-slug")
+			}
+			group.Status = tc.parentStatus
+			_, err := udb.UpdateGroup(ctx1, &group)
+			require.NoError(t, err)
+
+			// Attach authenticated user.
+			testUser := testauth.User("US1", group.GroupID)
+			testUser.GroupStatus = tc.parentStatus
+			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			auth.UserProvider = func(context.Context, string) (interfaces.UserInfo, error) {
+				return testUser, nil
+			}
+			ctx1, err = auth.WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			newGroupID, err := udb.CreateGroup(ctx1, &tables.Group{
+				Name:          "Child Group",
+				URLIdentifier: tc.urlID,
+				Status:        grpb.Group_UNKNOWN_GROUP_STATUS,
+			})
+			require.NoError(t, err)
+
+			newGroup, err := udb.GetGroupByID(ctx, newGroupID)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedStatus, newGroup.Status,
+				"Group status should be %s when created from parent with status %s",
+				tc.expectedStatus.String(), tc.parentStatus.String())
+		})
+	}
 }
 
 func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
@@ -2028,8 +2180,8 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Admin",
 			UserRole: role.Admin,
 			ExpectedCapabilities: []cappb.Capability{
-				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_CAS_WRITE,
 				cappb.Capability_ORG_ADMIN,
 			},
 		},
@@ -2037,8 +2189,8 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Writer",
 			UserRole: role.Writer,
 			ExpectedCapabilities: []cappb.Capability{
-				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_CAS_WRITE,
 			},
 		},
 		{
@@ -2296,4 +2448,213 @@ func TestUserListOps(t *testing.T) {
 	err = removeUserFromUserList(group1AdminCtx, udb, group2List.UserListID, "US2")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestUserListMembership(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	group1AdminCtx := authUserCtx(ctx, env, t, "US1")
+	group1ID := getGroup(t, group1AdminCtx, env).GroupID
+
+	createUser(t, ctx, env, "US2", "org2.io")
+	group2AdminCtx := authUserCtx(ctx, env, t, "US2")
+	group2ID := getGroup(t, group2AdminCtx, env).GroupID
+
+	// Create list.
+
+	group1List1 := &tables.UserList{GroupID: group1ID, Name: "foo"}
+	err := udb.CreateUserList(group1AdminCtx, group1List1)
+	require.NoError(t, err)
+	err = udb.CreateUserList(group1AdminCtx, &tables.UserList{GroupID: group2ID, Name: "bar"})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	group2List := &tables.UserList{GroupID: group2ID, Name: "baz"}
+	err = udb.CreateUserList(group2AdminCtx, group2List)
+	require.NoError(t, err)
+
+	// Add US1 and US2 to user list.
+	// US1 is an admin in the group and US2 has no membership in the group.
+
+	err = addUserToUserList(group1AdminCtx, udb, group1List1.UserListID, "US1")
+	require.NoError(t, err)
+	err = addUserToUserList(group1AdminCtx, udb, group1List1.UserListID, "US2")
+	require.NoError(t, err)
+
+	// US2 should not be a member of the group.
+	gr := getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.Nil(t, gr)
+
+	// Add user list with US2 as member of the group.
+	err = udb.UpdateGroupUsers(group1AdminCtx, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       group1List1.UserListID,
+		Role:             grpb.Group_WRITER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 should now be a member of the group with the Writer role/caps.
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_WRITER_ROLE, *gr.Role)
+	require.Equal(t, role.WriterCapabilities, gr.Capabilities)
+
+	// Now add US2 directly as a Developer.
+	err = udb.UpdateGroupUsers(group1AdminCtx, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserId:           &uidpb.UserId{Id: "US2"},
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 has a direct Developer membership and an indirect Writer membership.
+	// When looking up membership, the role should be unset and the caps
+	// should be that of a Writer.
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.Nil(t, gr.Role)
+	require.Equal(t, role.WriterCapabilities, gr.Capabilities)
+
+	// Now remove US2 from the user list. US2 should now have Developer
+	// role (via direct membership).
+	err = udb.UpdateUserListMembers(group1AdminCtx, group1List1.UserListID, []*ulpb.UpdateUserListMembershipRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: "US2"},
+			Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
+		},
+	})
+	require.NoError(t, err)
+	gr = getGroupRoleByUserID(t, group1AdminCtx, env, "US2", group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_DEVELOPER_ROLE, *gr.Role)
+	require.Equal(t, role.DeveloperCapabilities, gr.Capabilities)
+}
+
+func TestAddUserToGroup_GroupHasOnlyUserListMembers(t *testing.T) {
+	flags.Set(t, "database.create_user_list_tables", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// US1 creates a group and becomes admin (first user gets admin role).
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	group1 := getGroup(t, ctx1, env)
+	group1ID := group1.GroupID
+
+	// Create a user list and add US2 to it.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: group1ID, Name: "list1"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+
+	// Assign the user list to the group with Developer role.
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Remove US1 from the group. Now the group has no direct
+	// members but has US2 via the user list.
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US1"},
+	}})
+	require.NoError(t, err)
+
+	// Add US3 directly. Because the group already has members (via user
+	// list), US3 should get the default role, not admin.
+	createUser(t, ctx, env, "US3", "org3.io")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+	err = udb.UpdateGroupUsers(ctx1, group1ID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserId:           &uidpb.UserId{Id: "US3"},
+	}})
+	require.NoError(t, err)
+
+	gr := getGroupRole(t, ctx3, env, group1ID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.EqualValues(t, grpb.Group_DEVELOPER_ROLE, *gr.Role,
+		"user added to a group with existing user-list members should get the default role, not admin")
+}
+
+func TestGetUserBySubID(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	randUser := users[rand.Intn(len(users))]
+
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	require.NoError(t, err)
+	require.Equal(t, randUser, u)
+
+	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+	for i := 0; i < 10; i++ {
+		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
+		require.NoError(t, err)
+		err = env.GetUserDB().UpdateGroupUsers(ctx2, u.Groups[0].GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+			{UserId: &uidpb.UserId{Id: user.UserID}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+		})
+		require.NoError(t, err)
+
+		// The new user is an admin in the new group but the user we added as a member should
+		// only be added as a developer.
+		r := uint32(role.Developer)
+		u.Groups[0].Role = &r
+		u.Groups[0].Capabilities = role.DeveloperCapabilities
+		user.Groups = append(user.Groups, u.Groups[0])
+	}
+
+	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
+
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, user.SubID)
+	require.NoError(t, err)
+	require.Equal(t, user, u)
+
+	// Using empty or invalid values should produce an error
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "")
+	require.Nil(t, u)
+	require.Truef(
+		t, status.IsFailedPreconditionError(err),
+		"expected FailedPrecondition error; got: %v", err)
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "INVALID")
+	require.Nil(t, u)
+	require.Truef(
+		t, status.IsNotFoundError(err),
+		"expected RecordNotFound error; got: %v", err)
+}
+
+func TestGetUserBySubIDNoGroup(t *testing.T) {
+	flags.Set(t, "database.log_queries", true)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	flags.Set(t, "app.add_user_to_domain_group", false)
+	flags.Set(t, "app.create_group_per_user", false)
+
+	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	require.NoError(t, err)
+	require.Equal(t, randUser, u)
 }
