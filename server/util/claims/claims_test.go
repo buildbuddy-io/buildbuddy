@@ -438,35 +438,29 @@ func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
 
 func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		authErr error
-		// wantSameErr means the original error should be returned as-is.
-		wantSameErr bool
-		// wantUnauthenticated means the error should be wrapped as Unauthenticated.
-		wantUnauthenticated bool
-		// wantInternal means we expect the "Invalid JWT reparse" internal error
-		// (no auth error on context).
-		wantInternal bool
+		name        string
+		authErr     error
+		expectedErr error
 	}{
 		{
 			name:        "UnauthenticatedError_PassedThrough",
 			authErr:     status.UnauthenticatedError("bad token"),
-			wantSameErr: true,
+			expectedErr: status.UnauthenticatedError("bad token"),
 		},
 		{
 			name:        "PermissionDeniedError_PassedThrough",
 			authErr:     status.PermissionDeniedError("no access"),
-			wantSameErr: true,
+			expectedErr: status.PermissionDeniedError("no access"),
 		},
 		{
-			name:                "OtherError_WrappedAsUnauthenticated",
-			authErr:             status.InternalError("internal error"),
-			wantUnauthenticated: true,
+			name:        "OtherError_WrappedAsUnauthenticated",
+			authErr:     status.InternalError("internal error"),
+			expectedErr: status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, status.InternalError("internal error").Error()),
 		},
 		{
-			name:         "NoAuthError_ReturnsInternalError",
-			authErr:      nil,
-			wantInternal: true,
+			name:        "NoAuthError_ReturnsInternalError",
+			authErr:     status.UnauthenticatedError("bad token"),
+			expectedErr: status.UnauthenticatedError("bad token"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -480,15 +474,7 @@ func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
 
 			_, err := claims.ClaimsFromContext(ctx)
 			require.Error(t, err)
-
-			if tc.wantSameErr {
-				require.Equal(t, tc.authErr, err)
-			} else if tc.wantUnauthenticated {
-				require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
-				require.Contains(t, err.Error(), authutil.UserNotFoundMsg)
-			} else if tc.wantInternal {
-				require.True(t, status.IsInternalError(err), "expected Internal, got: %v", err)
-			}
+			require.Equal(t, tc.expectedErr, err)
 		})
 	}
 }

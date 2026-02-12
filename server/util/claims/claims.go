@@ -474,16 +474,6 @@ func AuthContext(ctx context.Context, c *Claims) context.Context {
 	return authutil.AuthContextWithError(ctx, nil)
 }
 
-func clientFacingAuthError(err error) error {
-	if err == nil {
-		return nil
-	}
-	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
-		return err
-	}
-	return status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
-}
-
 func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// If the context already contains trusted Claims, return them directly
 	// instead of re-parsing the JWT (which is expensive).
@@ -492,25 +482,19 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		if !*reparseJWTs {
-			// Return an auth error if there is one.
-			err, ok := authutil.AuthErrorFromContext(ctx)
-			if ok && err != nil {
-				return nil, clientFacingAuthError(err)
+	if *reparseJWTs {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			caller := "unknown"
+			if _, file, line, ok := runtime.Caller(1); ok {
+				caller = fmt.Sprintf("%s:%d", file, line)
 			}
-			return nil, status.InternalError("Invalid JWT reparse")
+			reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			if err != nil {
+				return nil, err
+			}
+			return claims, nil
 		}
-		caller := "unknown"
-		if _, file, line, ok := runtime.Caller(1); ok {
-			caller = fmt.Sprintf("%s:%d", file, line)
-		}
-		reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
-		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
-		if err != nil {
-			return nil, err
-		}
-		return claims, nil
 	}
 
 	// If there's no error or we have an assertion failure; just return a
@@ -520,11 +504,17 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
 	}
 
-	// If there was an error set on the context, pass through auth errors
-	// (the FE can handle them), and convert all others to Unauthenticated.
-	// WARNING: app/auth/auth_service.ts depends on this status being
-	// UNAUTHENTICATED.
-	return nil, clientFacingAuthError(err)
+	// if there was an error set on the context, and it was an
+	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
+	// so pass it through. This includes anonymous user errors.
+	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+		return nil, err
+	}
+
+	// All other types of errors will be converted into Unauthenticated
+	// errors.
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
 // AuthorizeServerAdmin checks whether the authenticated user is a server admin
