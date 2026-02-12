@@ -195,7 +195,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *cache_config.PebbleCacheCon
 		AtimeUpdateThreshold:        cfg.AtimeUpdateThreshold,
 		AtimeBufferSize:             cfg.AtimeBufferSize,
 		MinEvictionAge:              cfg.MinEvictionAge,
-		AverageChunkSizeBytes:       cfg.AverageChunkSizeBytes,
 		ClearCacheOnStartup:         cfg.ClearCacheOnStartup,
 		ActiveKeyVersion:            cfg.ActiveKeyVersion,
 		GCSBucket:                   cfg.GCSConfig.Bucket,

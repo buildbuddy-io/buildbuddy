@@ -256,7 +256,6 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 func TestEncryption(t *testing.T) {
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{

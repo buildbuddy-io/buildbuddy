@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -99,9 +98,6 @@ var (
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", DefaultMinBytesAutoZstdCompression, "Blobs larger than this will be zstd compressed before written to disk.")
-
-	// Chunking related flags
-	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache. Disabled if 0.")
 
 	// GCS Large File Support
 	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
@@ -185,7 +181,6 @@ type Options struct {
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
 	MaxInlineFileSizeBytes int64
-	AverageChunkSizeBytes  int
 
 	AtimeUpdateThreshold     *time.Duration
 	AtimeBufferSize          *int
@@ -240,7 +235,6 @@ type PebbleCache struct {
 	maxSizeBytes           int64
 	blockCacheSizeBytes    int64
 	maxInlineFileSizeBytes int64
-	averageChunkSizeBytes  int
 
 	includeMetadataSize bool
 
@@ -293,7 +287,6 @@ type PebbleCache struct {
 		findMissingDigestCount    prometheus.Counter
 		atimeDeltaWhenRead        prometheus.Observer
 		addedFileSizeBytes        prometheus.Observer
-		numChunksPerFile          prometheus.Observer
 	}
 }
 
@@ -376,7 +369,6 @@ func Register(env *real_environment.RealEnv) error {
 		SamplesPerBatch:             samplesPerBatch,
 		SamplerIterRefreshPeriod:    samplerIterRefreshPeriod,
 		MinEvictionAge:              minEvictionAgeFlag,
-		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
 		ActiveKeyVersion:            activeKeyVersion,
 		GCSBucket:                   *gcsBucket,
@@ -670,7 +662,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		maxSizeBytes:                opts.MaxSizeBytes,
 		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
 		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
-		averageChunkSizeBytes:       opts.AverageChunkSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
@@ -704,7 +695,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	pc.metrics.findMissingDigestCount = metrics.PebbleCacheFindMissingDigestCount.With(cacheLabels)
 	pc.metrics.atimeDeltaWhenRead = metrics.PebbleCacheAtimeDeltaWhenRead.With(cacheLabels)
 	pc.metrics.addedFileSizeBytes = metrics.DiskCacheAddedFileSizeBytes.With(cacheLabels)
-	pc.metrics.numChunksPerFile = metrics.PebbleCacheNumChunksPerFile.With(cacheLabels)
 
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	if err != nil {
@@ -2017,243 +2007,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
-// A writer that will chunk bytes written to it using Content-Defined Chunking,
-// and then, if configured, encrypt and compress the chunked bytes.
-type cdcWriter struct {
-	ctx        context.Context
-	pc         *PebbleCache
-	fileRecord *sgpb.FileRecord
-	key        filestore.PebbleKey
-
-	shouldCompress bool
-	isCompressed   bool
-
-	chunker         *chunking.Chunker
-	isChunkerClosed bool
-
-	mu            sync.Mutex // protects writtenChunks, numChunks, firstChunk, fileType
-	numChunks     int
-	firstChunk    []byte
-	fileType      sgpb.FileMetadata_FileType
-	writtenChunks []*rspb.ResourceName
-
-	eg *errgroup.Group
-}
-
-func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
-	db, err := p.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
-	cdcw := &cdcWriter{
-		ctx:            ctx,
-		eg:             eg,
-		pc:             p,
-		key:            key,
-		fileRecord:     fileRecord,
-		shouldCompress: shouldCompress,
-		isCompressed:   isCompressed,
-	}
-	var wc, decompressor io.WriteCloser
-	wc = cdcw
-
-	if isCompressed {
-		// If the bytes being written are compressed, we decompress them in
-		// order to generate CDC chunks, then compress those chunks.
-		decompressor, err = compression.NewZstdDecompressor(cdcw)
-		if err != nil {
-			db.Close()
-			return nil, err
-		}
-		wc = decompressor
-	}
-
-	chunker, err := chunking.NewChunker(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	cdcw.chunker = chunker
-
-	cwc := ioutil.NewCustomCommitWriteCloser(wc)
-	cwc.SetCloseFn(db.Close)
-	cwc.SetCommitFn(func(bytesWritten int64) error {
-		if decompressor != nil {
-			if err := decompressor.Close(); err != nil {
-				return status.InternalErrorf("failed to close decompressor: %s", err)
-			}
-		}
-
-		if err := cdcw.closeChunkerAndWait(); err != nil {
-			return status.InternalErrorf("failed to close chunker: %s", err)
-		}
-
-		cdcw.mu.Lock()
-		defer cdcw.mu.Unlock()
-
-		if cdcw.numChunks == 1 {
-			cdcw.fileType = sgpb.FileMetadata_COMPLETE_FILE_TYPE
-			// When there is only one single chunk, we want to store the original
-			// file record with the original key instead of computed digest from
-			// the chunkData. This is because the chunkData can be compressed or
-			// encrypted, so the digest computed from it will be different from
-			// the original digest.
-			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
-		}
-		now := p.clock.Now().UnixMicro()
-
-		md := &sgpb.FileMetadata{
-			FileRecord:      fileRecord,
-			StorageMetadata: cdcw.Metadata(),
-			// The chunks the file record pointed are stored seperately and are
-			// not evicted when this entry is evicted. Therefore, the stored
-			// size bytes should be zero to avoid double counting.
-			StoredSizeBytes: 0,
-			LastAccessUsec:  now,
-			LastModifyUsec:  now,
-			FileType:        sgpb.FileMetadata_COMPLETE_FILE_TYPE,
-		}
-
-		if numChunks := len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()); numChunks <= 1 {
-			log.Errorf("[%s] expected to have more than one chunks, but actually have %d for digest %s", p.name, numChunks, fileRecord.GetDigest().GetHash())
-			return status.InternalErrorf("invalid number of chunks (%d)", numChunks)
-		}
-		return p.writeMetadata(ctx, db, key, md)
-	})
-	return cwc, nil
-}
-
-func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
-	cdcw.mu.Lock()
-	defer cdcw.mu.Unlock()
-
-	cdcw.numChunks++
-
-	if cdcw.numChunks == 1 {
-		// We will wait to write the first chunk until either cdcw.Commit() is
-		// called or the second chunk is encountered.
-		// In the former case, there is only one chunk, we don't want to write a
-		// file-level metadata entry and a chunk entry into pebble.
-		cdcw.firstChunk = make([]byte, len(chunkData))
-		copy(cdcw.firstChunk, chunkData)
-		return nil
-	}
-
-	if cdcw.numChunks == 2 {
-		cdcw.fileType = sgpb.FileMetadata_CHUNK_FILE_TYPE
-		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
-			return err
-		}
-		// We no longer need the first chunk anymore.
-		cdcw.firstChunk = nil
-	}
-	// we need to copy the data because once the chunker calls Next, chunkData
-	// will be invalidated.
-	data := make([]byte, len(chunkData))
-	copy(data, chunkData)
-	return cdcw.writeChunkWhenMultiple(data)
-}
-
-func (cdcw *cdcWriter) writeRawChunk(fileRecord *sgpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
-	ctx := cdcw.ctx
-	p := cdcw.pc
-
-	cwc, err := p.newWrappedWriter(ctx, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, cdcw.fileType)
-	if err != nil {
-		return err
-	}
-	defer cwc.Close()
-	_, err = cwc.Write(chunkData)
-	if err != nil {
-		return status.InternalErrorf("failed to write raw chunk: %s", err)
-	}
-	if err := cwc.Commit(); err != nil {
-		return status.InternalErrorf("failed to commit while writing raw chunk: %s", err)
-	}
-	return nil
-}
-
-func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
-	ctx := cdcw.ctx
-	p := cdcw.pc
-
-	d, err := digest.Compute(bytes.NewReader(chunkData), cdcw.fileRecord.GetDigestFunction())
-	if err != nil {
-		return err
-	}
-
-	r := digest.NewResourceName(d, cdcw.fileRecord.GetIsolation().GetRemoteInstanceName(), cdcw.fileRecord.GetIsolation().GetCacheType(), cdcw.fileRecord.GetDigestFunction())
-	if cdcw.shouldCompress && cdcw.fileRecord.GetCompressor() == repb.Compressor_IDENTITY {
-		// we need to compress the chunk, but this data hasn't been compressed yet.
-		// so we need to set the resource name to identity to signal to the nested
-		// writer to compress it.
-		r.SetCompressor(repb.Compressor_IDENTITY)
-	} else {
-		r.SetCompressor(repb.Compressor_ZSTD)
-	}
-	rn := r.ToProto()
-	fileRecord, err := p.makeFileRecord(ctx, rn)
-
-	if err != nil {
-		return err
-	}
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return err
-	}
-
-	// We use cdcw.writtenChunks for the file-level metadata, and this needs to
-	// be in order. Otherwise, when we read the file, the chunks will be
-	// read out of order.
-	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
-
-	exists, _ := p.Contains(ctx, rn)
-
-	// We only write the chunk again if it does not exist in the cache. If it
-	// exists, we skip the write but the atime will be updated in the Contains
-	// call.
-	if !exists {
-		cdcw.eg.Go(func() error {
-			return cdcw.writeRawChunk(fileRecord, key, chunkData)
-		})
-	}
-	return nil
-}
-
-func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
-	return cdcw.chunker.Write(buf)
-}
-
-// closeChunkerAndWait closes the chunker and waiting for the data that has
-// already been passed to the chunker to be processed.
-func (cdcw *cdcWriter) closeChunkerAndWait() error {
-	closeErr := cdcw.chunker.Close()
-	cdcw.isChunkerClosed = true
-	if err := cdcw.eg.Wait(); err != nil {
-		return err
-	}
-	return closeErr
-}
-
-func (cdcw *cdcWriter) Close() error {
-	if !cdcw.isChunkerClosed {
-		return cdcw.closeChunkerAndWait()
-	}
-
-	return nil
-}
-
-func (cdcw *cdcWriter) Metadata() *sgpb.StorageMetadata {
-	return &sgpb.StorageMetadata{
-		ChunkedMetadata: &sgpb.StorageMetadata_ChunkedMetadata{
-			Resource: cdcw.writtenChunks,
-		},
-	}
-}
-
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
@@ -2265,7 +2018,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	// If data is not already compressed, return a writer that will compress it before writing
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
-	isCompressed := r.GetCompressor() == repb.Compressor_ZSTD
 	if shouldCompress {
 		r = &rspb.ResourceName{
 			Digest:         r.GetDigest(),
@@ -2283,12 +2035,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	key, err := p.fileStorer.PebbleKey(fileRecord)
 	if err != nil {
 		return nil, err
-	}
-
-	if p.averageChunkSizeBytes > 0 && r.GetDigest().GetSizeBytes() >= int64(p.averageChunkSizeBytes) {
-		// Files smaller than averageChunkSizeBytes are highly like to only
-		// have one chunk, so we skip cdc-chunking step.
-		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, sgpb.FileMetadata_COMPLETE_FILE_TYPE)
@@ -2428,13 +2174,6 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		}
 		if md.GetFileType() == sgpb.FileMetadata_COMPLETE_FILE_TYPE {
 			p.metrics.addedFileSizeBytes.Observe(float64(sizeBytes))
-			if p.averageChunkSizeBytes != 0 {
-				numChunks := 1
-				if chunkedMD != nil {
-					numChunks = len(chunkedMD.GetResource())
-				}
-				p.metrics.numChunksPerFile.Observe(float64(numChunks))
-			}
 		}
 	}
 

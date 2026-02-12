@@ -60,10 +60,6 @@ var (
 	randomGen      *digest.Generator
 )
 
-const (
-	averageChunkSizeBytes = 64 * 4
-)
-
 func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
@@ -140,7 +136,6 @@ func TestIsolation(t *testing.T) {
 		desc                   string
 		testDataSizeBytes      int64
 		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
 	}
 
 	testParams := []params{
@@ -153,16 +148,6 @@ func TestIsolation(t *testing.T) {
 			desc:                   "file is written on disk, chunking turned off",
 			testDataSizeBytes:      1000,
 			maxInlineFileSizeBytes: 100,
-		},
-		{
-			desc:                  "file is chunked",
-			testDataSizeBytes:     2 * 1024, // Ensure that the file is chunked
-			averageChunkSizeBytes: 64 * 4,
-		},
-		{
-			desc:                  "file is not chunked, chunking turned on",
-			testDataSizeBytes:     60, // Ensure that the file is not chunked
-			averageChunkSizeBytes: 64 * 4,
 		},
 	}
 	type test struct {
@@ -215,7 +200,6 @@ func TestIsolation(t *testing.T) {
 		options := &pebble_cache.Options{
 			RootDirectory:          testfs.MakeTempDir(t),
 			MaxSizeBytes:           maxSizeBytes,
-			AverageChunkSizeBytes:  tp.averageChunkSizeBytes,
 			MaxInlineFileSizeBytes: tp.maxInlineFileSizeBytes,
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, options)
@@ -268,55 +252,36 @@ func TestGetSet(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	type testCase struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-	}
-
-	testCases := []testCase{
-		{
-			desc:                   "chunking turned off",
-			maxInlineFileSizeBytes: 100,
-		},
-		{
-			desc:                  "chunking turned on",
-			averageChunkSizeBytes: 64 * 4,
-		},
-	}
 	testSizes := []int64{
 		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
-	for _, tc := range testCases {
-		options := &pebble_cache.Options{
-			RootDirectory:          testfs.MakeTempDir(t),
-			MaxSizeBytes:           maxSizeBytes,
-			AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-			MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-		}
-		pc, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-		defer pc.Stop()
-		for _, testSize := range testSizes {
-			desc := fmt.Sprintf("test size: %d (%s)", testSize, tc.desc)
-			t.Run(desc, func(t *testing.T) {
-				r, buf := testdigest.RandomCASResourceBuf(t, testSize)
-				// Set() the bytes in the cache.
-				err := pc.Set(ctx, r, buf)
-				require.NoError(t, err, "Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	defer pc.Stop()
+	for _, testSize := range testSizes {
+		desc := fmt.Sprintf("test size: %d", testSize)
+		t.Run(desc, func(t *testing.T) {
+			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+			// Set() the bytes in the cache.
+			err := pc.Set(ctx, r, buf)
+			require.NoError(t, err, "Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
 
-				// Get() the bytes from the cache.
-				rbuf, err := pc.Get(ctx, r)
-				require.NoError(t, err, "Error getting %q from cache: %s", r.GetDigest().GetHash(), err)
+			// Get() the bytes from the cache.
+			rbuf, err := pc.Get(ctx, r)
+			require.NoError(t, err, "Error getting %q from cache: %s", r.GetDigest().GetHash(), err)
 
-				// Compute a digest for the bytes returned.
-				d2, err := digest.Compute(bytes.NewReader(rbuf), r.GetDigestFunction())
-				require.NoError(t, err)
-				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
-			})
-		}
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf), r.GetDigestFunction())
+			require.NoError(t, err)
+			require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
+		})
 	}
 }
 
@@ -326,21 +291,6 @@ func TestDupeWrites(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-
-	var testParams = []struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-	}{
-		{
-			desc:                   "chunking off",
-			maxInlineFileSizeBytes: 100,
-		},
-		{
-			desc:                  "chunking on",
-			averageChunkSizeBytes: 64 * 4,
-		},
-	}
 
 	var tests = []struct {
 		name      string
@@ -353,52 +303,49 @@ func TestDupeWrites(t *testing.T) {
 		{"ac_extern", 1000, rspb.CacheType_AC},
 	}
 
-	for _, tp := range testParams {
-		options := &pebble_cache.Options{
-			RootDirectory:          testfs.MakeTempDir(t),
-			MaxSizeBytes:           maxSizeBytes,
-			AverageChunkSizeBytes:  tp.averageChunkSizeBytes,
-			MaxInlineFileSizeBytes: tp.maxInlineFileSizeBytes,
-		}
-		pc, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-		for _, test := range tests {
-			desc := fmt.Sprintf("%s(%s)", test.name, tp.desc)
-			t.Run(desc, func(t *testing.T) {
-				r, buf := testdigest.NewRandomResourceAndBuf(t, test.size, test.cacheType, "" /*instanceName*/)
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	for _, test := range tests {
+		desc := test.name
+		t.Run(desc, func(t *testing.T) {
+			r, buf := testdigest.NewRandomResourceAndBuf(t, test.size, test.cacheType, "" /*instanceName*/)
 
-				w1, err := pc.Writer(ctx, r)
-				require.NoError(t, err)
-				_, err = w1.Write(buf)
-				require.NoError(t, err)
+			w1, err := pc.Writer(ctx, r)
+			require.NoError(t, err)
+			_, err = w1.Write(buf)
+			require.NoError(t, err)
 
-				w2, err := pc.Writer(ctx, r)
-				require.NoError(t, err)
-				_, err = w2.Write(buf)
-				require.NoError(t, err)
+			w2, err := pc.Writer(ctx, r)
+			require.NoError(t, err)
+			_, err = w2.Write(buf)
+			require.NoError(t, err)
 
-				err = w1.Commit()
-				require.NoError(t, err)
-				err = w1.Close()
-				require.NoError(t, err)
+			err = w1.Commit()
+			require.NoError(t, err)
+			err = w1.Close()
+			require.NoError(t, err)
 
-				err = w2.Commit()
-				require.NoError(t, err)
-				err = w2.Close()
-				require.NoError(t, err)
+			err = w2.Commit()
+			require.NoError(t, err)
+			err = w2.Close()
+			require.NoError(t, err)
 
-				// Verify we can read the data back after dupe writes are done.
-				rbuf, err := pc.Get(ctx, r)
-				require.NoError(t, err)
+			// Verify we can read the data back after dupe writes are done.
+			rbuf, err := pc.Get(ctx, r)
+			require.NoError(t, err)
 
-				// Compute a digest for the bytes returned.
-				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-				require.NoError(t, err)
-				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
-			})
-		}
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
+		})
 	}
 }
 
@@ -562,8 +509,6 @@ func TestMetadata(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	averageChunkSizeBytesParam := []int{0, 64 * 4}
-
 	// Turn off automatic compression
 	minBytesAutoZstdCompression := int64(math.MaxInt64)
 
@@ -597,87 +542,71 @@ func TestMetadata(t *testing.T) {
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000,
 	}
-	for _, averageChunkSizeBytes := range averageChunkSizeBytesParam {
-		options := &pebble_cache.Options{
-			RootDirectory:               testfs.MakeTempDir(t),
-			MaxSizeBytes:                maxSizeBytes,
-			MaxInlineFileSizeBytes:      100,
-			MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
-			AverageChunkSizeBytes:       averageChunkSizeBytes,
-		}
-		pc, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-		defer pc.Stop()
-		for _, tc := range testCases {
-			for _, testSize := range testSizes {
-				desc := fmt.Sprintf("testSize: %d %s (averageChunkSizeBytes=%d)", testSize, tc.name, averageChunkSizeBytes)
-				t.Run(desc, func(t *testing.T) {
-					r, buf := testdigest.RandomCASResourceBuf(t, testSize)
-					r.CacheType = tc.cacheType
-					r.Compressor = tc.compressor
+	options := &pebble_cache.Options{
+		RootDirectory:               testfs.MakeTempDir(t),
+		MaxSizeBytes:                maxSizeBytes,
+		MaxInlineFileSizeBytes:      100,
+		MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	defer pc.Stop()
+	for _, tc := range testCases {
+		for _, testSize := range testSizes {
+			desc := fmt.Sprintf("testSize: %d %s", testSize, tc.name)
+			t.Run(desc, func(t *testing.T) {
+				r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+				r.CacheType = tc.cacheType
+				r.Compressor = tc.compressor
 
-					dataToWrite := buf
-					if tc.compressor == repb.Compressor_ZSTD {
-						dataToWrite = compression.CompressZstd(nil, buf)
-					}
+				dataToWrite := buf
+				if tc.compressor == repb.Compressor_ZSTD {
+					dataToWrite = compression.CompressZstd(nil, buf)
+				}
 
-					// Set data in the cache.
-					err := pc.Set(ctx, r, dataToWrite)
-					require.NoError(t, err, tc.name)
+				// Set data in the cache.
+				err := pc.Set(ctx, r, dataToWrite)
+				require.NoError(t, err, tc.name)
 
-					// Metadata should return correct size, regardless of queried size.
-					rWrongSize := r.CloneVT()
-					rWrongSize.Digest.SizeBytes = 1
+				// Metadata should return correct size, regardless of queried size.
+				rWrongSize := r.CloneVT()
+				rWrongSize.Digest.SizeBytes = 1
 
-					md, err := pc.Metadata(ctx, rWrongSize)
-					require.NoError(t, err, tc.name)
-					chunkingOn := averageChunkSizeBytes > 0 && len(dataToWrite) > averageChunkSizeBytes
-					if chunkingOn {
-						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
-					} else {
-						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
-					}
-					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
-					lastAccessTime1 := md.LastAccessTimeUsec
-					lastModifyTime1 := md.LastModifyTimeUsec
-					require.NotZero(t, lastAccessTime1)
-					require.NotZero(t, lastModifyTime1)
+				md, err := pc.Metadata(ctx, rWrongSize)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+				require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+				lastAccessTime1 := md.LastAccessTimeUsec
+				lastModifyTime1 := md.LastModifyTimeUsec
+				require.NotZero(t, lastAccessTime1)
+				require.NotZero(t, lastModifyTime1)
 
-					// Last access time should not update since last call to Metadata()
-					md, err = pc.Metadata(ctx, rWrongSize)
-					require.NoError(t, err, tc.name)
-					if chunkingOn {
-						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
-					} else {
-						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
-					}
+				// Last access time should not update since last call to Metadata()
+				md, err = pc.Metadata(ctx, rWrongSize)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
 
-					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
-					lastAccessTime2 := md.LastAccessTimeUsec
-					lastModifyTime2 := md.LastModifyTimeUsec
-					require.Equal(t, lastAccessTime1, lastAccessTime2)
-					require.Equal(t, lastModifyTime1, lastModifyTime2)
+				require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+				lastAccessTime2 := md.LastAccessTimeUsec
+				lastModifyTime2 := md.LastModifyTimeUsec
+				require.Equal(t, lastAccessTime1, lastAccessTime2)
+				require.Equal(t, lastModifyTime1, lastModifyTime2)
 
-					// After updating data, last access and modify time should update
-					err = pc.Set(ctx, r, dataToWrite)
-					require.NoError(t, err)
-					md, err = pc.Metadata(ctx, rWrongSize)
-					require.NoError(t, err, tc.name)
-					if chunkingOn {
-						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
-					} else {
-						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
-					}
+				// After updating data, last access and modify time should update
+				err = pc.Set(ctx, r, dataToWrite)
+				require.NoError(t, err)
+				md, err = pc.Metadata(ctx, rWrongSize)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
 
-					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
-					lastAccessTime3 := md.LastAccessTimeUsec
-					lastModifyTime3 := md.LastModifyTimeUsec
-					require.Greater(t, lastAccessTime3, lastAccessTime1)
-					require.Greater(t, lastModifyTime3, lastModifyTime2)
-				})
-			}
+				require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+				lastAccessTime3 := md.LastAccessTimeUsec
+				lastModifyTime3 := md.LastModifyTimeUsec
+				require.Greater(t, lastAccessTime3, lastAccessTime1)
+				require.Greater(t, lastModifyTime3, lastModifyTime2)
+			})
 		}
 	}
 }
@@ -704,53 +633,33 @@ func TestMultiGetSet(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	var testCases = []struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-	}{
-		{
-			desc:                   "chunking off",
-			maxInlineFileSizeBytes: 100,
-		},
-		{
-			desc:                  "chunking on",
-			averageChunkSizeBytes: 64 * 4,
-		},
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
 	}
+	pc2, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	err = pc2.Start()
+	require.NoError(t, err)
+	defer pc2.Stop()
 
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			options := &pebble_cache.Options{
-				RootDirectory:          testfs.MakeTempDir(t),
-				MaxSizeBytes:           maxSizeBytes,
-				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-			}
-			pc, err := pebble_cache.NewPebbleCache(te, options)
-			require.NoError(t, err)
-			err = pc.Start()
-			require.NoError(t, err)
-			defer pc.Stop()
-
-			digests := randomDigests(t, 10, 20, 11, 30, 1024, 40)
-			err = pc.SetMulti(ctx, digests)
-			require.NoError(t, err)
-			resourceNames := make([]*rspb.ResourceName, 0, len(digests))
-			for d := range digests {
-				resourceNames = append(resourceNames, d)
-			}
-			m, err := pc.GetMulti(ctx, resourceNames)
-			require.NoError(t, err)
-			for rn := range digests {
-				d := rn.GetDigest()
-				rbuf, ok := m[d]
-				require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
-				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-				require.NoError(t, err)
-				require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
-			}
-		})
+	digests := randomDigests(t, 10, 20, 11, 30, 1024, 40)
+	err = pc2.SetMulti(ctx, digests)
+	require.NoError(t, err)
+	resourceNames := make([]*rspb.ResourceName, 0, len(digests))
+	for d := range digests {
+		resourceNames = append(resourceNames, d)
+	}
+	m, err := pc2.GetMulti(ctx, resourceNames)
+	require.NoError(t, err)
+	for rn := range digests {
+		d := rn.GetDigest()
+		rbuf, ok := m[d]
+		require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 	}
 }
 
@@ -761,185 +670,52 @@ func TestReadWrite(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	type testCase struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-	}
-	testCases := []testCase{
-		{
-			desc:                   "chunking turned off",
-			maxInlineFileSizeBytes: 100,
-		},
-		{
-			desc:                  "chunking turned on",
-			averageChunkSizeBytes: 64 * 4,
-		},
-	}
 	testSizes := []int64{
 		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
-	for _, tc := range testCases {
-		options := &pebble_cache.Options{
-			RootDirectory:          testfs.MakeTempDir(t),
-			MaxSizeBytes:           maxSizeBytes,
-			AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-			MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-		}
-		pc, err := pebble_cache.NewPebbleCache(te, options)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-		defer pc.Stop()
-
-		for _, testSize := range testSizes {
-			desc := fmt.Sprintf("test size: %d (%s)", testSize, tc.desc)
-			t.Run(desc, func(t *testing.T) {
-				rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
-				// Use Writer() to set the bytes in the cache.
-				wc, err := pc.Writer(ctx, rn)
-				require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
-				_, err = wc.Write(buf)
-				require.NoError(t, err)
-				err = wc.Commit()
-				require.NoError(t, err)
-				err = wc.Close()
-				require.NoError(t, err)
-
-				// Use Reader() to get the bytes from the cache.
-				reader, err := pc.Reader(ctx, rn, 0, 0)
-				require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
-				d2 := testdigest.ReadDigestAndClose(t, reader)
-				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
-
-				contains, err := pc.Contains(ctx, rn)
-				require.NoError(t, err)
-				require.True(t, contains)
-
-				require.NoError(t, pc.Delete(ctx, rn))
-
-				_, err = pc.Reader(ctx, rn, 0, 0)
-				require.True(t, status.IsNotFoundError(err), "error should be NotFound but is %v", err)
-
-				contains, err = pc.Contains(ctx, rn)
-				require.NoError(t, err)
-				require.False(t, contains)
-			})
-		}
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
 	}
-}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	defer pc.Stop()
 
-func TestWriteCancelBeforeCommit(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
-
-	maxSizeBytes := int64(1_000_000_000) // 1GB
-
-	type testCase struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-		testSize               int64
-	}
-	testCases := []testCase{
-		{
-			desc:                  "chunking turned on",
-			averageChunkSizeBytes: 64 * 4,
-			testSize:              1024,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			options := &pebble_cache.Options{
-				RootDirectory:          testfs.MakeTempDir(t),
-				MaxSizeBytes:           maxSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-			}
-			pc, err := pebble_cache.NewPebbleCache(te, options)
-			require.NoError(t, err)
-			err = pc.Start()
-			require.NoError(t, err)
-
-			ctx := getAnonContext(t, te)
-			ctx, cancel := context.WithCancel(ctx)
-			rn, buf := testdigest.RandomCASResourceBuf(t, tc.testSize)
+	for _, testSize := range testSizes {
+		desc := fmt.Sprintf("test size: %d", testSize)
+		t.Run(desc, func(t *testing.T) {
+			rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
 			// Use Writer() to set the bytes in the cache.
 			wc, err := pc.Writer(ctx, rn)
 			require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
 			_, err = wc.Write(buf)
 			require.NoError(t, err)
-			cancel()
-			commitErr := wc.Commit()
-			err = wc.Close()
-			require.NoError(t, err)
-
-			if commitErr == nil {
-				// Use Reader() to get the bytes from the cache.
-				reader, err := pc.Reader(ctx, rn, 0, 0)
-				require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
-				d2 := testdigest.ReadDigestAndClose(t, reader)
-				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
-			} else {
-				require.Error(t, commitErr, "context canceled")
-			}
-
-			err = pc.Stop()
-			require.NoError(t, err)
-		})
-	}
-}
-
-func TestCancelBeforeWrite(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
-
-	maxSizeBytes := int64(1_000_000_000) // 1GB
-
-	type testCase struct {
-		desc                   string
-		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
-		testSize               int64
-	}
-	testCases := []testCase{
-		{
-			desc:                  "chunking turned on",
-			averageChunkSizeBytes: 64 * 4,
-			testSize:              256,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			options := &pebble_cache.Options{
-				RootDirectory:          testfs.MakeTempDir(t),
-				MaxSizeBytes:           maxSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-			}
-			pc, err := pebble_cache.NewPebbleCache(te, options)
-			require.NoError(t, err)
-			err = pc.Start()
-			require.NoError(t, err)
-
-			ctx := getAnonContext(t, te)
-			ctx, cancel := context.WithCancel(ctx)
-			rn, buf := testdigest.RandomCASResourceBuf(t, tc.testSize)
-			// Use Writer() to set the bytes in the cache.
-			wc, err := pc.Writer(ctx, rn)
-			require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
-			cancel()
-			// Wait for cancel to take effect.
-			time.Sleep(100 * time.Millisecond)
-			_, err = wc.Write(buf)
-			require.ErrorContains(t, err, "context canceled")
 			err = wc.Commit()
-			require.ErrorContains(t, err, "context canceled")
+			require.NoError(t, err)
 			err = wc.Close()
 			require.NoError(t, err)
 
-			err = pc.Stop()
+			// Use Reader() to get the bytes from the cache.
+			reader, err := pc.Reader(ctx, rn, 0, 0)
+			require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
+			d2 := testdigest.ReadDigestAndClose(t, reader)
+			require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
+
+			contains, err := pc.Contains(ctx, rn)
 			require.NoError(t, err)
+			require.True(t, contains)
+
+			require.NoError(t, pc.Delete(ctx, rn))
+
+			_, err = pc.Reader(ctx, rn, 0, 0)
+			require.True(t, status.IsNotFoundError(err), "error should be NotFound but is %v", err)
+
+			contains, err = pc.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.False(t, contains)
 		})
 	}
 }
@@ -954,7 +730,6 @@ func TestSizeLimit(t *testing.T) {
 	testCases := []struct {
 		desc                   string
 		maxInlineFileSizeBytes int64
-		averageChunkSizeBytes  int
 	}{
 		{
 			desc:                   "inline_chunking_off",
@@ -964,10 +739,6 @@ func TestSizeLimit(t *testing.T) {
 			desc:                   "disk_chunking_off",
 			maxInlineFileSizeBytes: 2000,
 		},
-		{
-			desc:                   "chunking_on",
-			maxInlineFileSizeBytes: 64 * 4,
-		},
 	}
 
 	for _, tc := range testCases {
@@ -976,7 +747,6 @@ func TestSizeLimit(t *testing.T) {
 			options := &pebble_cache.Options{
 				RootDirectory:          rootDir,
 				MaxSizeBytes:           maxSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, options)
@@ -1041,7 +811,6 @@ func readResource(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCach
 
 func TestCompression(t *testing.T) {
 	maxInlineFileSizeBytes := int64(1024)
-	averageChunkSizeBytes := 64 * 4
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
 	te := testenv.GetTestEnv(t)
@@ -1049,9 +818,8 @@ func TestCompression(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	testParams := []struct {
-		desc                  string
-		blobSize              int64
-		averageChunkSizeBytes int
+		desc     string
+		blobSize int64
 	}{
 		{
 			desc:     "disk_multiple_compression_chunk",
@@ -1060,16 +828,6 @@ func TestCompression(t *testing.T) {
 		{
 			desc:     "inline",
 			blobSize: maxInlineFileSizeBytes - 100,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks",
-			blobSize:              pebble_cache.CompressorBufSizeBytes + 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
-			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
 
@@ -1113,7 +871,6 @@ func TestCompression(t *testing.T) {
 					RootDirectory:          testfs.MakeTempDir(t),
 					MaxSizeBytes:           maxSizeBytes,
 					MaxInlineFileSizeBytes: maxInlineFileSizeBytes,
-					AverageChunkSizeBytes:  tp.averageChunkSizeBytes,
 				}
 				pc, err := pebble_cache.NewPebbleCache(te, opts)
 				require.NoError(t, err)
@@ -1159,26 +916,15 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 	testCases := []struct {
 		desc                   string
 		maxInlineFileSizeBytes int
-		averageChunkSizeBytes  int
 		blobSize               int64
 	}{
-		{
-			desc:                  "chunking on single chunk",
-			averageChunkSizeBytes: 64 * 4,
-			blobSize:              60,
-		},
-		{
-			desc:                  "chunking on multiple chunks",
-			averageChunkSizeBytes: 64 * 4,
-			blobSize:              2 * 1024,
-		},
 		{
 			desc:                   "chunking off inline",
 			maxInlineFileSizeBytes: 1024,
 			blobSize:               100,
 		},
 		{
-			desc:                   "chunking off inline",
+			desc:                   "chunking off non_inline",
 			maxInlineFileSizeBytes: 1,
 			blobSize:               100,
 		},
@@ -1190,7 +936,6 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 				RootDirectory:          testfs.MakeTempDir(t),
 				MaxSizeBytes:           maxSizeBytes,
 				MaxInlineFileSizeBytes: int64(tc.maxInlineFileSizeBytes),
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -1227,19 +972,8 @@ func TestCompression_ParallelRequests(t *testing.T) {
 	testCases := []struct {
 		desc                   string
 		maxInlineFileSizeBytes int
-		averageChunkSizeBytes  int
 		blobSize               int64
 	}{
-		{
-			desc:                  "chunking on single chunk",
-			averageChunkSizeBytes: 64 * 4,
-			blobSize:              60,
-		},
-		{
-			desc:                  "chunking on multiple chunks",
-			averageChunkSizeBytes: 64 * 4,
-			blobSize:              2 * 1024,
-		},
 		{
 			desc:                   "chunking off inline",
 			maxInlineFileSizeBytes: 1024,
@@ -1258,7 +992,6 @@ func TestCompression_ParallelRequests(t *testing.T) {
 				RootDirectory:          testfs.MakeTempDir(t),
 				MaxSizeBytes:           maxSizeBytes,
 				MaxInlineFileSizeBytes: int64(tc.maxInlineFileSizeBytes),
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -1314,65 +1047,45 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 			float64(totalSizeCompresedData) *
 				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 
-	testCases := []struct {
-		desc                  string
-		averageChunkSizeBytes int
-	}{
-		{
-			desc:                  "cdc chunking on",
-			averageChunkSizeBytes: 64 * 4,
-		},
-		{
-			desc:                  "cdc chunking off",
-			averageChunkSizeBytes: 0,
-		},
+	opts := &pebble_cache.Options{
+		RootDirectory:  testfs.MakeTempDir(t),
+		MaxSizeBytes:   maxSizeBytes,
+		MinEvictionAge: &minEvictionAge,
 	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	defer pc.Stop()
 
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			opts := &pebble_cache.Options{
-				RootDirectory:  testfs.MakeTempDir(t),
-				MaxSizeBytes:   maxSizeBytes,
-				MinEvictionAge: &minEvictionAge,
-			}
-			pc, err := pebble_cache.NewPebbleCache(te, opts)
-			require.NoError(t, err)
-			err = pc.Start()
-			require.NoError(t, err)
-			defer pc.Stop()
+	// Write decompressed bytes to the cache. Because blob compression is enabled, pebble should compress before writing
+	for d, blob := range digestBlobs {
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+		err = pc.Set(ctx, rn, blob)
+		require.NoError(t, err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc.TestingWaitForGC(ctx)
 
-			// Write decompressed bytes to the cache. Because blob compression is enabled, pebble should compress before writing
-			for d, blob := range digestBlobs {
-				rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
-				err = pc.Set(ctx, rn, blob)
-				require.NoError(t, err)
-			}
-			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			pc.TestingWaitForGC(ctx)
-
-			// All reads should succeed. Nothing should've been evicted
-			for d, blob := range digestBlobs {
-				rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
-				data, err := pc.Get(ctx, rn)
-				require.NoError(t, err)
-				require.True(t, bytes.Equal(blob, data))
-			}
-		})
+	// All reads should succeed. Nothing should've been evicted
+	for d, blob := range digestBlobs {
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+		data, err := pc.Get(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(blob, data))
 	}
 }
 
 func TestCompressionOffset(t *testing.T) {
 	maxInlineFileSizeBytes := 1024
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	averageChunkSizeBytes := 64 * 4
 
 	testCases := []struct {
-		desc                  string
-		blobSize              int64
-		averageChunkSizeBytes int
-		readOffset            int64
-		readLimit             int64
+		desc       string
+		blobSize   int64
+		readOffset int64
+		readLimit  int64
 	}{
 		{
 			desc:       "disk_multiple_compression_chunk",
@@ -1385,20 +1098,6 @@ func TestCompressionOffset(t *testing.T) {
 			blobSize:   int64(maxInlineFileSizeBytes - 100),
 			readOffset: 512,
 			readLimit:  10,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks",
-			blobSize:              pebble_cache.CompressorBufSizeBytes + 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-			readOffset:            2 * 1024,
-			readLimit:             10,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
-			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-			readOffset:            2 * 1024,
-			readLimit:             10,
 		},
 	}
 
@@ -1418,7 +1117,6 @@ func TestCompressionOffset(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory:          testfs.MakeTempDir(t),
 				MaxSizeBytes:           maxSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 				MaxInlineFileSizeBytes: int64(maxInlineFileSizeBytes),
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -1440,59 +1138,42 @@ func TestCompressionOffset(t *testing.T) {
 
 func TestFindMissing(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	tests := []struct {
-		desc                   string
-		averageChunkSizeBytes  int
-		maxInlineFileSizeBytes int64
-	}{
-		{
-			desc:                  "chunking_on",
-			averageChunkSizeBytes: 64 * 4,
-		},
-		{
-			desc:                   "chunking_off",
-			maxInlineFileSizeBytes: 100,
-		},
-	}
 	testSizes := []int64{50, 100, 1000, 1500, 10000}
-	for _, tc := range tests {
-		for _, testSize := range testSizes {
-			desc := fmt.Sprintf("%s_test_size_%d", tc.desc, testSize)
-			t.Run(desc, func(t *testing.T) {
-				te := testenv.GetTestEnv(t)
-				te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
-				ctx := getAnonContext(t, te)
+	for _, testSize := range testSizes {
+		desc := fmt.Sprintf("test_size_%d", testSize)
+		t.Run(desc, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+			ctx := getAnonContext(t, te)
 
-				options := &pebble_cache.Options{
-					RootDirectory:          testfs.MakeTempDir(t),
-					MaxSizeBytes:           maxSizeBytes,
-					AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
-					MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-				}
-				pc, err := pebble_cache.NewPebbleCache(te, options)
-				require.NoError(t, err)
-				err = pc.Start()
-				require.NoError(t, err)
-				defer pc.Stop()
+			options := &pebble_cache.Options{
+				RootDirectory:          testfs.MakeTempDir(t),
+				MaxSizeBytes:           maxSizeBytes,
+				MaxInlineFileSizeBytes: 100,
+			}
+			pc, err := pebble_cache.NewPebbleCache(te, options)
+			require.NoError(t, err)
+			err = pc.Start()
+			require.NoError(t, err)
+			defer pc.Stop()
 
-				r, buf := testdigest.RandomCASResourceBuf(t, testSize)
-				notSetR1, _ := testdigest.RandomCASResourceBuf(t, testSize)
-				notSetR2, _ := testdigest.RandomCASResourceBuf(t, testSize)
+			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+			notSetR1, _ := testdigest.RandomCASResourceBuf(t, testSize)
+			notSetR2, _ := testdigest.RandomCASResourceBuf(t, testSize)
 
-				err = pc.Set(ctx, r, buf)
-				require.NoError(t, err)
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
 
-				rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
-				missing, err := pc.FindMissing(ctx, rns)
-				require.NoError(t, err)
-				require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
+			rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
+			missing, err := pc.FindMissing(ctx, rns)
+			require.NoError(t, err)
+			require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 
-				rns = []*rspb.ResourceName{r}
-				missing, err = pc.FindMissing(ctx, rns)
-				require.NoError(t, err)
-				require.Empty(t, missing)
-			})
-		}
+			rns = []*rspb.ResourceName{r}
+			missing, err = pc.FindMissing(ctx, rns)
+			require.NoError(t, err)
+			require.Empty(t, missing)
+		})
 	}
 }
 
@@ -1503,7 +1184,6 @@ func TestNoEarlyEviction(t *testing.T) {
 
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
@@ -1516,11 +1196,6 @@ func TestNoEarlyEviction(t *testing.T) {
 			desc:                   "chunking_off_disk",
 			maxInlineFileSizeBytes: 1,
 			digestSize:             100,
-		},
-		{
-			desc:                  "chunking_on_multiple_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1064,
 		},
 	}
 
@@ -1543,7 +1218,6 @@ func TestNoEarlyEviction(t *testing.T) {
 				AtimeUpdateThreshold:   &atimeUpdateThreshold,
 				AtimeBufferSize:        &atimeBufferSize,
 				MinEvictionAge:         &minEvictionAge,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
 			})
 			require.NoError(t, err)
@@ -1576,15 +1250,9 @@ func TestNoEarlyEviction(t *testing.T) {
 func TestLRU(t *testing.T) {
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_multiple_chunks",
-			averageChunkSizeBytes: 64 * 4, // 256
-			digestSize:            2 * 1024,
-		},
 		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 1024,
@@ -1613,7 +1281,6 @@ func TestLRU(t *testing.T) {
 				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
 				MinBytesAutoZstdCompression: &maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
-				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
 				ActiveKeyVersion:            pointer(int64(5)),
 				Clock:                       clock,
 				SamplesPerBatch:             pointer(50),
@@ -1750,15 +1417,9 @@ func TestStartupScan(t *testing.T) {
 
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_multiple_chunks",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
-		},
 		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 1000,
@@ -1777,7 +1438,6 @@ func TestStartupScan(t *testing.T) {
 			options := &pebble_cache.Options{
 				RootDirectory:          rootDir,
 				MaxSizeBytes:           maxSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, options)
@@ -2274,15 +1934,9 @@ func TestEncryption(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_multiple_chunks",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
-		},
 		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 200,
@@ -2409,15 +2063,9 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 
 	testCases := []struct {
 		desc                   string
-		averageChunkSizeBytes  int
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_multiple_chunks",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
-		},
 		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 200,
@@ -2460,7 +2108,6 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 					ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 				}},
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
-				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
 				ActiveKeyVersion:       &activeKeyVersion,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2498,7 +2145,6 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 
 func TestEncryptionAndCompression(t *testing.T) {
 	maxInlineFileSizeBytes := int64(1024)
-	averageChunkSizeBytes := 64 * 4
 
 	te, kmsDir := getCrypterEnv(t)
 
@@ -2522,9 +2168,8 @@ func TestEncryptionAndCompression(t *testing.T) {
 	require.NoError(t, err)
 
 	testParams := []struct {
-		desc                  string
-		blobSize              int64
-		averageChunkSizeBytes int
+		desc     string
+		blobSize int64
 	}{
 		{
 			desc:     "disk_multiple_compression_chunk",
@@ -2533,16 +2178,6 @@ func TestEncryptionAndCompression(t *testing.T) {
 		{
 			desc:     "inline",
 			blobSize: maxInlineFileSizeBytes - 100,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks",
-			blobSize:              pebble_cache.CompressorBufSizeBytes + 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
-			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
 
@@ -2906,111 +2541,94 @@ func TestSampling(t *testing.T) {
 	err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 	require.NoError(t, err)
 
-	testCases := []struct {
-		desc                  string
-		averageChunkSizeBytes int
-	}{
-		{
-			desc:                  "chunking_on",
-			averageChunkSizeBytes: 64 * 4, // 256
-		},
-		{
-			desc:                  "chunking_off",
-			averageChunkSizeBytes: 0,
-		},
-	}
+	{
+		minEvictionAge := 1 * time.Hour
+		clock := clockwork.NewFakeClock()
+		opts := &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			Partitions: []disk.Partition{{
+				ID: pebble_cache.DefaultPartitionID,
+				// Force all entries to be evicted as soon as they pass the minimum
+				// eviction age.
+				MaxSizeBytes: 2,
+			}},
+			MinEvictionAge:   &minEvictionAge,
+			Clock:            clock,
+			ActiveKeyVersion: &activeKeyVersion,
+			SamplesPerBatch:  pointer(50),
+			// Never update atime so we can check if something has been evicted
+			// without preventing its eviction.
+			AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
+		}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		err = pc.Start()
+		require.NoError(t, err)
 
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			minEvictionAge := 1 * time.Hour
-			clock := clockwork.NewFakeClock()
-			opts := &pebble_cache.Options{
-				RootDirectory: testfs.MakeTempDir(t),
-				Partitions: []disk.Partition{{
-					ID: pebble_cache.DefaultPartitionID,
-					// Force all entries to be evicted as soon as they pass the minimum
-					// eviction age.
-					MaxSizeBytes: 2,
-				}},
-				MinEvictionAge:        &minEvictionAge,
-				AverageChunkSizeBytes: tc.averageChunkSizeBytes,
-				Clock:                 clock,
-				ActiveKeyVersion:      &activeKeyVersion,
-				SamplesPerBatch:       pointer(50),
-				// Never update atime so we can check if something has been evicted
-				// without preventing its eviction.
-				AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
-			}
-			pc, err := pebble_cache.NewPebbleCache(te, opts)
-			require.NoError(t, err)
-			err = pc.Start()
-			require.NoError(t, err)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		anonCtx := getAnonContext(t, te)
+		err = pc.Set(anonCtx, rn, buf)
+		require.NoError(t, err)
 
+		// Advance time (to force newer atime) and write the same digest
+		// encrypted. The encrypted key should have the same digest prefix as the
+		// unencrypted key and come before the unencrypted key in lexicographical f
+		// order.
+		clock.Advance(5 * time.Minute)
+		err = pc.Set(ctx, rn, buf)
+		require.NoError(t, err)
+
+		// Write some random digests as well.
+		var randomResources []*rspb.ResourceName
+		for i := 0; i < 10; i++ {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 			anonCtx := getAnonContext(t, te)
 			err = pc.Set(anonCtx, rn, buf)
 			require.NoError(t, err)
+			randomResources = append(randomResources, rn)
+		}
 
-			// Advance time (to force newer atime) and write the same digest
-			// encrypted. The encrypted key should have the same digest prefix as the
-			// unencrypted key and come before the unencrypted key in lexicographical f
-			// order.
-			clock.Advance(5 * time.Minute)
-			err = pc.Set(ctx, rn, buf)
-			require.NoError(t, err)
+		// Now advance the clock past the min eviction age to allow eviction to
+		// kick in. The unencrypted test digest should be evicted.
+		clock.Advance(minEvictionAge - 1*time.Minute)
 
-			// Write some random digests as well.
-			var randomResources []*rspb.ResourceName
-			for i := 0; i < 10; i++ {
-				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-				anonCtx := getAnonContext(t, te)
-				err = pc.Set(anonCtx, rn, buf)
-				require.NoError(t, err)
-				randomResources = append(randomResources, rn)
-			}
-
-			// Now advance the clock past the min eviction age to allow eviction to
-			// kick in. The unencrypted test digest should be evicted.
-			clock.Advance(minEvictionAge - 1*time.Minute)
-
-			waitForEviction := func(timeout time.Duration) {
-				interval := 100 * time.Millisecond
-				for i := 0; i < int(timeout/interval); i++ {
-					if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
-						log.Infof("i = %d: unencrypted test digest is evicted", i)
-						return
-					}
-					time.Sleep(interval)
-					// generateSamplesForEviction might be sleeping, so advance
-					// enough to wake it up. Alternatively, we could call
-					// pc.Start() after the cache already has some data so that
-					// generateSamplesForEviction never sleeps.
-					clock.Advance(pebble_cache.SamplerSleepDuration)
+		waitForEviction := func(timeout time.Duration) {
+			interval := 100 * time.Millisecond
+			for i := 0; i < int(timeout/interval); i++ {
+				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
+					log.Infof("i = %d: unencrypted test digest is evicted", i)
+					return
 				}
-				t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
+				time.Sleep(interval)
+				// generateSamplesForEviction might be sleeping, so advance
+				// enough to wake it up. Alternatively, we could call
+				// pc.Start() after the cache already has some data so that
+				// generateSamplesForEviction never sleeps.
+				clock.Advance(pebble_cache.SamplerSleepDuration)
 			}
-			waitForEviction(15 * time.Second)
+			t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
+		}
+		waitForEviction(15 * time.Second)
 
-			// The unencrypted key should no longer exist.
-			unencryptedExists, err := pc.Contains(anonCtx, rn)
+		// The unencrypted key should no longer exist.
+		unencryptedExists, err := pc.Contains(anonCtx, rn)
+		require.NoError(t, err)
+		require.False(t, unencryptedExists)
+
+		// The encrypted key should still exist.
+		encryptedExists, err := pc.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, encryptedExists)
+
+		// The other random digests should also exist.
+		for _, rr := range randomResources {
+			exists, err := pc.Contains(anonCtx, rr)
 			require.NoError(t, err)
-			require.False(t, unencryptedExists)
+			require.True(t, exists)
+		}
 
-			// The encrypted key should still exist.
-			encryptedExists, err := pc.Contains(ctx, rn)
-			require.NoError(t, err)
-			require.True(t, encryptedExists)
-
-			// The other random digests should also exist.
-			for _, rr := range randomResources {
-				exists, err := pc.Contains(anonCtx, rr)
-				require.NoError(t, err)
-				require.True(t, exists)
-			}
-
-			err = pc.Stop()
-			require.NoError(t, err)
-		})
+		err = pc.Stop()
+		require.NoError(t, err)
 	}
 }
 
