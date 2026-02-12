@@ -1,0 +1,48 @@
+# Builds against a cache proxy with CDC (content-defined chunking) enabled.
+# Large blobs are chunked on upload and download.
+name: Build against Proxy with Chunking (dev)
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  metal:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Restore caches
+        id: cache-restore
+        uses: ./.github/actions/cache-restore
+
+      - name: Test
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
+        run: |
+          bazelisk build \
+            --config=untrusted-ci \
+            --remote_cache=grpcs://proxy.metal.buildbuddy.dev \
+            --remote_executor=grpcs://proxy.metal.buildbuddy.dev \
+            --bes_backend=grpcs://proxy.metal.buildbuddy.dev \
+            --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BB_CHUNKING_TEST_DEV_API_KEY }} \
+            --remote_upload_local_results \
+            --announce_rc \
+            //...
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
+          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
+          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
