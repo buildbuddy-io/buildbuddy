@@ -386,7 +386,7 @@ func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord
 	}
 }
 
-func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fileType sgpb.FileMetadata_FileType, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	wcm, err := c.writerForRecord(ctx, fileRecord, sizeHint)
 	if err != nil {
 		return nil, err
@@ -403,7 +403,6 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 			StoredSizeBytes:    bytesWritten,
 			LastAccessUsec:     now,
 			LastModifyUsec:     now,
-			FileType:           fileType,
 		}
 		if bytesWritten == 0 {
 			log.Infof("Rejecting zero-length write. Metadata: %+v", md)
@@ -478,7 +477,7 @@ func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64
 		return nil, err
 	}
 
-	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, sgpb.FileMetadata_COMPLETE_FILE_TYPE, fn)
+	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -704,11 +703,9 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) (resultErr err
 }
 
 func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
-	// If this object was not chunked, and is somehow stored as a zero-
-	// length file, pretend it does not exist.
-	storageMetadata := md.GetStorageMetadata()
-
-	if chunkedMD := storageMetadata.GetChunkedMetadata(); chunkedMD == nil && md.GetStoredSizeBytes() == 0 {
+	// If this object is somehow stored as a zero-length file, pretend it
+	// does not exist.
+	if md.GetStoredSizeBytes() == 0 {
 		log.CtxInfof(ctx, "Ignoring zero-length file. md: %+v, resource: %v", md, r)
 		return nil, status.NotFoundError("object not found (zero-length)")
 	}
@@ -769,9 +766,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 			}
 			reader = d
 		}
-		if shouldDecompress && storageMetadata.GetChunkedMetadata() == nil {
-			// We don't need to decompress the chunked reader's content since
-			// it already returns decompressed content from its children.
+		if shouldDecompress {
 			dr, err := compression.NewZstdDecompressingReader(reader)
 			if err != nil {
 				return nil, err

@@ -224,7 +224,6 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 		StoredSizeBytes:    bytesWritten,
 		LastAccessUsec:     now,
 		LastModifyUsec:     now,
-		FileType:           sgpb.FileMetadata_COMPLETE_FILE_TYPE,
 	}
 	return md
 }

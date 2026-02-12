@@ -20,7 +20,6 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
-        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/approxlru",
@@ -52,7 +51,6 @@ go_test(
     name = "pebble_cache_test",
     size = "medium",
     srcs = ["pebble_cache_test.go"],
-    shard_count = 2,
     deps = [
         ":pebble_cache",
         "//enterprise/server/backends/kms",
