@@ -436,6 +436,63 @@ func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		authErr error
+		// wantSameErr means the original error should be returned as-is.
+		wantSameErr bool
+		// wantUnauthenticated means the error should be wrapped as Unauthenticated.
+		wantUnauthenticated bool
+		// wantInternal means we expect the "Invalid JWT reparse" internal error
+		// (no auth error on context).
+		wantInternal bool
+	}{
+		{
+			name:        "UnauthenticatedError_PassedThrough",
+			authErr:     status.UnauthenticatedError("bad token"),
+			wantSameErr: true,
+		},
+		{
+			name:        "PermissionDeniedError_PassedThrough",
+			authErr:     status.PermissionDeniedError("no access"),
+			wantSameErr: true,
+		},
+		{
+			name:                "OtherError_WrappedAsUnauthenticated",
+			authErr:             status.InternalError("internal error"),
+			wantUnauthenticated: true,
+		},
+		{
+			name:         "NoAuthError_ReturnsInternalError",
+			authErr:      nil,
+			wantInternal: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.reparse_jwts", false)
+
+			// Build a context with a JWT token string and an auth error.
+			ctx := context.WithValue(context.Background(), authutil.ContextTokenStringKey, "some.jwt.token")
+			if tc.authErr != nil {
+				ctx = authutil.AuthContextWithError(ctx, tc.authErr)
+			}
+
+			_, err := claims.ClaimsFromContext(ctx)
+			require.Error(t, err)
+
+			if tc.wantSameErr {
+				require.Equal(t, tc.authErr, err)
+			} else if tc.wantUnauthenticated {
+				require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+				require.Contains(t, err.Error(), authutil.UserNotFoundMsg)
+			} else if tc.wantInternal {
+				require.True(t, status.IsInternalError(err), "expected Internal, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	keyProvider := func(ctx context.Context) ([]string, error) {
