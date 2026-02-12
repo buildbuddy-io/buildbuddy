@@ -474,6 +474,13 @@ func AuthContext(ctx context.Context, c *Claims) context.Context {
 	return authutil.AuthContextWithError(ctx, nil)
 }
 
+func authErrorToUnauthenticatedError(err error) error {
+	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+		return err
+	}
+	return status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
+}
+
 func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// If the context already contains trusted Claims, return them directly
 	// instead of re-parsing the JWT (which is expensive).
@@ -487,14 +494,9 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 			// Return an auth error if there is one.
 			err, ok := authutil.AuthErrorFromContext(ctx)
 			if ok && err != nil {
-				if status.IsUnauthenticatedError(err) ||
-					status.IsPermissionDeniedError(err) {
-					return nil, err
-				}
-				return nil, status.UnauthenticatedErrorf("%s: %s",
-					authutil.UserNotFoundMsg, err.Error())
+				return nil, authErrorToUnauthenticatedError(err)
 			}
-			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
+			return nil, status.InternalError("Invalid JWT reparse")
 		}
 		caller := "unknown"
 		if _, file, line, ok := runtime.Caller(1); ok {
@@ -515,17 +517,11 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
 	}
 
-	// if there was an error set on the context, and it was an
-	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
-	// so pass it through. This includes anonymous user errors.
-	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
-		return nil, err
-	}
-
-	// All other types of errors will be converted into Unauthenticated
-	// errors.
-	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
+	// If there was an error set on the context, pass through auth errors
+	// (the FE can handle them), and convert all others to Unauthenticated.
+	// WARNING: app/auth/auth_service.ts depends on this status being
+	// UNAUTHENTICATED.
+	return nil, authErrorToUnauthenticatedError(err)
 }
 
 // AuthorizeServerAdmin checks whether the authenticated user is a server admin
