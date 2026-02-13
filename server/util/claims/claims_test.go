@@ -2,7 +2,13 @@ package claims_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -453,4 +459,81 @@ func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
 	// Parsing should fail because the parser is configured with ES256 public keys
 	_, err = parser.Parse(t.Context(), hs256Token)
 	require.Error(t, err)
+}
+
+func generateES256KeyPair(tb testing.TB) (privateKeyPEM, publicKeyPEM string) {
+	tb.Helper()
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(tb, err)
+	privBytes, err := x509.MarshalECPrivateKey(privateKey)
+	require.NoError(tb, err)
+	pubBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	require.NoError(tb, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})),
+		string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes}))
+}
+
+func BenchmarkMintHS256(b *testing.B) {
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := claims.AssembleJWT(c, jwt.SigningMethodHS256); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkVerifyHS256(b *testing.B) {
+	flags.Set(b, "auth.jwt_claims_cache_ttl", time.Duration(0))
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
+	require.NoError(b, err)
+	parser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
+	require.NoError(b, err)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := parser.Parse(ctx, tokenString); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMintES256(b *testing.B) {
+	privPEM, _ := generateES256KeyPair(b)
+	flags.Set(b, "auth.jwt_es256_private_key", privPEM)
+	require.NoError(b, claims.Init())
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := claims.AssembleJWT(c, jwt.SigningMethodES256); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkVerifyES256(b *testing.B) {
+	privPEM, pubPEM := generateES256KeyPair(b)
+	flags.Set(b, "auth.jwt_es256_private_key", privPEM)
+	flags.Set(b, "auth.jwt_claims_cache_ttl", time.Duration(0))
+	require.NoError(b, claims.Init())
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(b, err)
+	keyProvider := func(ctx context.Context) ([]string, error) {
+		return []string{pubPEM}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(b, err)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := parser.Parse(ctx, tokenString); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
