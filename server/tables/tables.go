@@ -22,9 +22,6 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
-
-	// Temporary flag until the feature is ready.
-	createUserListTables = flag.Bool("database.create_user_list_tables", false, "If true, crate user list tables.", flag.Internal)
 )
 
 const (
@@ -953,7 +950,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 	}
 
-	// Migrate Groups.APIKey to APIKey rows.
+	// Migrate Groups.apiKeyGroup to apiKeyGroup rows.
 	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM "Groups"`).Rows()
@@ -1415,10 +1412,8 @@ func RegisterTables() {
 	registerTable("UA", &Usage{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
-	if *createUserListTables {
-		registerTable("UL", &UserList{})
-		registerTable("UU", &UserUserList{})
-		registerTable("UM", &UserListGroup{})
-	}
+	registerTable("UL", &UserList{})
+	registerTable("UU", &UserUserList{})
+	registerTable("UM", &UserListGroup{})
 	registerTable("WF", &Workflow{})
 }

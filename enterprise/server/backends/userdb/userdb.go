@@ -694,13 +694,13 @@ func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, user
 		groupID).Exec().Error; err != nil {
 		return err
 	}
-	if err := tx.NewQuery(ctx, "userdb_delete_user_api_keys").Raw(`
-						DELETE FROM "APIKeys"
-						WHERE user_id = ? AND group_id = ?`,
-		userID,
-		groupID).Exec().Error; err != nil {
-		return err
-	}
+	//if err := tx.NewQuery(ctx, "userdb_delete_user_api_keys").Raw(`
+	//					DELETE FROM "APIKeys"
+	//					WHERE user_id = ? AND group_id = ?`,
+	//	userID,
+	//	groupID).Exec().Error; err != nil {
+	//	return err
+	//}
 	return nil
 }
 

@@ -804,20 +804,20 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
+	keys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
 	if err != nil {
 		return nil, err
 	}
 	rsp := &akpb.GetApiKeysResponse{
-		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
+		ApiKey: make([]*akpb.ApiKey, 0, len(keys)),
 	}
-	for _, k := range tableKeys {
+	for _, k := range keys {
 		// API Key value must be retrieved via GetAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
-			Id:                  k.APIKeyID,
-			Label:               k.Label,
-			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			Id:                  k.GetAPIKeyID(),
+			Label:               k.GetLabel(),
+			Capability:          capabilities.FromInt(k.GetCapabilities()),
+			VisibleToDevelopers: k.GetVisibleToDevelopers(),
 		})
 	}
 	return rsp, nil
@@ -1004,20 +1004,20 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		userID = u.GetUserID()
 	}
 
-	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID)
+	keys, err := authDB.GetUserAPIKeys(ctx, userID, groupID)
 	if err != nil {
 		return nil, err
 	}
 	rsp := &akpb.GetApiKeysResponse{
-		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
+		ApiKey: make([]*akpb.ApiKey, 0, len(keys)),
 	}
-	for _, k := range tableKeys {
+	for _, k := range keys {
 		// API Key value must be retrieved via GetUserAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
-			Id:                  k.APIKeyID,
-			Label:               k.Label,
-			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			Id:                  k.GetAPIKeyID(),
+			Label:               k.GetLabel(),
+			Capability:          capabilities.FromInt(k.GetCapabilities()),
+			VisibleToDevelopers: k.GetVisibleToDevelopers(),
 		})
 	}
 	return rsp, nil
@@ -1222,15 +1222,15 @@ func assembleURL(host, scheme, port string) string {
 	return url
 }
 
-func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
-	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
-	for i, k := range tableKeys {
+func toProtoAPIKeys(keys []interfaces.APIKeyGroup) []*akpb.ApiKey {
+	protoKeys := make([]*akpb.ApiKey, len(keys))
+	for i, k := range keys {
 		protoKeys[i] = &akpb.ApiKey{
-			Id:                  k.APIKeyID,
-			Value:               k.Value,
-			Label:               k.Label,
-			VisibleToDevelopers: k.VisibleToDevelopers,
-			UserOwned:           k.Perms&perms.OWNER_READ > 0,
+			Id:                  k.GetAPIKeyID(),
+			Value:               k.GetValue(),
+			Label:               k.GetLabel(),
+			VisibleToDevelopers: k.GetVisibleToDevelopers(),
+			UserOwned:           k.GetPerms()&perms.OWNER_READ > 0,
 		}
 	}
 	return protoKeys
@@ -1253,7 +1253,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	}
 
 	// List user-owned keys first.
-	var userKeys []*tables.APIKey
+	var userKeys []interfaces.APIKeyGroup
 	if authDB.GetUserOwnedKeysEnabled() {
 		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {

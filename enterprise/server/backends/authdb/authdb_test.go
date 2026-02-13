@@ -297,24 +297,24 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			keys := createRandomAPIKeys(t, ctx, env)
 			randKey := keys[rand.Intn(len(keys))]
 
-			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
+			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.GetValue())
 			require.NoError(t, err)
 
 			assert.Equal(t, "", akg.GetUserID())
-			assert.Equal(t, randKey.GroupID, akg.GetGroupID())
-			assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
+			assert.Equal(t, randKey.GetGroupID(), akg.GetGroupID())
+			assert.Equal(t, randKey.GetCapabilities(), akg.GetCapabilities())
 			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
 			// Converting to Claims should produce the expected value
 			c, err := claims.APIKeyGroupClaims(ctx, akg)
 			require.NoError(t, err)
-			assert.Equal(t, randKey.GroupID, c.GetGroupID())
-			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
+			assert.Equal(t, randKey.GetGroupID(), c.GetGroupID())
+			assert.Equal(t, capabilities.FromInt(randKey.GetCapabilities()), c.GetCapabilities())
 			require.Len(t, c.GetGroupMemberships(), 1)
 			assert.Equal(t, []*interfaces.GroupMembership{
 				{
-					GroupID:      randKey.GroupID,
-					Capabilities: capabilities.FromInt(randKey.Capabilities),
+					GroupID:      randKey.GetGroupID(),
+					Capabilities: capabilities.FromInt(randKey.GetCapabilities()),
 				},
 			}, c.GetGroupMemberships())
 
@@ -351,12 +351,12 @@ func TestBackfillUnencryptedKeys(t *testing.T) {
 
 	// Verify that we can still find the keys after backfill.
 	for _, k := range keys {
-		akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.GetValue())
 		require.NoError(t, err)
 
 		assert.Equal(t, "", akg.GetUserID())
-		assert.Equal(t, k.GroupID, akg.GetGroupID())
-		assert.Equal(t, k.Capabilities, akg.GetCapabilities())
+		assert.Equal(t, k.GetGroupID(), akg.GetGroupID())
+		assert.Equal(t, k.GetCapabilities(), akg.GetCapabilities())
 		assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 	}
 }
@@ -369,12 +369,12 @@ func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
 	keys := createRandomAPIKeys(t, ctx, env)
 	randKey := keys[rand.Intn(len(keys))]
 
-	akg, err := adb.GetAPIKeyGroupFromAPIKeyID(ctx, randKey.APIKeyID)
+	akg, err := adb.GetAPIKeyGroupFromAPIKeyID(ctx, randKey.GetAPIKeyID())
 	require.NoError(t, err)
 
 	assert.Equal(t, "", akg.GetUserID())
-	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
-	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, randKey.GetGroupID(), akg.GetGroupID())
+	assert.Equal(t, randKey.GetCapabilities(), akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
 	// Using an invalid or empty value should produce an error
@@ -422,11 +422,11 @@ func TestGetAPIKeys(t *testing.T) {
 
 			// Verify that we can auth using all of the returned keys.
 			for _, k := range keys {
-				_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+				_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.GetValue())
 				require.NoError(t, err)
 				// Verify that we can correctly retrieve the API key using
 				// GetAPIKey.
-				ak, err := adb.GetAPIKey(adminCtx, k.APIKeyID)
+				ak, err := adb.GetAPIKey(adminCtx, k.GetAPIKeyID())
 				require.NoError(t, err)
 				_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, ak.Value)
 				require.NoError(t, err)
@@ -459,22 +459,26 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	require.NoError(t, err)
 	keys, err := adb.GetAPIKeys(adminCtx, groupID)
 	require.NoError(t, err)
-	key := keys[0]
+	key := keys[0].(*authdb.APIKey)
 	key.UserID = admin.UserID
-	err = env.GetDBHandle().NewQuery(ctx, "update_key").Update(key)
+	err = env.GetDBHandle().NewQuery(ctx, "update_key").Update(&tables.APIKey{
+		APIKeyID: key.APIKeyID,
+		UserID:   key.UserID,
+		GroupID:  key.GroupID,
+	})
 	require.NoError(t, err)
-	g, err := env.GetUserDB().GetGroupByID(adminCtx, key.GroupID)
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, key.GetGroupID())
 	require.NoError(t, err)
 
 	// Should not be able to use this user-level key, since groups have the
 	// setting disabled.
-	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, key.GetValue())
 	require.Nil(t, akg)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated error; got: %v", err)
 
-	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
+	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.GetAPIKeyID())
 	require.Nil(t, akg)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
@@ -486,18 +490,18 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should now be able to use the user-owned key.
-	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
+	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key.GetValue())
 	require.NoError(t, err)
-	assert.Equal(t, key.UserID, akg.GetUserID())
-	assert.Equal(t, key.GroupID, akg.GetGroupID())
-	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, key.GetUserID(), akg.GetUserID())
+	assert.Equal(t, key.GetGroupID(), akg.GetGroupID())
+	assert.Equal(t, key.GetCapabilities(), akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
-	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
+	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.GetAPIKeyID())
 	require.NoError(t, err)
-	assert.Equal(t, key.UserID, akg.GetUserID())
-	assert.Equal(t, key.GroupID, akg.GetGroupID())
-	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, key.GetUserID(), akg.GetUserID())
+	assert.Equal(t, key.GetGroupID(), akg.GetGroupID())
+	assert.Equal(t, key.GetCapabilities(), akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 }
 
@@ -704,17 +708,17 @@ func TestSubdomainRestrictions(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, k := range keys {
-		_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.GetValue())
 		require.NoError(t, err)
 
 		// Set subdomain that won't match the group.
 		ctx = subdomain.SetHost(ctx, "some-random-host.buildbuddy.dev")
-		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.GetValue())
 		require.Truef(t, status.IsUnauthenticatedError(err), "expected unauthenticated error but got %v", err)
 
 		// Use a subdomain that matches the group.
 		ctx = subdomain.SetHost(ctx, admin.Groups[0].Group.URLIdentifier+".buildbuddy.dev")
-		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.GetValue())
 		require.NoError(t, err)
 	}
 }
@@ -798,9 +802,9 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	}
 }
 
-func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []*tables.APIKey {
+func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []interfaces.APIKeyGroup {
 	users := enterprise_testauth.CreateRandomGroups(t, env)
-	var allKeys []*tables.APIKey
+	var allKeys []interfaces.APIKeyGroup
 	// List the org API keys accessible to any admins we created
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	for _, u := range users {
@@ -824,10 +828,10 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	return env
 }
 
-func apiKeyIDs(keys []*tables.APIKey) []string {
+func apiKeyIDs(keys []interfaces.APIKeyGroup) []string {
 	ids := make([]string, len(keys))
 	for i, k := range keys {
-		ids[i] = k.APIKeyID
+		ids[i] = k.GetAPIKeyID()
 	}
 	return ids
 }

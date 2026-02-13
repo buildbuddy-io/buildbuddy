@@ -125,6 +125,11 @@ func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return f.groupStatus
 }
 
+func (f *fakeAPIKeyGroup) GetValue() string             { return "" }
+func (f *fakeAPIKeyGroup) GetLabel() string             { return "" }
+func (f *fakeAPIKeyGroup) GetVisibleToDevelopers() bool { return false }
+func (f *fakeAPIKeyGroup) GetPerms() int32              { return 0 }
+
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.NoError(t, claims.Init())
 	ctx := context.Background()

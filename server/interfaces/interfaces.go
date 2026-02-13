@@ -456,10 +456,14 @@ type InvocationDB interface {
 }
 
 type APIKeyGroup interface {
-	GetCapabilities() int32
 	GetAPIKeyID() string
 	GetUserID() string
 	GetGroupID() string
+	GetValue() string
+	GetLabel() string
+	GetCapabilities() int32
+	GetVisibleToDevelopers() bool
+	GetPerms() int32
 	GetChildGroupIDs() []string
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
@@ -492,7 +496,7 @@ type AuthDB interface {
 
 	// GetAPIKeys returns group-level API keys that the user is authorized to
 	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	GetAPIKeys(ctx context.Context, groupID string) ([]APIKeyGroup, error)
 
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
@@ -510,7 +514,7 @@ type AuthDB interface {
 	GetUserOwnedKeysEnabled() bool
 
 	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
+	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]APIKeyGroup, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group. The given
 	// user must be a member of the group. If the request is not authenticated

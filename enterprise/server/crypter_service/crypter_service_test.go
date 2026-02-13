@@ -711,7 +711,7 @@ func TestConfigAPI(t *testing.T) {
 
 	apiKeys, err := env.GetAuthDB().GetAPIKeys(userCtx, groupID)
 	require.NoError(t, err)
-	apiKeyCtx := auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+	apiKeyCtx := auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].GetValue())
 
 	rootDir := testfs.MakeTempDir(t)
 	cacheSizeBytes := int64(1000000)
@@ -750,7 +750,7 @@ func TestConfigAPI(t *testing.T) {
 		KmsConfig: &enpb.KMSConfig{LocalInsecureKmsConfig: &enpb.LocalInsecureKMSConfig{KeyId: "groupKey"}},
 	})
 	require.NoError(t, err)
-	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].GetValue())
 
 	// Write an encrypted resource. This resource should become unreadable
 	// after encryption keys become unavailable.
@@ -784,7 +784,7 @@ func TestConfigAPI(t *testing.T) {
 		Enabled: false,
 	})
 	require.NoError(t, err)
-	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].GetValue())
 	advanceTimeAndWaitForRefresh(clock, crypter, 11*time.Minute)
 	_, err = pc.Get(apiKeyCtx, encryptedResource)
 	require.Error(t, err)

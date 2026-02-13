@@ -79,7 +79,7 @@ func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, 
 	return user
 }
 
-func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
+func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) interfaces.APIKeyGroup {
 	keys, err := env.GetAuthDB().GetAPIKeys(ctx, groupID)
 	require.NoError(t, err)
 	require.Len(t, keys, 1, "expected exactly one org-level API key")
@@ -131,10 +131,10 @@ func getGroupRoleByUserID(t *testing.T, ctx context.Context, env environment.Env
 	return nil
 }
 
-func apiKeyValues(keys []*tables.APIKey) []string {
+func apiKeyValues(keys []interfaces.APIKeyGroup) []string {
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, k.Value)
+		out = append(out, k.GetValue())
 	}
 	return out
 }
@@ -380,7 +380,6 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 }
 
 func TestCreateUser_GroupHasOnlyUserListMembers(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 	flags.Set(t, "app.add_user_to_domain_group", true)
 	flags.Set(t, "app.create_group_per_user", true)
@@ -754,7 +753,6 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -1105,7 +1103,7 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 		// Delete any keys created by default so that we're only testing the
 		// ones we created.
 		for _, k := range defaultKeys {
-			err := adb.DeleteAPIKey(authCtx, k.APIKeyID)
+			err := adb.DeleteAPIKey(authCtx, k.GetAPIKeyID())
 			require.NoError(t, err)
 		}
 
@@ -1144,13 +1142,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
 		[]cappb.Capability{cappb.Capability_CAS_WRITE},
-		0, /*=expiresIn*/
+		0,   /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -1197,7 +1195,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx2, groupID1, "test-label-2",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1207,7 +1205,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	_, err = adb.CreateAPIKey(
 		ctx3, groupID1, "test-label-3",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1225,9 +1223,11 @@ func TestUpdateAPIKey(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	gr1 := getGroup(t, ctx1, env)
 
-	k1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
+	ik1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
+	k1, err := adb.GetAPIKey(ctx1, ik1.GetAPIKeyID())
+	require.NoError(t, err)
 	k1.Label = "US1-Updated-Label"
-	err := adb.UpdateAPIKey(ctx1, k1)
+	err = adb.UpdateAPIKey(ctx1, k1)
 
 	require.NoError(t, err, "US1 should be able to update their own API key")
 
@@ -1263,14 +1263,14 @@ func TestDeleteAPIKey(t *testing.T) {
 	createUser(t, ctx, env, "US3", "org1.io")
 	authUserCtx(ctx, env, t, "US3")
 
-	err := adb.DeleteAPIKey(ctx2, k1.APIKeyID)
+	err := adb.DeleteAPIKey(ctx2, k1.GetAPIKeyID())
 
 	require.True(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDeniedError if US2 tries to delete US1's API key; got: %T",
 		err)
 
-	err = adb.DeleteAPIKey(ctx1, k1.APIKeyID)
+	err = adb.DeleteAPIKey(ctx1, k1.GetAPIKeyID())
 
 	require.NoError(t, err, "US1 should be able to delete their org API key")
 
@@ -1372,7 +1372,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 				require.NoError(t, err)
 				hasKey := false
 				for _, k := range keys {
-					if k.Value == ownerKey.Value {
+					if k.GetValue() == ownerKey.Value {
 						hasKey = true
 						break
 					}
@@ -1383,7 +1383,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 					test.Owner, test.Accessor)
 			} else {
 				for _, k := range keys {
-					if k.Value == ownerKey.Value {
+					if k.GetValue() == ownerKey.Value {
 						require.FailNowf(
 							t, "", "GetAPIKeys() should not return key for %q when auth'd as %q",
 							test.Owner, test.Accessor)
@@ -1676,7 +1676,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	keys, err := adb.GetAPIKeys(ctx1, g.GroupID)
 	require.NoError(t, err)
 	for _, key := range keys {
-		err := adb.DeleteAPIKey(ctx1, key.APIKeyID)
+		err := adb.DeleteAPIKey(ctx1, key.GetAPIKeyID())
 		require.NoError(t, err)
 	}
 
@@ -1812,7 +1812,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
 			if err == nil {
 				require.Len(t, userKeys, 1)
-				assert.Equal(t, k.APIKeyID, userKeys[0].APIKeyID)
+				assert.Equal(t, k.APIKeyID, userKeys[0].GetAPIKeyID())
 
 				k.Label = "Updated Label"
 				err = adb.UpdateAPIKey(authCtx, k)
@@ -2252,7 +2252,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key1, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
@@ -2263,7 +2263,7 @@ func TestChildGroupAuth(t *testing.T) {
 	key2, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-		0, /*=expiresIn*/
+		0,    /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -2346,8 +2346,6 @@ func TestChildGroupAuth(t *testing.T) {
 }
 
 func TestUserListOps(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
-
 	ctx := context.Background()
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
@@ -2451,7 +2449,6 @@ func TestUserListOps(t *testing.T) {
 }
 
 func TestUserListMembership(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 
 	ctx := context.Background()
@@ -2537,7 +2534,6 @@ func TestUserListMembership(t *testing.T) {
 }
 
 func TestAddUserToGroup_GroupHasOnlyUserListMembers(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -2640,6 +2636,471 @@ func TestGetUserBySubID(t *testing.T) {
 	require.Truef(
 		t, status.IsNotFoundError(err),
 		"expected RecordNotFound error; got: %v", err)
+}
+
+func TestRemoveUserFromGroup_IndirectAccessPreservesKey(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	// US1 creates org, becomes admin.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// Create US2 and add directly as Admin.
+	createUser(t, ctx, env, "US2", "org2.io")
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
+	})
+	require.NoError(t, err)
+
+	// Also add US2 indirectly via a user list with Writer role.
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err = udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_WRITER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates an API key with CACHE_WRITE.
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove US2's direct membership.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US2"},
+	}})
+	require.NoError(t, err)
+
+	// Key should still exist but be constrained to Writer's max capabilities.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err, "key should still be valid via indirect membership")
+	assert.Equal(t, capabilities.ToInt(role.WriterCapabilities), akg.GetCapabilities())
+}
+
+func TestRemoveUserFromGroup_NoIndirectAccess_DeletesKey(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// Add US2 directly as Admin (no user list membership).
+	createUser(t, ctx, env, "US2", "org2.io")
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
+	})
+	require.NoError(t, err)
+
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove US2's direct membership.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US2"},
+	}})
+	require.NoError(t, err)
+
+	// Key should be deleted.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.Truef(t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated for deleted key; got: %v", err)
+}
+
+func TestUpdateUserListRole_DowngradeUpdatesCaps(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 is only a member via user list with Admin role.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_ADMIN_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates a key with CACHE_WRITE.
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Downgrade user list role to Developer.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserListId: ul.UserListID,
+		Role:       grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Key should have capabilities constrained to Developer's max (CAS_WRITE).
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err)
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+}
+
+func TestRemoveUserListFromGroup_DeletesKeysForIndirectOnlyUser(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 only in group via user list.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove user list from group.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserListId:       ul.UserListID,
+	}})
+	require.NoError(t, err)
+
+	// Key should be deleted.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.Truef(t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated for deleted key; got: %v", err)
+}
+
+func TestRemoveUserListFromGroup_PreservesKeysForDirectMember(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 has direct Developer membership + indirect Writer via user list.
+	createUser(t, ctx, env, "US2", "org2.io")
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+	})
+	require.NoError(t, err)
+
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err = udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_WRITER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates a key with CAS_WRITE (within Developer limits).
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove user list from group.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserListId:       ul.UserListID,
+	}})
+	require.NoError(t, err)
+
+	// Key should still exist with capabilities constrained to Developer's max.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err, "key should still be valid via direct membership")
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+}
+
+func TestRemoveUserFromUserList_ReconcilesCapsAcrossGroups(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	// Create two groups.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	createUser(t, ctx, env, "US3", "org3.io")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+	gr2 := getGroup(t, ctx3, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx3, env, gr2.GroupID, true)
+
+	// Create user list owned by gr1, add US2.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+
+	// Assign user list to both groups.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx3, gr2.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates API keys in both groups.
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	key1, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "key-gr1",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+	key2, err := adb.CreateUserAPIKey(
+		ctx2, gr2.GroupID, "US2", "key-gr2",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove US2 from user list.
+	err = removeUserFromUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+
+	// Keys should be deleted in both groups.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key1.Value)
+	require.Truef(t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated for deleted key in gr1; got: %v", err)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key2.Value)
+	require.Truef(t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated for deleted key in gr2; got: %v", err)
+}
+
+func TestRemoveUserFromUserList_PreservesDirectAccess(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 has direct Developer membership + indirect Writer via user list.
+	createUser(t, ctx, env, "US2", "org2.io")
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+	})
+	require.NoError(t, err)
+
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err = udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_WRITER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates a key with CAS_WRITE.
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Remove US2 from user list.
+	err = removeUserFromUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+
+	// Key should still exist — Developer still grants CAS_WRITE.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err, "key should still be valid via direct membership")
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+}
+
+func TestDeleteUserList_CleansUpGroups(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 only in group via user list.
+	createUser(t, ctx, env, "US2", "org2.io")
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Delete the entire user list.
+	err = udb.DeleteUserList(ctx1, ul.UserListID)
+	require.NoError(t, err)
+
+	// US2 should no longer be a member of the group.
+	gr := getGroupRoleByUserID(t, ctx1, env, "US2", gr1.GroupID)
+	require.Nil(t, gr, "US2 should not have membership in the group after user list deletion")
+}
+
+func TestDeleteUserList_PreservesDirectMemberKeys(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	// US2 has direct Developer membership + indirect Admin via user list.
+	createUser(t, ctx, env, "US2", "org2.io")
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+	})
+	require.NoError(t, err)
+
+	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
+	err = udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_ADMIN_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// US2 creates a key with CACHE_WRITE (within Admin limits).
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Key, err := adb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2", "US2's key",
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE}, 0)
+	require.NoError(t, err)
+
+	// Delete the entire user list.
+	err = udb.DeleteUserList(ctx1, ul.UserListID)
+	require.NoError(t, err)
+
+	// Key should still exist but constrained to Developer's max.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err, "key should still be valid via direct membership")
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
 func TestGetUserBySubIDNoGroup(t *testing.T) {
