@@ -68,11 +68,11 @@ require (
 	github.com/buildbuddy-io/fastcdc2020 v0.0.2
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
 	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
+	github.com/cavaliergopher/cpio v1.0.1
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/cavaliergopher/cpio v1.0.1
-	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cockroachdb/pebble v1.1.4
 	github.com/coreos/go-oidc/v3 v3.10.0
 	github.com/creack/pty v1.1.18
