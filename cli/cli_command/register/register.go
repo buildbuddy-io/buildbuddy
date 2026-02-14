@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
@@ -113,6 +114,11 @@ func register() {
 			Name:    "index",
 			Help:    "Sends updates to the remote codesearch index.",
 			Handler: index.HandleIndex,
+		},
+		{
+			Name:    "ui",
+			Help:    "Opens an interactive terminal UI for viewing builds.",
+			Handler: ui.HandleUI,
 		},
 		{
 			Name:    "update",
