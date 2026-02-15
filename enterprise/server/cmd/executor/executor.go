@@ -80,6 +80,7 @@ var (
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 	clientType                = flag.String("executor.grpc_client_type", "executor", "The client type label for requests from this executor, used to differentiate e.g. workflow executor traffic.")
+	testOnlyExecutorID        = flag.String("executor.test_only_executor_id", "", "(TEST ONLY) overrides the executor ID", flag.Internal)
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -345,6 +346,9 @@ func main() {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
 	}
 	executorID := executorUUID.String()
+	if *testOnlyExecutorID != "" {
+		executorID = *testOnlyExecutorID
+	}
 
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	env.SetImageCacheAuthenticator(imageCacheAuth)

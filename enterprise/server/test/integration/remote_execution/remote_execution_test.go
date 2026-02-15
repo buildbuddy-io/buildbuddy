@@ -216,7 +216,7 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
+	rbe.AddInProcessExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", `
@@ -239,7 +239,7 @@ func TestWorkflowCommand_InternalError_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(status.InternalError("test error message"))
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	rbe.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
@@ -259,7 +259,7 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	rbe.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
@@ -277,7 +277,7 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+	rbe.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{
 		RunInterceptor: func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
 			// Wait for the action timeout to pass
 			<-ctx.Done()
@@ -477,7 +477,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
-	rbe.AddExecutors(t, 10)
+	rbe.AddInProcessExecutors(t, 10)
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -548,7 +548,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 
 	rbe.AddBuildBuddyServers(3)
 	for i := 0; i < 5; i++ {
-		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
+		rbe.AddInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{Pool: "foo"})
 	}
 
 	platform := &repb.Platform{
@@ -1420,7 +1420,7 @@ func TestUnregisterExecutor(t *testing.T) {
 
 	// Start with two executors.
 	// AddExecutors will block until both are registered.
-	executors := rbe.AddExecutors(t, 2)
+	executors := rbe.AddInProcessExecutors(t, 2)
 
 	// Remove one of the executors.
 	// RemoveExecutor will block until the executor is unregistered.
@@ -1599,8 +1599,9 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 
 	var busyExecutors []*rbetest.Executor
 	for _, id := range busyExecutorIDs {
-		e := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: id})
-		e.ShutdownTaskScheduler()
+		e := rbe.AddSingleTaskInProcessExecutorWithOptions(t, &rbetest.InProcessExecutorOptions{Name: id})
+		err := e.ShutdownTaskScheduler()
+		require.NoError(t, err)
 		busyExecutors = append(busyExecutors, e)
 	}
 
@@ -1636,7 +1637,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
+	rbe.AddInProcessExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	platform := &repb.Platform{
@@ -1762,7 +1763,7 @@ func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	bbServer := rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
+	rbe.AddInProcessExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	iid := uuid.NewString()
@@ -2170,7 +2171,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 
 	app1 := rbe.AddBuildBuddyServer()
 	app2 := rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
+	rbe.AddInProcessExecutor(t)
 
 	// Set up a custom proxy director that makes sure we choose app1 for the
 	// initial PublishOperation request, so that we can test stopping app1 while
@@ -2296,7 +2297,7 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	rbe.AppProxy.SetDirector(director)
 
 	// Add the executor after the proxy so the executor registers with app 1.
-	rbe.AddExecutor(t)
+	rbe.AddInProcessExecutor(t)
 
 	var cmds []*rbetest.ControlledCommand
 	for i := 0; i < 10; i++ {
@@ -2505,8 +2506,9 @@ func testCustomResources(t *testing.T, test customResourcesTest) {
 			})
 		},
 	})
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex1ID})
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex2ID})
+	resourceArg := `--executor.custom_resources={"name": "foo", "value": 1.0}`
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex1ID, Args: []string{resourceArg}})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex2ID, Args: []string{resourceArg}})
 
 	// First try scheduling a task that requires 2 "foo" resources. This should
 	// not be assigned to any executor because the executors each only have 1

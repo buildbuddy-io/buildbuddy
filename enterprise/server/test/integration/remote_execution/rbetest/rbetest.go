@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -81,6 +82,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -319,6 +321,9 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
+			if e.separateProcess {
+				continue
+			}
 			id, e := id, e
 			e.env.GetHealthChecker().Shutdown()
 			wg.Add(1)
@@ -690,7 +695,7 @@ func newTestCommandController(t *testing.T, env environment.Env) *testCommandCon
 	return controller
 }
 
-type ExecutorOptions struct {
+type InProcessExecutorOptions struct {
 	// Optional name that will appear in executor logs.
 	// To ease debugging, you should specify an explicit name if it's important to the test on which executor an action
 	// is executed.
@@ -704,6 +709,19 @@ type ExecutorOptions struct {
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
 }
 
+type ExecutorOptions struct {
+	// Optional name that will appear in executor logs.
+	// To ease debugging, you should specify an explicit name if it's important to the test on which executor an action
+	// is executed.
+	Name string
+	// Optional API key to be sent by executor
+	APIKey string
+	// Optional Pool name for the executor
+	Pool string
+	// Additional args to pass to the executor binary.
+	Args []string
+}
+
 // Executor is a handle for a running executor instance.
 type Executor struct {
 	env                *testenv.TestEnv
@@ -711,6 +729,7 @@ type Executor struct {
 	grpcServer         *grpc.Server
 	cancelRegistration context.CancelFunc
 	taskScheduler      *priority_task_scheduler.PriorityTaskScheduler
+	separateProcess    bool
 }
 
 // Stop unregisters the executor from the BuildBuddy server.
@@ -720,10 +739,14 @@ func (e *Executor) stop() {
 }
 
 // ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
-func (e *Executor) ShutdownTaskScheduler() {
+func (e *Executor) ShutdownTaskScheduler() error {
+	if e.separateProcess {
+		return status.UnimplementedErrorf("cannot shut down scheduler in executor running in a separate process")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
 	defer cancel()
 	e.taskScheduler.Shutdown(ctx)
+	return nil
 }
 
 // QueueLength returns the current number of tasks in the executor's queue.
@@ -777,25 +800,86 @@ func (r *Env) updateAppProxy() {
 
 // AddExecutorWithOptions brings up an executor with custom options.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutorWithOptions(t testing.TB, opts *ExecutorOptions) *Executor {
+func (r *Env) AddInProcessExecutorWithOptions(t testing.TB, opts *InProcessExecutorOptions) *Executor {
 	executor := r.addExecutor(t, opts)
 	r.waitForExecutorRegistration()
 	return executor
+}
+
+func (r *Env) AddExecutorWithOptions(t *testing.T, opts *ExecutorOptions) *testexecutor.Executor {
+	name := opts.Name
+	if name == "" {
+		name = fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+	}
+
+	teOpts := &testexecutor.Opts{
+		DebugName: name,
+		Args: []string{
+			"--executor.app_target=" + r.AppProxy.GRPCTarget(),
+			"--executor.test_only_executor_id=" + name,
+		},
+	}
+	if opts.Pool != "" {
+		teOpts.Args = append(teOpts.Args, "--executor.pool="+opts.Pool)
+	}
+	if opts.APIKey != "" {
+		teOpts.Args = append(teOpts.Args, "--executor.api_key="+opts.APIKey)
+	}
+	teOpts.Args = append(teOpts.Args, opts.Args...)
+	e := testexecutor.RunWithOpts(t, teOpts)
+	r.executors[name] = &Executor{id: name, separateProcess: true}
+	r.waitForExecutorRegistration()
+	return e
+}
+
+// AddInProcessExecutor brings up an executor with an auto generated name with default settings.
+// Use this function in tests where it's not important on which executor tasks are executed,
+// otherwise use AddExecutorWithOptions and specify a custom Name.
+// Blocks until executor registers with the scheduler.
+// Deprecated. Use AddExecutor when possible.
+func (r *Env) AddInProcessExecutor(t testing.TB) *Executor {
+	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+	return r.AddInProcessExecutorWithOptions(t, &InProcessExecutorOptions{Name: name})
 }
 
 // AddExecutor brings up an executor with an auto generated name with default settings.
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutor(t testing.TB) *Executor {
+func (r *Env) AddExecutor(t *testing.T) *testexecutor.Executor {
 	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddExecutorWithOptions(t, &ExecutorOptions{Name: name})
+	opts := &testexecutor.Opts{
+		DebugName: name,
+		Args: []string{
+			"--executor.app_target=" + r.AppProxy.GRPCTarget(),
+			"--executor.test_only_executor_id=" + name,
+		},
+	}
+	e := testexecutor.RunWithOpts(t, opts)
+	r.executors[name] = &Executor{id: name, separateProcess: true}
+	r.waitForExecutorRegistration()
+	return e
 }
 
 // AddSingleTaskExecutorWithOptions brings up an executor with custom options that is configured with capacity to
 // accept only a single "default" sized task.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutorWithOptions(t testing.TB, options *ExecutorOptions) *Executor {
+func (r *Env) AddSingleTaskExecutorWithOptions(t *testing.T, options *ExecutorOptions) *testexecutor.Executor {
+	optionsCopy := *options
+	if optionsCopy.Name == "" {
+		optionsCopy.Name = fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
+	}
+	optionsCopy.Args = append(optionsCopy.Args, fmt.Sprintf("--executor.memory_bytes=%d", tasksize.DefaultMemEstimate))
+	optionsCopy.Args = append(optionsCopy.Args, fmt.Sprintf("--executor.millicpu=%d", tasksize.DefaultCPUEstimate))
+	return r.AddExecutorWithOptions(t, &optionsCopy)
+}
+
+// AddSingleTaskInProcessExecutorWithOptions brings up an executor with
+// custom options that is configured with capacity to
+// accept only a single "default" sized task.
+// Blocks until executor registers with the scheduler.
+// Deprecated. Use AddSingleTaskExecutorWithOptions when possible.
+func (r *Env) AddSingleTaskInProcessExecutorWithOptions(t testing.TB, options *InProcessExecutorOptions) *Executor {
 	optionsCopy := *options
 	optionsCopy.priorityTaskSchedulerOptions = priority_task_scheduler.Options{
 		RAMBytesCapacityOverride:  tasksize.DefaultMemEstimate,
@@ -811,19 +895,50 @@ func (r *Env) AddSingleTaskExecutorWithOptions(t testing.TB, options *ExecutorOp
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutor(t testing.TB) *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddSingleTaskExecutorWithOptions(t, &ExecutorOptions{Name: name})
+func (r *Env) AddSingleTaskExecutor(t *testing.T) *testexecutor.Executor {
+	return r.AddSingleTaskExecutorWithOptions(t, &ExecutorOptions{})
 }
 
 // AddNamedExecutors brings up N named executors with default settings.
 // Use this function if it matters for the test on which executor tasks are executed, otherwise
 // use AddExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
+func (r *Env) AddNamedExecutors(t *testing.T, names []string) []*testexecutor.Executor {
+	var eg errgroup.Group
+
+	var executors []*testexecutor.Executor
+	for _, name := range names {
+		opts := &testexecutor.Opts{
+			DebugName: name,
+			Args: []string{
+				"--executor.app_target=" + r.AppProxy.GRPCTarget(),
+				"--executor.test_only_executor_id=" + name,
+			},
+			SkipWaitForReady: true,
+		}
+		e := testexecutor.RunWithOpts(t, opts)
+		eg.Go(func() error {
+			return e.WaitForReady()
+		})
+		r.executors[name] = &Executor{id: name, separateProcess: true}
+		executors = append(executors, e)
+	}
+	if err := eg.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	r.waitForExecutorRegistration()
+	return executors
+}
+
+// AddNamedExecutors brings up N named executors with default settings.
+// Use this function if it matters for the test on which executor tasks are executed, otherwise
+// use AddExecutors.
+// Blocks until all executors register with the scheduler.
+// Deprecated. Use AddNamedExecutors instead when possible.
+func (r *Env) AddNamedInProcessExecutors(t testing.TB, names []string) []*Executor {
 	var executors []*Executor
 	for _, name := range names {
-		executors = append(executors, r.addExecutor(t, &ExecutorOptions{Name: name}))
+		executors = append(executors, r.addExecutor(t, &InProcessExecutorOptions{Name: name}))
 	}
 	r.waitForExecutorRegistration()
 	return executors
@@ -833,7 +948,7 @@ func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
 // Use this function in tests where it's not important on which executor tasks are exected,
 // otherwise use AddNamedExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
+func (r *Env) AddExecutors(t *testing.T, n int) []*testexecutor.Executor {
 	var names []string
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
@@ -842,7 +957,21 @@ func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 	return r.AddNamedExecutors(t, names)
 }
 
-func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
+// AddExecutors brings up N executors with auto generated names with default settings.
+// Use this function in tests where it's not important on which executor tasks are exected,
+// otherwise use AddNamedExecutors.
+// Blocks until all executors register with the scheduler.
+// Deprecated. Use AddExecutors when possible.
+func (r *Env) AddInProcessExecutors(t testing.TB, n int) []*Executor {
+	var names []string
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+		names = append(names, name)
+	}
+	return r.AddNamedInProcessExecutors(t, names)
+}
+
+func (r *Env) addExecutor(t testing.TB, options *InProcessExecutorOptions) *Executor {
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
 	clientConn := r.appProxyConn
@@ -917,6 +1046,9 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 }
 
 func (r *Env) RemoveExecutor(executor *Executor) {
+	if executor.separateProcess {
+		assert.FailNow(r.t, "removing executors started as separate processes is not yet supported")
+	}
 	if _, ok := r.executors[executor.id]; !ok {
 		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
 	}
