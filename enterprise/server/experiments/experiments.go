@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -154,6 +155,13 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if currentRegion := region.ConfiguredAppRegion(); currentRegion != "" {
 		options.attributes["region"] = currentRegion
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		for key, values := range md {
+			if attr, ok := strings.CutPrefix(key, "x-buildbuddy-experiment.attr."); ok && len(values) > 0 {
+				options.attributes[attr] = values[len(values)-1]
+			}
+		}
 	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {
