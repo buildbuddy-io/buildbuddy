@@ -308,7 +308,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 		resourceName = "" // Only set resource name on first request
 
-		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("timed out sending Write request"))
 		if err != nil {
 			// If the blob already exists in the CAS, the server will respond EOF.
 			// It is safe to stop sending writes.
@@ -321,9 +321,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if readDone {
 			break
 		}
-
 	}
-	rsp, err := stream.CloseAndRecv()
+	rsp, err := sender.CloseAndRecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("timed out receiving Write response"))
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
@@ -1147,7 +1146,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 type UploadWriter struct {
 	ctx          context.Context
 	stream       bspb.ByteStream_WriteClient
-	sender       rpcutil.Sender[*bspb.WriteRequest]
+	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
 
 	bytesUploaded int64
