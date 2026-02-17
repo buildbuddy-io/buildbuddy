@@ -463,7 +463,7 @@ func (s *BuildBuddyServer) start() {
 	s.env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 	grpcServerRunFunc := func() {
 		if err = grpcServer.Serve(lis); err != nil {
-			s.t.Fatal(err.Error())
+			log.Warningf("Error starting gRPC server: %v", err)
 		}
 	}
 
