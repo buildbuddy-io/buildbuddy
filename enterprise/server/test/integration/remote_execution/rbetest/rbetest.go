@@ -460,9 +460,10 @@ func (s *BuildBuddyServer) start() {
 	}
 	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(s.env, s.grpcServerConfig)...)
 	s.grpcServer = grpcServer
+	s.env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 	grpcServerRunFunc := func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatal(err.Error())
+		if err = grpcServer.Serve(lis); err != nil {
+			s.t.Fatal(err.Error())
 		}
 	}
 
