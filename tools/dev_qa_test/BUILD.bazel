@@ -21,7 +21,9 @@ bazel_integration_test(
     env = {
         "QA_TARBALL_URL": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.tar.gz",
         "QA_STRIP_PREFIX": "abseil-cpp-20250814.1",
-        "QA_BAZEL_COMMAND": "build //...",
+        "QA_BAZEL_COMMAND": "test //...",
+        # Exclude tests that need timezone data (missing in RBE containers) and benchmarks.
+        "QA_EXTRA_BAZEL_FLAGS": "--test_tag_filters=-performance,-webdriver,-docker,-bare,-benchmark -- -//absl/time:time_test -//absl/time/internal/cctz:time_zone_format_test -//absl/time/internal/cctz:time_zone_lookup_test -//absl/random/internal:randen_benchmarks",
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":dev_qa_test_runner",
@@ -36,7 +38,8 @@ bazel_integration_test(
     env = {
         "QA_TARBALL_URL": "https://github.com/bazelbuild/rules_python/archive/refs/tags/1.6.3.tar.gz",
         "QA_STRIP_PREFIX": "rules_python-1.6.3",
-        "QA_BAZEL_COMMAND": "build //python/...",
+        "QA_BAZEL_COMMAND": "test //...",
+        "QA_EXTRA_BAZEL_FLAGS": "--test_tag_filters=-performance,-webdriver,-docker,-bare,-integration-test,-acceptance-test --build_tag_filters=-integration-test -- -//tests/implicit_namespace_packages/... -//tests/whl_with_build_files/... -//tests/toolchains/...",
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":dev_qa_test_runner",
@@ -51,7 +54,8 @@ bazel_integration_test(
     env = {
         "QA_TARBALL_URL": "https://github.com/bazel-contrib/bazel-gazelle/archive/refs/tags/v0.47.0.tar.gz",
         "QA_STRIP_PREFIX": "bazel-gazelle-0.47.0",
-        "QA_BAZEL_COMMAND": "build //cmd/gazelle:gazelle",
+        "QA_BAZEL_COMMAND": "test //...",
+        "QA_EXTRA_BAZEL_FLAGS": "-- -//internal:bazel_test -//cmd/gazelle:gazelle_test -//docs/... -//tests/bzl_deps/...",
     },
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     test_runner = ":dev_qa_test_runner",

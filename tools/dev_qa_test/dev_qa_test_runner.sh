@@ -12,6 +12,7 @@ workspace_dir="${BIT_WORKSPACE_DIR:-}"
 tarball_url="${QA_TARBALL_URL:-}"
 strip_prefix="${QA_STRIP_PREFIX:-}"
 bazel_command="${QA_BAZEL_COMMAND:-}"
+extra_bazel_flags="${QA_EXTRA_BAZEL_FLAGS:-}"
 api_key="${BB_API_KEY:-}"
 bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.remote.buildbuddy.dev}"
@@ -147,7 +148,7 @@ echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
-${bazel} ${bazel_command} --config=dev_qa_test
+${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}
 exit_code=$?
 set +x
 
