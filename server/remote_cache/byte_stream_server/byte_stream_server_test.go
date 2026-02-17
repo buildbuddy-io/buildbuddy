@@ -597,14 +597,6 @@ func TestReadChunked(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 

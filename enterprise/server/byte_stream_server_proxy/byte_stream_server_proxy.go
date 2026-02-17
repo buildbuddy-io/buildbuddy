@@ -472,7 +472,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 
 	// TODO(buildbuddy-internal#6426): Read and write chunked blobs for encrypted requests.
 	encryptionRequested := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
-	if s.chunkingEnabled(ctx) && !encryptionRequested && !proxy_util.SkipRemote(ctx) {
+	if s.writeChunkingEnabled(ctx) && !encryptionRequested && !proxy_util.SkipRemote(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
 			recordWriteMetrics(byteStreamMetrics{
@@ -686,9 +686,10 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 	return s.ByteStream_WriteServer.Recv()
 }
 
-func (s *ByteStreamServerProxy) chunkingEnabled(ctx context.Context) bool {
+func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	return s.localCache != nil && s.remoteCAS != nil &&
-		chunking.Enabled(ctx, s.efp)
+		chunking.Enabled(ctx, s.efp) &&
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
 }
 
 type writeChunkedResult struct {

@@ -51,8 +51,7 @@ func ValidateConfig() error {
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
 	return efp != nil &&
-		efp.Boolean(ctx, "cache.chunking_enabled", false) &&
-		efp.Boolean(ctx, "cache.split_splice_enabled", false)
+		efp.Boolean(ctx, "cache.chunking_enabled", false)
 }
 
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
