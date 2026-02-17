@@ -275,40 +275,40 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
   }
 
-  getTab() {
-    // If the user explicitly clicked on a tab, show that
-    if (this.props.tab) {
-      return this.props.tab;
-    }
+  // Parses hash like "#coverage-2", "#coverage", "#2", or "#".
+  private parseHash(): { section: SectionFilter; run?: number } {
+    const parts = (this.props.tab?.replace("#", "") || "").split("-");
+    const sections: string[] = ["documents", "logs", "coverage", "actions", "artifacts", "cache", "executions"];
+    const section = sections.includes(parts[0]) ? (parts[0] as SectionFilter) : "all";
+    const runStr = section !== "all" ? parts[1] : parts[0];
+    const run = runStr && /^\d+$/.test(runStr) ? Number(runStr) : undefined;
+    return { section, run };
+  }
 
-    // If any of the attempts didn't pass, let's default ot that one.
-    let events = this.state.target?.testResultEvents?.sort(this.resultSort) || [];
-    for (let [i, event] of events.entries()) {
+  private getRun(): number {
+    const { run } = this.parseHash();
+    if (run !== undefined) return run;
+
+    // Default to the first non-passing attempt, or the first attempt.
+    const events = this.state.target?.testResultEvents?.sort(this.resultSort) || [];
+    for (const [i, event] of events.entries()) {
       if (event.testResult?.status != build_event_stream.TestStatus.PASSED) {
-        return `#${i + 1}`;
+        return i + 1;
       }
     }
+    return 1;
+  }
 
-    // If all attempts passed, let's fall back to the first one.
-    return "#1";
+  private buildHash(section?: string, run?: number): string {
+    const resolved = section ?? this.parseHash().section;
+    const s = resolved !== "all" ? resolved : "";
+    const r = run ?? this.parseHash().run;
+    if (s && r) return `#${s}-${r}`;
+    return s ? `#${s}` : r ? `#${r}` : "#";
   }
 
   private getSectionFromHash(): SectionFilter {
-    const hash = this.props.tab?.replace("#", "") || "";
-    const validSections: SectionFilter[] = [
-      "all",
-      "documents",
-      "logs",
-      "coverage",
-      "actions",
-      "artifacts",
-      "cache",
-      "executions",
-    ];
-    if (validSections.includes(hash as SectionFilter)) {
-      return hash as SectionFilter;
-    }
-    return "all";
+    return this.parseHash().section;
   }
 
   async executeRemoteBazelQuery(target: string) {
@@ -463,7 +463,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             {sectionTabs.map((tab) => (
               <a
                 key={tab.id}
-                href={tab.id === "all" ? "#" : `#${tab.id}`}
+                href={this.buildHash(tab.id)}
                 debug-id={`target-section-tab-${tab.id}`}
                 className={`tab ${activeSection === tab.id ? "selected" : ""}`}>
                 {tab.label}
@@ -474,11 +474,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (
                 <a
-                  href={`#${index + 1}`}
+                  href={this.buildHash(undefined, index + 1)}
                   title={this.generateRunName(event?.id?.testResult ?? {})}
                   className={`run ${this.getTestResultStatusClass(
                     event.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
-                  )} ${this.getTab() == `#${index + 1}` ? "selected" : ""}`}>
+                  )} ${this.getRun() === index + 1 ? "selected" : ""}`}>
                   Run {event.id?.testResult?.run ?? 0} (Attempt {event.id?.testResult?.attempt ?? 0}, Shard{" "}
                   {event.id?.testResult?.shard ?? 0}
                   {event.testResult?.cachedLocally
@@ -492,7 +492,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             </div>
           )}
           {resultEvents
-            .filter((_, index) => `#${index + 1}` == this.getTab())
+            .filter((_, index) => index + 1 === this.getRun())
             .map((buildEvent) => (
               <span>
                 {(activeSection === "all" || activeSection === "documents") && (
@@ -532,7 +532,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           )}
           {(activeSection === "all" || activeSection === "artifacts") &&
             resultEvents
-              .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
+              .filter((event, index) => index + 1 === this.getRun() && event?.testResult?.testActionOutput)
               .map((event) => (
                 <div>
                   <TargetArtifactsCardComponent
