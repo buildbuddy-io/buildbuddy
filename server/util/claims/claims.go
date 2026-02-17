@@ -482,20 +482,19 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		if !*reparseJWTs {
-			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
+	if *reparseJWTs {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			caller := "unknown"
+			if _, file, line, ok := runtime.Caller(1); ok {
+				caller = fmt.Sprintf("%s:%d", file, line)
+			}
+			reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			if err != nil {
+				return nil, err
+			}
+			return claims, nil
 		}
-		caller := "unknown"
-		if _, file, line, ok := runtime.Caller(1); ok {
-			caller = fmt.Sprintf("%s:%d", file, line)
-		}
-		reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
-		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
-		if err != nil {
-			return nil, err
-		}
-		return claims, nil
 	}
 
 	// If there's no error or we have an assertion failure; just return a
