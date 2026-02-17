@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -21,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -1185,4 +1188,65 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 			require.Equal(t, buf, out.Bytes(), "downloaded blob should match original")
 		})
 	}
+}
+
+func setupChunkingEnv(t *testing.T) *testenv.TestEnv {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
+}
+
+func TestUploadFromReaderWithChunking(t *testing.T) {
+	te := setupChunkingEnv(t)
+
+	ctx := context.Background()
+	blobSize := int64(3 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	d, uploadedBytes, err := cachetools.UploadFromReaderWithChunking(ctx, te, casRN, bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.NotNil(t, d)
+	require.Equal(t, rn.Digest.GetHash(), d.GetHash())
+	require.Greater(t, uploadedBytes, int64(0))
+
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
+}
+
+func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
+	te := setupChunkingEnv(t)
+
+	ctx := cachetools.WithChunkingEnabled(context.Background())
+	blobSize := int64(3 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction())
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
 }

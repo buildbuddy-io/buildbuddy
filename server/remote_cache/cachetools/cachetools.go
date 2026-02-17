@@ -13,11 +13,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -56,6 +58,7 @@ const (
 
 var (
 	enableUploadCompression     = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
+	chunkUploadConcurrency      = flag.Int("cache.client.chunk_upload_concurrency", 8, "Maximum number of chunk uploads to run in parallel during chunked upload.")
 	casRPCTimeout               = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
@@ -354,6 +357,108 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	return r.GetDigest(), bytesUploaded, nil
 }
 
+// UploadFromReaderWithChunking uploads a blob to the CAS using FastCDC if
+// the blob is large enough. Missing chunks are uploaded and then SpliceBlob
+// is used to tell the server how to reassemble them. Blobs less than the
+// threshold are uploaded normally.
+func UploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in ioutil.ReadAtSeeker) (*repb.Digest, int64, error) {
+	if !shouldUploadChunked(env, r.GetDigest()) {
+		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
+	}
+	if _, err := in.Seek(0, io.SeekStart); err != nil {
+		return nil, 0, err
+	}
+
+	var chunkDigests []*repb.Digest
+	chunkOffsets := make(map[string]int64)
+	var offset int64
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(chunkData []byte) error {
+		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction())
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, d)
+		if _, exists := chunkOffsets[d.GetHash()]; !exists {
+			chunkOffsets[d.GetHash()] = offset
+		}
+		offset += int64(len(chunkData))
+		return nil
+	})
+	if err != nil {
+		return nil, 0, status.InternalErrorf("create chunker: %s", err)
+	}
+	if _, err := io.Copy(chunker, in); err != nil {
+		_ = chunker.Close()
+		return nil, 0, status.InternalErrorf("chunk input: %s", err)
+	}
+	if err := chunker.Close(); err != nil {
+		return nil, 0, status.InternalErrorf("finalize chunking: %s", err)
+	}
+	if len(chunkDigests) <= 1 {
+		return nil, 0, status.UnimplementedErrorf("chunking produced %d chunk(s)", len(chunkDigests))
+	}
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     r.GetDigest(),
+		ChunkDigests:   chunkDigests,
+		InstanceName:   r.GetInstanceName(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+	missingRsp, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest())
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var uploadedBytes atomic.Int64
+	if missingDigests := missingRsp.GetMissingBlobDigests(); len(missingDigests) > 0 {
+		// Each chunk's offset and size map to a region of the original file,
+		// so we can upload directly from SectionReaders without loading the
+		// full blob into memory.
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(*chunkUploadConcurrency)
+		for _, d := range missingDigests {
+			eg.Go(func() error {
+				chunkRN := digest.NewCASResourceName(d, r.GetInstanceName(), r.GetDigestFunction())
+				chunkRN.SetCompressor(repb.Compressor_ZSTD)
+				sr := io.NewSectionReader(in, chunkOffsets[d.GetHash()], d.GetSizeBytes())
+				_, u, err := UploadFromReaderWithCompression(egCtx, env.GetByteStreamClient(), chunkRN, sr, repb.Compressor_IDENTITY)
+				uploadedBytes.Add(u)
+				return err
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, uploadedBytes.Load(), err
+		}
+	}
+
+	if _, err := env.GetContentAddressableStorageClient().SpliceBlob(ctx, manifest.ToSpliceBlobRequest()); err != nil {
+		return nil, uploadedBytes.Load(), err
+	}
+	return r.GetDigest(), uploadedBytes.Load(), nil
+}
+
+type contextKey int
+
+const chunkingEnabledKey contextKey = iota
+
+// WithChunkingEnabled returns a context that causes BatchCASUploader to use
+// FastCDC chunked uploads for large blobs when the reader supports ReadAt.
+func WithChunkingEnabled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, chunkingEnabledKey, true)
+}
+
+func chunkingEnabled(ctx context.Context) bool {
+	v, _ := ctx.Value(chunkingEnabledKey).(bool)
+	return v
+}
+
+func shouldUploadChunked(env environment.Env, d *repb.Digest) bool {
+	return env != nil &&
+		env.GetByteStreamClient() != nil &&
+		env.GetContentAddressableStorageClient() != nil &&
+		d.GetSizeBytes() > chunking.MaxChunkSizeBytes()
+}
+
 type uploadRetryResult = struct {
 	digest        *repb.Digest
 	uploadedBytes int64
@@ -638,6 +743,15 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
+		if ras, ok := rsc.(ioutil.ReadAtSeeker); ok && chunkingEnabled(ul.ctx) {
+			ul.eg.Go(func() error {
+				defer r.Close()
+				_, _, err := UploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras)
+				return err
+			})
+			return nil
+		}
+
 		byteStreamClient := ul.env.GetByteStreamClient()
 		if byteStreamClient == nil {
 			return status.InvalidArgumentError("missing bytestream client")
@@ -807,7 +921,7 @@ func (ul *BatchCASUploader) Stats() UploadStats {
 }
 
 type bytesReadSeekCloser struct {
-	io.ReadSeeker
+	ioutil.ReadAtSeeker
 }
 
 func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
