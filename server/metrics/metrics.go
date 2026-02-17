@@ -2154,6 +2154,15 @@ var (
 		StatusLabel,
 	})
 
+	// ### Usage tracker
+
+	UsageTrackerMissingCollectionCountsCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "usage_tracker",
+		Name:      "missing_collection_counts_count",
+		Help:      "The number of times the usage tracking system was missing counts for a particular collection period. This may happen if there are transient redis errors.",
+	})
+
 	// ### Webhooks
 	//
 	// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
