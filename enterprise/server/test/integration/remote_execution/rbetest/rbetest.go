@@ -342,6 +342,9 @@ type BuildBuddyServerOptions struct {
 
 	// EnvModifier modifies the environment before starting the BuildBuddy server.
 	EnvModifier func(env *testenv.TestEnv)
+
+	// GRPCServerConfig configures the gRPC server, allowing extra interceptors.
+	GRPCServerConfig grpc_server.GRPCServerConfig
 }
 
 // buildBuddyServerEnv is a specialized environment that allows us to return a random SchedulerClient for every
@@ -360,6 +363,7 @@ type BuildBuddyServer struct {
 	env  *buildBuddyServerEnv
 	port int
 
+	grpcServerConfig        grpc_server.GRPCServerConfig
 	grpcServer              *grpc.Server
 	schedulerServer         *scheduler_server.SchedulerServer
 	executionServer         repb.ExecutionServer
@@ -430,6 +434,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		t:                       t,
 		env:                     env,
 		port:                    port,
+		grpcServerConfig:        opts.GRPCServerConfig,
 		schedulerServer:         scheduler,
 		executionServer:         executionServer,
 		buildBuddyServiceServer: buildBuddyServiceServer,
@@ -453,8 +458,14 @@ func (s *BuildBuddyServer) start() {
 	if err != nil {
 		assert.FailNow(s.t, fmt.Sprintf("could not listen on port %d", s.port), err.Error())
 	}
-	grpcServer, grpcServerRunFunc := testenv.GRPCServer(s.env.TestEnv, lis)
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(s.env, s.grpcServerConfig)...)
 	s.grpcServer = grpcServer
+	s.env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
+	grpcServerRunFunc := func() {
+		if err = grpcServer.Serve(lis); err != nil {
+			log.Fatalf("Error starting gRPC server: %v", err)
+		}
+	}
 
 	// Configure services needed by remote execution.
 
