@@ -23,7 +23,7 @@ jobs:
         id: cache-restore
         uses: ./.github/actions/cache-restore
 
-      - name: Test
+      - name: Build
         env:
           GO_REPOSITORY_USE_HOST_CACHE: 1
           GOMODCACHE: /home/runner/go-mod-cache
