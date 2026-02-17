@@ -13,15 +13,15 @@ func formatStatus(inv *inpb.Invocation) string {
 	switch inv.GetInvocationStatus() {
 	case inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS:
 		if inv.GetSuccess() {
-			return statusPassedStyle.Render("Passed")
+			return "Passed"
 		}
-		return statusFailedStyle.Render("Failed")
+		return "Failed"
 	case inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS:
-		return statusInProgressStyle.Render("In progress")
+		return "In progress"
 	case inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
-		return statusDisconnectedStyle.Render("Disconnected")
+		return "Disconnected"
 	default:
-		return statusUnknownStyle.Render("Unknown")
+		return "Unknown"
 	}
 }
 
