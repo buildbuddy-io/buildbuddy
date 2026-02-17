@@ -41,6 +41,10 @@ if [[ -z "${bazel_command}" ]]; then
   exit 1
 fi
 
+# Generate a unique run ID to ensure a fresh remote cache namespace.
+# This prevents AC (action cache) and CAS hits from previous runs.
+run_id="$(date +%s)-${RANDOM}"
+
 echo "=================================================="
 echo "Dev QA Test Runner"
 echo "=================================================="
@@ -49,6 +53,7 @@ echo "Workspace: ${workspace_dir}"
 echo "Tarball URL: ${tarball_url}"
 echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
+echo "Run ID: ${run_id}"
 echo "=================================================="
 
 cd "${workspace_dir}"
@@ -112,9 +117,9 @@ build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 build:dev_qa_test --nocache_test_results
-build:dev_qa_test --remote_cache=
 build:dev_qa_test --noremote_accept_cached
 build:dev_qa_test --noremote_upload_local_results
+build:dev_qa_test --remote_instance_name=dev-qa-test/${run_id}
 build:dev_qa_test --remote_download_minimal
 EOF
 
