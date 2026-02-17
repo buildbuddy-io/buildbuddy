@@ -1163,7 +1163,7 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		}, nil
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
@@ -1204,7 +1204,7 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
 	}
 

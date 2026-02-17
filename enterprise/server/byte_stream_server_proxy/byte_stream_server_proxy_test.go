@@ -788,14 +788,6 @@ func TestReadChunked(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
@@ -919,7 +911,7 @@ func TestWriteChunked(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1084,7 +1076,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1219,7 +1211,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1405,14 +1397,6 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{

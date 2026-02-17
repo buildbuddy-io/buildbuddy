@@ -844,7 +844,7 @@ func TestGetTreeMissingRoot(t *testing.T) {
 
 func TestSpliceAndSplitBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -949,7 +949,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 
 func TestSplitBlobNotFound(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -991,7 +991,7 @@ func TestSplitBlobNotFound(t *testing.T) {
 
 func TestSpliceBlobSingleChunk(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1048,14 +1048,6 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache.split_splice_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
