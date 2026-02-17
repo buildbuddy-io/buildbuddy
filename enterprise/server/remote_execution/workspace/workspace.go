@@ -38,6 +38,7 @@ import (
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
 
 var (
@@ -371,12 +372,44 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	return nil
 }
 
+func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
+	if err := ws.AddCIRunner(ctx); err != nil {
+		return err
+	}
+	if err := ws.AddCLI(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// AddCLI adds the bb CLI to the workspace root if it doesn't already exist.
+func (ws *Workspace) AddCLI(ctx context.Context) error {
+	// The CLI binary is not embedded on Windows due to a CGo dependency that isn't supported.
+	if len(cli_bundle.CLIBytes) == 0 {
+		return status.UnimplementedErrorf("CLI binary not embedded")
+	}
+	// Don't add CLI if the workspace is backed by FUSE.
+	if ws.vfs != nil {
+		return status.UnimplementedErrorf("AddCLI not supported on VFS")
+	}
+	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
+	exists, err := disk.FileExists(ctx, destPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	return os.WriteFile(destPath, cli_bundle.CLIBytes, 0o555)
+}
+
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// Don't add CI runner if the workspace is backed by FUSE.
 	if ws.vfs != nil {
-		return status.UnimplementedErrorf("AddCIRunner not support on VFS")
+		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
