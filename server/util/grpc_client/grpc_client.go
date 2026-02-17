@@ -2,6 +2,7 @@ package grpc_client
 
 import (
 	"context"
+	"errors"
 	"math"
 	"math/rand/v2"
 	"net/url"
@@ -22,6 +23,9 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/balancer"
+	"google.golang.org/grpc/balancer/endpointsharding"
+	"google.golang.org/grpc/balancer/pickfirst"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/google"
@@ -234,6 +238,72 @@ func (p *ClientConnPoolSplitter) Invoke(ctx context.Context, method string, args
 
 func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	return p.getPool().getConn().NewStream(ctx, desc, method, opts...)
+}
+
+const customRRName = "fail_fast"
+
+type failFastBalancerBuilder struct{}
+
+func (failFastBalancerBuilder) Name() string {
+	return customRRName
+}
+
+func (failFastBalancerBuilder) Build(cc balancer.ClientConn, bOpts balancer.BuildOptions) balancer.Balancer {
+	crr := &failFastBalancer{
+		ClientConn: cc,
+		bOpts:      bOpts,
+	}
+	crr.Balancer = endpointsharding.NewBalancer(crr, bOpts, balancer.Get(pickfirst.Name).Build, endpointsharding.Options{})
+	return crr
+}
+
+type failFastBalancer struct {
+	balancer.Balancer
+	balancer.ClientConn
+	bOpts balancer.BuildOptions
+}
+
+func (ffb *failFastBalancer) UpdateClientConnState(state balancer.ClientConnState) error {
+	log.Infof("Updating client conn state to %v", state)
+	defer log.Infof("Finished updating client conn state to %v", state)
+	return ffb.Balancer.UpdateClientConnState(balancer.ClientConnState{
+		ResolverState: state.ResolverState,
+	})
+}
+
+func (ffb *failFastBalancer) UpdateState(state balancer.State) {
+	log.Infof("Updating balancer state to %v", state)
+	defer log.Infof("Finished updating balancer state to %v", state)
+	childStates := endpointsharding.ChildStatesFromPicker(state.Picker)
+	for _, childState := range childStates {
+		log.Infof("child state %v", childState)
+	}
+	picker := &failFastPicker{
+		delegate: state.Picker,
+	}
+	ffb.ClientConn.UpdateState(balancer.State{
+		ConnectivityState: state.ConnectivityState,
+		Picker:            picker,
+	})
+}
+
+type failFastPicker struct {
+	delegate balancer.Picker
+}
+
+func (ffp *failFastPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
+	log.Infof("fail-fast-picker: picking %v", info)
+	res, err := ffp.delegate.Pick(info)
+	log.Infof("fail-fast-picker: delegate pick result %v %v", res, err)
+	if errors.Is(err, balancer.ErrNoSubConnAvailable) {
+		log.Infof("fail-fast-picker: no subconn available")
+		return balancer.PickResult{}, status.UnavailableErrorf("no ready connection available, failing fast")
+	}
+	return res, err
+}
+
+func init() {
+	balancer.Register(failFastBalancerBuilder{})
 }
 
 // DialSimple handles some of the logic around detecting the correct GRPC
