@@ -375,7 +375,11 @@ common:mac-workflows --config=workflows
 common:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Build fully static binaries linked against musl on Linux.
+# TODO(tyler-french): Remove once toolchains_musl is updated to load cc symbols explicitly.
+# See https://github.com/bazel-contrib/musl-toolchain/pull/65
+common:static --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain
 common:static --platforms=//platforms:linux_x86_64_musl
 common:static --extra_toolchains=@musl_toolchains_hub//:all
+common:static-arm64 --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain
 common:static-arm64 --platforms=//platforms:linux_arm64_musl
 common:static-arm64 --extra_toolchains=@musl_toolchains_hub//:all
