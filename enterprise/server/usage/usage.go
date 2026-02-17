@@ -415,7 +415,7 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			if !ok {
 				// Collection contains a new column; let a newer app flush
 				// instead.
-				log.Infof("Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
+				log.CtxInfof(ctx, "Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
 				return nil
 			}
 		}
@@ -432,7 +432,15 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 				return err
 			}
 			if len(h) == 0 {
-				alert.UnexpectedEvent("usage_unexpected_empty_hash_in_redis", "Usage counts in Redis are unexpectedly empty for key %q", countsKey)
+				// Normally every collection key should have a corresponding
+				// counts key containing a non-empty hash, but sometimes we may
+				// be missing counts if there are transient redis issues such as
+				// restarts or resharding events (e.g. when adding redis shards
+				// or temporarily losing connection to a shard). Increment a
+				// metric so we can track how often this happens and alert if it
+				// happens too often.
+				log.CtxInfof(ctx, "Usage counts in Redis are empty for key %q", countsKey)
+				metrics.UsageTrackerMissingCollectionCountsCount.Inc()
 				continue
 			}
 			counts, err := stringMapToCounts(h)
