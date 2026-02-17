@@ -28,8 +28,10 @@ jobs:
           GO_REPOSITORY_USE_HOST_CACHE: 1
           GOMODCACHE: /home/runner/go-mod-cache
         run: |
-          bazelisk build \
+          USE_BAZEL_VERSION="tyler-french/9.1.0-cdc" bazelisk build \
             --config=untrusted-ci \
+            --experimental_remote_cache_chunking \
+            --check_direct_dependencies=off \
             --remote_cache=grpcs://proxy.metal.buildbuddy.dev \
             --remote_executor=grpcs://proxy.metal.buildbuddy.dev \
             --bes_backend=grpcs://proxy.metal.buildbuddy.dev \
