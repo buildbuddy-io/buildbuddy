@@ -126,7 +126,6 @@ const (
 
 	bazelBinaryName    = "bazel"
 	bazeliskBinaryName = "bazelisk"
-	bbBinaryName       = "bb"
 
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
@@ -772,22 +771,10 @@ func run() error {
 		}
 		*bazelCommand = bazeliskPath
 	}
-	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
-	if *bazelCommand == bbBinaryName {
-		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
-		if _, err := os.Stat(bbPath); err != nil {
-			backendLog.Warningf("bb binary not found in workspace: %s", err)
-		} else {
-			if err := os.Setenv("BB_DISABLE_SIDECAR", "1"); err != nil {
-				backendLog.Warningf("could not set BB_DISABLE_SIDECAR: %s", err)
-			}
-			*bazelCommand = bbPath
-		}
-	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
-	if err := ws.writeBazelWrapperScript(taskWorkspaceDir); err != nil {
+	if err := ws.writeBazelWrapperScript(); err != nil {
 		return status.WrapError(err, "write bazel wrapper script")
 	}
 
@@ -1118,7 +1105,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		action.Steps = make([]*rnpb.Step, 0)
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
-		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName) || strings.HasPrefix(cmd, bbBinaryName)) {
+		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName)) {
 			cmd = "bazel " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
@@ -1600,7 +1587,7 @@ func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName || tokens[0] == bbBinaryName {
+	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
@@ -2130,22 +2117,13 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
-// Also adds it to the PATH so it will be invoked whenever `bazel`, `bazelisk`, or `bb` are called.
+// Also adds it to the PATH so it will be invoked whenever `bazel` or `bazelisk` are called.
 // The wrapper script adds a startup option for the custom ci_runner .bazelrc to
 // all bazel commands.
-func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
+func (ws *workspace) writeBazelWrapperScript() error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
-
-	wrapperBinaries := map[string]string{
-		bazelBinaryName:    *bazelCommand,
-		bazeliskBinaryName: *bazelCommand,
-	}
-	if _, err := os.Stat(bbPath); err == nil {
-		wrapperBinaries[bbBinaryName] = bbPath
-	}
-	for wrapperName, binaryPath := range wrapperBinaries {
-		wrapperPath := filepath.Join(wrapperDir, wrapperName)
+	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
+		wrapperPath := filepath.Join(wrapperDir, c)
 		_, err := os.Stat(wrapperPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -2159,7 +2137,7 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 
 		cmd := fmt.Sprintf(
 			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
-			binaryPath,
+			*bazelCommand,
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
 		)
@@ -2600,7 +2578,7 @@ func runBazelWrapper() error {
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
 	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName || arg == bbBinaryName) {
+		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName) {
 			continue
 		}
 		if strings.Contains(arg, "--invocation_id") ||

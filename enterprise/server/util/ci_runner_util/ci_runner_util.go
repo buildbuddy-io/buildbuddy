@@ -15,12 +15,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const ExecutableName = "buildbuddy_ci_runner"
-const CLIBinaryName = "bb"
 
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
@@ -54,37 +52,17 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, status.UnavailableError("no cache configured")
 		}
 
-		if len(bundle.CiRunnerBytes) == 0 {
-			return nil, status.InternalError("CI runner binary not embedded")
-		}
-		if len(cli_bundle.CLIBytes) == 0 {
-			return nil, status.InternalError("CLI binary not embedded")
-		}
-
 		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
 		if err != nil {
 			return nil, status.WrapError(err, "upload runner bin")
 		}
-
-		bbBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, cli_bundle.CLIBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload bb bin")
-		}
-
 		runnerName := filepath.Base(ExecutableName)
 		dir := &repb.Directory{
-			Files: []*repb.FileNode{
-				{
-					Name:         runnerName,
-					Digest:       runnerBinDigest,
-					IsExecutable: true,
-				},
-				{
-					Name:         CLIBinaryName,
-					Digest:       bbBinDigest,
-					IsExecutable: true,
-				},
-			},
+			Files: []*repb.FileNode{{
+				Name:         runnerName,
+				Digest:       runnerBinDigest,
+				IsExecutable: true,
+			}},
 		}
 		return cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, dir)
 	}
