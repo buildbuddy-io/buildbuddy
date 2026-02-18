@@ -379,10 +379,9 @@ const (
 	OCIFetcherMethodFetchBlob = "FetchBlob"
 	OCIFetcherRoleLeader      = "leader"
 	OCIFetcherRoleWaiter      = "waiter"
-	OCISourceCache      = "cache"
-	OCISourceUpstream    = "upstream"
-	OCISourceOCIFetcher = "ocifetcher"
-
+	OCISourceCache            = "cache"
+	OCISourceUpstream         = "upstream"
+	OCISourceOCIFetcher       = "ocifetcher"
 )
 
 // Other constants
