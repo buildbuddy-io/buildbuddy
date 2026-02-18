@@ -303,7 +303,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" {
+		if u.Scheme != "unix" && u.Scheme != "kube" {
 			target = u.Host
 		}
 	}
