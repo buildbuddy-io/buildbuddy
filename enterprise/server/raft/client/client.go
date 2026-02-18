@@ -84,6 +84,8 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	attr := attribute.String("peer", peer)
+	spn.SetAttributes(attr)
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
