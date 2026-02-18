@@ -358,7 +358,8 @@ const (
 
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
-	OCIFetcherStatusLabel = "status"
+
+	OCISourceLabel = "source"
 )
 
 // Label value constants
@@ -378,8 +379,10 @@ const (
 	OCIFetcherMethodFetchBlob = "FetchBlob"
 	OCIFetcherRoleLeader      = "leader"
 	OCIFetcherRoleWaiter      = "waiter"
-	OCIFetcherStatusOK        = "ok"
-	OCIFetcherStatusError     = "error"
+	OCISourceCache      = "cache"
+	OCISourceUpstream    = "upstream"
+	OCISourceOCIFetcher = "ocifetcher"
+
 )
 
 // Other constants
@@ -3750,7 +3753,7 @@ var (
 	}, []string{
 		OCIFetcherMethodLabel,
 		OCIFetcherRoleLabel,
-		OCIFetcherStatusLabel,
+		StatusLabel,
 	})
 
 	OCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -3762,6 +3765,31 @@ var (
 	}, []string{
 		OCIFetcherMethodLabel,
 		OCIFetcherRoleLabel,
+	})
+
+	// OCIResolveCount counts individual OCI resource fetch attempts
+	// (manifests and blobs) during image resolution, labeled by source.
+	OCIResolveCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "oci",
+		Name:      "resolve_count",
+		Help:      "Number of OCI resource fetch attempts during image resolution.",
+	}, []string{
+		OCISourceLabel,
+		StatusLabel,
+	})
+
+	// OCIResolveDurationUsec tracks the duration of individual OCI
+	// resource fetches (manifests and blobs) during image resolution.
+	OCIResolveDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "oci",
+		Name:      "resolve_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Hour, 5),
+		Help:      "Duration of individual OCI resource fetches during image resolution, in **microseconds**.",
+	}, []string{
+		OCISourceLabel,
+		StatusLabel,
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{

@@ -5,6 +5,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -35,6 +36,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -213,10 +215,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 }
 
 func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		statusLabel = metrics.OCIFetcherStatusError
-	}
+	statusLabel := fmt.Sprintf("%d", gstatus.Code(err))
 	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
 	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
 }

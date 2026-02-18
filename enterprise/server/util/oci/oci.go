@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -32,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -39,6 +41,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -46,6 +49,15 @@ const (
 	resolveImageDigestLRUMaxEntries = 1000
 	resolveImageDigestLRUDuration   = 15 * time.Minute
 )
+
+func recordResolve(source string, err error, start time.Time) {
+	labels := prometheus.Labels{
+		metrics.OCISourceLabel: source,
+		metrics.StatusLabel:    fmt.Sprintf("%d", gstatus.Code(err)),
+	}
+	metrics.OCIResolveCount.With(labels).Inc()
+	metrics.OCIResolveDurationUsec.With(labels).Observe(float64(time.Since(start).Microseconds()))
+}
 
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
@@ -387,6 +399,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			digest = desc.Digest
 		}
 
+		cacheStart := time.Now()
 		mc, err := ocicache.FetchManifestFromAC(
 			ctx,
 			acClient,
@@ -395,9 +408,11 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
+			recordResolve(metrics.OCISourceCache, err, cacheStart)
 			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 		}
 		if mc != nil && err == nil {
+			recordResolve(metrics.OCISourceCache, nil, cacheStart)
 			// If we skipped fetching the manifest descriptor (because the
 			// reference already contained a resolved digest), then build a
 			// descriptor from the cached manifest entry. We aren't populating
@@ -484,6 +499,13 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
+
+	source := metrics.OCISourceUpstream
+	if useOCIFetcher {
+		source = metrics.OCISourceOCIFetcher
+	}
+	start := time.Now()
+
 	if useOCIFetcher {
 		resp, err := ociFetcherClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 			Ref:            digestOrTagRef.String(),
@@ -491,12 +513,16 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 			BypassRegistry: credentials.bypassRegistry,
 		})
 		if err != nil {
+			recordResolve(source, err, start)
 			return nil, nil, err
 		}
 		digest, err := gcr.NewHash(resp.GetDigest())
 		if err != nil {
-			return nil, nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
+			err = status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
+			recordResolve(source, err, start)
+			return nil, nil, err
 		}
+		recordResolve(source, nil, start)
 		return &gcr.Descriptor{
 			Digest:    digest,
 			Size:      resp.GetSize(),
@@ -507,10 +533,15 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+			err = status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+			recordResolve(source, err, start)
+			return nil, nil, err
 		}
-		return nil, nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		err = status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		recordResolve(source, err, start)
+		return nil, nil, err
 	}
+	recordResolve(source, nil, start)
 	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
 
@@ -814,17 +845,26 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	if l.image.useCache {
+		cacheStart := time.Now()
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
+			recordResolve(metrics.OCISourceCache, err, cacheStart)
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
 		}
 		if rc != nil && err == nil {
-			return rc, nil
+			return newInstrumentedBlobReader(rc, metrics.OCISourceCache, cacheStart), nil
 		}
 	}
 
+	source := metrics.OCISourceUpstream
+	if l.image.useOCIFetcher {
+		source = metrics.OCISourceOCIFetcher
+	}
+
+	start := time.Now()
 	upstream, err := l.fetchFromRemote()
 	if err != nil {
+		recordResolve(source, err, start)
 		return nil, err
 	}
 
@@ -834,12 +874,12 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
-			return upstream, nil
+			return newInstrumentedBlobReader(upstream, source, start), nil
 		}
 		contentLength, err := l.Size()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
-			return upstream, nil
+			return newInstrumentedBlobReader(upstream, source, start), nil
 		}
 		rc, err := ocicache.NewBlobReadThroughCacher(
 			l.image.ctx,
@@ -852,12 +892,52 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 			contentLength,
 		)
 		if err != nil {
-			return upstream, nil
+			return newInstrumentedBlobReader(upstream, source, start), nil
 		}
-		return rc, nil
+		return newInstrumentedBlobReader(rc, source, start), nil
 	}
 
-	return upstream, nil
+	return newInstrumentedBlobReader(upstream, source, start), nil
+}
+
+// instrumentedBlobReader wraps an io.ReadCloser to record resolve metrics
+// (duration and count) when the reader is closed. This captures the full
+// streaming duration for blob fetches.
+type instrumentedBlobReader struct {
+	inner    io.ReadCloser
+	source   string
+	start    time.Time
+	readErr  error
+	recorded bool
+}
+
+func newInstrumentedBlobReader(inner io.ReadCloser, source string, start time.Time) *instrumentedBlobReader {
+	return &instrumentedBlobReader{
+		inner:  inner,
+		source: source,
+		start:  start,
+	}
+}
+
+func (r *instrumentedBlobReader) Read(p []byte) (int, error) {
+	n, err := r.inner.Read(p)
+	if err != nil && err != io.EOF {
+		r.readErr = err
+	}
+	return n, err
+}
+
+func (r *instrumentedBlobReader) Close() error {
+	cErr := r.inner.Close()
+	if !r.recorded {
+		r.recorded = true
+		finalErr := r.readErr
+		if finalErr == nil {
+			finalErr = cErr
+		}
+		recordResolve(r.source, finalErr, r.start)
+	}
+	return cErr
 }
 
 // fetchFromRemote fetches the layer from the remote registry.
