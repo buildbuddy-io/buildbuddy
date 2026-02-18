@@ -32,6 +32,7 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//backoff",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//status",
     ],
 )

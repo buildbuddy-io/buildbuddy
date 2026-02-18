@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/connectivity"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -69,7 +70,7 @@ type APIClient struct {
 	env      environment.Env
 	log      log.Logger
 	mu       sync.Mutex
-	clients  map[string]*grpc_client.ClientConnPool
+	clients  map[string]*grpc.ClientConn
 	registry IRegistry
 }
 
@@ -77,7 +78,7 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 	return &APIClient{
 		env:      env,
 		log:      log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
-		clients:  make(map[string]*grpc_client.ClientConnPool),
+		clients:  make(map[string]*grpc.ClientConn),
 		registry: registry,
 	}
 }
@@ -90,24 +91,21 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 	}()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if client, ok := c.clients[peer]; ok {
-		conn, err := client.GetReadyConnection()
-		if err != nil {
-			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
-		}
+	if conn, ok := c.clients[peer]; ok {
 		return rfspb.NewApiClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
 
 	// Use a backoff config allows for fast-reconnect during server rollout.
-	conn, err := grpc_client.DialSimple("grpc://"+peer, grpc.WithConnectParams(grpc.ConnectParams{
+	// Use the fail_fast balancer to avoid blocking on CONNECTING subconns.
+	conn, err := grpc_client.DialSimpleWithoutPooling("grpc://"+peer, grpc.WithConnectParams(grpc.ConnectParams{
 		Backoff: backoff.Config{
 			BaseDelay:  100 * time.Millisecond,
 			Multiplier: 1.6,
 			Jitter:     0.2,
 			MaxDelay:   1 * time.Second,
 		},
-	}))
+	}), grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"fail_fast":{}}]}`))
 	if err != nil {
 		return nil, err
 	}
@@ -135,9 +133,8 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if client, ok := c.clients[peer]; ok {
-		_, err := client.GetReadyConnection()
-		return err == nil
+	if conn, ok := c.clients[peer]; ok {
+		return conn.GetState() == connectivity.Ready
 	}
 	return false
 }
