@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -49,7 +50,7 @@ func TestES256Auth(t *testing.T) {
 	var capturedJWT string
 	jwtInterceptor := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if vals := md.Get("x-buildbuddy-jwt"); len(vals) > 0 {
+			if vals := md.Get(authutil.ContextTokenStringKey); len(vals) > 0 {
 				mu.Lock()
 				capturedJWT = vals[len(vals)-1]
 				mu.Unlock()
@@ -72,7 +73,7 @@ func TestES256Auth(t *testing.T) {
 		},
 	}
 
-	ctx := metadata.AppendToOutgoingContext(t.Context(), "x-buildbuddy-api-key", rbe.APIKey1)
+	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, rbe.APIKey1)
 	resp, err := cas.FindMissingBlobs(ctx, &req)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(resp.MissingBlobDigests))
@@ -100,13 +101,12 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	proxy := rbe.AddCacheProxy()
-	cpConn, err := grpc_client.DialSimple(
+	conn, err := grpc_client.DialSimple(
 		fmt.Sprintf("grpc://localhost:%d", proxy.Port))
 	require.NoError(t, err)
-	cacheConn := grpc.ClientConnInterface(cpConn)
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		Name:      "executor",
-		CacheConn: &cacheConn,
+		CacheConn: conn,
 	})
 
 	cmd := rbe.Execute(&repb.Command{
@@ -137,7 +137,7 @@ func TestFindMissing_Encryption(t *testing.T) {
 		},
 	}
 
-	ctx := metadata.AppendToOutgoingContext(t.Context(), "x-buildbuddy-api-key", rbe.APIKey1)
+	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, rbe.APIKey1)
 	resp, err := cas.FindMissingBlobs(ctx, &req)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(resp.MissingBlobDigests))
