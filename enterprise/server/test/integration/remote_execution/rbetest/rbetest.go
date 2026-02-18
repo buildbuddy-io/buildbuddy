@@ -710,6 +710,9 @@ type ExecutorOptions struct {
 	APIKey string
 	// Optional Pool name for the executor
 	Pool string
+	// Optional connection for the executor to use for CAS/AC/ByteStream.
+	// Defaults to the app proxy connection if unset.
+	CacheConn *grpc.ClientConnInterface
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -859,10 +862,15 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	clientConn := r.appProxyConn
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
-	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
+
+	cacheConn := grpc.ClientConnInterface(clientConn)
+	if options.CacheConn != nil {
+		cacheConn = *options.CacheConn
+	}
+	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(cacheConn))
 
 	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
@@ -976,7 +984,7 @@ func (r *Env) waitForExecutorRegistration() {
 type CacheProxy struct {
 	t    testing.TB
 	env  *testenv.TestEnv
-	port int
+	Port int
 	conn *grpc_client.ClientConnPool
 }
 
@@ -1036,7 +1044,7 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
-	return &CacheProxy{t: r.t, env: proxyEnv, conn: conn}
+	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {

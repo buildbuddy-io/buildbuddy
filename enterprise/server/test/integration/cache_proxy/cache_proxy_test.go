@@ -2,6 +2,8 @@ package cache_proxy_test
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang-jwt/jwt/v4"
@@ -82,6 +85,39 @@ func TestES256Auth(t *testing.T) {
 	token, _, err := new(jwt.Parser).ParseUnverified(jwtStr, &claims.Claims{})
 	require.NoError(t, err)
 	require.Equal(t, "ES256", token.Method.Alg())
+}
+
+func TestES256Auth_RemoteExecution(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	require.NoError(t, claims.Init())
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	proxy := rbe.AddCacheProxy()
+	cpConn, err := grpc_client.DialSimple(
+		fmt.Sprintf("grpc://localhost:%d", proxy.Port))
+	require.NoError(t, err)
+	cacheConn := grpc.ClientConnInterface(cpConn)
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		Name:      "executor",
+		CacheConn: &cacheConn,
+	})
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"sh", "-c", "echo hello"},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: "none"},
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		},
+	}, &rbetest.ExecuteOpts{APIKey: rbe.APIKey1})
+	res := cmd.Wait()
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "hello\n", res.Stdout)
 }
 
 func TestFindMissing_Encryption(t *testing.T) {
