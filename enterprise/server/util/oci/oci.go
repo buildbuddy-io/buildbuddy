@@ -928,16 +928,16 @@ func (r *instrumentedBlobReader) Read(p []byte) (int, error) {
 }
 
 func (r *instrumentedBlobReader) Close() error {
-	cErr := r.inner.Close()
+	err := r.inner.Close()
 	if !r.recorded {
 		r.recorded = true
-		finalErr := r.readErr
-		if finalErr == nil {
-			finalErr = cErr
+		if r.readErr != nil {
+			recordResolve(r.source, r.readErr, r.start)
+		} else {
+			recordResolve(r.source, err, r.start)
 		}
-		recordResolve(r.source, finalErr, r.start)
 	}
-	return cErr
+	return err
 }
 
 // fetchFromRemote fetches the layer from the remote registry.
