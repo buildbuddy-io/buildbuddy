@@ -146,6 +146,10 @@ func (r *k8sResolver) updateStateFromPod(pod *corev1.Pod) {
 	ip := pod.Status.PodIP
 	if ip == "" {
 		log.Warningf("pod %s/%s has no IP yet", r.podTarget.namespace, r.podTarget.podName)
+		err := r.cc.UpdateState(resolver.State{})
+		if err != nil {
+			log.Warningf("failed to update state: %s", err)
+		}
 		return
 	}
 
