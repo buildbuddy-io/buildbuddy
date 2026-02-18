@@ -579,7 +579,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
           {this.state.profileLoading ? (
             <Spinner />
           ) : this.state.profile ? (
-            <TraceViewer profile={this.state.profile} fitToContent filterHidden />
+            <TraceViewer
+              profile={this.state.profile}
+              fitToContent
+              filterHidden
+              dark={this.props.preferences.darkModeEnabled}
+            />
           ) : null}
         </div>
       </>

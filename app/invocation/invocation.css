@@ -1482,6 +1482,10 @@ svg.invocation-query-graph .nodes rect {
   white-space: nowrap;
 }
 
+.timing.card .sort-control .selected {
+  color: var(--color-text-primary);
+}
+
 .timing.card .progress-bar {
   height: 8px;
   border-radius: 4px;

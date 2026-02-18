@@ -77,6 +77,7 @@ ts_library(
         "//app/trace:trace_events",
         "//app/trace:trace_viewer_model",
         "//app/util:canvas",
+        "//app/util:color",
         "//app/util:dom",
         "//app/util:math",
     ],

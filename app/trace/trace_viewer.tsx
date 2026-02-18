@@ -19,6 +19,7 @@ export interface TraceViewProps {
   fitToContent?: boolean;
   /** Hide the filter bar. */
   filterHidden?: boolean;
+  dark: boolean;
 }
 
 interface TraceViewerState {
@@ -160,6 +161,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       panel.container.addEventListener("wheel", (e: WheelEvent) => this.onWheel(e), {
         passive: false,
       });
+    }
+  }
+
+  componentDidUpdate(prevProps: TraceViewProps): void {
+    if (prevProps.dark !== this.props.dark) {
+      for (const panel of this.panels) panel.onThemeChange();
     }
   }
 
