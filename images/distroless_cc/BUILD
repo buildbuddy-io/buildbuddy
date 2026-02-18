@@ -1,19 +1,63 @@
 load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "java_keystore", "passwd")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
-load("@rules_img//img:push.bzl", "image_push")
+load("@rules_img//img:load.bzl", "image_load")
 
 package(default_visibility = ["//visibility:public"])
 
-# Export the apt lockfile and manifest for the module extension
-exports_files([
-    "apt.lock.json",
-    "apt.yaml",
-])
+# Create group entries (similar to groupadd)
+group(
+    name = "groups",
+    entries = [
+        # Root group
+        dict(
+            name = "root",
+            gid = 0,
+            users = ["root"],
+        ),
+    ],
+)
+
+# Create passwd entries (similar to useradd/passwd)
+passwd(
+    name = "passwd",
+    entries = [
+        # Root user
+        dict(
+            gecos = ["root"],
+            gid = 0,
+            home = "/root",
+            shell = "/bin/bash",
+            uid = 0,
+            username = "root",
+        ),
+    ],
+)
+
+# Generate CA certificates bundle
+cacerts(
+    name = "ca_certificates",
+    package = "@trixie_cc//ca-certificates/amd64:data",
+    # the cacerts rule currently doesn't support running on Windows
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+# Create a Java keystore with custom certificates
+java_keystore(
+    name = "custom_java_keystore",
+    certificates = [
+        "//images:custom-ca.crt",
+        "//images:internal-root.crt",
+    ],
+)
 
 [
     flatten(
-        name = "cc_layer_%s" % arch,
+        name = "layer_%s" % arch,
         compress = "gzip",
+        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -22,11 +66,19 @@ exports_files([
             }[arch],
         ],
         tars = [
-            "@bookworm//:libgomp1",
-            "@bookworm//:libstdc++6",
-            "@bookworm//:libgcc-s1",
-            "@bookworm//:gcc-14-base",
-            "@bookworm//:dpkg_status",
+            "@trixie_cc//:dpkg_status",
+            "@trixie_cc//base-files/%s:data" % arch,
+            "@trixie_cc//netbase/%s:data" % arch,
+            "@trixie_cc//tzdata/%s:data" % arch,
+            "@trixie_cc//media-types/%s:data" % arch,
+            "@trixie_cc//libgomp1/%s:data" % arch,
+            "@trixie_cc//libstdc++6/%s:data" % arch,
+            "@trixie_cc//libgcc-s1/%s:data" % arch,
+            "@trixie_cc//gcc-14-base/%s:data" % arch,
+            ":groups",
+            ":passwd",
+            ":ca_certificates",
+            ":custom_java_keystore",
         ],
     )
     for arch in [
@@ -35,32 +87,26 @@ exports_files([
     ]
 ]
 
-# Create a minimal Python distroless image
+# Create a complete distroless cc image with all features
 image_manifest(
-    name = "cc_manifest",
+    name = "manifest",
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
     },
     layers = select({
-        "@platforms//cpu:arm64": [
-            ":base_layer_arm64",
-            ":python_layer_arm64",
-        ],
-        "@platforms//cpu:x86_64": [
-            ":base_layer_amd64",
-            ":python_layer_amd64",
-        ],
+        "@platforms//cpu:arm64": [":layer_arm64"],
+        "@platforms//cpu:x86_64": [":layer_amd64"],
     }),
     user = "root",
 )
 
 image_index(
-    name = "python_distroless",
-    manifests = [":python_manifest"],
+    name = "index",
+    manifests = [":manifest"],
     platforms = [
-        "//platform:linux_amd64",
-        "//platform:linux_arm64",
+        "//platforms:linux_x86_64",
+        "//platforms:linux_arm64",
     ],
     target_compatible_with = select({
         # the cacerts target referenced
@@ -69,4 +115,12 @@ image_index(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+)
+
+# Load a multi-platform image
+image_load(
+    name = "load",
+    daemon = "docker",  # Explicitly use docker
+    image = ":index",  # References an image_index
+    tag = "bb-distroless_cc:latest",
 )
