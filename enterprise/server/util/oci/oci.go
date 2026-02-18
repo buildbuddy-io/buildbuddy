@@ -55,7 +55,7 @@ func recordResolve(source string, err error, start time.Time) {
 		metrics.OCISourceLabel: source,
 		metrics.StatusLabel:    fmt.Sprintf("%d", gstatus.Code(err)),
 	}
-	metrics.OCIResolveCount.With(labels).Inc()
+	metrics.OCIResolveFetchCount.With(labels).Inc()
 	metrics.OCIResolveDurationUsec.With(labels).Observe(float64(time.Since(start).Microseconds()))
 }
 

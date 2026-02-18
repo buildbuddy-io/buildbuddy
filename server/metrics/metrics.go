@@ -3766,12 +3766,12 @@ var (
 		OCIFetcherRoleLabel,
 	})
 
-	// OCIResolveCount counts individual OCI resource fetch attempts
+	// OCIResolveFetchCount counts individual OCI resource fetch attempts
 	// (manifests and blobs) during image resolution, labeled by source.
-	OCIResolveCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	OCIResolveFetchCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "oci",
-		Name:      "resolve_count",
+		Name:      "resolve_fetch_count",
 		Help:      "Number of OCI resource fetch attempts during image resolution.",
 	}, []string{
 		OCISourceLabel,
