@@ -345,7 +345,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if err != nil {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "Error writing response body for %q: %s", resolvedRef.Context(), err)
+			log.CtxWarningf(ctx, "Error writing non-cacheable response body for %q (digest parse failed): %s", resolvedRef.Context(), err)
 		}
 		return
 	}
