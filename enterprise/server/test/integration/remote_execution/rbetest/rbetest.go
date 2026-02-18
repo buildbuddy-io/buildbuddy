@@ -712,7 +712,7 @@ type ExecutorOptions struct {
 	Pool string
 	// Optional connection for the executor to use for CAS/AC/ByteStream.
 	// Defaults to the app proxy connection if unset.
-	CacheConn *grpc.ClientConnInterface
+	CacheConn grpc.ClientConnInterface
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -866,7 +866,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	cacheConn := grpc.ClientConnInterface(clientConn)
 	if options.CacheConn != nil {
-		cacheConn = *options.CacheConn
+		cacheConn = options.CacheConn
 	}
 	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
