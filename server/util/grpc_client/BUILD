@@ -18,7 +18,6 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//credentials",
-        "@org_golang_google_grpc//credentials/google",
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//mem",

@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
@@ -40,8 +39,7 @@ const (
 )
 
 var (
-	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
-	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
+	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 
 	idsMu sync.Mutex
 	ids   = map[string]int{}
@@ -296,13 +294,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			if *enableGoogleDefaultCredentials {
-				log.Debugf("Initializing google default credentials")
-				dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
-				log.Debugf("Initialized google default credentials")
-			} else {
-				dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
-			}
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
