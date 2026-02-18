@@ -128,6 +128,7 @@ func TestHelpForBBCommands(t *testing.T) {
 		"remote",
 		"remote-download",
 		"search",
+		"secrets",
 		"update",
 		"upload",
 		"version",

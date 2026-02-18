@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/secrets"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
@@ -65,6 +66,7 @@ var implementationsByCommandName = map[string]implementation{
 	"remote":          {handler: remotebazel.HandleRemoteBazel, flags: remotebazel.RemoteFlagset},
 	"remote-download": {handler: remote_download.HandleRemoteDownload, flags: remote_download.Flags},
 	"search":          {handler: search.HandleSearch, flags: search.Flags},
+	"secrets":         {handler: secrets.HandleSecrets, flags: secrets.Flags},
 	"ssh":             {handler: ssh.HandleSSH, flags: ssh.Flags},
 	"ssh-server":      {handler: ssh_server.HandleSSHServer, flags: ssh_server.Flags},
 	"ui":              {handler: ui.HandleUI, flags: ui.Flags},
