@@ -11,6 +11,7 @@ go_library(
         "//server/rpc/interceptors",
         "//server/util/canary",
         "//server/util/flag",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/rpcutil",
         "//server/util/status",

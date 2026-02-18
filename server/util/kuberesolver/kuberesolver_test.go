@@ -1,0 +1,286 @@
+package kuberesolver
+
+import (
+	"context"
+	"net/url"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/serviceconfig"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+)
+
+func TestParsePodTarget(t *testing.T) {
+	tests := []struct {
+		name      string
+		endpoint  string
+		want      podTarget
+		wantError bool
+	}{
+		{
+			name:     "full FQDN with port",
+			endpoint: "metadata-server-0.headless.metadata-server-dev.svc.cluster.local:4772",
+			want: podTarget{
+				podName:     "metadata-server-0",
+				serviceName: "headless",
+				namespace:   "metadata-server-dev",
+				port:        "4772",
+			},
+		},
+		{
+			name:     "full FQDN without port",
+			endpoint: "metadata-server-0.headless.metadata-server-dev.svc.cluster.local",
+			want: podTarget{
+				podName:     "metadata-server-0",
+				serviceName: "headless",
+				namespace:   "metadata-server-dev",
+				port:        "",
+			},
+		},
+		{
+			name:     "short FQDN with port",
+			endpoint: "pod-0.svc.ns:8080",
+			want: podTarget{
+				podName:     "pod-0",
+				serviceName: "svc",
+				namespace:   "ns",
+				port:        "8080",
+			},
+		},
+		{
+			name:     "short FQDN without port",
+			endpoint: "pod-0.svc.ns",
+			want: podTarget{
+				podName:     "pod-0",
+				serviceName: "svc",
+				namespace:   "ns",
+				port:        "",
+			},
+		},
+		{
+			name:      "too few parts",
+			endpoint:  "pod-0.svc",
+			wantError: true,
+		},
+		{
+			name:      "single name",
+			endpoint:  "pod-0",
+			wantError: true,
+		},
+		{
+			name:      "empty string",
+			endpoint:  "",
+			wantError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parsePodTarget(tc.endpoint)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// fakeClientConn implements resolver.ClientConn for testing.
+type fakeClientConn struct {
+	states chan resolver.State
+	errors chan error
+}
+
+func newFakeClientConn() *fakeClientConn {
+	return &fakeClientConn{
+		states: make(chan resolver.State, 10),
+		errors: make(chan error, 10),
+	}
+}
+
+func (f *fakeClientConn) UpdateState(state resolver.State) error {
+	f.states <- state
+	return nil
+}
+
+func (f *fakeClientConn) ReportError(err error) {
+	f.errors <- err
+}
+
+func (f *fakeClientConn) NewAddress(_ []resolver.Address) {}
+func (f *fakeClientConn) ParseServiceConfig(_ string) *serviceconfig.ParseResult {
+	return nil
+}
+func (f *fakeClientConn) NewServiceConfig(_ string) {}
+
+func makeTarget(rawURL string) resolver.Target {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		panic(err)
+	}
+	return resolver.Target{URL: *u}
+}
+
+func TestResolveExistingPod(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metadata-server-0",
+			Namespace: "metadata-server-dev",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	SetK8sClientForTesting(client)
+
+	cc := newFakeClientConn()
+	builder := &k8sResolverBuilder{}
+	r, err := builder.Build(
+		makeTarget("k8s:///metadata-server-0.headless.metadata-server-dev.svc.cluster.local:4772"),
+		cc,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r.Close()
+
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		assert.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for initial resolve")
+	}
+}
+
+func TestResolvePodIPChanges(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metadata-server-0",
+			Namespace: "metadata-server-dev",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	SetK8sClientForTesting(client)
+
+	cc := newFakeClientConn()
+	builder := &k8sResolverBuilder{}
+	r, err := builder.Build(
+		makeTarget("k8s:///metadata-server-0.headless.metadata-server-dev.svc.cluster.local:4772"),
+		cc,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r.Close()
+
+	// Wait for initial resolve.
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		assert.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for initial resolve")
+	}
+
+	// Wait for the watch goroutine to establish its watch before
+	// updating the pod. The fake client tracks watch actions.
+	require.Eventually(t, func() bool {
+		for _, a := range client.Actions() {
+			if a.GetVerb() == "watch" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for watch to be established")
+
+	// Update the pod IP via the fake client.
+	pod.Status.PodIP = "10.0.0.2"
+	_, err = client.CoreV1().Pods("metadata-server-dev").Update(
+		context.Background(), pod, metav1.UpdateOptions{},
+	)
+	require.NoError(t, err)
+
+	// The watch should pick up the change.
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		assert.Equal(t, "10.0.0.2:4772", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for updated resolve")
+	}
+}
+
+func TestResolveNonExistentPod(t *testing.T) {
+	client := fake.NewClientset()
+	SetK8sClientForTesting(client)
+
+	cc := newFakeClientConn()
+	builder := &k8sResolverBuilder{}
+	r, err := builder.Build(
+		makeTarget("k8s:///nonexistent-0.headless.ns.svc.cluster.local:4772"),
+		cc,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r.Close()
+
+	// Should get an error reported since pod doesn't exist.
+	select {
+	case err := <-cc.errors:
+		assert.Contains(t, err.Error(), "not found")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for error")
+	}
+}
+
+func TestResolveNow(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.5",
+		},
+	}
+	client := fake.NewClientset(pod)
+	SetK8sClientForTesting(client)
+
+	cc := newFakeClientConn()
+	builder := &k8sResolverBuilder{}
+	r, err := builder.Build(
+		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:9090"),
+		cc,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r.Close()
+
+	// Drain initial resolve.
+	select {
+	case <-cc.states:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for initial resolve")
+	}
+
+	// Trigger manual resolve.
+	r.ResolveNow(resolver.ResolveNowOptions{})
+
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		assert.Equal(t, "10.0.0.5:9090", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ResolveNow result")
+	}
+}

@@ -84,23 +84,34 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	attr := attribute.String("peer", peer)
+	spn.SetAttributes(attr)
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
+
+	_, childSpn := tracing.StartNamedSpan(ctx, "getClient: c.mu.Lock")
 	c.mu.Lock()
+	childSpn.End()
 	defer c.mu.Unlock()
+
+	_, childSpn = tracing.StartNamedSpan(ctx, "getClient: GetReadyConnection")
 	if client, ok := c.clients[peer]; ok {
 		conn, err := client.GetReadyConnection()
 		if err != nil {
+			childSpn.End()
 			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
 		}
+		childSpn.End()
 		return rfspb.NewApiClient(conn), nil
 	}
+	childSpn.End()
 	log.Debugf("Creating new client for peer: %q", peer)
 
+	_, childSpn = tracing.StartNamedSpan(ctx, "getClient: DialSimple")
 	// Use a backoff config allows for fast-reconnect during server rollout.
-	conn, err := grpc_client.DialSimple("grpc://"+peer, grpc.WithConnectParams(grpc.ConnectParams{
+	conn, err := grpc_client.DialSimple("kube:///"+peer, grpc.WithConnectParams(grpc.ConnectParams{
 		Backoff: backoff.Config{
 			BaseDelay:  100 * time.Millisecond,
 			Multiplier: 1.6,
@@ -109,8 +120,10 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 		},
 	}))
 	if err != nil {
+		childSpn.End()
 		return nil, err
 	}
+	childSpn.End()
 	c.clients[peer] = conn
 	return rfspb.NewApiClient(conn), nil
 }

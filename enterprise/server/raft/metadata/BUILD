@@ -35,6 +35,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/lib/set",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",

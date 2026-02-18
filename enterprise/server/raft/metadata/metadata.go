@@ -36,6 +36,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
