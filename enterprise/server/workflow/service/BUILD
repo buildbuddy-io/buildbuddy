@@ -58,7 +58,7 @@ go_library(
 
 go_test(
     name = "service_test",
-    size = "small",
+    size = "medium",
     srcs = ["service_test.go"],
     shard_count = 6,
     deps = [
