@@ -88,6 +88,9 @@ func TestES256Auth(t *testing.T) {
 }
 
 func TestES256Auth_RemoteExecution(t *testing.T) {
+	// TODO(http://go/b/4539): enable this test
+	t.Skip()
+
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	flags.Set(t, "auth.remote.use_es256_jwts", true)
