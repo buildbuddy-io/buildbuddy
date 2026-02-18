@@ -318,6 +318,8 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 		}
 	}
 
+	log.Infof("Dialing target %q", target)
+
 	// Connect to host/port and create a new client
 	return grpc.Dial(target, dialOptions...)
 }
