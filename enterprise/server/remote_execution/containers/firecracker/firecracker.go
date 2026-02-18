@@ -2400,6 +2400,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		defer cancel()
+
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
 		// Include whether the snapshot will be saved, so it can be displayed in the UI.
