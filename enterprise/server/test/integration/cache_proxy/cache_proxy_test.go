@@ -91,6 +91,7 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.reparse_jwts", false)
 	require.NoError(t, claims.Init())
 
 	rbe := rbetest.NewRBETestEnv(t)
