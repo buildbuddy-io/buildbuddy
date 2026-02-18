@@ -179,7 +179,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		// It is possible this error occurred while writing to the stream.
 		// Since we do not know the state of the stream, it is not safe
 		// to write bytes to the stream past this point.
-		log.CtxWarningf(ctx, "[ocifetcher] Error fetching blob from cache: %s", err)
+		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 		return err
 	}
 
@@ -257,7 +257,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		}, nil
 	}
 	if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "[ocifetcher] Error fetching blob metadata from cache: %s", err)
+		log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
 	}
 
 	if req.GetBypassRegistry() {
@@ -337,7 +337,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		}, nil
 	}
 	if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "[ocifetcher] Error fetching manifest from cache: %s", err)
+		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 	}
 
 	if req.GetBypassRegistry() {
@@ -352,7 +352,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}
 
 	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
-		log.CtxWarningf(ctx, "[ocifetcher] Error writing manifest to cache: %s", err)
+		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
 	}
 
 	return &ofpb.FetchManifestResponse{
@@ -474,21 +474,21 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "[ocifetcher] Could not get media type for layer: %s", err)
+		log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
 		return s.streamBlob(rc, stream)
 	}
 
 	size, err := layer.Size()
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "[ocifetcher] Could not get size for layer: %s", err)
+		log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
 		return s.streamBlob(rc, stream)
 	}
 
 	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, string(mediaType), size)
 	if err != nil {
 		defer rc.Close()
-		log.CtxWarningf(ctx, "[ocifetcher] Error creating read-through cacher: %s", err)
+		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
 		return s.streamBlob(rc, stream)
 	}
 	defer cachedRC.Close()
