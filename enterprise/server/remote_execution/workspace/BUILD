@@ -23,7 +23,6 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/util/bb",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/fspath",
