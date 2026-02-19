@@ -614,7 +614,7 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	isCached, err := ctr.IsImageCached(ctx)
+	onDisk, err := ctr.IsImageCached(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -624,17 +624,17 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	}
 	// If the image is cached and these credentials have been used recently
 	// by this group to pull the image, no need to re-auth.
-	if isCached && cacheAuth.IsAuthorized(cacheToken) {
+	if onDisk && cacheAuth.IsAuthorized(cacheToken) {
 		return true, nil
 	}
 	if err := ctr.PullImage(ctx, creds); err != nil {
-		return isCached, err
+		return onDisk, err
 	}
 	// Pull was successful, which means auth was successful. Refresh the token so
 	// we don't have to keep re-authenticating on every action until the token
 	// expires.
 	cacheAuth.Refresh(cacheToken)
-	return isCached, nil
+	return onDisk, nil
 }
 
 // NewImageCacheToken returns the token representing the authenticated group ID,
