@@ -191,6 +191,7 @@ func (r *kubeResolver) watch() {
 		}
 
 		if err := r.processWatchEvents(watcher); err != nil {
+			watcher.Stop()
 			log.Warningf("Watch for pod %s/%s ended abruptly: %s", r.podTarget.namespace, r.podTarget.podName, err)
 			select {
 			case <-time.After(backoff):
