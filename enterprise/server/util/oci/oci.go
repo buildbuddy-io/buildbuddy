@@ -39,7 +39,6 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -993,16 +992,9 @@ func RegistryETLDPlusOne(imageRef string) string {
 		return "[UNKNOWN]"
 	}
 	host := ref.Context().RegistryStr()
-	// Strip port if present.
+	// Strip port if present (RegistryStr may include it).
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	if net.ParseIP(host) != nil {
-		return "[IP_ADDRESS]"
-	}
-	etld1, err := publicsuffix.EffectiveTLDPlusOne(host)
-	if err != nil {
-		return host
-	}
-	return etld1
+	return httpclient.HostLabel(host)
 }
