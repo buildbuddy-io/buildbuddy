@@ -962,13 +962,14 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
 	// the auth result, since it makes it tricker to debug per-action
 	// misconfiguration.
+	onDisk, _ := c.IsImageCached(ctx)
 	pullStart := time.Now()
 	pullErr := c.PullImage(ctx, creds)
 	container.RecordImageFetchMetrics(
 		c.IsolationType(),
 		container.RegistryETLDPlusOne(platProps.ContainerImage),
 		metrics.ImageFetchTriggerWarmup,
-		false,             // on_disk: warmup always pulls
+		onDisk,
 		!creds.IsEmpty(),
 		pullErr,
 		time.Since(pullStart),
