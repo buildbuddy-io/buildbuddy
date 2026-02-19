@@ -73,6 +73,43 @@ https://app.buildbuddy.io/api/v1/Run
 3) Parse `invocation_id` from the response and share:
    https://app.buildbuddy.io/invocation/<invocation_id>
 
+4) Fetch invocation metadata with GetInvocation:
+
+curl --fail --silent --show-error -d '{
+  "selector": {"invocation_id":"<invocation_id>"}
+}' \
+-H "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+-H "Content-Type: application/json" \
+https://app.buildbuddy.io/api/v1/GetInvocation
+
+5) Fetch logs with GetLog:
+
+curl --fail --silent --show-error -d '{
+  "selector": {"invocation_id":"<invocation_id>"}
+}' \
+-H "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+-H "Content-Type: application/json" \
+https://app.buildbuddy.io/api/v1/GetLog
+
+If `next_page_token` is present in the GetLog response, keep calling GetLog with
+that page token until all log chunks are fetched.
+
+6) Look for build failures in log contents and summarize them for the user.
+Common failure signals include:
+- `Build did NOT complete successfully`
+- `FAILED:`
+- `ERROR:`
+- `Target ... failed to build`
+
+If failure signals are present, report:
+- failing targets (if detectable),
+- first error lines,
+- likely root cause, and
+- suggested next command(s).
+
+If no failure signals are found and invocation metadata indicates success,
+report the build as successful.
+
 Safety rules:
 - Only run commands that start with `bazel `.
 - Never print or persist the API key.
