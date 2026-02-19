@@ -242,7 +242,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 		return nil
 	}
 
-	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
+	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
 
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
@@ -316,7 +316,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
-	log.CtxDebugf(ctx, "Resolving image %q", imageRef)
+	log.CtxInfof(ctx, "Resolving image %q", imageRef)
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	puller, err := remote.NewPuller(remoteOpts...)
@@ -969,7 +969,7 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 			metadata.GetContentLength(),
 		)
 		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Error fetching blob from cache: %s", err)
+			log.Warningf("Error fetching blob from cache: %s", err)
 			pw.CloseWithError(err)
 		}
 	}()

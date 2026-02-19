@@ -1622,14 +1622,14 @@ func (s *ImageStore) populateFileCache() error {
 			layerPath := filepath.Join(algorithmDir, layerEntry.Name())
 			info, err := layerEntry.Info()
 			if err != nil {
-				log.CtxWarningf(ctx, "Failed to get info for layer %s: %s", layerPath, err)
+				log.Warningf("Failed to get info for layer %s: %s", layerPath, err)
 				continue
 			}
 
 			// Get the size of the layer directory.
 			size, err := disk.DirSize(layerPath)
 			if err != nil {
-				log.CtxWarningf(ctx, "Failed to get size of layer %s: %s", layerPath, err)
+				log.Warningf("Failed to get size of layer %s: %s", layerPath, err)
 				continue
 			}
 
@@ -1640,13 +1640,13 @@ func (s *ImageStore) populateFileCache() error {
 					// Layer not in cache yet, will be added when used.
 					continue
 				}
-				log.CtxWarningf(ctx, "Failed to track layer %s in filecache: %s", layerPath, err)
+				log.Warningf("Failed to track layer %s in filecache: %s", layerPath, err)
 				continue
 			}
 			// Immediately unlock since we're just populating the cache.
 			unlock()
 			populatedCount++
-			log.CtxDebugf(ctx, "Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
+			log.Debugf("Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
 		}
 	}
 

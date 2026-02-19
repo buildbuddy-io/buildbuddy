@@ -96,7 +96,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 	if !exists {
 		return "", nil
 	}
-	log.CtxDebugf(ctx, "Found existing %q disk image at path %q", containerImage, diskImagePath)
+	log.Debugf("Found existing %q disk image at path %q", containerImage, diskImagePath)
 	return diskImagePath, nil
 }
 
@@ -176,7 +176,7 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 	if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
 		return "", err
 	}
-	log.CtxDebugf(ctx, "generated rootfs at %q", containerImagePath)
+	log.Debugf("generated rootfs at %q", containerImagePath)
 	return containerImagePath, nil
 }
 
@@ -215,7 +215,7 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
-	log.CtxDebugf(ctx, "Wrote container %q to image file: %q", containerImage, imageFile)
+	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
 	return imageFile, nil
 }
 

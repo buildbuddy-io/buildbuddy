@@ -44,6 +44,7 @@ const (
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 
@@ -53,6 +54,7 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	any, err := anypb.New(m)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error constructing manifest contents %s@%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 	ar := &repb.ActionResult{
@@ -63,8 +65,10 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 		},
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, arRN, ar); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest %s@%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
 		return err
 	}
+	log.CtxInfof(ctx, "Successfully wrote manifest %s@%s (original ref %q)", repo, hash, originalRef)
 	return nil
 }
 
@@ -76,12 +80,12 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 }
 
 func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxDebugf(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
+	log.CtxInfof(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
 func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxDebugf(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
+	log.CtxInfof(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
@@ -91,26 +95,33 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Error creating key for manifest %s@%s: %s", repo, hash, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error getting action result for manifest %s@%s: %s", repo, hash, err)
+		}
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
 		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Missing execution metadata for manifest %s@%s", repo, hash)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	mc := &ocipb.OCIManifestContent{}
 	ok, err := rexec.FindFirstAuxiliaryMetadata(meta, mc)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Error unmarshalling manifest content %s@%s: %s", repo, hash, err)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest %s@%s: %s", repo, hash, err)
 	}
 	if !ok {
 		manifestMiss(ctx, repo, hash, originalRef)
+		log.CtxWarningf(ctx, "Missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
 		return nil, status.InternalErrorf("missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
 	}
 	manifestHit(ctx, repo, hash, originalRef)
@@ -397,14 +408,12 @@ func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bs
 		return nil, err
 	}
 	return &readThroughCacher{
-		ctx:   ctx,
 		rc:    rc,
 		cache: cache,
 	}, nil
 }
 
 type readThroughCacher struct {
-	ctx   context.Context
 	rc    io.ReadCloser
 	cache interfaces.CommittedWriteCloser
 
@@ -422,18 +431,18 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 		r.cacheErr = writeErr
 		if r.cacheErr == nil {
 			if written < n {
-				log.CtxWarningf(r.ctx, "Short write to cache. Wanted %v, wrote %v", n, written)
+				log.Warningf("Short write to cache. Wanted %v, wrote %v", n, written)
 				r.cacheErr = io.ErrShortWrite
 			}
 		} else if !status.IsAlreadyExistsError(r.cacheErr) {
-			log.CtxWarningf(r.ctx, "Error writing to cache: %s", r.cacheErr)
+			log.Warningf("Error writing to cache: %s", r.cacheErr)
 		}
 	}
 
 	if err == io.EOF && r.cacheErr == nil {
 		r.cacheErr = r.cache.Commit()
 		if r.cacheErr != nil {
-			log.CtxWarningf(r.ctx, "Error committing blob to cache: %s", r.cacheErr)
+			log.Warningf("Error committing blob to cache: %s", r.cacheErr)
 		}
 	}
 
@@ -443,7 +452,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 func (r *readThroughCacher) Close() error {
 	err := r.rc.Close()
 	if err := r.cache.Close(); err != nil {
-		log.CtxWarningf(r.ctx, "Error closing cache writer: %s", err)
+		log.Warningf("Error closing cache writer: %s", err)
 	}
 	return err
 }
