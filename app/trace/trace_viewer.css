@@ -1,3 +1,55 @@
+:root {
+  --trace-event-chroma: 80;
+  --trace-event-lightness: 65%;
+  --color-trace-border: var(--color-gray-200);
+  --color-trace-button-active-text: var(--color-black);
+  --color-trace-button-bg: var(--color-overlay-gray-50-60);
+  --color-trace-button-focus: var(--color-blue-300);
+  --color-trace-button-text: var(--color-gray-700);
+  --color-trace-event-filtered: var(--color-gray-300-alt);
+  --color-trace-event-highlight-stroke: var(--color-black);
+  --color-trace-event-label-font: var(--color-gray-900);
+  --color-trace-gridline: var(--color-blue-gray-100);
+  --color-trace-hovercard-shadow: var(--color-shadow-27);
+  --color-trace-mouse-gridline: var(--color-blue-gray-200);
+  --color-trace-mouse-timestamp-bg: var(--color-gray-300);
+  --color-trace-scrollbar-bg: var(--color-gray-50);
+  --color-trace-scrollbar-corner: var(--color-gray-300);
+  --color-trace-scrollbar-thumb: var(--color-gray-400);
+  --color-trace-section-bg: var(--color-gray-200);
+  --color-trace-section-border: var(--color-gray-300);
+  --color-trace-section-font: var(--color-gray-900);
+  --color-trace-timestamp-header-bg: var(--color-blue-gray-50);
+  --color-trace-timestamp-font: var(--color-gray-800);
+  --color-trace-zoom-factor-bg: var(--color-yellow-highlight);
+}
+
+.dark {
+  --trace-event-chroma: 55;
+  --trace-event-lightness: 40%;
+  --color-trace-border: var(--color-gray-900);
+  --color-trace-button-active-text: var(--color-white);
+  --color-trace-button-bg: var(--color-gray-900);
+  --color-trace-button-focus: var(--color-blue-400);
+  --color-trace-button-text: var(--color-white);
+  --color-trace-event-filtered: var(--color-gray-700);
+  --color-trace-event-highlight-stroke: var(--color-white);
+  --color-trace-event-label-font: var(--color-white);
+  --color-trace-gridline: var(--color-gray-700);
+  --color-trace-hovercard-shadow: var(--color-shadow-40);
+  --color-trace-mouse-gridline: var(--color-gray-500);
+  --color-trace-mouse-timestamp-bg: var(--color-gray-700);
+  --color-trace-scrollbar-bg: var(--color-gray-900-alt3);
+  --color-trace-scrollbar-corner: var(--color-gray-900);
+  --color-trace-scrollbar-thumb: var(--color-gray-800);
+  --color-trace-section-bg: var(--color-gray-800);
+  --color-trace-section-border: var(--color-gray-700);
+  --color-trace-section-font: var(--color-gray-200);
+  --color-trace-timestamp-header-bg: var(--color-gray-900-alt4);
+  --color-trace-timestamp-font: var(--color-gray-300);
+  --color-trace-zoom-factor-bg: var(--color-amber-800-alt);
+}
+
 .trace-viewer {
   width: 100%;
   /* Disable text selection since it conflicts with mouse panning.
@@ -26,7 +78,7 @@
   border-radius: 2px;
   border: 2px solid var(--color-trace-border);
   box-sizing: border-box;
-  background: var(--color-white);
+  background: var(--color-bg-primary);
 }
 
 .trace-viewer .panel::-webkit-scrollbar-thumb {

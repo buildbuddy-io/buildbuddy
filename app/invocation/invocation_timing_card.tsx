@@ -14,6 +14,7 @@ import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_sugge
 
 interface Props {
   model: InvocationModel;
+  dark: boolean;
 }
 
 interface State {
@@ -323,7 +324,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        <TraceViewer profile={this.state.profile} />
+        <TraceViewer profile={this.state.profile} dark={this.props.dark} />
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}
