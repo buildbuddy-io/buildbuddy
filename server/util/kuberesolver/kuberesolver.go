@@ -1,5 +1,7 @@
 // Package kuberesolver provides a gRPC resolver that uses the Kubernetes API
 // to resolve pod FQDNs to pod IPs. It registers a "kube" scheme resolver.
+// Unlike the default DNS resolver, the k8s watch API allows the resolver to
+// be notified promptly when the IP changes.
 //
 // Usage:
 //
@@ -19,6 +21,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/resolver"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -187,20 +190,32 @@ func (r *kubeResolver) watch() {
 			continue
 		}
 
+		if err := r.processWatchEvents(watcher); err != nil {
+			log.Warningf("Watch for pod %s/%s ended abruptly: %s", r.podTarget.namespace, r.podTarget.podName, err)
+			select {
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+			case <-r.ctx.Done():
+				return
+			}
+			continue
+		}
+
 		backoff = time.Second
-		r.processWatchEvents(watcher)
 		watcher.Stop()
 	}
 }
 
-func (r *kubeResolver) processWatchEvents(watcher watch.Interface) {
+// processWatchEvents processes events received from the watch stream.
+// A non-nil error is returned when the watch ends abruptly.
+func (r *kubeResolver) processWatchEvents(watcher watch.Interface) error {
 	for {
 		select {
 		case <-r.ctx.Done():
-			return
+			return nil
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
-				return
+				return fmt.Errorf("watch channel closed")
 			}
 			if obj, ok := event.Object.(metav1.ObjectMetaAccessor); ok {
 				if rv := obj.GetObjectMeta().GetResourceVersion(); rv != "" {
@@ -220,8 +235,9 @@ func (r *kubeResolver) processWatchEvents(watcher watch.Interface) {
 			case watch.Bookmark:
 				// No-op: bookmark events are informational.
 			case watch.Error:
-				log.Warningf("Watch error for pod %s/%s", r.podTarget.namespace, r.podTarget.podName)
-				return
+				err := errors.FromObject(event.Object)
+				log.Warningf("Watch error for pod %s/%s: %s", r.podTarget.namespace, r.podTarget.podName, err)
+				return fmt.Errorf("watch error: %w", err)
 			}
 		case <-r.resolveCh:
 			r.resolve()

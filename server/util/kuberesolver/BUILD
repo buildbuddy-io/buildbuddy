@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/watch",
         "@io_k8s_client_go//kubernetes",
