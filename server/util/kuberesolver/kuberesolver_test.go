@@ -155,7 +155,7 @@ func TestResolveExistingPod(t *testing.T) {
 		require.Len(t, state.Addresses, 1)
 		require.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initial resolve")
+		require.FailNow(t, "timed out waiting for initial resolve")
 	}
 }
 
@@ -187,7 +187,7 @@ func TestResolvePodIPChanges(t *testing.T) {
 		require.Len(t, state.Addresses, 1)
 		require.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initial resolve")
+		require.FailNow(t, "timed out waiting for initial resolve")
 	}
 
 	// Wait for the watch goroutine to establish its watch before
@@ -217,7 +217,7 @@ func TestResolvePodIPChanges(t *testing.T) {
 		require.Len(t, state.Addresses, 1)
 		require.Equal(t, "10.0.0.2:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for updated resolve")
+		require.FailNow(t, "timed out waiting for updated resolve")
 	}
 }
 
@@ -239,7 +239,7 @@ func TestResolveNonExistentPod(t *testing.T) {
 	case err := <-cc.errors:
 		require.Contains(t, err.Error(), "not found")
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for error")
+		require.FailNow(t, "timed out waiting for error")
 	}
 }
 
@@ -269,7 +269,7 @@ func TestResolveNow(t *testing.T) {
 	select {
 	case <-cc.states:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initial resolve")
+		require.FailNow(t, "timed out waiting for initial resolve")
 	}
 
 	// Trigger manual resolve.
@@ -280,6 +280,6 @@ func TestResolveNow(t *testing.T) {
 		require.Len(t, state.Addresses, 1)
 		require.Equal(t, "10.0.0.5:9090", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for ResolveNow result")
+		require.FailNow(t, "timed out waiting for ResolveNow result")
 	}
 }
