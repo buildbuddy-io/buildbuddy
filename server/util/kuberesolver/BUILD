@@ -21,7 +21,6 @@ go_test(
     srcs = ["kuberesolver_test.go"],
     embed = [":kuberesolver"],
     deps = [
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
