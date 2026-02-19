@@ -12,6 +12,12 @@ var (
 	colorWhite  = lipgloss.Color("#ffffff")
 	colorDim    = lipgloss.Color("#666666")
 
+	// Muted status colors for list rendering
+	colorStatusPassed  = lipgloss.Color("#7fb995")
+	colorStatusFailed  = lipgloss.Color("#d58686")
+	colorStatusRunning = lipgloss.Color("#c0a96f")
+	colorStatusNeutral = lipgloss.Color("#a0a7b0")
+
 	// Title bar
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -33,13 +39,6 @@ var (
 	errorStyle = lipgloss.NewStyle().
 			Foreground(colorRed).
 			Bold(true)
-
-	// Status styles
-	statusPassedStyle       = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
-	statusFailedStyle       = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
-	statusInProgressStyle   = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
-	statusDisconnectedStyle = lipgloss.NewStyle().Foreground(colorGray).Bold(true)
-	statusUnknownStyle      = lipgloss.NewStyle().Foreground(colorGray)
 
 	// Detail view labels
 	labelStyle = lipgloss.NewStyle().
@@ -63,3 +62,18 @@ var (
 	lipglossNormal = lipgloss.NewStyle().
 			Foreground(colorGray)
 )
+
+func statusTextStyle(status string) lipgloss.Style {
+	switch status {
+	case "Passed":
+		return lipgloss.NewStyle().Foreground(colorStatusPassed)
+	case "Failed":
+		return lipgloss.NewStyle().Foreground(colorStatusFailed)
+	case "In progress":
+		return lipgloss.NewStyle().Foreground(colorStatusRunning)
+	case "Disconnected", "Unknown":
+		return lipgloss.NewStyle().Foreground(colorStatusNeutral)
+	default:
+		return lipgloss.NewStyle()
+	}
+}
