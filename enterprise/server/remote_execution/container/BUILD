@@ -30,7 +30,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@org_golang_x_net//publicsuffix",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

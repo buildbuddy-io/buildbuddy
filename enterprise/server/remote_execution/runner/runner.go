@@ -967,7 +967,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	pullErr := c.PullImage(ctx, creds)
 	container.RecordImageFetchMetrics(
 		c.IsolationType(),
-		container.RegistryETLDPlusOne(platProps.ContainerImage),
+		oci.RegistryETLDPlusOne(platProps.ContainerImage),
 		metrics.ImageFetchTriggerWarmup,
 		onDisk,
 		!creds.IsEmpty(),

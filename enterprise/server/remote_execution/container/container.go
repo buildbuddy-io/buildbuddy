@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/net/publicsuffix"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -494,46 +493,6 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
-// RegistryETLDPlusOne extracts the eTLD+1 of the registry host from a
-// container image reference string.
-//
-// Image references follow the pattern [HOST[:PORT]/]PATH[:TAG|@DIGEST].
-// If the first path component contains a "." or ":", it is treated as the
-// registry host. Otherwise, the implicit registry is "docker.io".
-func RegistryETLDPlusOne(imageRef string) string {
-	// Strip tag or digest.
-	ref := imageRef
-	if i := strings.IndexByte(ref, '@'); i != -1 {
-		ref = ref[:i]
-	}
-	if i := strings.LastIndexByte(ref, ':'); i != -1 {
-		// Only strip if the colon is after the last slash (i.e. it's a tag,
-		// not a port in the host).
-		if j := strings.LastIndexByte(ref, '/'); j == -1 || i > j {
-			ref = ref[:i]
-		}
-	}
-
-	host := "docker.io"
-	if i := strings.IndexByte(ref, '/'); i != -1 {
-		firstComponent := ref[:i]
-		if strings.ContainsAny(firstComponent, ".:" ) {
-			host = firstComponent
-		}
-	}
-
-	// Strip port if present.
-	if h, _, ok := strings.Cut(host, ":"); ok {
-		host = h
-	}
-
-	etld1, err := publicsuffix.EffectiveTLDPlusOne(host)
-	if err != nil {
-		return host
-	}
-	return etld1
-}
-
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds bool, err error, duration time.Duration) {
@@ -572,7 +531,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	cached, err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef)
 	RecordImageFetchMetrics(
 		ctr.IsolationType(),
-		RegistryETLDPlusOne(imageRef),
+		oci.RegistryETLDPlusOne(imageRef),
 		metrics.ImageFetchTriggerExecution,
 		cached,
 		!creds.IsEmpty(),

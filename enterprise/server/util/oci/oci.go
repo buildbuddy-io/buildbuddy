@@ -39,6 +39,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -979,4 +980,29 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 func isAnonymousUser(ctx context.Context) bool {
 	_, err := claims.ClaimsFromContext(ctx)
 	return authutil.IsAnonymousUserError(err)
+}
+
+// RegistryETLDPlusOne extracts the eTLD+1 of the registry host from a
+// container image reference string. It uses go-containerregistry to parse the
+// reference, which handles implicit docker.io defaults, tags, digests, and
+// ports. For IP-address registries, it returns the raw IP. Returns
+// "[UNKNOWN]" if the reference cannot be parsed.
+func RegistryETLDPlusOne(imageRef string) string {
+	ref, err := gcrname.ParseReference(imageRef)
+	if err != nil {
+		return "[UNKNOWN]"
+	}
+	host := ref.Context().RegistryStr()
+	// Strip port if present.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if net.ParseIP(host) != nil {
+		return "[IP_ADDRESS]"
+	}
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return host
+	}
+	return etld1
 }
