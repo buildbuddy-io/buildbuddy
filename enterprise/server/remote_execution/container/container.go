@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -491,6 +493,24 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
+// RecordImageFetchMetrics records the image fetch duration histogram.
+// Counts are available via the histogram's _count suffix.
+func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds bool, err error, duration time.Duration) {
+	statusLabel := metrics.OCIFetcherStatusOK
+	if err != nil {
+		statusLabel = metrics.OCIFetcherStatusError
+	}
+	labels := prometheus.Labels{
+		metrics.IsolationTypeLabel:      isolation,
+		metrics.ImageFetchRegistryLabel: registry,
+		metrics.StatusLabel:             statusLabel,
+		metrics.ImageFetchOnDiskLabel:   strconv.FormatBool(onDisk),
+		metrics.ImageFetchHasCredsLabel: strconv.FormatBool(hasCreds),
+		metrics.ImageFetchTriggerLabel:  trigger,
+	}
+	metrics.ImageFetchDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
+}
+
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
@@ -507,7 +527,18 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		defer cancel()
 	}
 
-	if err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef); err != nil {
+	start := time.Now()
+	cached, err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef)
+	RecordImageFetchMetrics(
+		ctr.IsolationType(),
+		oci.RegistryETLDPlusOne(imageRef),
+		metrics.ImageFetchTriggerExecution,
+		cached,
+		!creds.IsEmpty(),
+		err,
+		time.Since(start),
+	)
+	if err != nil {
 		// make sure we always return Unavailable if the context deadline
 		// was exceeded
 		if err == context.DeadlineExceeded || ctx.Err() != nil {
@@ -518,7 +549,9 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	return nil
 }
 
-func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
+// pullImageIfNecessary returns (cached, err) where cached indicates whether
+// the image was already present on the executor.
+func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) (bool, error) {
 	cacheAuth := env.GetImageCacheAuthenticator()
 	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
@@ -526,7 +559,7 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		slowPullWarnOnce.Do(func() {
 			log.CtxWarningf(ctx, "Authentication is not properly configured; this will result in slower image pulls.")
 		})
-		return ctr.PullImage(ctx, creds)
+		return false, ctr.PullImage(ctx, creds)
 	}
 
 	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
@@ -536,31 +569,31 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
 		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
-		return status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
+		return false, status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	isCached, err := ctr.IsImageCached(ctx)
+	onDisk, err := ctr.IsImageCached(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef)
 	if err != nil {
-		return status.WrapError(err, "create image cache token")
+		return false, status.WrapError(err, "create image cache token")
 	}
 	// If the image is cached and these credentials have been used recently
 	// by this group to pull the image, no need to re-auth.
-	if isCached && cacheAuth.IsAuthorized(cacheToken) {
-		return nil
+	if onDisk && cacheAuth.IsAuthorized(cacheToken) {
+		return true, nil
 	}
 	if err := ctr.PullImage(ctx, creds); err != nil {
-		return err
+		return onDisk, err
 	}
 	// Pull was successful, which means auth was successful. Refresh the token so
 	// we don't have to keep re-authenticating on every action until the token
 	// expires.
 	cacheAuth.Refresh(cacheToken)
-	return nil
+	return onDisk, nil
 }
 
 // NewImageCacheToken returns the token representing the authenticated group ID,

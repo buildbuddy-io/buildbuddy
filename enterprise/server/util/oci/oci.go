@@ -980,3 +980,21 @@ func isAnonymousUser(ctx context.Context) bool {
 	_, err := claims.ClaimsFromContext(ctx)
 	return authutil.IsAnonymousUserError(err)
 }
+
+// RegistryETLDPlusOne extracts the eTLD+1 of the registry host from a
+// container image reference string. It uses go-containerregistry to parse the
+// reference, which handles implicit docker.io defaults, tags, digests, and
+// ports. For IP-address registries, it returns the raw IP. Returns
+// "[UNKNOWN]" if the reference cannot be parsed.
+func RegistryETLDPlusOne(imageRef string) string {
+	ref, err := gcrname.ParseReference(imageRef)
+	if err != nil {
+		return "[UNKNOWN]"
+	}
+	host := ref.Context().RegistryStr()
+	// Strip port if present (RegistryStr may include it).
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return httpclient.HostLabel(host)
+}
