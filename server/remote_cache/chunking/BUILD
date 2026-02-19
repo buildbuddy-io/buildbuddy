@@ -10,9 +10,11 @@ go_library(
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )

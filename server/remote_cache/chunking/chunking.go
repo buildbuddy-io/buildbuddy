@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
@@ -21,6 +22,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -270,7 +272,13 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return err
 	}
 
-	return cache.Set(ctx, acRNProto, arBytes)
+	if err := cache.Set(ctx, acRNProto, arBytes); err != nil {
+		if status.IsInternalError(err) {
+			log.CtxInfof(ctx, "Failed to set chunking manifest (blob %s, manifest key %s): %v", cm.BlobDigest.GetHash(), acRNProto.GetDigest().GetHash(), err)
+		}
+		return sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+	}
+	return nil
 }
 
 // LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
@@ -282,6 +290,10 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 
 	arBytes, err := cache.Get(ctx, acRNProto)
 	if err != nil {
+		if status.IsInternalError(err) {
+			log.CtxInfof(ctx, "Failed to get chunking manifest (blob %s, manifest key %s): %v", blobDigest.GetHash(), acRNProto.GetDigest().GetHash(), err)
+		}
+		err = sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), blobDigest.GetHash())
 		if status.IsNotFoundError(err) {
 			blobRN := digest.NewCASResourceName(blobDigest, instanceName, digestFunction).ToProto()
 			if exists, existsErr := cache.Contains(ctx, blobRN); existsErr != nil {
@@ -383,6 +395,28 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 		return nil, err
 	}
 	return acRN.ToProto(), nil
+}
+
+// sanitizeManifestError replaces the salted AC key hash with the original blob hash in
+// the error message, so callers see the blob digest rather than the internal salted key.
+// The gRPC status code is preserved.
+func sanitizeManifestError(err error, saltedHash, blobHash string) error {
+	if err == nil || saltedHash == "" || saltedHash == blobHash {
+		return err
+	}
+	grpcStatus, ok := gstatus.FromError(err)
+	if !ok {
+		return fmt.Errorf("%s", sanitizeMsg(err.Error(), saltedHash, blobHash))
+	}
+	return gstatus.Error(grpcStatus.Code(), sanitizeMsg(grpcStatus.Message(), saltedHash, blobHash))
+}
+
+func sanitizeMsg(msg, saltedHash, blobHash string) string {
+	replacement := fmt.Sprintf("manifestKey(%s)", blobHash)
+	if replaced := strings.ReplaceAll(msg, saltedHash, replacement); replaced != msg {
+		return replaced
+	}
+	return fmt.Sprintf("%s (blob %s)", msg, blobHash)
 }
 
 func DigestsSummary(digests []*repb.Digest) string {
