@@ -359,6 +359,15 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+
+	// Label name for the eTLD+1 of the container image registry.
+	ImageFetchRegistryLabel = "registry"
+	// Label name for whether the image was already on disk on the executor.
+	ImageFetchOnDiskLabel = "on_disk"
+	// Label name for whether credentials were provided for the image fetch.
+	ImageFetchHasCredsLabel = "has_creds"
+	// Label name for what triggered the image fetch.
+	ImageFetchTriggerLabel = "trigger"
 )
 
 // Label value constants
@@ -380,6 +389,9 @@ const (
 	OCIFetcherRoleWaiter      = "waiter"
 	OCIFetcherStatusOK        = "ok"
 	OCIFetcherStatusError     = "error"
+
+	ImageFetchTriggerExecution = "execution"
+	ImageFetchTriggerWarmup    = "warmup"
 )
 
 // Other constants
@@ -3779,6 +3791,23 @@ var (
 		Subsystem: "disk",
 		Name:      "file_writer_in_progress_ops",
 		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
+	})
+
+	// ## Container image fetch metrics
+
+	ImageFetchDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "image_fetch_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 5),
+		Help:      "Duration of container image fetch attempts on executors, in **microseconds**. Use the _count suffix for fetch counts.",
+	}, []string{
+		IsolationTypeLabel,
+		ImageFetchRegistryLabel,
+		StatusLabel,
+		ImageFetchOnDiskLabel,
+		ImageFetchHasCredsLabel,
+		ImageFetchTriggerLabel,
 	})
 
 	// Custom gRPC metrics

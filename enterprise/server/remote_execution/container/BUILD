@@ -15,6 +15,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/background",
@@ -26,8 +27,10 @@ go_library(
         "//server/util/tracing",
         "//server/util/unixcred",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_x_net//publicsuffix",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
