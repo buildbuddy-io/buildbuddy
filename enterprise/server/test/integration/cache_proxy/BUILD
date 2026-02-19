@@ -4,7 +4,8 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "cache_proxy_test",
-    size = "large",
+    size = "small",
+    timeout = "short",
     srcs = ["cache_proxy_test.go"],
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbetest",
