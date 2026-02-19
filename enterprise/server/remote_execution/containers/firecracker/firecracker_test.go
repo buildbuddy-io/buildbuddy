@@ -2882,8 +2882,13 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
-			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+			# Capture pull output; dump to stderr on failure for debugging.
+			# Use timeout to avoid long retries on transient network issues.
+			if ! timeout 60 docker pull ` + busyboxImage + ` > /tmp/pull.log 2>&1; then
+				echo "docker pull failed:" >&2
+				cat /tmp/pull.log >&2
+				exit 1
+			fi
 
 			docker run --rm ` + busyboxImage + ` echo Hello
 		`},
