@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"k8s.io/client-go/kubernetes/fake"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestParsePodTarget(t *testing.T) {
@@ -87,7 +87,7 @@ func TestParsePodTarget(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -153,7 +153,7 @@ func TestResolveExistingPod(t *testing.T) {
 	select {
 	case state := <-cc.states:
 		require.Len(t, state.Addresses, 1)
-		assert.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
+		require.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial resolve")
 	}
@@ -185,7 +185,7 @@ func TestResolvePodIPChanges(t *testing.T) {
 	select {
 	case state := <-cc.states:
 		require.Len(t, state.Addresses, 1)
-		assert.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
+		require.Equal(t, "10.0.0.1:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial resolve")
 	}
@@ -215,7 +215,7 @@ func TestResolvePodIPChanges(t *testing.T) {
 	select {
 	case state := <-cc.states:
 		require.Len(t, state.Addresses, 1)
-		assert.Equal(t, "10.0.0.2:4772", state.Addresses[0].Addr)
+		require.Equal(t, "10.0.0.2:4772", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for updated resolve")
 	}
@@ -237,7 +237,7 @@ func TestResolveNonExistentPod(t *testing.T) {
 	// Should get an error reported since pod doesn't exist.
 	select {
 	case err := <-cc.errors:
-		assert.Contains(t, err.Error(), "not found")
+		require.Contains(t, err.Error(), "not found")
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for error")
 	}
@@ -278,7 +278,7 @@ func TestResolveNow(t *testing.T) {
 	select {
 	case state := <-cc.states:
 		require.Len(t, state.Addresses, 1)
-		assert.Equal(t, "10.0.0.5:9090", state.Addresses[0].Addr)
+		require.Equal(t, "10.0.0.5:9090", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for ResolveNow result")
 	}
