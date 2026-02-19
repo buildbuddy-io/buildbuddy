@@ -243,43 +243,80 @@ func TestResolveNonExistentPod(t *testing.T) {
 	}
 }
 
-func TestResolveNow(t *testing.T) {
+func TestSharedWatcher(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod-0",
 			Namespace: "ns",
 		},
 		Status: corev1.PodStatus{
-			PodIP: "10.0.0.5",
+			PodIP: "10.0.0.1",
 		},
 	}
 	client := fake.NewClientset(pod)
 
-	cc := newFakeClientConn()
 	builder := &kubeResolverBuilder{client: client}
-	r, err := builder.Build(
-		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:9090"),
-		cc,
+
+	// Build two resolvers for the same pod but different ports.
+	cc1 := newFakeClientConn()
+	r1, err := builder.Build(
+		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:8080"),
+		cc1,
 		resolver.BuildOptions{},
 	)
 	require.NoError(t, err)
-	defer r.Close()
+	defer r1.Close()
 
-	// Drain initial resolve.
-	select {
-	case <-cc.states:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for initial resolve")
+	cc2 := newFakeClientConn()
+	r2, err := builder.Build(
+		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:9090"),
+		cc2,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r2.Close()
+
+	// Both should resolve with their respective ports.
+	for _, tc := range []struct {
+		cc   *fakeClientConn
+		port string
+	}{
+		{cc1, "8080"},
+		{cc2, "9090"},
+	} {
+		select {
+		case state := <-tc.cc.states:
+			require.Len(t, state.Addresses, 1)
+			require.Equal(t, "10.0.0.1:"+tc.port, state.Addresses[0].Addr)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for resolve on port %s", tc.port)
+		}
 	}
 
-	// Trigger manual resolve.
-	r.ResolveNow(resolver.ResolveNowOptions{})
+	// Wait for the watch to be established before updating.
+	require.Eventually(t, func() bool {
+		for _, a := range client.Actions() {
+			if a.GetVerb() == "watch" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for watch to be established")
+
+	// Close one resolver; the other should still receive updates.
+	r1.Close()
+
+	pod.Status.PodIP = "10.0.0.2"
+	_, err = client.CoreV1().Pods("ns").Update(
+		context.Background(), pod, metav1.UpdateOptions{},
+	)
+	require.NoError(t, err)
 
 	select {
-	case state := <-cc.states:
+	case state := <-cc2.states:
 		require.Len(t, state.Addresses, 1)
-		require.Equal(t, "10.0.0.5:9090", state.Addresses[0].Addr)
+		require.Equal(t, "10.0.0.2:9090", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for ResolveNow result")
+		require.FailNow(t, "timed out waiting for update after closing r1")
 	}
 }

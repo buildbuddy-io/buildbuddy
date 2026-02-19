@@ -66,9 +66,189 @@ func parsePodTarget(endpoint string) (podTarget, error) {
 	}, nil
 }
 
+type podResolution struct {
+	pod *corev1.Pod
+	err error
+}
+
+// podWatcher owns a single Get+Watch loop for a specific (namespace, podName)
+// pair. Multiple kubeResolvers can subscribe to the same podWatcher.
+type podWatcher struct {
+	client    kubernetes.Interface
+	namespace string
+	podName   string
+
+	// Only accessed from the watch goroutine.
+	resourceVersion string
+
+	mu               sync.Mutex
+	subscribers      map[*kubeResolver]func(podResolution)
+	cancel           context.CancelFunc
+	latestResolution *podResolution
+}
+
+func newPodWatcher(ctx context.Context, client kubernetes.Interface, namespace, podName string) *podWatcher {
+	ctx, cancel := context.WithCancel(ctx)
+	pw := &podWatcher{
+		client:      client,
+		namespace:   namespace,
+		podName:     podName,
+		subscribers: make(map[*kubeResolver]func(podResolution)),
+		cancel:      cancel,
+	}
+	go pw.watch(ctx)
+	return pw
+}
+
+// subscribe adds a subscriber with callback cb. cb will be called immediately
+// with the latestResolution known state (pod or error) and then whenever the pod state
+// changes. cb must not block.
+func (pw *podWatcher) subscribe(r *kubeResolver, cb func(podResolution)) {
+	pw.mu.Lock()
+	pw.subscribers[r] = cb
+	if pw.latestResolution != nil {
+		cb(*pw.latestResolution)
+	}
+	pw.mu.Unlock()
+}
+
+// unsubscribe removes a subscriber. It returns true if no subscribers remain.
+func (pw *podWatcher) unsubscribe(r *kubeResolver) bool {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+	delete(pw.subscribers, r)
+	return len(pw.subscribers) == 0
+}
+
+func (pw *podWatcher) notifySubscribers(r podResolution) {
+	pw.mu.Lock()
+	pw.latestResolution = &r
+	callbacks := make([]func(podResolution), 0, len(pw.subscribers))
+	for _, cb := range pw.subscribers {
+		callbacks = append(callbacks, cb)
+	}
+	pw.mu.Unlock()
+
+	for _, cb := range callbacks {
+		cb(r)
+	}
+}
+
+// resolve does a one-shot Get and notifies subscribers. Returns true on success.
+func (pw *podWatcher) resolve(ctx context.Context) bool {
+	log.Infof("Resolving pod %s/%s", pw.namespace, pw.podName)
+	pod, err := pw.client.CoreV1().Pods(pw.namespace).Get(ctx, pw.podName, metav1.GetOptions{})
+	if err != nil {
+		log.Warningf("Failed to get pod %s/%s from k8s: %s", pw.namespace, pw.podName, err)
+		pw.notifySubscribers(podResolution{err: fmt.Errorf("failed to get pod: %w", err)})
+		return false
+	}
+	pw.notifySubscribers(podResolution{pod: pod})
+	pw.resourceVersion = pod.ResourceVersion
+	return true
+}
+
+func (pw *podWatcher) watch(ctx context.Context) {
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
+
+	// Resolve the pod before starting the watch loop. Retry until it
+	// succeeds so that the watch has a valid resourceVersion to start from.
+	for !pw.resolve(ctx) {
+		select {
+		case <-time.After(backoff):
+			backoff = min(backoff*2, maxBackoff)
+		case <-ctx.Done():
+			return
+		}
+	}
+	backoff = time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		log.Infof("Watching pod %s/%s for updates.", pw.namespace, pw.podName)
+		watcher, err := pw.client.CoreV1().Pods(pw.namespace).Watch(ctx, metav1.ListOptions{
+			FieldSelector:   "metadata.name=" + pw.podName,
+			ResourceVersion: pw.resourceVersion,
+		})
+		if err != nil {
+			log.Warningf("Failed to watch pod %s/%s: %s", pw.namespace, pw.podName, err)
+			select {
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
+
+		if err := pw.processWatchEvents(ctx, watcher); err != nil {
+			log.Warningf("Watch for pod %s/%s ended abruptly: %s", pw.namespace, pw.podName, err)
+			watcher.Stop()
+			select {
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
+
+		backoff = time.Second
+		watcher.Stop()
+	}
+}
+
+// processWatchEvents processes events received from the watch stream.
+// A non-nil error is returned when the watch ends abruptly.
+func (pw *podWatcher) processWatchEvents(ctx context.Context, watcher watch.Interface) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				return fmt.Errorf("watch channel closed")
+			}
+			if obj, ok := event.Object.(metav1.ObjectMetaAccessor); ok {
+				if rv := obj.GetObjectMeta().GetResourceVersion(); rv != "" {
+					pw.resourceVersion = rv
+				}
+			}
+			switch event.Type {
+			case watch.Added, watch.Modified:
+				pod, ok := event.Object.(*corev1.Pod)
+				if !ok {
+					continue
+				}
+				pw.notifySubscribers(podResolution{pod: pod})
+			case watch.Deleted:
+				log.Warningf("Pod %s/%s was deleted", pw.namespace, pw.podName)
+				pw.notifySubscribers(podResolution{err: fmt.Errorf("pod %s/%s was deleted", pw.namespace, pw.podName)})
+			case watch.Bookmark:
+				// No-op: bookmark events are informational.
+			case watch.Error:
+				err := errors.FromObject(event.Object)
+				log.Warningf("Watch error for pod %s/%s: %s", pw.namespace, pw.podName, err)
+				return fmt.Errorf("watch error: %w", err)
+			}
+		}
+	}
+}
+
 type kubeResolverBuilder struct {
-	mu     sync.Mutex
-	client kubernetes.Interface
+	mu       sync.Mutex
+	client   kubernetes.Interface
+	watchers map[string]*podWatcher
+}
+
+func watcherKey(namespace, podName string) string {
+	return namespace + "/" + podName
 }
 
 func (b *kubeResolverBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
@@ -91,17 +271,34 @@ func (b *kubeResolverBuilder) Build(target resolver.Target, cc resolver.ClientCo
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	r := &kubeResolver{
-		cc:        cc,
-		client:    b.client,
-		podTarget: pt,
-		ctx:       ctx,
-		cancel:    cancel,
-		resolveCh: make(chan struct{}, 1),
+	// gRPC creates one resolver per connection.
+	// To avoid making redundant calls to the k8s APIs we create a single
+	// watcher for each namespace/pod pair.
+	key := watcherKey(pt.namespace, pt.podName)
+	pw := b.watchers[key]
+	if pw == nil {
+		if b.watchers == nil {
+			b.watchers = make(map[string]*podWatcher)
+		}
+		pw = newPodWatcher(context.Background(), b.client, pt.namespace, pt.podName)
+		b.watchers[key] = pw
 	}
 
-	go r.watch()
+	r := &kubeResolver{
+		cc:        cc,
+		podTarget: pt,
+		watcher:   pw,
+		builder:   b,
+	}
+
+	pw.subscribe(r, func(result podResolution) {
+		if result.err != nil {
+			r.cc.ReportError(result.err)
+			return
+		}
+		r.updateStateFromPod(result.pod)
+	})
+
 	return r, nil
 }
 
@@ -109,39 +306,33 @@ func (b *kubeResolverBuilder) Scheme() string {
 	return scheme
 }
 
-type kubeResolver struct {
-	cc        resolver.ClientConn
-	client    kubernetes.Interface
-	podTarget podTarget
-	ctx       context.Context
-	cancel    context.CancelFunc
-	resolveCh chan struct{}
-
-	// resourceVersion is the last known resource version from a Get or Watch
-	// event. It is used to resume watches without missing events.
-	// Only accessed from the watch goroutine, so no mutex is needed.
-	resourceVersion string
+// removeWatcher unsubscribes a resolver from its podWatcher and cleans up
+// the watcher if no subscribers remain.
+func (b *kubeResolverBuilder) removeWatcher(r *kubeResolver) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pw := r.watcher
+	if pw.unsubscribe(r) {
+		pw.cancel()
+		delete(b.watchers, watcherKey(pw.namespace, pw.podName))
+	}
 }
 
-func (r *kubeResolver) resolve() {
-	log.Infof("Resolving pod %s/%s", r.podTarget.namespace, r.podTarget.podName)
-	pod, err := r.client.CoreV1().Pods(r.podTarget.namespace).Get(r.ctx, r.podTarget.podName, metav1.GetOptions{})
-	if err != nil {
-		log.Warningf("Failed to get pod %s/%s from k8s: %s", r.podTarget.namespace, r.podTarget.podName, err)
-		r.cc.ReportError(fmt.Errorf("failed to get pod: %w", err))
-		return
-	}
-	r.updateStateFromPod(pod)
-	r.resourceVersion = pod.ResourceVersion
+type kubeResolver struct {
+	cc        resolver.ClientConn
+	podTarget podTarget
+	watcher   *podWatcher
+	builder   *kubeResolverBuilder
 }
 
 func (r *kubeResolver) updateStateFromPod(pod *corev1.Pod) {
 	ip := pod.Status.PodIP
+	// This will happen when a pod restarts.
 	if ip == "" {
 		log.Infof("Pod %s/%s doesn't have an IP yet", r.podTarget.namespace, r.podTarget.podName)
-		// Setting an empty address list will return an error, but it should
-		// still cause the balancer to close any existing connections.
-		_ = r.cc.UpdateState(resolver.State{Addresses: nil})
+		// If we previously reported an IP, reporting an error should cause
+		// the balancer to close existing connections to the old IP.
+		r.cc.ReportError(fmt.Errorf("pod %s/%s doesn't have an IP yet", r.podTarget.namespace, r.podTarget.podName))
 		return
 	}
 
@@ -160,101 +351,14 @@ func (r *kubeResolver) updateStateFromPod(pod *corev1.Pod) {
 	}
 }
 
-func (r *kubeResolver) watch() {
-	// Do an initial resolve before subscribing to async updates.
-	r.resolve()
-
-	backoff := time.Second
-	maxBackoff := 30 * time.Second
-
-	for {
-		select {
-		case <-r.ctx.Done():
-			return
-		default:
-		}
-
-		log.Infof("Watching pod %s/%s for updates.", r.podTarget.namespace, r.podTarget.podName)
-		watcher, err := r.client.CoreV1().Pods(r.podTarget.namespace).Watch(r.ctx, metav1.ListOptions{
-			FieldSelector:   "metadata.name=" + r.podTarget.podName,
-			ResourceVersion: r.resourceVersion,
-		})
-		if err != nil {
-			log.Warningf("Failed to watch pod %s/%s: %s", r.podTarget.namespace, r.podTarget.podName, err)
-			select {
-			case <-time.After(backoff):
-				backoff = min(backoff*2, maxBackoff)
-			case <-r.ctx.Done():
-				return
-			}
-			continue
-		}
-
-		if err := r.processWatchEvents(watcher); err != nil {
-			watcher.Stop()
-			log.Warningf("Watch for pod %s/%s ended abruptly: %s", r.podTarget.namespace, r.podTarget.podName, err)
-			select {
-			case <-time.After(backoff):
-				backoff = min(backoff*2, maxBackoff)
-			case <-r.ctx.Done():
-				return
-			}
-			continue
-		}
-
-		backoff = time.Second
-		watcher.Stop()
-	}
-}
-
-// processWatchEvents processes events received from the watch stream.
-// A non-nil error is returned when the watch ends abruptly.
-func (r *kubeResolver) processWatchEvents(watcher watch.Interface) error {
-	for {
-		select {
-		case <-r.ctx.Done():
-			return nil
-		case event, ok := <-watcher.ResultChan():
-			if !ok {
-				return fmt.Errorf("watch channel closed")
-			}
-			if obj, ok := event.Object.(metav1.ObjectMetaAccessor); ok {
-				if rv := obj.GetObjectMeta().GetResourceVersion(); rv != "" {
-					r.resourceVersion = rv
-				}
-			}
-			switch event.Type {
-			case watch.Added, watch.Modified:
-				pod, ok := event.Object.(*corev1.Pod)
-				if !ok {
-					continue
-				}
-				r.updateStateFromPod(pod)
-			case watch.Deleted:
-				log.Warningf("Pod %s/%s was deleted", r.podTarget.namespace, r.podTarget.podName)
-				r.cc.ReportError(fmt.Errorf("pod %s/%s was deleted", r.podTarget.namespace, r.podTarget.podName))
-			case watch.Bookmark:
-				// No-op: bookmark events are informational.
-			case watch.Error:
-				err := errors.FromObject(event.Object)
-				log.Warningf("Watch error for pod %s/%s: %s", r.podTarget.namespace, r.podTarget.podName, err)
-				return fmt.Errorf("watch error: %w", err)
-			}
-		case <-r.resolveCh:
-			r.resolve()
-		}
-	}
-}
-
 func (r *kubeResolver) ResolveNow(_ resolver.ResolveNowOptions) {
-	select {
-	case r.resolveCh <- struct{}{}:
-	default:
-	}
+	// Per the documentation, ResolveNow is a hint.
+	// We already resolve and watch the target for changes as soon as the
+	// resolver is created so there's no benefit in doing anything here.
 }
 
 func (r *kubeResolver) Close() {
-	r.cancel()
+	r.builder.removeWatcher(r)
 }
 
 func init() {
