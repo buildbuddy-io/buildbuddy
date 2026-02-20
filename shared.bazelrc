@@ -97,6 +97,7 @@ common --test_summary=terse
 common --downloader_config=bazel_downloader.cfg
 
 common:race --@io_bazel_rules_go//go/config:race
+common:race --test_timeout=120,600,-1,-1
 
 common:performance --compilation_mode=opt
 
