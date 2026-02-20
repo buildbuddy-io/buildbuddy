@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -150,21 +149,6 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		Stdout:     stdout.Bytes(),
 		Error:      err,
 		UsageStats: stats,
-	}
-	// The vmexec server normally calls unix.Sync() after the command is
-	// terminated, but if the context was cancelled then the Sync() call may not
-	// have completed yet. Explicitly sync here so that we have a better chance
-	// of collecting output files in this case.
-	if err := ctx.Err(); err != nil {
-		ctxErr := status.FromContextError(ctx)
-		ctx, cancel := background.ExtendContextForFinalization(ctx, syncTimeout)
-		defer cancel()
-		_, err := client.Sync(ctx, &vmxpb.SyncRequest{})
-		if err != nil {
-			result.Error = status.WrapErrorf(
-				ctxErr,
-				"failed to sync filesystem following interrupted command; some output files may be missing from the workspace: %s. command interrupted due to", err)
-		}
 	}
 	return result
 }
