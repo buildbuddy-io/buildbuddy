@@ -27,6 +27,8 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 )
 
 const (
@@ -303,7 +305,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" {
+		if u.Scheme != "unix" && u.Scheme != "kube" {
 			target = u.Host
 		}
 	}
