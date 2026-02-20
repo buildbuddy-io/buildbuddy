@@ -1024,11 +1024,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		SequenceNumber: event.GetOrderedBuildEvent().GetSequenceNumber(),
 	}
 
-	// Bazel sends an Interrupted exit code in the finished event if the user cancelled the build.
-	// Use that signal to cancel any actions that are currently in the remote execution system.
-	if f, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
-		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
-			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
+	// Cancel any ongoing invocations as soon as bazel has finished the build.
+	if _, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
+		if executionService := e.env.GetRemoteExecutionService(); executionService != nil {
+			if err := executionService.Cancel(e.ctx, iid); err != nil {
 				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
 			}
 		}
