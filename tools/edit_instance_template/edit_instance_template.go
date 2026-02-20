@@ -54,7 +54,7 @@ func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
 	filter := fmt.Sprintf("name = gke-%s-*", *cluster)
 	it := c.AggregatedList(ctx, &computepb.AggregatedListInstanceTemplatesRequest{
-		Filter:  proto.String(filter),
+		Filter:  new(filter),
 		Project: *project,
 	})
 
@@ -132,28 +132,28 @@ func modifiedTemplateName(unmodifiedName string) (string, error) {
 }
 
 func createModifiedVersion(ctx context.Context, c *compute.InstanceTemplatesClient, old *computepb.InstanceTemplate, newTemplateName string) (*computepb.InstanceTemplate, error) {
-	new := proto.Clone(old).(*computepb.InstanceTemplate)
-	if new.GetProperties().GetAdvancedMachineFeatures() == nil {
-		new.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
+	updated := proto.Clone(old).(*computepb.InstanceTemplate)
+	if updated.GetProperties().GetAdvancedMachineFeatures() == nil {
+		updated.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
 	}
-	new.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = proto.Bool(true)
+	updated.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = new(true)
 	if *addNetwork {
-		new.GetProperties().NetworkInterfaces = append(new.GetProperties().GetNetworkInterfaces(),
+		updated.GetProperties().NetworkInterfaces = append(updated.GetProperties().GetNetworkInterfaces(),
 			&computepb.NetworkInterface{
 				AccessConfigs: []*computepb.AccessConfig{
 					{
-						Name: proto.String("external-nat"),
-						Type: proto.String("ONE_TO_ONE_NAT"),
+						Name: new("external-nat"),
+						Type: new("ONE_TO_ONE_NAT"),
 					},
 				},
-				Subnetwork: proto.String(getSubnetURL()),
+				Subnetwork: new(getSubnetURL()),
 			})
 	}
-	new.Name = proto.String(newTemplateName)
+	updated.Name = new(newTemplateName)
 
 	req := &computepb.InsertInstanceTemplateRequest{
 		Project:                  *project,
-		InstanceTemplateResource: new,
+		InstanceTemplateResource: updated,
 	}
 	if !*apply {
 		// Don't print the template here, it's fucken huge.
@@ -201,9 +201,9 @@ func createIGMWithTemplate(ctx context.Context, c *compute.InstanceGroupManagers
 	req := &computepb.InsertInstanceGroupManagerRequest{
 		Project: *project,
 		InstanceGroupManagerResource: &computepb.InstanceGroupManager{
-			Name:             proto.String(name),
-			InstanceTemplate: proto.String(modifiedTemplateURL),
-			TargetSize:       proto.Int32(int32(1)),
+			Name:             new(name),
+			InstanceTemplate: new(modifiedTemplateURL),
+			TargetSize:       new(int32(1)),
 		},
 		Zone: shortZone,
 	}

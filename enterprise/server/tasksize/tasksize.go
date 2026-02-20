@@ -633,24 +633,24 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 // and scheduled task size.
 func GetCgroupSettings(ctx context.Context, fp interfaces.ExperimentFlagProvider, size *scpb.TaskSize, metadata *scpb.SchedulingMetadata) *scpb.CgroupSettings {
 	settings := &scpb.CgroupSettings{
-		PidsMax: proto.Int64(*pidLimit + (*additionalPIDsLimitPerCPU*size.GetEstimatedMilliCpu())/1000),
+		PidsMax: new(int64(*pidLimit + (*additionalPIDsLimitPerCPU*size.GetEstimatedMilliCpu())/1000)),
 
 		// Set CPU weight using the same milliCPU => weight conversion used by k8s.
 		// Using the same weight as k8s is not strictly required, since we are
 		// weighting tasks relative to each other, not relative to k8s pods. But it
 		// makes the scaling of the values a little more sensible/consistent when
 		// inspecting cgroup weights on a node.
-		CpuWeight: proto.Int64(CPUMillisToWeight(size.GetEstimatedMilliCpu())),
+		CpuWeight: new(int64(CPUMillisToWeight(size.GetEstimatedMilliCpu()))),
 
 		// Apply the global max CPU limit.
-		CpuQuotaLimitUsec:  proto.Int64((*cpuQuotaLimit).Microseconds()),
-		CpuQuotaPeriodUsec: proto.Int64((*cpuQuotaPeriod).Microseconds()),
+		CpuQuotaLimitUsec:  new(int64((*cpuQuotaLimit).Microseconds())),
+		CpuQuotaPeriodUsec: new(int64((*cpuQuotaPeriod).Microseconds())),
 	}
 	if *memoryLimitBytes > 0 {
-		settings.MemoryLimitBytes = proto.Int64(*memoryLimitBytes)
+		settings.MemoryLimitBytes = new(int64(*memoryLimitBytes))
 	}
 	if *memoryOOMGroup {
-		settings.MemoryOomGroup = proto.Bool(*memoryOOMGroup)
+		settings.MemoryOomGroup = new(*memoryOOMGroup)
 	}
 	// Allow experimenting with setting memory hard limits as a fraction of the
 	// task size plus an additional fixed value.
@@ -666,7 +666,7 @@ func GetCgroupSettings(ctx context.Context, fp interfaces.ExperimentFlagProvider
 		if memoryHardLimitMultiplier > 0 {
 			memoryHardLimitAdditionalBytes := fp.Int64(ctx, "remote_execution.memory_hard_limit_additional_bytes", 0, options...)
 			limit := int64(float64(size.GetEstimatedMemoryBytes())*memoryHardLimitMultiplier) + memoryHardLimitAdditionalBytes
-			settings.MemoryLimitBytes = proto.Int64(limit)
+			settings.MemoryLimitBytes = new(limit)
 		}
 	}
 	return settings

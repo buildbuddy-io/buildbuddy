@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/open-feature/go-sdk/openfeature"
@@ -524,11 +523,11 @@ func TestCgroupSettings(t *testing.T) {
 		}
 		actual := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
 		expected := &scpb.CgroupSettings{
-			CpuWeight:          proto.Int64(39),
-			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
-			CpuQuotaPeriodUsec: proto.Int64(1 * 100 * 1e3),
-			PidsMax:            proto.Int64(4096 + 4096), // 4096 base limit + (1*4096) CPU-based limit
-			MemoryOomGroup:     proto.Bool(true),
+			CpuWeight:          new(int64(39)),
+			CpuQuotaLimitUsec:  new(int64(30 * 100 * 1e3)),
+			CpuQuotaPeriodUsec: new(int64(1 * 100 * 1e3)),
+			PidsMax:            new(int64(4096 + 4096)), // 4096 base limit + (1*4096) CPU-based limit
+			MemoryOomGroup:     new(true),
 		}
 		assert.Empty(t, cmp.Diff(expected, actual, protocmp.Transform()))
 	}

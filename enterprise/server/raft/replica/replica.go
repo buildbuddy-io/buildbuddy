@@ -182,7 +182,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		Replica: &rfpb.ReplicaDescriptor{
 			RangeId:   sm.rangeID,
 			ReplicaId: sm.replicaID,
-			Nhid:      proto.String(sm.NHID),
+			Nhid:      new(sm.NHID),
 		},
 		RangeId: rd.GetRangeId(),
 	}
@@ -1418,7 +1418,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	reqSession := batchReq.GetSession()
 	if reqSession != nil {
-		reqSession.EntryIndex = proto.Uint64(entry.Index)
+		reqSession.EntryIndex = new(uint64(entry.Index))
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {

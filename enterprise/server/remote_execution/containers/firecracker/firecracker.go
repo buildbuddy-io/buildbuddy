@@ -1688,40 +1688,40 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		},
 		JailerCfg: jailerCfg,
 		MachineCfg: fcmodels.MachineConfiguration{
-			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
-			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
-			Smt:             fcclient.Bool(false),
-			TrackDirtyPages: fcclient.Bool(true),
+			VcpuCount:       new(c.vmConfig.NumCpus),
+			MemSizeMib:      new(c.vmConfig.MemSizeMb),
+			Smt:             new(false),
+			TrackDirtyPages: new(true),
 		},
 	}
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
-			DriveID:      fcclient.String(rootDriveID),
+			DriveID:      new(rootDriveID),
 			PathOnHost:   &rootFS,
-			IsRootDevice: fcclient.Bool(false),
-			IsReadOnly:   fcclient.Bool(false),
+			IsRootDevice: new(false),
+			IsReadOnly:   new(false),
 		})
 	} else {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
-			DriveID:      fcclient.String(containerDriveID),
+			DriveID:      new(containerDriveID),
 			PathOnHost:   &containerFS,
-			IsRootDevice: fcclient.Bool(false),
-			IsReadOnly:   fcclient.Bool(true),
+			IsRootDevice: new(false),
+			IsReadOnly:   new(true),
 		}, fcmodels.Drive{
-			DriveID:      fcclient.String(scratchDriveID),
+			DriveID:      new(scratchDriveID),
 			PathOnHost:   &scratchFS,
-			IsRootDevice: fcclient.Bool(false),
-			IsReadOnly:   fcclient.Bool(false),
+			IsRootDevice: new(false),
+			IsReadOnly:   new(false),
 		})
 	}
 	// Workspace drive will be /dev/vdb if merged rootfs is enabled, /dev/vdc
 	// otherwise.
 	cfg.Drives = append(cfg.Drives, []fcmodels.Drive{
 		{
-			DriveID:      fcclient.String(workspaceDriveID),
+			DriveID:      new(workspaceDriveID),
 			PathOnHost:   &workspaceFS,
-			IsRootDevice: fcclient.Bool(false),
-			IsReadOnly:   fcclient.Bool(false),
+			IsRootDevice: new(false),
+			IsReadOnly:   new(false),
 		},
 	}...)
 
@@ -1760,9 +1760,9 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
 		ChrootBaseDir:  c.jailerRoot,
 		ID:             c.id,
-		UID:            fcclient.Int(unix.Geteuid()),
-		GID:            fcclient.Int(unix.Getegid()),
-		NumaNode:       fcclient.Int(numaNode),
+		UID:            new(unix.Geteuid()),
+		GID:            new(unix.Getegid()),
+		NumaNode:       new(numaNode),
 		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		Stdout:         c.vmLogWriter(),
@@ -1780,7 +1780,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
 		// 2. This ParentCgroup setting
 		// 3. The ID setting
-		ParentCgroup: fcclient.String(c.cgroupParent),
+		ParentCgroup: new(c.cgroupParent),
 	}, nil
 }
 
@@ -3080,10 +3080,6 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 	}
 }
 
-func pointer[T any](val T) *T {
-	return &val
-}
-
 func toInt32s(in []int) []int32 {
 	out := make([]int32, len(in))
 	for i, l := range in {
@@ -3175,7 +3171,7 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
+	c.cgroupSettings.NumaNode = new(int32(numaNode))
 
 	if *debugDisableCgroup {
 		return nil

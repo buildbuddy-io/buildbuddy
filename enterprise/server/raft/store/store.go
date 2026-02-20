@@ -605,21 +605,21 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 		membershipRsp.Voters = append(membershipRsp.Voters, &rfpb.ReplicaDescriptor{
 			RangeId:   req.GetRangeId(),
 			ReplicaId: replicaID,
-			Nhid:      proto.String(addr),
+			Nhid:      new(addr),
 		})
 	}
 	for replicaID, addr := range membership.NonVotings {
 		membershipRsp.NonVoters = append(membershipRsp.NonVoters, &rfpb.ReplicaDescriptor{
 			RangeId:   req.GetRangeId(),
 			ReplicaId: replicaID,
-			Nhid:      proto.String(addr),
+			Nhid:      new(addr),
 		})
 	}
 	for replicaID, addr := range membership.Witnesses {
 		membershipRsp.Witnesses = append(membershipRsp.Witnesses, &rfpb.ReplicaDescriptor{
 			RangeId:   req.GetRangeId(),
 			ReplicaId: replicaID,
-			Nhid:      proto.String(addr),
+			Nhid:      new(addr),
 		})
 	}
 	for replicaID := range membership.Removed {
@@ -2048,7 +2048,7 @@ func (s *Store) newRangeDescriptorFromRaftMembership(ctx context.Context, rangeI
 		res.Replicas = append(res.Replicas, &rfpb.ReplicaDescriptor{
 			RangeId:   rangeID,
 			ReplicaId: replicaID,
-			Nhid:      proto.String(addr),
+			Nhid:      new(addr),
 		})
 	}
 	return res, nil
@@ -2934,7 +2934,7 @@ func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeI
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
 			RangeId:   newRangeID,
 			ReplicaId: replicaID,
-			Nhid:      proto.String(r.GetNhid()),
+			Nhid:      new(r.GetNhid()),
 		})
 		initialMembers[replicaID] = r.GetNhid()
 	}
@@ -3743,7 +3743,7 @@ func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID,
 	newDescriptor.Staging = append(newDescriptor.GetStaging(), &rfpb.ReplicaDescriptor{
 		RangeId:   rangeID,
 		ReplicaId: replicaID,
-		Nhid:      proto.String(nhid),
+		Nhid:      new(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
@@ -3763,8 +3763,8 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
-	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
+	newDescriptor.LastAddedReplicaId = new(uint64(replicaID))
+	newDescriptor.LastReplicaAddedAtUsec = new(int64(time.Now().UnixMicro()))
 	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}

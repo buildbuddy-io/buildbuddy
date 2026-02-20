@@ -197,9 +197,9 @@ func TestCgroupSettings(t *testing.T) {
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
 				CgroupSettings: &scpb.CgroupSettings{
-					CpuQuotaLimitUsec:  proto.Int64(300000),
-					CpuQuotaPeriodUsec: proto.Int64(100000),
-					PidsMax:            proto.Int64(256),
+					CpuQuotaLimitUsec:  new(int64(300000)),
+					CpuQuotaPeriodUsec: new(int64(100000)),
+					PidsMax:            new(int64(256)),
 				},
 			},
 		},
@@ -352,11 +352,11 @@ func TestRunOOM(t *testing.T) {
 			SchedulingMetadata: &scpb.SchedulingMetadata{
 				CgroupSettings: &scpb.CgroupSettings{
 					// Set a relatively small memory limit to trigger an OOM.
-					MemoryLimitBytes: proto.Int64(8_000_000),
+					MemoryLimitBytes: new(int64(8_000_000)),
 					// Eagerly kill the whole container on OOM - errors are
 					// returned on OOM anyway and the task is retried, so there
 					// is no need to continue once an OOM has occurred.
-					MemoryOomGroup: proto.Bool(true),
+					MemoryOomGroup: new(true),
 				},
 			},
 		},
