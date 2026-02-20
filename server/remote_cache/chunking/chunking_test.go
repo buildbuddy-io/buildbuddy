@@ -213,6 +213,29 @@ func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 }
 
+func TestLoadWithoutManifest_SaltedHashNotLeaked(t *testing.T) {
+	const salt = "test-salt"
+	flags.Set(t, "cache.chunking.ac_key_salt", salt)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	blobRN, _ := testdigest.RandomCASResourceBuf(t, 500)
+	blobDigest := blobRN.GetDigest()
+
+	saltedDigest, err := digest.Compute(bytes.NewReader([]byte(salt+":"+blobDigest.GetHash())), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+	assert.Contains(t, err.Error(), blobDigest.GetHash())
+	assert.NotContains(t, err.Error(), saltedDigest.GetHash())
+}
+
 func TestStore_ErrGroupContextCancellation(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
