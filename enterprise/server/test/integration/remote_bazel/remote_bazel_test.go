@@ -65,7 +65,8 @@ func init() {
 	log.Configure()
 }
 
-func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) {
+// Returns the invocation ID of the outer invocation.
+func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 			RequestContext: reqCtx,
@@ -76,14 +77,35 @@ func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildB
 		}
 		for _, in := range searchResp.GetInvocation() {
 			if in.GetRole() == "HOSTED_BAZEL" {
-				return
+				return in.GetInvocationId()
 			}
 		}
-
 		time.Sleep(delay)
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for workflow invocation to be created")
+	return ""
+}
+
+func waitForLogLine(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, invocationID string, s string) {
+	chunkID := ""
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+			InvocationId: invocationID,
+			ChunkId:      chunkID,
+			MinLines:     math.MaxInt32,
+		})
+		if err == nil {
+			if strings.Contains(string(logResp.GetBuffer()), s) {
+				return
+			}
+			if logResp.GetNextChunkId() != "" {
+				chunkID = logResp.GetNextChunkId()
+			}
+		}
+		time.Sleep(delay)
+	}
+	require.FailNowf(t, "timeout", "Timed out waiting for %s in invocation logs", s)
 }
 
 func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inspb.InvocationStatus) {
@@ -223,6 +245,8 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 	// Avoid uploading embedded CI runner binaries to the in-memory cache in
 	// each test because it's very slow. The executor will add these binaries locally instead.
 	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+	flags.Set(t, "executor.enable_bare_runner", true)
+	flags.Set(t, "github.app.enabled", true)
 
 	githubToken := ""
 	repoURL := ""
@@ -262,8 +286,6 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 
 	executors := env.AddExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
-	flags.Set(t, "executor.enable_bare_runner", true)
-	flags.Set(t, "github.app.enabled", true)
 
 	// Create a workflow for the repo - will be used to fetch the git token
 	if repoURL != "" {
@@ -289,16 +311,7 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 }
 
 func TestCancel(t *testing.T) {
-	repoDir, _ := makeLocalGitRepo(t, map[string]string{
-		"BUILD": `
-sh_binary(
-    name = "sleep_forever_test",
-    srcs = ["sleep_forever_test.sh"],
-)
-`,
-		"sleep_forever_test.sh": "sleep 2147483647",
-		"WORKSPACE":             "",
-	})
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
@@ -321,49 +334,39 @@ sh_binary(
 	require.NoError(t, err)
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiRsp.ApiKey.Value)
 
-	// Before the remote runner has a chance to complete, cancel the run
-	ctxWithCancel, cancel := context.WithCancel(ctx)
-	go func() {
-		waitForInvocationCreated(t, ctx, bbClient, reqCtx)
-		cancel()
-	}()
-
 	t.Chdir(repoDir)
-	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image="})
+	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image=", "--skip_auto_checkout=true"})
 	require.NoError(t, err)
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	require.NoError(t, err)
 	repoConfig, err := remotebazel.Config()
 	require.NoError(t, err)
-	_, err = remotebazel.Run(
-		ctxWithCancel,
-		remotebazel.RunOpts{
-			Server:            bbServer.GRPCAddress(),
-			Command:           "bazel run //:sleep_forever_test",
-			WorkspaceFilePath: wsFilePath,
-		}, repoConfig)
-	require.Contains(t, err.Error(), "context canceled")
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	// Check the invocation logs to make sure the invocation was canceled
-	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
-		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
-	})
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(searchRsp.GetInvocation()), 1)
+	// Start the run in the background because it will block as it runs.
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, runErr := remotebazel.Run(
+			ctxWithCancel,
+			remotebazel.RunOpts{
+				Server:            bbServer.GRPCAddress(),
+				Command:           "echo STARTING && sleep 2147483647",
+				WorkspaceFilePath: wsFilePath,
+			}, repoConfig)
+		runErrCh <- runErr
+	}()
 
-	// Find outer invocation because the inner invocation will report a successful
-	// status after the build has completed, and will not wait for the infinite
-	// script to run
-	var inv *inpb.Invocation
-	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
-			inv = i
-		}
-	}
-	require.NotNil(t, inv)
-	invocationID := inv.InvocationId
+	// Don't cancel until the remote runner has printed "STARTING" to ensure that it's actually running.
+	invocationID := waitForInvocationCreated(t, ctx, bbClient, reqCtx)
+	waitForLogLine(t, ctx, bbClient, invocationID, "STARTING")
+	cancel()
 
+	runErr := <-runErrCh
+	require.Error(t, runErr)
+	require.Contains(t, runErr.Error(), "context canceled")
+
+	// Check the invocation was canceled.
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 }
 
