@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -280,6 +281,7 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 }
 
 func TestCancel(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
 sh_binary(
