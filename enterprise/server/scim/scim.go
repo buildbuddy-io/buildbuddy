@@ -763,6 +763,15 @@ func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.
 	return nil, nil
 }
 
+func logGroupResponse(ctx context.Context, label string, v interface{}) {
+	out, err := json.Marshal(v)
+	if err != nil {
+		log.CtxWarningf(ctx, "SCIM %s response: failed to marshal: %s", label, err)
+		return
+	}
+	log.CtxInfof(ctx, "SCIM %s response:\n%s", label, string(out))
+}
+
 func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -801,7 +810,9 @@ func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables
 	if err != nil {
 		return nil, err
 	}
-	return newGroupResource(created), nil
+	res := newGroupResource(created)
+	logGroupResponse(ctx, "create group", res)
+	return res, nil
 }
 
 func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -811,7 +822,9 @@ func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Gr
 	if err != nil {
 		return nil, err
 	}
-	return newGroupResource(ul), nil
+	res := newGroupResource(ul)
+	logGroupResponse(ctx, "get group", res)
+	return res, nil
 }
 
 func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -820,6 +833,7 @@ func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables
 	if err := s.env.GetUserDB().DeleteUserList(ctx, id); err != nil {
 		return nil, err
 	}
+	log.CtxInfof(ctx, "SCIM delete group response: success (no content)")
 	return nil, nil
 }
 
@@ -931,7 +945,9 @@ func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	return newGroupResource(updated), nil
+	res := newGroupResource(updated)
+	logGroupResponse(ctx, "patch group", res)
+	return res, nil
 }
 
 // parseMemberValues extracts user IDs from the "value" field of an add members
@@ -1050,11 +1066,13 @@ func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.G
 	}
 	groups = groups[:count]
 
-	return &GroupListResponseResource{
+	res := &GroupListResponseResource{
 		Schemas:      []string{ListResponseSchema},
 		TotalResults: totalResults,
 		StartIndex:   startIndex + 1,
 		ItemsPerPage: count,
 		Resources:    groups,
-	}, nil
+	}
+	logGroupResponse(ctx, "get groups", res)
+	return res, nil
 }
