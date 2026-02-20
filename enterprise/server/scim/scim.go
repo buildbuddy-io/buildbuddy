@@ -285,6 +285,8 @@ func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
 			}
 		case http.MethodPost:
 			return s.createGroup, nil
+		case http.MethodPut:
+			return s.updateGroup, nil
 		case http.MethodPatch:
 			return s.patchGroup, nil
 		case http.MethodDelete:
@@ -824,6 +826,64 @@ func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Gr
 	}
 	res := newGroupResource(ul)
 	logGroupResponse(ctx, "get group", res)
+	return res, nil
+}
+
+func (s *SCIMServer) updateGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	req, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	log.CtxInfof(ctx, "SCIM update group request: %s %s\n%s", r.Method, r.URL.RequestURI(), string(req))
+
+	gr := GroupResource{}
+	if err := json.Unmarshal(req, &gr); err != nil {
+		return nil, err
+	}
+
+	id := path.Base(r.URL.Path)
+	// Fetch the existing user list to verify it exists and get current members.
+	ul, err := s.env.GetUserDB().GetUserList(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update the display name.
+	if err := s.env.GetUserDB().UpdateUserList(ctx, &tables.UserList{
+		UserListID: id,
+		GroupID:    g.GroupID,
+		Name:       gr.DisplayName,
+	}); err != nil {
+		return nil, err
+	}
+
+	// Replace the full member list: remove all existing, then add the new set.
+	var memberUpdates []*ulpb.UpdateUserListMembershipRequest_Update
+	for _, u := range ul.GetUser() {
+		memberUpdates = append(memberUpdates, &ulpb.UpdateUserListMembershipRequest_Update{
+			UserId: u.GetUserId(),
+			Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
+		})
+	}
+	for _, m := range gr.Members {
+		memberUpdates = append(memberUpdates, &ulpb.UpdateUserListMembershipRequest_Update{
+			UserId: &uidpb.UserId{Id: m.Value},
+			Action: ulpb.UpdateUserListMembershipRequest_ADD,
+		})
+	}
+	if len(memberUpdates) > 0 {
+		if err := s.env.GetUserDB().UpdateUserListMembers(ctx, id, memberUpdates); err != nil {
+			return nil, err
+		}
+	}
+
+	// Re-fetch to return the updated state.
+	updated, err := s.env.GetUserDB().GetUserList(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	res := newGroupResource(updated)
+	logGroupResponse(ctx, "update group", res)
 	return res, nil
 }
 
