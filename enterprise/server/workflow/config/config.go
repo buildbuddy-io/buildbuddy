@@ -188,6 +188,18 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
 if [ ! -d "$KYTHE_DIR" ]; then
   mkdir -p "$KYTHE_DIR"
   curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi
+
+# Bazel 8+ removed proto_lang_toolchain from native rules.
+# Patch the Kythe BUILD file to load it from rules_proto.
+if ! grep -q 'proto_lang_toolchain.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
+  sed -i '1s|^|load("@rules_proto//proto:proto_lang_toolchain.bzl", "proto_lang_toolchain")\n|' "$KYTHE_DIR"/BUILD
+fi
+
+# Ensure the Kythe MODULE.bazel declares rules_proto as a dependency
+# (needed when the Kythe module is registered via local_path_override).
+if ! grep -q 'rules_proto' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
+  echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> "$KYTHE_DIR"/MODULE.bazel
 fi`, dirName, downloadURL)
 	return buf
 }
