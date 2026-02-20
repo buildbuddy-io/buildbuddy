@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
@@ -801,6 +802,121 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 		err = forkedVM.Pause(ctx)
 		require.NoError(t, err)
 	}
+}
+
+func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+	filecacheRoot := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		}
+	})
+
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				// Only a snapshot it none exists
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable},
+			}},
+			// Use ci_runner so it supports remote snapshots
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+				{Name: "GIT_BRANCH", Value: "pr"},
+			},
+		},
+	}
+
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: cfg,
+	}
+	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, baseVM)
+	err = container.PullImageIfNecessary(ctx, env, baseVM, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+
+	// Create an initial snapshot. Data written to this snapshot should persist
+	// when other VMs reuse the snapshot
+	cmd := appendToLog("Base")
+	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	assert.True(t, res.VMMetadata.GetSavedLocalSnapshot())
+	err = baseVM.Pause(ctx)
+	require.NoError(t, err)
+
+	// Delete some chunks from the local filecache. The chunks should still
+	// exist in the remote cache, so the local manifest should still be valid.
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	snapshotKeys := baseVM.SnapshotKeySet()
+	snap, err := loader.GetSnapshot(ctx, snapshotKeys, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	})
+	require.NoError(t, err)
+
+	deletedCount := 0
+	for _, cf := range snap.GetChunkedFiles() {
+		for i, c := range cf.GetChunks() {
+			// Delete every other chunk
+			if i%2 == 0 {
+				deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: c.GetDigest()})
+				if deleted {
+					deletedCount++
+				}
+			}
+		}
+	}
+	require.Greater(t, deletedCount, 0, "should have deleted at least one chunk")
+
+	// Create a new VM that loads from the snapshot. Even though some chunks
+	// are missing locally, they should be fetched from the remote cache.
+	workDir2 := testfs.MakeDirAll(t, rootDir, "fork")
+	opts.ActionWorkingDirectory = workDir2
+	forkVM, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, forkVM)
+
+	err = forkVM.Unpause(ctx)
+	require.NoError(t, err)
+
+	cmd = appendToLog("Fork")
+	res = forkVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\nFork\n", string(res.Stdout))
+
+	// The fork should not save a new local snapshot because the local manifest
+	// exists and all chunks are available (locally or remotely).
+	assert.False(t, res.VMMetadata.GetSavedLocalSnapshot())
 }
 
 func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {

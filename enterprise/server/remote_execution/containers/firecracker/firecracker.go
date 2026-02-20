@@ -825,8 +825,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 				return nil, err
 			}
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-				RemoteReadEnabled: c.supportsRemoteSnapshots,
-				ReadPolicy:        readPolicy,
+				SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+				SupportsRemoteManifest: c.supportsRemoteSnapshots,
+				ReadPolicy:             readPolicy,
 			})
 			c.createFromSnapshot = err == nil
 			label := ""
@@ -1282,7 +1283,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		maxFallbackAge = d
 	}
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled:           c.supportsRemoteSnapshots,
+		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
+		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
 		ReadPolicy:                  readPolicy,
 		MaxStaleFallbackSnapshotAge: maxFallbackAge,
 	})
@@ -3347,8 +3349,9 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 		return false
 	}
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: c.supportsRemoteSnapshots,
-		ReadPolicy:        readPolicy,
+		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+		SupportsRemoteManifest: c.supportsRemoteSnapshots,
+		ReadPolicy:             readPolicy,
 	})
 	return err == nil
 }
@@ -3358,8 +3361,9 @@ func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loade
 		return false
 	}
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: false,
-		ReadPolicy:        readPolicy,
+		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+		SupportsRemoteManifest: false,
+		ReadPolicy:             readPolicy,
 	})
 	return err == nil
 }
