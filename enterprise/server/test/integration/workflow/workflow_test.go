@@ -107,6 +107,10 @@ func makeRepo(t *testing.T, contents map[string]string) (string, string) {
 }
 
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	env := rbetest.NewRBETestEnv(t)
 	var workflowService interfaces.WorkflowService
 

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -28,6 +29,10 @@ import (
 )
 
 func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
 	ctx := context.Background()

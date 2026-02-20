@@ -16,10 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
@@ -27,8 +29,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -49,8 +51,10 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
 
 func init() {
@@ -216,6 +220,10 @@ func TestWithPrivateRepo(t *testing.T) {
 }
 
 func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	githubToken := ""
 	repoURL := ""
 	if mockPrivateGithubToken {
@@ -281,7 +289,6 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 }
 
 func TestCancel(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
 sh_binary(
@@ -655,4 +662,69 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
+}
+
+// In production, the apps upload the ci_runner and bb binaries to the cache so
+// executors can fetch the latest versions without upgrading. Writing to the cache
+// for tests is very slow, so this behavior is disabled by default.
+//
+// This test enables the behavior and verifies the binaries can be used correctly.
+func TestEmbeddedBinariesFromApp(t *testing.T) {
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+
+	// The flag is disabled in `runLocalServerAndExecutor`. Enable it here.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", true)
+
+	require.NotEmpty(t, bundle.CiRunnerBytes)
+	require.NotEmpty(t, cli_bundle.CLIBytes)
+	runnerBinDigest, err := digest.Compute(bytes.NewReader(bundle.CiRunnerBytes), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	cliDigest, err := digest.Compute(bytes.NewReader(cli_bundle.CLIBytes), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	// The binaries should not be in the cache to begin with.
+	casClient := env.GetContentAddressableStorageClient()
+	findReq := &repb.FindMissingBlobsRequest{
+		// Hosted runner uploads the CI runner inputs to the snapshot partition.
+		InstanceName:   snaputil.SnapshotPartitionPrefix,
+		BlobDigests:    []*repb.Digest{runnerBinDigest, cliDigest},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	findResp, err := casClient.FindMissingBlobs(ctx, findReq)
+	require.NoError(t, err)
+	require.Len(t, findResp.GetMissingBlobDigests(), 2)
+
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--os=linux",
+		"--arch=amd64",
+		"--script=echo HELLO!",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
+	)
+
+	// Verify invocation logs.
+	bbClient := env.GetBuildBuddyServiceClient()
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+		RequestContext: reqCtx,
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(searchRsp.GetInvocation()))
+
+	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: searchRsp.Invocation[0].InvocationId,
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(logResp.GetBuffer()), "HELLO!")
+
+	// Verify that the binaries were uploaded to the cache.
+	findResp, err = casClient.FindMissingBlobs(ctx, findReq)
+	require.NoError(t, err)
+	require.Empty(t, findResp.GetMissingBlobDigests())
 }
