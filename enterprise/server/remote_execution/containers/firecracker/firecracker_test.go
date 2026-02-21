@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -234,23 +235,28 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	env.SetByteStreamClient(bsClient)
 	acClient := repb.NewActionCacheClient(conn)
 	env.SetActionCacheClient(acClient)
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	casClient := repb.NewContentAddressableStorageClient(conn)
+	env.SetContentAddressableStorageClient(casClient)
 
 	if opts.runProxy {
 		// Initialize proxies in their own env.
 		proxyEnv := testenv.GetTestEnv(t)
 		proxyEnv.SetActionCacheClient(acClient)
 		proxyEnv.SetByteStreamClient(bsClient)
+		proxyEnv.SetContentAddressableStorageClient(casClient)
 		runProxyServers(ctx, proxyEnv, t)
 
 		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
 		require.NoError(t, err)
 		bsProxy, err := byte_stream_server_proxy.New(proxyEnv)
 		require.NoError(t, err)
+		casProxy, err := content_addressable_storage_server_proxy.New(proxyEnv)
+		require.NoError(t, err)
 
 		proxyGrpcServer, proxyRunFunc, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 		repb.RegisterActionCacheServer(proxyGrpcServer, acProxy)
 		bspb.RegisterByteStreamServer(proxyGrpcServer, bsProxy)
+		repb.RegisterContentAddressableStorageServer(proxyGrpcServer, casProxy)
 		go proxyRunFunc()
 
 		proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
@@ -260,6 +266,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 		// Point cache clients on primary env towards proxies.
 		env.SetActionCacheClient(repb.NewActionCacheClient(proxyConn))
 		env.SetByteStreamClient(bspb.NewByteStreamClient(proxyConn))
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(proxyConn))
 	}
 
 	fcDir := opts.filecacheRootDir
@@ -288,9 +295,12 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
 	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(proxyEnv)
+	require.NoError(t, err)
 	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(server)
+	proxyEnv.SetLocalCASServer(casServer)
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
@@ -1748,6 +1758,111 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 	require.Equal(t, "Base\nChild\n", string(res.Stdout))
+}
+
+func TestFirecracker_RemoteSnapshotSharing_CacheProxy_LocalManifestFallback(t *testing.T) {
+	// Enable cache proxy cluster-local snapshot storage.
+	flags.Set(t, "executor.store_snapshots_in_local_cluster_only", true)
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{runProxy: true})
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	instanceName := "test-instance-name"
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots.
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+				{Name: platform.SnapshotReadPolicyPropertyName, Value: platform.ReadLocalSnapshotOnly},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: instanceName,
+		},
+	}
+
+	newVM := func(workDir string) *firecracker.FirecrackerContainer {
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:            1,
+				MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
+				NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb:  100,
+				GuestKernelVersion: cfg.GuestKernelVersion,
+				FirecrackerVersion: cfg.FirecrackerVersion,
+				GuestApiVersion:    cfg.GuestAPIVersion,
+			},
+			ExecutorConfig: cfg,
+		}
+		vm, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		})
+		require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+		require.NoError(t, vm.Create(ctx, opts.ActionWorkingDirectory))
+		return vm
+	}
+
+	baseVM := newVM(testfs.MakeDirAll(t, rootDir, "work-base"))
+	res := baseVM.Exec(ctx, appendToLog("Base"), nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	require.NoError(t, baseVM.Pause(ctx))
+
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	snapshot, err := loader.GetSnapshot(ctx, baseVM.SnapshotKeySet(), &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: true,
+		ReadPolicy:        platform.ReadLocalSnapshotOnly,
+	})
+	require.NoError(t, err)
+	require.Equal(t, snaputil.ChunkSourceLocalFilecache, snapshot.GetManifestFetchSource())
+
+	var artifactDigests []*repb.Digest
+	for _, node := range snapshot.GetFiles() {
+		artifactDigests = append(artifactDigests, node.GetDigest())
+	}
+	for _, file := range snapshot.GetChunkedFiles() {
+		for _, chunk := range file.GetChunks() {
+			artifactDigests = append(artifactDigests, chunk.GetDigest())
+		}
+	}
+	require.NotEmpty(t, artifactDigests)
+
+	removedDigests := 0
+	for _, d := range artifactDigests {
+		if d == nil {
+			continue
+		}
+		if env.GetFileCache().DeleteFile(ctx, &repb.FileNode{Digest: d}) {
+			removedDigests++
+		}
+	}
+	require.Greater(t, removedDigests, 0)
+
+	// Starting from this snapshot now requires a remote CAS FindMissingBlobs
+	// check. This request must include snapshot access context so that cache
+	// proxy checks its cluster-local snapshot partition.
+	forkVM := newVM(testfs.MakeDirAll(t, rootDir, "work-fork"))
+	res = forkVM.Exec(ctx, appendToLog("Child"), nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\nChild\n", string(res.Stdout))
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 }
 
 func TestFirecrackerBalloon(t *testing.T) {
