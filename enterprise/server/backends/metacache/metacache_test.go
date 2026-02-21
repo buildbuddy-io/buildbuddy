@@ -364,7 +364,7 @@ func TestMultiGetSet(t *testing.T) {
 		d := rn.GetDigest()
 		rbuf, ok := m[d]
 		require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), rn.GetDigestFunction())
 		require.NoError(t, err)
 		require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 	}
