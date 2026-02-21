@@ -36,10 +36,10 @@ const (
 	usersPath  = "/scim/Users"
 	groupsPath = "/scim/Groups"
 
-	ListResponseSchema   = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
-	UserResourceSchema   = "urn:ietf:params:scim:schemas:core:2.0:User"
-	GroupResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:Group"
-	PatchResourceSchema  = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
+	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
+	GroupResourceSchema = "urn:ietf:params:scim:schemas:core:2.0:Group"
+	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 
 	ActiveAttribute     = "active"
 	GivenNameAttribute  = "name.givenName"
@@ -922,19 +922,6 @@ func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.
 	for _, op := range pr.Operations {
 		opLower := strings.ToLower(op.Op)
 		switch {
-		case op.Path == "" && opLower == "replace":
-			m, ok := op.Value.(map[string]any)
-			if !ok {
-				return nil, status.InvalidArgumentErrorf("path was empty, but value was not a map but %T", op.Value)
-			}
-			if name, ok := m["displayName"]; ok {
-				v, ok := name.(string)
-				if !ok {
-					return nil, status.InvalidArgumentErrorf("expected string for displayName but got %T", name)
-				}
-				ul.Name = v
-				nameUpdated = true
-			}
 		case op.Path == "displayName" && opLower == "replace":
 			v, ok := op.Value.(string)
 			if !ok {
@@ -953,14 +940,7 @@ func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.
 					Action: ulpb.UpdateUserListMembershipRequest_ADD,
 				})
 			}
-		case op.Path == "members" && opLower == "replace":
-			// Remove all existing members, then add the new set.
-			for _, u := range ul.GetUser() {
-				memberUpdates = append(memberUpdates, &ulpb.UpdateUserListMembershipRequest_Update{
-					UserId: u.GetUserId(),
-					Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
-				})
-			}
+		case op.Path == "members" && opLower == "remove":
 			members, err := parseMemberValues(op.Value)
 			if err != nil {
 				return nil, err
@@ -968,18 +948,9 @@ func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.
 			for _, m := range members {
 				memberUpdates = append(memberUpdates, &ulpb.UpdateUserListMembershipRequest_Update{
 					UserId: &uidpb.UserId{Id: m},
-					Action: ulpb.UpdateUserListMembershipRequest_ADD,
+					Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
 				})
 			}
-		case strings.HasPrefix(op.Path, "members[") && opLower == "remove":
-			userID, err := parseMemberFilter(op.Path)
-			if err != nil {
-				return nil, err
-			}
-			memberUpdates = append(memberUpdates, &ulpb.UpdateUserListMembershipRequest_Update{
-				UserId: &uidpb.UserId{Id: userID},
-				Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
-			})
 		default:
 			return nil, status.InvalidArgumentErrorf("unsupported operation %q on %q", op.Op, op.Path)
 		}
