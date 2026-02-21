@@ -604,6 +604,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     // the shell.
     unquotedIndexes.add(parts.length - 1);
 
+    // Setting this flag will tell the CLI to print a URL to the Execution.
+    const besResultsUrl = this.props.model.stringCommandLineOption("bes_results_url");
+    if (besResultsUrl) parts.push(`--bes_results_url=${shlex.quote(besResultsUrl)}`);
+
     // Remote executor / instance (derived from invocation options if present)
     const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
     if (remoteExec) parts.push(`--remote_executor=${remoteExec}`);
