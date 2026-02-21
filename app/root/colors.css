@@ -289,6 +289,7 @@
   --color-login-button-text: var(--color-gray-900);
   --color-members-hover-bg: var(--color-gray-50);
   --color-members-selected-bg: var(--color-blue-100);
+  --color-header-bg: var(--color-gray-900);
   --color-menu-hover-bg: var(--color-gray-200);
   --color-menu-text: var(--color-black);
   --color-org-invite-link: var(--color-gray-900);
@@ -546,6 +547,7 @@
   --color-login-button-text: var(--color-text-primary);
   --color-members-hover-bg: var(--color-bg-hover);
   --color-members-selected-bg: var(--color-teal-700);
+  --color-header-bg: var(--color-bg-primary);
   --color-menu-hover-bg: var(--color-bg-hover);
   --color-menu-text: var(--color-text-primary);
   --color-org-invite-link: var(--color-text-primary);
