@@ -1320,10 +1320,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			// TODO(Maggie): Flush execution data to DB when the stream is closed
-			//if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-			//	log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-			//}
+			if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+				log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
@@ -1420,11 +1419,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				}
 				lastWrite = time.Now()
 				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
-				// TODO(Maggie): Flush execution data to DB when the stream is closed.
-				// Don't flush early here.
-				if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-					log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-				}
 				return nil
 			}()
 			if err != nil {
