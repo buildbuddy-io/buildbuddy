@@ -123,15 +123,6 @@ container_layer(
 )
 
 container_layer(
-    name = "docker_credential_gcr_docker_config_layer",
-    directory = "/root/.docker",
-    files = [
-        "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
-    ],
-    tags = ["manual"],
-)
-
-container_layer(
     name = "containerd_layer",
     directory = "/usr/bin",
     files = select({
@@ -243,7 +234,6 @@ container_image(
     layers = [
         ":tini_layer",
         ":docker_credential_gcr_layer",
-        ":docker_credential_gcr_docker_config_layer",
         ":containerd_layer",
         ":runc_layer",
         # Updating these layers does not currently afford us any vulnerability
