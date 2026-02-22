@@ -123,6 +123,7 @@ go_test(
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
         "--executor.firecracker_enable_linux_6_1=true",
+        "--executor.firecracker_enable_native_snapshot_overwriting=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
