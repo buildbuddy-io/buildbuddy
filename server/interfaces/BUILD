@@ -42,6 +42,7 @@ go_library(
         "//proto/api/v1:api_v1_go_proto",
         "//server/remote_cache/digest",
         "//server/tables",
+        "//server/usage/sku",
         "//server/util/clickhouse/schema",
         "//server/util/platform",
         "//server/util/proto",

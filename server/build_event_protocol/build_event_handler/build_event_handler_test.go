@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -799,6 +800,15 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 			},
 		},
 	}, ut.Totals())
+	assert.ElementsMatch(t, []testusage.OLAPTotal{
+		{
+			GroupID: "GROUP1",
+			Labels:  sku.Labels{},
+			Counts: map[sku.SKU]int64{
+				sku.BuildEventsBESCount: 1,
+			},
+		},
+	}, ut.OLAPTotals())
 
 	// Send another started event for good measure; we should still only count 1
 	// invocation since it's the same stream.
@@ -816,6 +826,15 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 			},
 		},
 	}, ut.Totals())
+	assert.ElementsMatch(t, []testusage.OLAPTotal{
+		{
+			GroupID: "GROUP1",
+			Labels:  sku.Labels{},
+			Counts: map[sku.SKU]int64{
+				sku.BuildEventsBESCount: 1,
+			},
+		},
+	}, ut.OLAPTotals())
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {

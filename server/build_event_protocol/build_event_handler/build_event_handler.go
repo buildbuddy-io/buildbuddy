@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -1720,14 +1721,17 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 }
 
 func incrementInvocationUsage(ctx context.Context, ut interfaces.UsageTracker) {
-	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to compute invocation usage labels: %s", err)
 		return
 	}
 	if err := ut.Increment(ctx, labels, &tables.UsageCounts{Invocations: 1}); err != nil {
 		log.CtxWarningf(ctx, "Failed to increment invocation usage: %s", err)
-		return
+	}
+	// TODO: add 'tool' label? (bazel, buildbuddy_ci_runner, other)
+	if err := ut.IncrementOLAP(ctx, olapLabels, sku.BuildEventsBESCount, 1); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP build events count usage: %s", err)
 	}
 }
 

@@ -91,6 +91,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testusage",
+        "//server/usage/sku",
         "//server/util/bazel_request",
         "//server/util/clientip",
         "//server/util/db",
