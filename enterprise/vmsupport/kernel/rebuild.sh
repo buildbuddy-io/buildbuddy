@@ -20,8 +20,7 @@ ARCH=$(uname -m)
 if [[ "$ARCH" == "x86_64" ]]; then
   VERSION=v6.1
 elif [[ "$ARCH" == "aarch64" ]]; then
-  # TODO: update arm64 to v6.1 as well
-  VERSION=v5.10
+  VERSION=v6.1
 else
   echo >&2 "Unsupported architecture: $ARCH"
   exit 1
