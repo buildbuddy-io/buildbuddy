@@ -166,7 +166,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
 
     try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getInvocationId());
+      rpcService.downloadBytestreamFile("timing_profile.json.gz", profileFile.uri, this.props.model.getInvocationId());
     } catch {
       console.error("Error downloading bytestream timing profile");
     }
