@@ -24,6 +24,7 @@ go_library(
         "//cli/remote_download",
         "//cli/remotebazel",
         "//cli/search",
+        "//cli/secrets",
         "//cli/ui",
         "//cli/update",
         "//cli/upload",
