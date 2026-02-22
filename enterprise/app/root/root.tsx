@@ -29,6 +29,7 @@ import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
 import WorkflowsComponent from "../workflows/workflows";
+const SettingsThemeTransition = React.lazy(() => import("../settings/settings_theme_transition"));
 const CodeComponent = React.lazy(() => import("../code/code"));
 const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
@@ -304,7 +305,7 @@ export default class EnterpriseRootComponent extends React.Component {
             <div
               className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""} ${
                 tests ? "root-tests" : ""
-              }`}>
+              } ${settings ? "root-main-settings" : ""}`}>
               {!this.state.loading && (
                 <div className={`content ${login || repo ? "content-flex" : ""}`}>
                   {invocationId && (
@@ -466,6 +467,11 @@ export default class EnterpriseRootComponent extends React.Component {
                 </div>
               )}
               {!this.state.loading && !code && <FooterComponent />}
+              {settings && (
+                <Suspense fallback={null}>
+                  <SettingsThemeTransition dark={this.state.preferences.darkModeEnabled} />
+                </Suspense>
+              )}
               {this.state.loading && <div className="loading loading"></div>}
             </div>
           </div>

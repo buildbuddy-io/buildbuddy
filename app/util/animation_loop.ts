@@ -42,4 +42,8 @@ export class AnimationLoop {
     this.enabled_ = false;
     this.dt.reset();
   }
+
+  isRunning() {
+    return this.enabled_;
+  }
 }
