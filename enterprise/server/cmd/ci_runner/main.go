@@ -2592,7 +2592,8 @@ func runBazelWrapper() error {
 	// our bazel options. This can happen if the command is a `bb` CLI command
 	// and `bb` is being invoked via bazelisk (e.g. by setting
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
-	if _, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs); cmdIdx == -1 {
+	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
+	if cmdIdx == -1 {
 		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
 
@@ -2627,6 +2628,12 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+
+	// When using the bb CLI and running `bb run`, stream the run logs to the server.
+	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
+	}
 
 	// Parse and save the startup args (including our custom applied ones).
 	// We apply these on future bazel cleanup commands to make sure the running
