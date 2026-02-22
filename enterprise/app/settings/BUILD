@@ -136,3 +136,16 @@ ts_library(
         "//proto:group_ts_proto",
     ],
 )
+
+ts_library(
+    name = "settings_theme_transition",
+    srcs = ["settings_theme_transition.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//app/preferences",
+        "//app/util:animation_loop",
+        "//app/util:color",
+        "//app/util:math",
+    ],
+)

@@ -1,5 +1,9 @@
-.settings .title.settings-title {
-  margin-bottom: 0;
+.settings .shelf {
+  transition: 250ms ease-out 250ms;
+}
+
+.dark .settings .shelf {
+  transition: 100ms ease-out;
 }
 
 .settings-section {
@@ -268,7 +272,7 @@
   padding: 8px 16px;
   position: relative;
   overflow: hidden;
-  transition: box-shadow 100ms ease-out;
+  transition: 100ms ease-out;
 }
 
 .settings .settings-tab .icon {
