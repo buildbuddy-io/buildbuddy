@@ -2,8 +2,11 @@ package remoteauth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -251,6 +254,14 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	// If a JWT was provided, check if it's valid and use it if so.
 	jwt, c, err := a.getValidJwtFromContext(ctx)
 	if err != nil {
+		if a.shouldReauthenticateHS256JWT(ctx, jwt) {
+			remoteJWT, c, err := a.authenticateAndValidate(ctx)
+			if err == nil {
+				return authContext(ctx, remoteJWT, c)
+			}
+			log.Debugf("Error remotely authenticating with incoming JWT: %s", err)
+			return authutil.AuthContextWithError(ctx, err)
+		}
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	if jwt != "" {
@@ -347,6 +358,56 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
+func (a *RemoteAuthenticator) authenticateAndValidate(ctx context.Context) (string, *claims.Claims, error) {
+	jwt, err := a.authenticate(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	c, err := a.jwtIsValid(ctx, jwt)
+	if err != nil {
+		return "", nil, err
+	}
+	return jwt, c, nil
+}
+
+func (a *RemoteAuthenticator) shouldReauthenticateHS256JWT(ctx context.Context, incomingJWT string) bool {
+	if incomingJWT == "" {
+		return false
+	}
+	if getLastMetadataValue(ctx, authutil.APIKeyHeader) != "" {
+		return false
+	}
+	if !useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
+		return false
+	}
+	alg, err := jwtSigningAlgorithm(incomingJWT)
+	if err != nil {
+		return false
+	}
+	return alg == "HS256"
+}
+
+func jwtSigningAlgorithm(token string) (string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", status.InvalidArgumentError("invalid JWT format")
+	}
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", status.InvalidArgumentError("invalid JWT header encoding")
+	}
+	var header struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		return "", status.InvalidArgumentError("invalid JWT header")
+	}
+	if header.Alg == "" {
+		return "", status.InvalidArgumentError("missing JWT alg")
+	}
+	return header.Alg, nil
+}
+
 // getValidJwtFromContext returns:
 // - A valid JWT from the incoming RPC metadata or
 // - An error if an invalid JWT is present or
@@ -358,7 +419,7 @@ func (a *RemoteAuthenticator) getValidJwtFromContext(ctx context.Context) (strin
 	}
 	claims, err := a.jwtIsValid(ctx, jwt)
 	if err != nil {
-		return "", nil, err
+		return jwt, nil, err
 	}
 	return jwt, claims, nil
 }

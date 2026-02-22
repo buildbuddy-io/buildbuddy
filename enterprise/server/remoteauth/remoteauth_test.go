@@ -352,6 +352,30 @@ func TestAuthenticateDoesNotRequestES256WhenDisabled(t *testing.T) {
 	require.Equal(t, authpb.JWTSigningMethod_UNKNOWN, req.GetJwtSigningMethod())
 }
 
+func TestAuthenticatedGRPCContext_ReauthenticatesHS256JWTWhenES256Enabled(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	authenticator, fakeAuth := setup(t)
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	incomingHS256JWT := validJwt(t, "executor")
+	remoteES256JWT := validES256Jwt(t, "foo")
+	fakeAuth.setNextJwt(t, "", remoteES256JWT)
+
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithJwt(t, incomingHS256JWT))
+	require.Equal(t, remoteES256JWT, ctx.Value(authutil.ContextTokenStringKey))
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+
+	req := fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.Equal(t, authpb.JWTSigningMethod_ES256, req.GetJwtSigningMethod())
+}
+
 func TestES256KeysCached(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
