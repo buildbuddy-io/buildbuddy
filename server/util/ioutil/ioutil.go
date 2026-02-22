@@ -10,6 +10,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+// ReadAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
+// *os.File and *bytes.Reader, enabling concurrent random reads (e.g. via
+// io.SectionReader) alongside sequential operations.
+type ReadAtSeeker interface {
+	io.ReaderAt
+	io.ReadSeeker
+}
+
 // A writer that drops anything written to it.
 // Useful when you need an io.Writer but don't intend
 // to actually write bytes to it.

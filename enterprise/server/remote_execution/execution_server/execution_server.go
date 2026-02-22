@@ -836,6 +836,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	if chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		executionTask.Experiments = append(executionTask.Experiments, "upload_outputs_chunked")
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets {
