@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
@@ -61,14 +62,20 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, status.InternalError("CLI binary not embedded")
 		}
 
-		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload runner bin")
-		}
-
-		bbBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, cli_bundle.CLIBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload bb bin")
+		var runnerBinDigest, bbBinDigest *repb.Digest
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.Go(func() error {
+			var err error
+			runnerBinDigest, err = cachetools.UploadBlobToCAS(egCtx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
+			return status.WrapError(err, "upload runner bin")
+		})
+		eg.Go(func() error {
+			var err error
+			bbBinDigest, err = cachetools.UploadBlobToCAS(egCtx, bsClient, instanceName, repb.DigestFunction_BLAKE3, cli_bundle.CLIBytes)
+			return status.WrapError(err, "upload bb bin")
+		})
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 
 		runnerName := filepath.Base(ExecutableName)
