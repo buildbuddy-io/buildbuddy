@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package spawn_diff;
 
+import "google/protobuf/duration.proto";
 import "proto/spawn.proto";
 
 message DiffResult {
@@ -33,7 +34,9 @@ message NewOnly {
 message Modified {
   repeated Diff diffs = 1;
   map<string, uint32> transitively_invalidated = 2;
+  map<string, uint32> transitively_invalidated_uncached = 4;
   bool expected = 3;
+  google.protobuf.Duration uncached_execution_time = 5;
 }
 
 message Diff {
