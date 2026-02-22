@@ -38,7 +38,6 @@ go_library(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",
-        "//server/util/proto",
         "//server/util/status",
         "//server/util/statusz",
         "//server/util/unixcred",

@@ -91,6 +91,8 @@ nogo(
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
         "-SA1029",
+        # TODO: Re-enable once nogo-analyzer upgrades staticcheck for Go 1.26 `new(value)` support.
+        "-SA4006",
         "-ST1000",
         "-ST1003",
         "-ST1005",

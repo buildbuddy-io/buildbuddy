@@ -47,8 +47,8 @@ var (
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
 			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
-				Help: proto.String("Number of actions currently waiting in the executor queue."),
+				Name: new("exported_buildbuddy_remote_execution_queue_length"),
+				Help: new("Number of actions currently waiting in the executor queue."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
 			Examples: "sum by(pod_name) (exported_buildbuddy_remote_execution_queue_length)",
@@ -57,8 +57,8 @@ var (
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
 			LabelNames:       []string{metrics.InvocationStatusLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_invocation_duration_usec"),
-				Help: proto.String("The total duration of each invocation, in **microseconds**."),
+				Name: new("exported_buildbuddy_invocation_duration_usec"),
+				Help: new("The total duration of each invocation, in **microseconds**."),
 				Type: dto.MetricType_HISTOGRAM.Enum(),
 			},
 			Examples: `# Median invocation duration in the past 5 minutes
@@ -75,8 +75,8 @@ sum by (invocation_status) (rate(exported_buildbuddy_invocation_duration_usec_co
 			sourceMetricName: "buildbuddy_remote_cache_num_hits_exported",
 			LabelNames:       []string{metrics.CacheTypeLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
-				Help: proto.String("Number of cache hits."),
+				Name: new("exported_buildbuddy_remote_cache_num_hits"),
+				Help: new("Number of cache hits."),
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of Hits as measured over the last week
@@ -86,8 +86,8 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
 			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
-				Help: proto.String("Number of bytes downloaded from the remote cache."),
+				Name: new("exported_buildbuddy_remote_cache_download_size_bytes"),
+				Help: new("Number of bytes downloaded from the remote cache."),
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes downloaded as measured over the last week
@@ -97,8 +97,8 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
 			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
-				Help: proto.String("Number of bytes uploaded to the remote cache."),
+				Name: new("exported_buildbuddy_remote_cache_upload_size_bytes"),
+				Help: new("Number of bytes uploaded to the remote cache."),
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes uploaded as measured over the last week
@@ -108,8 +108,8 @@ sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
 			LabelNames:       []string{metrics.OS, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
-				Name: proto.String("exported_buildbuddy_remote_execution_duration_usec"),
-				Help: proto.String("The total duration of remote execution, in **microseconds**."),
+				Name: new("exported_buildbuddy_remote_execution_duration_usec"),
+				Help: new("The total duration of remote execution, in **microseconds**."),
 				Type: dto.MetricType_HISTOGRAM.Enum(),
 			},
 			Examples: `# The total duration of remote execution as measured over the last week
@@ -442,8 +442,8 @@ func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair
 			return nil, status.InternalErrorf("miss label name %q", ln)
 		}
 		labelPairs = append(labelPairs, &dto.LabelPair{
-			Name:  proto.String(ln),
-			Value: proto.String(string(lv)),
+			Name:  new(ln),
+			Value: new(string(lv)),
 		})
 	}
 	return labelPairs, nil
@@ -459,7 +459,7 @@ func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metri
 		sample := &dto.Metric{
 			Label: labelPairs,
 			Counter: &dto.Counter{
-				Value: proto.Float64(float64(promSample.Value)),
+				Value: new(float64(promSample.Value)),
 			},
 		}
 		res = append(res, sample)
@@ -477,7 +477,7 @@ func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric,
 		sample := &dto.Metric{
 			Label: labelPairs,
 			Gauge: &dto.Gauge{
-				Value: proto.Float64(float64(promSample.Value)),
+				Value: new(float64(promSample.Value)),
 			},
 		}
 		res = append(res, sample)
@@ -503,8 +503,8 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 			return nil, status.InternalErrorf("failed to parse %q to float64", leValue)
 		}
 		bucket := &dto.Bucket{
-			UpperBound:      proto.Float64(upperBound),
-			CumulativeCount: proto.Uint64(uint64(sample.Value)),
+			UpperBound:      new(upperBound),
+			CumulativeCount: new(uint64(sample.Value)),
 		}
 
 		// remove leLabel
@@ -536,8 +536,8 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 		res = append(res, &dto.Metric{
 			Label: labelPairs,
 			Histogram: &dto.Histogram{
-				SampleCount: proto.Uint64(uint64(sample.Value)),
-				SampleSum:   proto.Float64(sum),
+				SampleCount: new(uint64(sample.Value)),
+				SampleSum:   new(sum),
 				Bucket:      buckets,
 			},
 		})

@@ -1608,16 +1608,16 @@ func TestLRU(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                maxSizeBytes,
-				AtimeUpdateThreshold:        pointer(time.Duration(0)), // update atime on every access
-				AtimeBufferSize:             pointer(0),                // blocking channel of atime updates
-				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
+				AtimeUpdateThreshold:        new(time.Duration(0)), // update atime on every access
+				AtimeBufferSize:             new(0),                // blocking channel of atime updates
+				MinEvictionAge:              new(time.Duration(0)), // no min eviction age
 				MinBytesAutoZstdCompression: &maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
-				ActiveKeyVersion:            pointer(int64(5)),
+				ActiveKeyVersion:            new(int64(5)),
 				Clock:                       clock,
-				SamplesPerBatch:             pointer(50),
-				SampleBufferSize:            pointer(10), // Don't allow filling the sample channel with many copies of the same key.
+				SamplesPerBatch:             new(50),
+				SampleBufferSize:            new(10), // Don't allow filling the sample channel with many copies of the same key.
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2936,10 +2936,10 @@ func TestSampling(t *testing.T) {
 				AverageChunkSizeBytes: tc.averageChunkSizeBytes,
 				Clock:                 clock,
 				ActiveKeyVersion:      &activeKeyVersion,
-				SamplesPerBatch:       pointer(50),
+				SamplesPerBatch:       new(50),
 				// Never update atime so we can check if something has been evicted
 				// without preventing its eviction.
-				AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
+				AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -3176,10 +3176,6 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
-func pointer[T any](value T) *T {
-	return &value
-}
-
 func dirSizeFiles(path string) (int64, error) {
 	var size int64
 	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
@@ -3221,9 +3217,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 			},
 		},
@@ -3232,9 +3228,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				MaxInlineFileSizeBytes:      -1, // don't inline anything.
 			},
@@ -3244,9 +3240,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 			},
@@ -3256,17 +3252,17 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 
 				Clock:                  clock,
 				FileStorer:             fileStorer,
 				MaxInlineFileSizeBytes: -1, // force everything into mock gcs
-				MinGCSFileSizeBytes:    pointer(int64(1)),
-				GCSTTLDays:             pointer(int64(1)),
+				MinGCSFileSizeBytes:    new(int64(1)),
+				GCSTTLDays:             new(int64(1)),
 			},
 		},
 	}
@@ -3277,8 +3273,8 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
 
 			// Don't allow filling the sample channel with many copies of the same key.
-			tc.opts.SamplesPerBatch = pointer(50)
-			tc.opts.SampleBufferSize = pointer(10)
+			tc.opts.SamplesPerBatch = new(50)
+			tc.opts.SampleBufferSize = new(10)
 			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
 			if err != nil {
 				t.Fatal(err)

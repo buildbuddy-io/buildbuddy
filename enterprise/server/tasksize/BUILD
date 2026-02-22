@@ -43,7 +43,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/platform",
-        "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_open_feature_go_sdk//openfeature",

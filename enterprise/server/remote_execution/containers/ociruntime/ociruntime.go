@@ -48,7 +48,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
@@ -961,12 +960,12 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	log.CtxInfof(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	c.cgroupSettings.NumaNode = new(int32(numaNode))
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
-		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+		c.cgroupSettings.MemoryLimitBytes = new(int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion))))
 	}
 	if c.cgroupSettings.PidsMax != nil && *minPIDsLimit > 0 {
-		c.cgroupSettings.PidsMax = proto.Int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit))
+		c.cgroupSettings.PidsMax = new(int64(max(c.cgroupSettings.GetPidsMax(), *minPIDsLimit)))
 	}
 
 	path := c.cgroupPath()
@@ -1489,12 +1488,8 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		UID:            uid,
 		GID:            gid,
 		AdditionalGids: gids,
-		Umask:          pointer(uint32(022)), // 0644 file perms by default
+		Umask:          new(uint32(022)), // 0644 file perms by default
 	}, nil
-}
-
-func pointer[T any](val T) *T {
-	return &val
 }
 
 func toInt32s(in []int) []int32 {

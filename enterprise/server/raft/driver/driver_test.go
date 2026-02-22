@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
@@ -214,9 +213,9 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -252,11 +251,11 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
 				},
 				Removed: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -292,7 +291,7 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -328,10 +327,10 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
 				},
 				Staging: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-2"},
@@ -367,7 +366,7 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -405,13 +404,13 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			desc: "do-not-delete-newly-added-replica",
 			rd: &rfpb.RangeDescriptor{
 				RangeId:                1,
-				LastAddedReplicaId:     proto.Uint64(4),
-				LastReplicaAddedAtUsec: proto.Int64(withinGracePeriodTS),
+				LastAddedReplicaId:     new(uint64(4)),
+				LastReplicaAddedAtUsec: new(withinGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -422,10 +421,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -457,7 +456,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
 				ReplicaId: 3,
-				Nhid:      proto.String("nhid-3"),
+				Nhid:      new("nhid-3"),
 			},
 		},
 		{
@@ -468,13 +467,13 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			desc: "delete-replica-with-full-disk",
 			rd: &rfpb.RangeDescriptor{
 				RangeId:                1,
-				LastAddedReplicaId:     proto.Uint64(4),
-				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
+				LastAddedReplicaId:     new(uint64(4)),
+				LastReplicaAddedAtUsec: new(outsideGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -485,10 +484,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -520,7 +519,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
 				ReplicaId: 4,
-				Nhid:      proto.String("nhid-4"),
+				Nhid:      new("nhid-4"),
 			},
 		},
 		{
@@ -532,13 +531,13 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			desc: "newly-added-replica-grace-period-pass",
 			rd: &rfpb.RangeDescriptor{
 				RangeId:                1,
-				LastAddedReplicaId:     proto.Uint64(4),
-				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
+				LastAddedReplicaId:     new(uint64(4)),
+				LastReplicaAddedAtUsec: new(outsideGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -549,10 +548,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: new("nhid-4")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -584,7 +583,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
 				ReplicaId: 4,
-				Nhid:      proto.String("nhid-4"),
+				Nhid:      new("nhid-4"),
 			},
 		},
 	}
@@ -615,16 +614,16 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -672,19 +671,19 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 				Removed: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 5, Nhid: proto.String("nhid-5")},
+					{RangeId: 1, ReplicaId: 5, Nhid: new("nhid-5")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -729,16 +728,16 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -788,16 +787,16 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -845,16 +844,16 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -937,16 +936,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -981,16 +980,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -1025,16 +1024,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -1061,16 +1060,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -1102,16 +1101,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -1143,16 +1142,16 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			replicasByStatus: &storemap.ReplicasByStatus{
 				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: new("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: new("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{

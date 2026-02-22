@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -41,30 +40,30 @@ func TestSettingsMap(t *testing.T) {
 		{
 			name: "all fields set",
 			settings: &scpb.CgroupSettings{
-				CpuWeight:                proto.Int64(200),
-				CpuQuotaLimitUsec:        proto.Int64(400e3),
-				CpuQuotaPeriodUsec:       proto.Int64(100e3),
-				CpuMaxBurstUsec:          proto.Int64(50e3),
-				CpuUclampMin:             proto.Float32(12.34),
-				CpuUclampMax:             proto.Float32(98.76),
-				PidsMax:                  proto.Int64(2048),
-				MemoryThrottleLimitBytes: proto.Int64(777e6),
-				MemoryLimitBytes:         proto.Int64(800e6),
-				MemorySoftGuaranteeBytes: proto.Int64(100e6),
-				MemoryMinimumBytes:       proto.Int64(50e6),
-				MemoryOomGroup:           proto.Bool(true),
-				SwapThrottleLimitBytes:   proto.Int64(800e6),
-				SwapLimitBytes:           proto.Int64(1e9),
-				BlockIoLatencyTargetUsec: proto.Int64(100e3),
-				BlockIoWeight:            proto.Int64(300),
+				CpuWeight:                new(int64(200)),
+				CpuQuotaLimitUsec:        new(int64(400e3)),
+				CpuQuotaPeriodUsec:       new(int64(100e3)),
+				CpuMaxBurstUsec:          new(int64(50e3)),
+				CpuUclampMin:             new(float32(12.34)),
+				CpuUclampMax:             new(float32(98.76)),
+				PidsMax:                  new(int64(2048)),
+				MemoryThrottleLimitBytes: new(int64(777e6)),
+				MemoryLimitBytes:         new(int64(800e6)),
+				MemorySoftGuaranteeBytes: new(int64(100e6)),
+				MemoryMinimumBytes:       new(int64(50e6)),
+				MemoryOomGroup:           new(true),
+				SwapThrottleLimitBytes:   new(int64(800e6)),
+				SwapLimitBytes:           new(int64(1e9)),
+				BlockIoLatencyTargetUsec: new(int64(100e3)),
+				BlockIoWeight:            new(int64(300)),
 				BlockIoLimit: &scpb.CgroupSettings_BlockIOLimits{
-					Riops: proto.Int64(1000),
-					Wiops: proto.Int64(500),
-					Rbps:  proto.Int64(4096e3),
-					Wbps:  proto.Int64(1024e3),
+					Riops: new(int64(1000)),
+					Wiops: new(int64(500)),
+					Rbps:  new(int64(4096e3)),
+					Wbps:  new(int64(1024e3)),
 				},
 				CpusetCpus: []int32{0, 1, 2, 3},
-				NumaNode:   proto.Int32(0),
+				NumaNode:   new(int32(0)),
 			},
 			expectedMap: map[string]string{
 				"cpu.weight":       "200",
@@ -90,7 +89,7 @@ func TestSettingsMap(t *testing.T) {
 		{
 			name: "write cpu quota with only limit",
 			settings: &scpb.CgroupSettings{
-				CpuQuotaLimitUsec: proto.Int64(300_000),
+				CpuQuotaLimitUsec: new(int64(300_000)),
 			},
 			expectedMap: map[string]string{
 				"cpu.max": "300000",
@@ -99,7 +98,7 @@ func TestSettingsMap(t *testing.T) {
 		{
 			name: "write cpu quota with only period",
 			settings: &scpb.CgroupSettings{
-				CpuQuotaPeriodUsec: proto.Int64(300_000),
+				CpuQuotaPeriodUsec: new(int64(300_000)),
 			},
 			expectedError: "cannot set CPU period without also setting quota",
 		},
@@ -107,7 +106,7 @@ func TestSettingsMap(t *testing.T) {
 			name: "write partial IO limits",
 			settings: &scpb.CgroupSettings{
 				BlockIoLimit: &scpb.CgroupSettings_BlockIOLimits{
-					Wbps: proto.Int64(1024e3),
+					Wbps: new(int64(1024e3)),
 				},
 			},
 			expectedMap: map[string]string{
