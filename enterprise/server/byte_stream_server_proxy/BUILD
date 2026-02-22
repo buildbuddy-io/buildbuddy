@@ -19,6 +19,7 @@ go_library(
         "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/util/authutil",
+        "//server/util/bazel_request",
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/lib/set",
