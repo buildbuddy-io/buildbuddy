@@ -147,8 +147,6 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return retry.NonRetryableError(err)
 			}
-			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
-			defer cancel()
 			err := getBlob(ctx, bsClient, r, out)
 			if status.IsNotFoundError(err) {
 				return retry.NonRetryableError(err)
