@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -354,7 +355,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
 		// the action timeout yet, so any DeadlineExceeded errors at this point
 		// would be internal timeouts.
-		if status.IsDeadlineExceededError(err) {
+		if errors.Is(context.DeadlineExceeded, err) || status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
 
