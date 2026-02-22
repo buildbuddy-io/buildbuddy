@@ -33,7 +33,6 @@ const (
 	maxRedisRetry                = 3
 	redisQuotaKeyPrefix          = "quota"
 	bucketQuotaExperimentName    = "quota.buckets"
-	disallowBlockedGroupsFlagKey = "quota.disallow_blocked_groups"
 	quotaExceededMessageTemplate = "quota exceeded for %q - to increase quota, request a quote at https://buildbuddy.io/request-quote"
 )
 
@@ -66,10 +65,6 @@ type QuotaManager struct {
 func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 	fp := qm.env.GetExperimentFlagProvider()
 	if fp == nil {
-		return nil
-	}
-
-	if !fp.Boolean(ctx, disallowBlockedGroupsFlagKey, false) {
 		return nil
 	}
 
