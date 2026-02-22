@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 
@@ -40,8 +41,9 @@ func getAnonContext(t *testing.T) context.Context {
 }
 
 func TestIsolation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +140,9 @@ func TestIsolation(t *testing.T) {
 }
 
 func TestGetSet(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,8 +183,9 @@ func randomResources(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte
 }
 
 func TestMultiGetSet(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,8 +218,9 @@ func TestMultiGetSet(t *testing.T) {
 }
 
 func TestReadWrite(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000000000) // 1GB
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +259,8 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestReadOffsetLimit(t *testing.T) {
-	mc, err := memory_cache.NewMemoryCache(1000)
+	te := testenv.GetTestEnv(t)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), 1000)
 	require.NoError(t, err)
 
 	ctx := getAnonContext(t)
@@ -276,8 +282,9 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestSizeLimit(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000) // 1000 bytes
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +320,9 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1000) // 1000 bytes
-	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +388,8 @@ func (f *fakeAtimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest
 }
 
 func TestAtimeUpdater(t *testing.T) {
-	mc, err := memory_cache.NewMemoryCache(int64(1_000))
+	te := testenv.GetTestEnv(t)
+	mc, err := memory_cache.NewMemoryCache(te.GetAuthenticator(), int64(1_000))
 	require.NoError(t, err)
 
 	ctx := getAnonContext(t)
@@ -401,4 +410,171 @@ func TestAtimeUpdater(t *testing.T) {
 	_, err = mc.Get(ctx, r)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, updater.calls.Load())
+}
+
+func TestPartitionIsolation(t *testing.T) {
+	partitions := []disk.Partition{
+		{ID: "p1", MaxSizeBytes: 1000},
+		{ID: "p2", MaxSizeBytes: 1000},
+	}
+	mappings := []disk.PartitionMapping{
+		{Prefix: "prod/", PartitionID: "p1"},
+		{Prefix: "staging/", PartitionID: "p2"},
+	}
+
+	te := testenv.GetTestEnv(t)
+	mc, err := memory_cache.NewMemoryCacheWithOptions(te.GetAuthenticator(),
+		&memory_cache.Options{
+			MaxSizeBytes:      2000,
+			Partitions:        partitions,
+			PartitionMappings: mappings,
+		})
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t)
+
+	// Create same digest but different instance names -> different partitions
+	r1, buf := testdigest.RandomCASResourceBuf(t, 100)
+	r1.InstanceName = "prod/foo"
+
+	r2 := r1.CloneVT()
+	r2.InstanceName = "staging/foo"
+
+	// Set in partition p1
+	require.NoError(t, mc.Set(ctx, r1, buf))
+
+	// Should NOT be found in partition p2 (CAS is isolated by partition)
+	_, err = mc.Get(ctx, r2)
+	require.Error(t, err)
+
+	// Should be found in partition p1
+	_, err = mc.Get(ctx, r1)
+	require.NoError(t, err)
+}
+
+func TestCASSharedWithinPartition(t *testing.T) {
+	users := map[string]interfaces.UserInfo{
+		"US1": &testauth.TestUser{UserID: "US1", GroupID: "GR1"},
+		"US2": &testauth.TestUser{UserID: "US2", GroupID: "GR2"},
+	}
+	te := getTestEnv(t, users)
+
+	partitions := []disk.Partition{
+		{ID: "shared", MaxSizeBytes: 1000},
+	}
+	mappings := []disk.PartitionMapping{
+		{GroupID: "GR1", PartitionID: "shared"},
+		{GroupID: "GR2", PartitionID: "shared"},
+	}
+
+	mc, err := memory_cache.NewMemoryCacheWithOptions(te.GetAuthenticator(),
+		&memory_cache.Options{
+			MaxSizeBytes:      1000,
+			Partitions:        partitions,
+			PartitionMappings: mappings,
+		})
+	require.NoError(t, err)
+
+	// Create contexts for different users
+	ctx1, err := te.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	ctx2, err := te.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US2")
+	require.NoError(t, err)
+
+	// Store CAS blob as user 1
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, mc.Set(ctx1, r, buf))
+
+	// User 2 should be able to read the same CAS blob (shared within partition)
+	got, err := mc.Get(ctx2, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
+func TestACIsolatedWithinPartition(t *testing.T) {
+	users := map[string]interfaces.UserInfo{
+		"US1": &testauth.TestUser{UserID: "US1", GroupID: "GR1"},
+		"US2": &testauth.TestUser{UserID: "US2", GroupID: "GR2"},
+	}
+	te := getTestEnv(t, users)
+
+	partitions := []disk.Partition{
+		{ID: "shared", MaxSizeBytes: 1000},
+	}
+	mappings := []disk.PartitionMapping{
+		{GroupID: "GR1", PartitionID: "shared"},
+		{GroupID: "GR2", PartitionID: "shared"},
+	}
+
+	mc, err := memory_cache.NewMemoryCacheWithOptions(te.GetAuthenticator(),
+		&memory_cache.Options{
+			MaxSizeBytes:      1000,
+			Partitions:        partitions,
+			PartitionMappings: mappings,
+		})
+	require.NoError(t, err)
+
+	// Create contexts for different users
+	ctx1, err := te.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	ctx2, err := te.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US2")
+	require.NoError(t, err)
+
+	// Store AC entry as user 1
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	require.NoError(t, mc.Set(ctx1, r, buf))
+
+	// User 2 should NOT be able to read the AC entry (isolated by group)
+	_, err = mc.Get(ctx2, r)
+	require.Error(t, err)
+
+	// User 1 should still be able to read it
+	got, err := mc.Get(ctx1, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
+func TestPartitionMethod(t *testing.T) {
+	partitions := []disk.Partition{{ID: "mypart", MaxSizeBytes: 1000}}
+	mappings := []disk.PartitionMapping{
+		{Prefix: "special/", PartitionID: "mypart"},
+	}
+
+	te := testenv.GetTestEnv(t)
+	mc, err := memory_cache.NewMemoryCacheWithOptions(te.GetAuthenticator(),
+		&memory_cache.Options{
+			MaxSizeBytes:      1000,
+			Partitions:        partitions,
+			PartitionMappings: mappings,
+		})
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t)
+
+	// Should return "mypart" for matching prefix
+	partID, err := mc.Partition(ctx, "special/instance")
+	require.NoError(t, err)
+	require.Equal(t, "mypart", partID)
+
+	// Should return "default" for non-matching prefix
+	partID, err = mc.Partition(ctx, "other/instance")
+	require.NoError(t, err)
+	require.Equal(t, "default", partID)
+}
+
+func TestInvalidPartitionMapping(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	partitions := []disk.Partition{{ID: "p1", MaxSizeBytes: 1000}}
+	mappings := []disk.PartitionMapping{
+		{Prefix: "prod/", PartitionID: "nonexistent"},
+	}
+
+	_, err := memory_cache.NewMemoryCacheWithOptions(te.GetAuthenticator(),
+		&memory_cache.Options{
+			MaxSizeBytes:      1000,
+			Partitions:        partitions,
+			PartitionMappings: mappings,
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nonexistent")
 }
