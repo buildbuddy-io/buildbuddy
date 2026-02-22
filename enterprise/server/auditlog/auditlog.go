@@ -203,24 +203,74 @@ func filterEntry(entry *alpb.Entry, userEmail string) {
 //     information in the shown request is redundant.
 //  2. resource IDs -- audit logs include a resource identifier for every entry
 //     so the ID under the request is redundant.
-func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
+func CleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
+	if e == nil {
+		return nil
+	}
 	e = e.CloneVT()
-	if r := e.ApiRequest.GetApiKeys; r != nil {
+	if e.GetApiRequest() == nil {
+		return e
+	}
+	if r := e.GetApiRequest().GetGetApiKeys(); r != nil {
 		r.GroupId = ""
 	}
-	if r := e.ApiRequest.UpdateApiKey; r != nil {
+	if r := e.GetApiRequest().GetUpdateApiKey(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.DeleteApiKey; r != nil {
+	if r := e.GetApiRequest().GetDeleteApiKey(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.UpdateGroup; r != nil {
+	if r := e.GetApiRequest().GetUpdateGroup(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
+	if r := e.GetApiRequest().GetUpdateGroupUsers(); r != nil {
 		r.GroupId = ""
 	}
 	return e
+}
+
+func EntryFromDBRow(row *schema.AuditLog) (*alpb.Entry, error) {
+	request := &alpb.Entry_Request{}
+	if row.Request != "" {
+		if err := proto.Unmarshal([]byte(row.Request), request); err != nil {
+			return nil, err
+		}
+	}
+
+	resourceType := alpb.ResourceType(row.ResourceType)
+	// If no resource is specified, the resource is implicitly the owning
+	// organization.
+	if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
+		resourceType = alpb.ResourceType_GROUP
+	}
+
+	entry := &alpb.Entry{
+		EventTime: timestamppb.New(time.UnixMicro(row.EventTimeUsec)),
+		AuthenticationInfo: &alpb.AuthenticationInfo{
+			ClientIp: row.ClientIP,
+		},
+		Resource: &alpb.ResourceID{
+			Type: resourceType,
+			Id:   row.ResourceID,
+			Name: row.ResourceName,
+		},
+		Action:  alpb.Action(row.Action),
+		Request: CleanRequest(request),
+	}
+	if row.AuthUserID != "" {
+		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
+			UserId:    row.AuthUserID,
+			UserEmail: row.AuthUserEmail,
+		}
+	}
+	if row.AuthAPIKeyID != "" {
+		entry.AuthenticationInfo.ApiKey = &alpb.AuthenticatedAPIKey{
+			Id:    row.AuthAPIKeyID,
+			Label: row.AuthAPIKeyLabel,
+		}
+	}
+
+	return entry, nil
 }
 
 func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
@@ -288,47 +338,14 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	rq := l.dbh.NewQuery(ctx, "audit_logs_get_logs").Raw(q, args...)
 	resp := &alpb.GetAuditLogsResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, e *schema.AuditLog) error {
-		request := &alpb.Entry_Request{}
-		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
-			return err
-		}
-
 		if len(resp.Entries) == pageSize {
 			resp.NextPageToken = strconv.FormatInt(e.EventTimeUsec, 10)
 			return nil
 		}
 
-		resourceType := alpb.ResourceType(e.ResourceType)
-		// If no resource is specified, the resource is implicitely the owning
-		// organization.
-		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
-			resourceType = alpb.ResourceType_GROUP
-		}
-
-		entry := &alpb.Entry{
-			EventTime: timestamppb.New(time.UnixMicro(e.EventTimeUsec)),
-			AuthenticationInfo: &alpb.AuthenticationInfo{
-				ClientIp: e.ClientIP,
-			},
-			Resource: &alpb.ResourceID{
-				Type: resourceType,
-				Id:   e.ResourceID,
-				Name: e.ResourceName,
-			},
-			Action:  alpb.Action(e.Action),
-			Request: cleanRequest(request),
-		}
-		if e.AuthUserID != "" {
-			entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
-				UserId:    e.AuthUserID,
-				UserEmail: e.AuthUserEmail,
-			}
-		}
-		if e.AuthAPIKeyID != "" {
-			entry.AuthenticationInfo.ApiKey = &alpb.AuthenticatedAPIKey{
-				Id:    e.AuthAPIKeyID,
-				Label: e.AuthAPIKeyLabel,
-			}
+		entry, err := EntryFromDBRow(e)
+		if err != nil {
+			return err
 		}
 
 		if !isServerAdmin {

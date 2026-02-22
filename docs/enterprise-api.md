@@ -319,6 +319,119 @@ message Log {
 }
 ```
 
+## GetAuditLog
+
+The `GetAuditLog` endpoint provides a stable, paginated API for exporting organization audit logs. View full [Audit Log proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/audit_log.proto).
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Service
+
+```protobuf
+// Retrieves a page of audit log entries.
+rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+```
+
+### Example cURL request
+
+```bash
+curl -d '{
+  "selector": {
+    "start_time": "2026-02-01T00:00:00Z",
+    "end_time": "2026-02-02T00:00:00Z"
+  },
+  "page_size": 500
+}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Example cURL response
+
+```json
+{
+  "entry": [
+    {
+      "eventTime": "2026-02-01T03:45:21.123456Z",
+      "action": "UPDATE",
+      "resource": {
+        "type": "GROUP",
+        "id": "GR1234567890"
+      }
+    }
+  ],
+  "nextPageToken": "1769927121123456|AL188473992849932"
+}
+```
+
+### GetAuditLogRequest
+
+```protobuf
+// Request passed into GetAuditLog.
+message GetAuditLogRequest {
+  // Optional selector used to constrain results.
+  AuditLogSelector selector = 1;
+
+  // Opaque cursor returned by a previous request, if any.
+  string page_token = 2;
+
+  // Maximum number of entries to return in this page.
+  // If unset, a server default is used.
+  int32 page_size = 3;
+}
+```
+
+### AuditLogSelector
+
+```protobuf
+// The selector used to specify which audit logs to return.
+message AuditLogSelector {
+  // Optional: BuildBuddy group ID to query.
+  string group_id = 1;
+
+  // Optional inclusive lower bound for event time.
+  google.protobuf.Timestamp start_time = 2;
+
+  // Optional exclusive upper bound for event time.
+  google.protobuf.Timestamp end_time = 3;
+}
+```
+
+### GetAuditLogResponse
+
+```protobuf
+// Response from calling GetAuditLog.
+message GetAuditLogResponse {
+  // Audit log entries matching the request.
+  repeated auditlog.Entry entry = 1;
+
+  // Cursor to retrieve the next page, or empty if there are no more results.
+  string next_page_token = 2;
+}
+```
+
+### Polling Recommendations
+
+- Treat `next_page_token` as opaque. Do not parse it.
+- Keep `start_time` / `end_time` fixed while paginating through one window.
+- Resume by passing the returned `next_page_token` until it is empty.
+- For continuous export, query bounded windows (for example every minute) and checkpoint the last successful window end.
+
+### Access and Parent/Child Orgs
+
+- Use an org API key with `AUDIT_LOG_READ` capability (or `ORG_ADMIN`) for least-privilege access.
+- A separate "auditor" role is not required for API scraping; `AUDIT_LOG_READ` already provides read-only audit access.
+- Parent-org API keys with `AUDIT_LOG_READ` or `ORG_ADMIN` can read child-org audit logs by setting `selector.group_id` to the child org ID.
+
+### Export Forwarding
+
+BuildBuddy does not currently support automatic audit-log forwarding to S3 / GCS. For now, use `GetAuditLog` with periodic polling and checkpointing.
+
 ## GetTarget
 
 The `GetTarget` endpoint allows you to fetch targets associated with a given invocation ID. View full [Target proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/target.proto).
