@@ -25,6 +25,7 @@ const CLIBinaryName = "bb"
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
+	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
@@ -38,7 +39,9 @@ var (
 // a ci_runner task. This will guarantee the binary is built for the correct os/arch,
 // but it will not update automatically when the apps are upgraded.
 func CanInitFromCache(os, arch string) bool {
-	return (os == "" || os == platform.LinuxOperatingSystemName) && (arch == "" || arch == platform.AMD64ArchitectureName)
+	return *InitCIRunnerFromCache &&
+		(os == "" || os == platform.LinuxOperatingSystemName) &&
+		(arch == "" || arch == platform.AMD64ArchitectureName)
 }
 
 // UploadInputRoot If the ci_runner can be properly initialized from the cache,

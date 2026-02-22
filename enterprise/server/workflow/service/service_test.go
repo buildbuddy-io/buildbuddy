@@ -73,6 +73,10 @@ actions:
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	flags.Set(t, "github.app.enabled", true)
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
