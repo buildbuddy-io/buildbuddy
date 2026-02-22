@@ -2632,7 +2632,7 @@ func runBazelWrapper() error {
 	// We apply these on future bazel cleanup commands to make sure the running
 	// Bazel server isn't restarted.
 	if err := cacheStartupOptions(bazelArgs, rootPath); err != nil {
-		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
+		backendLog.Warningf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
 	// Replace the process running the bazel wrapper with the process running bazel,
@@ -2646,6 +2646,11 @@ func runBazelWrapper() error {
 // the existing bazel server, we must make sure to apply the last used startup
 // options when running bazel commands.
 func cacheStartupOptions(bazelCmd []string, rootDir string) error {
+	// If not a bazel command (e.g. a CLI command like 'bazel index'),
+	// there won't be startup options. Do nothing.
+	if _, idx := bazel.GetBazelCommandAndIndex(bazelCmd); idx < 0 {
+		return nil
+	}
 	startupOptions, err := bazel.GetStartupOptions(bazelCmd)
 	if err != nil {
 		return status.WrapErrorf(err, "parse startup options from bazel command")
