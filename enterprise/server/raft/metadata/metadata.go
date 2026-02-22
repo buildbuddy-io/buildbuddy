@@ -1,10 +1,12 @@
 package metadata
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -60,6 +62,8 @@ var (
 	deploymentID = flag.Uint64("cache.raft.deployment_id", 0, "Deployment ID is used to determine whether to raft node hosts belong to the same deployment and thus allowed to communicate with each other. Note: when you change deploymentID and has --cache.raft.clear_prev_cache_on_startup = true, the data from non-current deployments will be wiped out.")
 	gcsConfig    = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
 )
+
+var dumpStackOnce sync.Once
 
 const (
 	// atimeFlushPeriod is the time interval that we will wait before
@@ -530,6 +534,20 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 		return nil, err
 	}
 
+	timer := time.AfterFunc(1*time.Second, func() {
+		dumpStackOnce.Do(func() {
+			log.CtxWarningf(ctx, "metadata.Get stuck for >1s, dumping goroutines")
+			p := pprof.Lookup("goroutine")
+			if p == nil {
+				return
+			}
+			var b bytes.Buffer
+			p.WriteTo(&b, 2)
+			log.Warning(b.String())
+		})
+	})
+	defer timer.Stop()
+
 	// Shard the query by key and query shards in parallel.
 	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
@@ -717,6 +735,20 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	if err != nil {
 		return nil, err
 	}
+
+	timer := time.AfterFunc(1*time.Second, func() {
+		dumpStackOnce.Do(func() {
+			log.CtxWarningf(ctx, "metadata.Set stuck for >1s, dumping goroutines")
+			p := pprof.Lookup("goroutine")
+			if p == nil {
+				return
+			}
+			var b bytes.Buffer
+			p.WriteTo(&b, 2)
+			log.Warning(b.String())
+		})
+	})
+	defer timer.Stop()
 
 	// Shard the query by key and query shards in parallel.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
