@@ -16,7 +16,7 @@ jobs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
       - name: Checkout /buildbuddy
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           # We need to fetch git tags to obtain the latest cli version tag.
           fetch-depth: 0
@@ -41,7 +41,7 @@ jobs:
     needs: push-tag
     steps:
       - name: Checkout buildbuddy-io/bazel
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           repository: buildbuddy-io/bazel
           path: bazel-fork
@@ -78,12 +78,12 @@ jobs:
     needs: [push-tag, create-release]
     steps:
       - name: Checkout buildbuddy-io/buildbuddy
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           path: buildbuddy
 
       - name: Checkout buildbuddy-io/plugins
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           repository: buildbuddy-io/plugins
           path: plugins
@@ -157,7 +157,7 @@ jobs:
           ls -la ./
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           path: buildbuddy
 

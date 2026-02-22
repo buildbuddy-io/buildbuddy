@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # podman_test installs its own version of podman under / in order to test
       # the same version that we use in the executor while not having to

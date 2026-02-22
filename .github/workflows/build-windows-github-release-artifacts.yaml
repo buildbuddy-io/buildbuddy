@@ -28,7 +28,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.release_branch }}
           # We need to fetch git tags to obtain the latest version tag to report
