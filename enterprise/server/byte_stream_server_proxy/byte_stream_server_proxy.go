@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
@@ -689,7 +690,8 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	return s.localCache != nil && s.remoteCAS != nil &&
 		chunking.Enabled(ctx, s.efp) &&
-		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false) &&
+		bazel_request.GetActionID(ctx) != "bes-upload"
 }
 
 type writeChunkedResult struct {
