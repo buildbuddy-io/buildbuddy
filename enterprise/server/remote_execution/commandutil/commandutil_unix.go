@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -65,12 +67,49 @@ func (p *process) signal(sig syscall.Signal) error {
 	return syscall.Kill(-p.cmd.Process.Pid, sig)
 }
 
+const (
+	// sigtermGracePeriod is the amount of time to wait after sending SIGTERM
+	// before falling back to SIGKILL. This gives processes time to run cleanup
+	// handlers (e.g. Go's t.Cleanup).
+	sigtermGracePeriod = 2 * time.Second
+)
+
 // killProcessTree kills the given pid as well as any descendant processes.
+//
+// It first sends SIGTERM to the process group to allow graceful shutdown
+// (e.g. so that Go test cleanup functions can run). If the process does not
+// exit within a grace period, it falls back to a BFS SIGSTOP+SIGKILL approach
+// to forcefully terminate the entire process tree.
 //
 // It tries to kill as many processes in the tree as possible. If it encounters
 // an error along the way, it proceeds to kill subsequent pids in the tree. It
 // returns the last error encountered, if any.
 func (p *process) killProcessTree() error {
+	// First, send SIGTERM to the process group to allow graceful shutdown.
+	if err := p.signal(syscall.SIGTERM); err != nil {
+		log.Warningf("Failed to send SIGTERM to process group (pid %d): %s", p.cmd.Process.Pid, err)
+		// Fall through to SIGKILL path below.
+	} else {
+		// Wait for the process to exit gracefully, up to the grace period.
+		timer := time.NewTimer(sigtermGracePeriod)
+		select {
+		case <-p.terminated:
+			timer.Stop()
+			// Main process exited after SIGTERM. Still do BFS kill to
+			// clean up any orphaned children in separate process groups.
+		case <-timer.C:
+			log.Warningf("Process %d did not exit within %s after SIGTERM; falling back to SIGKILL.", p.cmd.Process.Pid, sigtermGracePeriod)
+		}
+	}
+
+	// BFS SIGSTOP+SIGKILL to clean up the entire process tree, including
+	// any children that may have escaped into their own process groups.
+	return p.sigkillProcessTree()
+}
+
+// sigkillProcessTree forcefully kills the process tree rooted at p using a BFS
+// SIGSTOP+SIGKILL approach.
+func (p *process) sigkillProcessTree() error {
 	var lastErr error
 
 	// Run a BFS on the process tree to build up a list of processes to kill.
