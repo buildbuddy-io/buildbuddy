@@ -699,6 +699,32 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		return nil
 	})
 
+	// Clean up any stale veth device from a previous process that was
+	// SIGKILL'd (flock is released but veth pairs and routes persist).
+	_, hostNet, err := net.ParseCIDR(vp.network.HostIPWithCIDR())
+	if err != nil {
+		return nil, status.WrapError(err, "parse host IP CIDR")
+	}
+	rs, err := netlink.RouteList(nil, 0)
+	if err != nil {
+		return nil, status.WrapError(err, "list routes for stale veth check")
+	}
+	for _, rt := range rs {
+		if rt.Dst != nil && rt.Dst.String() == hostNet.String() {
+			l, err := netlink.LinkByIndex(rt.LinkIndex)
+			if err != nil {
+				log.Warningf("Found stale route for %s but could not look up device (index %d): %s", hostNet, rt.LinkIndex, err)
+				continue
+			}
+			staleDev := l.Attrs().Name
+			log.Warningf("Cleaning up stale veth device %q with route to %s (likely from a previous SIGKILL'd process)", staleDev, hostNet)
+			if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
+				log.Warningf("Failed to delete stale veth device %q: %s", staleDev, err)
+			}
+			break
+		}
+	}
+
 	// Create a veth pair with randomly generated names.
 	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netns)
 	if err != nil {
