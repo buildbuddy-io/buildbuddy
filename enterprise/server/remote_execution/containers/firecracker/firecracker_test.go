@@ -293,6 +293,43 @@ func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
+// setupDockerMirror configures a local OCI registry mirror so that Docker
+// inside the Firecracker VM can pull images without requiring direct internet
+// access from the VM. The mirror runs on the host network and proxies requests
+// to Docker Hub (with BuildBuddy CAS caching).
+//
+// Tests using this helper should reference Docker Hub images by their short
+// names (e.g. "busybox") rather than fully-qualified mirror.gcr.io references,
+// since Docker's mirror config only applies to Docker Hub pulls.
+func setupDockerMirror(ctx context.Context, t *testing.T, env *testenv.TestEnv) {
+	hostIP, err := networking.DefaultIP(ctx)
+	require.NoError(t, err)
+
+	port := testport.FindFree(t)
+	registryHost := fmt.Sprintf("%s:%d", hostIP, port)
+	registryURL := fmt.Sprintf("http://%s", registryHost)
+
+	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+	flags.Set(t, "executor.firecracker_vm_docker_mirrors", []string{registryURL})
+	flags.Set(t, "executor.firecracker_vm_docker_insecure_registries", []string{registryHost})
+
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(env)
+	require.NoError(t, err)
+
+	ocireg, err := ociregistry.New(env)
+	require.NoError(t, err)
+
+	server := &http.Server{Handler: ocireg}
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", hostIP, port))
+	require.NoError(t, err)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(func() { server.Shutdown(context.Background()) })
+}
+
 func executorRootDir(t *testing.T) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
@@ -2342,6 +2379,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
+	setupDockerMirror(ctx, t, env)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
@@ -2349,11 +2387,11 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 			set -e
 
 			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+			docker pull busybox &>/dev/null
 
 			# Try running a few commands
-			docker run --rm ` + busyboxImage + ` echo Hello
-			docker run --rm ` + busyboxImage + ` echo world
+			docker run --rm busybox echo Hello
+			docker run --rm busybox echo world
 
 			# Check what storage driver docker is using
 			docker info 2>/dev/null | grep 'Storage Driver'
@@ -2399,17 +2437,18 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
+	setupDockerMirror(ctx, t, env)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
+			docker -H tcp://127.0.0.1:2375 pull busybox &>/dev/null
 
 			# Try running a few commands
-			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
-			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
+			docker -H tcp://127.0.0.1:2375 run --rm busybox echo Hello
+			docker -H tcp://127.0.0.1:2375 run --rm busybox echo world
 		`},
 	}
 
@@ -2449,13 +2488,14 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
+	setupDockerMirror(ctx, t, env)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
+			docker -H tcp://127.0.0.1:2375 pull busybox &>/dev/null
 		`},
 	}
 
@@ -2729,6 +2769,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	setupDockerMirror(ctx, t, env)
 
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -2771,11 +2812,11 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker pull ` + ubuntuImage + ` 2>&1 >/dev/null
+			docker pull busybox 2>&1 >/dev/null
 
 			# Try running a few commands
-			docker run --rm ` + ubuntuImage + ` echo Hello
-			docker run --rm ` + ubuntuImage + ` echo world
+			docker run --rm busybox echo Hello
+			docker run --rm busybox echo world
 
 			# Write some output to the workspace to be preserved
 			touch preserves.txt
@@ -2808,7 +2849,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		stat preserves.txt >/dev/null
 
 		# Make sure we can run docker images from cache
-		docker run --rm ` + ubuntuImage + ` echo world
+		docker run --rm busybox echo world
 		`,
 	})
 
@@ -2838,6 +2879,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	setupDockerMirror(ctx, t, env)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -2883,9 +2925,9 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+			docker pull busybox &>/dev/null
 
-			docker run --rm ` + busyboxImage + ` echo Hello
+			docker run --rm busybox echo Hello
 		`},
 	}
 
@@ -2907,7 +2949,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	cmd = &repb.Command{
 		Arguments: []string{"bash", "-c", `
 		  # Note: Image should be cached from previous command.
-			docker run --rm ` + busyboxImage + ` echo world
+			docker run --rm busybox echo world
 		`},
 	}
 
