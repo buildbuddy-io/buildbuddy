@@ -43,7 +43,7 @@ var (
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
 	clampMSSToPMTU                = flag.Bool("executor.clamp-mss-to-pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
-	cleanupStaleVethDevices       = flag.Bool("executor.cleanup_stale_veth_devices", false, "If true, clean up stale veth devices with conflicting IPs before creating new ones. This handles the case where a previous process was killed without cleanup, leaving orphaned veth devices with stale routes.")
+	cleanupStaleVethDevices       = flag.Bool("executor.cleanup_stale_veth_devices", false, "If true, clean up stale veth devices with conflicting IPs before creating new ones.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
