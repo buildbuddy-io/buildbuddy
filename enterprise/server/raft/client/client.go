@@ -100,7 +100,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 	log.Debugf("Creating new client for peer: %q", peer)
 
 	// Use a backoff config allows for fast-reconnect during server rollout.
-	conn, err := grpc_client.DialSimple("grpc://"+peer, grpc.WithConnectParams(grpc.ConnectParams{
+	conn, err := grpc_client.DialSimple("kube:///"+peer, grpc.WithConnectParams(grpc.ConnectParams{
 		Backoff: backoff.Config{
 			BaseDelay:  100 * time.Millisecond,
 			Multiplier: 1.6,
