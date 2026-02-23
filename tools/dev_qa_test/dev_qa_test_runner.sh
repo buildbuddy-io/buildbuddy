@@ -15,7 +15,7 @@ bazel_command="${QA_BAZEL_COMMAND:-}"
 extra_bazel_flags="${QA_EXTRA_BAZEL_FLAGS:-}"
 api_key="${BB_API_KEY:-}"
 bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
-bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.remote.buildbuddy.dev}"
+bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
