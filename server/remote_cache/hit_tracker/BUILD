@@ -15,6 +15,7 @@ go_library(
         "//server/real_environment",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/bazel_request",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/rexec",

@@ -17,8 +17,7 @@ var (
 )
 
 const (
-	bazelToolName   = "bazel"
-	profileActionID = "bes-upload"
+	bazelToolName = "bazel"
 
 	warningMetricPrefix = "warning-"
 	warningKey          = "warnings"
@@ -105,7 +104,7 @@ func printN(n int, s string) string {
 }
 
 func (w *Warner) Warn(ctx context.Context) error {
-	canWarn := bazel_request.GetToolName(ctx) == bazelToolName && bazel_request.GetActionID(ctx) == profileActionID
+	canWarn := bazel_request.GetToolName(ctx) == bazelToolName && bazel_request.GetActionID(ctx) == bazel_request.BESUploadActionID
 	if !canWarn {
 		return nil
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
@@ -36,7 +37,7 @@ var (
 	// Test data.
 
 	besUpload = &capb.ScoreCard_Result{
-		ActionId:    "bes-upload",
+		ActionId:    bazel_request.BESUploadActionID,
 		Digest:      &repb.Digest{Hash: "aaa", SizeBytes: 1_000},
 		CacheType:   rspb.CacheType_CAS,
 		RequestType: capb.RequestType_WRITE,
@@ -96,7 +97,7 @@ func TestGetCacheScoreCard_Filter_Search(t *testing.T) {
 		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:   &fieldmaskpb.FieldMask{Paths: []string{"search"}},
-			Search: "bes-upload",
+			Search: bazel_request.BESUploadActionID,
 		},
 	}
 

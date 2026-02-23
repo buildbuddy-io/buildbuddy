@@ -22,6 +22,8 @@ var (
 
 const (
 	RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+	// BESUploadActionID is the action ID used by Bazel BEP uploads.
+	BESUploadActionID = "bes-upload"
 
 	requestMetadataContextKey = "bazel_request.request_metadata"
 )
