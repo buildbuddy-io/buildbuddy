@@ -168,12 +168,9 @@ type envOpts struct {
 }
 
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
-	// Use a dedicated IP range for this test to avoid conflicts with stale
-	// veth devices left by other tests sharing the same executor host. Other
-	// tests use the default 192.168.0.0/16, and their veths persist after
-	// process death (flock released but kernel state remains). Using a
-	// separate range sidesteps the duplicate-route problem entirely.
-	flags.Set(t, "executor.task_ip_range", "10.200.0.0/16")
+	// Clean up stale veth devices from previous test runs that were killed
+	// without cleanup (e.g. SIGKILL from the test runner).
+	flags.Set(t, "executor.cleanup_stale_veth_devices", true)
 	err := networking.Configure(ctx)
 	require.NoError(t, err)
 	testnetworking.Setup(t)

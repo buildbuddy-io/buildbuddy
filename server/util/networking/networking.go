@@ -43,6 +43,7 @@ var (
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
 	clampMSSToPMTU                = flag.Bool("executor.clamp-mss-to-pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
+	cleanupStaleVethDevices       = flag.Bool("executor.cleanup_stale_veth_devices", false, "If true, clean up stale veth devices with conflicting IPs before creating new ones. This handles the case where a previous process was killed without cleanup, leaving orphaned veth devices with stale routes.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -417,8 +418,10 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 
 	// Clean up stale veths before assigning the new IP, to avoid routing
 	// conflicts with orphaned devices from killed processes.
-	if err := cleanupStaleVeths(ctx, network.HostIPWithCIDR()); err != nil {
-		log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", network.HostIPWithCIDR(), err)
+	if *cleanupStaleVethDevices {
+		if err := cleanupStaleVeths(ctx, network.HostIPWithCIDR()); err != nil {
+			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", network.HostIPWithCIDR(), err)
+		}
 	}
 
 	// Assign IPs to the host and namespaced side, and create the default route
@@ -747,8 +750,10 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 	// released when the process dies, but the kernel-level veth pairs and
 	// routes persist. If we don't clean these up, return traffic will be
 	// routed to a stale veth instead of ours, breaking connectivity.
-	if err := cleanupStaleVeths(ctx, vp.network.HostIPWithCIDR()); err != nil {
-		log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", vp.network.HostIPWithCIDR(), err)
+	if *cleanupStaleVethDevices {
+		if err := cleanupStaleVeths(ctx, vp.network.HostIPWithCIDR()); err != nil {
+			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", vp.network.HostIPWithCIDR(), err)
+		}
 	}
 
 	// Create a veth pair with randomly generated names.
