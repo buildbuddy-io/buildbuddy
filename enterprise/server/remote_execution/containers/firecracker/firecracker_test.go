@@ -168,11 +168,18 @@ type envOpts struct {
 }
 
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
+	// Use a dedicated IP range for this test to avoid conflicts with stale
+	// veth devices left by other tests sharing the same executor host. Other
+	// tests use the default 192.168.0.0/16, and their veths persist after
+	// process death (flock released but kernel state remains). Using a
+	// separate range sidesteps the duplicate-route problem entirely.
+	flags.Set(t, "executor.task_ip_range", "10.200.0.0/16")
 	err := networking.Configure(ctx)
 	require.NoError(t, err)
 	testnetworking.Setup(t)
 	err = networking.EnableMasquerading(ctx)
 	require.NoError(t, err)
+
 	// Set up a lockfile directory to coordinate network locking across sharded
 	// test processes on the host.
 	flags.Set(t, "executor.network_lock_directory", "/tmp/buildbuddy/networking/locks")
