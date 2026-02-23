@@ -72,6 +72,7 @@ java_keystore(
             "@trixie_cc//tzdata/%s:data" % arch,
             "@trixie_cc//media-types/%s:data" % arch,
             "@trixie_cc//libgomp1/%s:data" % arch,
+            "@trixie_cc//libc6/%s:data" % arch,
             "@trixie_cc//libstdc++6/%s:data" % arch,
             "@trixie_cc//libgcc-s1/%s:data" % arch,
             "@trixie_cc//gcc-14-base/%s:data" % arch,
