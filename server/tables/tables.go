@@ -24,7 +24,7 @@ var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
 
 	// Temporary flag until the feature is ready.
-	createUserListTables = flag.Bool("database.create_user_list_tables", false, "If true, crate user list tables.", flag.Internal)
+	createUserListTables = flag.Bool("database.create_user_list_tables", true, "If true, crate user list tables.", flag.Internal)
 )
 
 const (

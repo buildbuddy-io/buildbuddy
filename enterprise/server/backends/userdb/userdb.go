@@ -776,129 +776,86 @@ type reconcileOpts struct {
 	UserListID string
 }
 
-// userSubQuery returns a query suitable for use with
-// query_builder.AddWhereInClause to match the set of user IDs described by opts.
-func (opts reconcileOpts) userSubQuery() *query_builder.Query {
-	if opts.UserID != "" {
-		return query_builder.NewQueryWithArgs("?", []interface{}{opts.UserID})
-	}
-	return query_builder.NewQueryWithArgs(
-		`SELECT user_user_id FROM "UserUserLists" WHERE user_list_user_list_id = ?`,
-		[]interface{}{opts.UserListID},
-	)
-}
-
-// getDirectCapsForUser returns the capabilities from direct group membership
-// for a single user. Returns NotFound if the user has no direct membership.
-func getDirectCapsForUser(ctx context.Context, tx interfaces.DB, userID, groupID string) (int32, error) {
-	type directRole struct {
-		UserUserID string
-		Role       *uint32
-	}
-	rq := tx.NewQuery(ctx, "userdb_reconcile_direct_roles").Raw(`
-		SELECT user_user_id, role
-		FROM "UserGroups"
-		WHERE user_user_id = ? AND group_group_id = ? AND membership_status = ?
-	`, userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER))
-	dr := &directRole{}
-	err := rq.Take(&dr)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return 0, status.NotFoundError("user is not a direct member")
-		}
-		return 0, err
-	}
-	c, err := role.ToCapabilities(role.Role(*dr.Role))
-	if err != nil {
-		return 0, err
-	}
-	return capabilities.ToInt(c), nil
-}
-
-// getDirectCapsForUsersInUserList returns the user IDs and capabilities via
-// direct membership for all users in the user list.
-func getDirectCapsForUsersInUserList(ctx context.Context, tx interfaces.DB, userListID, groupID string) ([]string, map[string]int32, error) {
-	type directRole struct {
-		UserUserID string
-		Role       *uint32
-	}
-	rq := tx.NewQuery(ctx, "userdb_reconcile_direct_roles_by_list").Raw(`
-		SELECT uul.user_user_id, ug.role
-		FROM "UserUserLists" AS uul
-		LEFT JOIN "UserGroups" AS ug ON ug.user_user_id = uul.user_user_id
-			AND ug.group_group_id = ?
-			AND ug.membership_status = ?
-		WHERE uul.user_list_user_list_id = ?`,
-		groupID, int32(grpb.GroupMembershipStatus_MEMBER), userListID,
-	)
-	rows, err := db.ScanAll(rq, &directRole{})
-	if err != nil {
-		return nil, nil, err
-	}
-	effectiveCaps := make(map[string]int32)
-	var affectedUserIDs []string
-	for _, dr := range rows {
-		affectedUserIDs = append(affectedUserIDs, dr.UserUserID)
-		if dr.Role != nil {
-			caps, err := role.ToCapabilities(role.Role(*dr.Role))
-			if err != nil {
-				return nil, nil, err
-			}
-			effectiveCaps[dr.UserUserID] |= capabilities.ToInt(caps)
-		}
-	}
-	return affectedUserIDs, effectiveCaps, nil
-}
-
 func getUserIDsAndCapsForReconciliation(ctx context.Context, tx interfaces.DB, groupID string, opts reconcileOpts) ([]string, map[string]int32, error) {
-	// First query capabilities for affected users through direct membership.
-	var affectedUserIDs []string
-	effectiveCaps := make(map[string]int32)
-	var err error
-	if opts.UserID != "" {
-		affectedUserIDs = []string{opts.UserID}
-		caps, err := getDirectCapsForUser(ctx, tx, opts.UserID, groupID)
-		if err == nil {
-			effectiveCaps[opts.UserID] = caps
-		}
-		if err != nil && !status.IsNotFoundError(err) {
-			return nil, nil, err
-		}
-	} else {
-		affectedUserIDs, effectiveCaps, err = getDirectCapsForUsersInUserList(ctx, tx, opts.UserListID, groupID)
-		if err != nil {
-			return nil, nil, err
-		}
+	type userRole struct {
+		UserUserID string
+		Role       *uint32
 	}
 
-	// Query indirect roles via user lists and add those capabilities to the
-	// effectiveCaps map.
-	if authutil.UserListsEnabled() {
-		q := query_builder.NewQuery(`
+	var rows []*userRole
+
+	if opts.UserID != "" {
+		// Query direct and indirect roles for a single user.
+		// The first part finds the user's direct group membership role.
+		// The second part finds roles granted indirectly via user lists.
+		rq := tx.NewQuery(ctx, "userdb_reconcile_roles").Raw(`
+			SELECT user_user_id, role
+			FROM "UserGroups"
+			WHERE user_user_id = ? AND group_group_id = ? AND membership_status = ?
+			UNION ALL
 			SELECT uul.user_user_id, ulg.role
 			FROM "UserListGroups" AS ulg
 			JOIN "UserUserLists" AS uul ON uul.user_list_user_list_id = ulg.user_list_user_list_id
-		`)
-		q.AddWhereInClause("uul.user_user_id", opts.userSubQuery())
-		q.AddWhereClause("ulg.group_group_id = ?", groupID)
-		qStr, qArgs := q.Build()
-		rq := tx.NewQuery(ctx, "userdb_reconcile_indirect_roles").Raw(qStr, qArgs...)
-		type userRole struct {
-			UserUserID string
-			Role       uint32
-		}
-		indirectRoles, err := db.ScanAll(rq, &userRole{})
+			WHERE uul.user_user_id = ? AND ulg.group_group_id = ?
+		`, opts.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER),
+			opts.UserID, groupID)
+		var err error
+		rows, err = db.ScanAll(rq, &userRole{})
 		if err != nil {
 			return nil, nil, err
 		}
-		for _, ir := range indirectRoles {
-			caps, err := role.ToCapabilities(role.Role(ir.Role))
+	} else {
+		// Query direct and indirect roles for all users in a user list.
+		// The first part uses a LEFT JOIN so that every user in the list
+		// appears even if they have no direct group membership.
+		// The second part finds roles granted indirectly via user lists.
+		rq := tx.NewQuery(ctx, "userdb_reconcile_roles_by_list").Raw(`
+			SELECT uul.user_user_id, ug.role
+			FROM "UserUserLists" AS uul
+			LEFT JOIN "UserGroups" AS ug ON ug.user_user_id = uul.user_user_id
+				AND ug.group_group_id = ?
+				AND ug.membership_status = ?
+			WHERE uul.user_list_user_list_id = ?
+			UNION ALL
+			SELECT uul2.user_user_id, ulg.role
+			FROM "UserListGroups" AS ulg
+			JOIN "UserUserLists" AS uul2 ON uul2.user_list_user_list_id = ulg.user_list_user_list_id
+			WHERE uul2.user_user_id IN (SELECT user_user_id FROM "UserUserLists" WHERE user_list_user_list_id = ?)
+			AND ulg.group_group_id = ?
+		`, groupID, int32(grpb.GroupMembershipStatus_MEMBER), opts.UserListID,
+			opts.UserListID, groupID)
+		var err error
+		rows, err = db.ScanAll(rq, &userRole{})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	effectiveCaps := make(map[string]int32)
+	affectedUserIDSet := make(map[string]struct{})
+	for _, r := range rows {
+		affectedUserIDSet[r.UserUserID] = struct{}{}
+		if r.Role != nil {
+			caps, err := role.ToCapabilities(role.Role(*r.Role))
 			if err != nil {
 				return nil, nil, err
 			}
-			effectiveCaps[ir.UserUserID] |= capabilities.ToInt(caps)
+			effectiveCaps[r.UserUserID] |= capabilities.ToInt(caps)
 		}
 	}
+
+	// For the single-user case, ensure the user is always in
+	// affectedUserIDs even if they have no direct or indirect
+	// membership (so their API keys get deleted).
+	if opts.UserID != "" {
+		affectedUserIDSet[opts.UserID] = struct{}{}
+	}
+
+	var affectedUserIDs []string
+	for uid := range affectedUserIDSet {
+		affectedUserIDs = append(affectedUserIDs, uid)
+	}
+
 	return affectedUserIDs, effectiveCaps, nil
 }
 
