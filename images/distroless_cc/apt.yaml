@@ -25,6 +25,7 @@ packages:
   - ca-certificates
 
   # CC packages
+  - libc6
   - libgomp1
   - libstdc++6
   - libgcc-s1

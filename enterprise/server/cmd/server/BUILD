@@ -124,7 +124,7 @@ image_layer(
     name = "symlinks_layer",
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
-        "buildbuddy": "tmp",
+        "/app/enterprise/server/cmd/server/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/server/cmd/server/buildbuddy_/buildbuddy" % runfiles_directory(),
     },
     tags = ["manual"],
 )
@@ -152,13 +152,16 @@ image_manifest(
         ],
     }),
     user = "root",
+    entrypoint = [
+        "/app/enterprise/server/cmd/server/buildbuddy",
+    ],
 )
 
 image_load(
     name = "buildbuddy_image",
-    daemon = "docker",  # Explicitly use docker
-    image = ":manifest",  # References an image_index
+    image = ":manifest",  # References an image_manifest
     tag = "buildbuddy_image:latest",
+    daemon = "containerd",  # Explicitly use containerd
 )
 
 # TODO(sluongng): Verify the layering of the image.
