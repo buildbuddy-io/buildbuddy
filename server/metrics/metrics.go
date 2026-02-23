@@ -604,6 +604,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		GroupID,
 		UsageTracked,
 	})
 
@@ -661,6 +662,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		GroupID,
 		UsageTracked,
 	})
 
