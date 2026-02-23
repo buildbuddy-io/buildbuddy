@@ -1219,9 +1219,6 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 
 	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err != nil {
-		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
-		// exists but wasn't stored with chunking. In the future, we could return
-		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
 	}
 

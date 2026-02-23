@@ -183,22 +183,6 @@ func TestStoreAndLoad(t *testing.T) {
 	}
 }
 
-func TestLoadWithoutManifest_BlobExists(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-	require.NoError(t, err)
-	cache := te.GetCache()
-
-	blobRN, blobData := testdigest.RandomCASResourceBuf(t, 500)
-	require.NoError(t, cache.Set(ctx, blobRN, blobData))
-
-	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
-	require.Error(t, err)
-	require.True(t, status.IsUnimplementedError(err))
-	assert.Contains(t, err.Error(), "exists but was not stored with chunking")
-}
-
 func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)

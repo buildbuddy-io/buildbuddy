@@ -4,7 +4,6 @@ package chunking
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -293,17 +292,7 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 		if status.IsInternalError(err) {
 			log.CtxInfof(ctx, "Failed to get chunking manifest (blob %s, manifest key %s): %v", blobDigest.GetHash(), acRNProto.GetDigest().GetHash(), err)
 		}
-		err = sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), blobDigest.GetHash())
-		if status.IsNotFoundError(err) {
-			blobRN := digest.NewCASResourceName(blobDigest, instanceName, digestFunction).ToProto()
-			if exists, existsErr := cache.Contains(ctx, blobRN); existsErr != nil {
-				return nil, errors.Join(existsErr, err)
-			} else if exists {
-				return nil, status.UnimplementedErrorf("blob %s exists but was not stored with chunking", blobDigest.GetHash())
-			}
-			return nil, err
-		}
-		return nil, status.InternalErrorf("retrieve chunked manifest from AC: %w", err)
+		return nil, sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), blobDigest.GetHash())
 	}
 
 	ar := &repb.ActionResult{}
