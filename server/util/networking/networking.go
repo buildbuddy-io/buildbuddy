@@ -869,17 +869,18 @@ type cleanupStack []func(ctx context.Context) error
 func (s cleanupStack) Cleanup(ctx context.Context) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
 	defer cancel()
+	var lastErr error
 	// Pop and run cleanup funcs from the stack until empty.
+	// Best-effort: attempt every cleanup step even if some fail.
 	for len(s) > 0 {
 		f := s[len(s)-1]
 		s = s[:len(s)-1]
 		if err := f(ctx); err != nil {
-			// Short-circuit on the first error.
 			alert.CtxUnexpectedEvent(ctx, "network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
-			return err
+			lastErr = err
 		}
 	}
-	return nil
+	return lastErr
 }
 
 // VMNetwork represents a fully-provisioned VM network, which consists of a net
