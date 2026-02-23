@@ -205,7 +205,9 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, h interfaces.DB, domai
 func getUserGroup(ctx context.Context, h interfaces.DB, userID string, groupID string) (*tables.UserGroup, error) {
 	userGroup := &tables.UserGroup{}
 	rq := h.NewQuery(ctx, "userdb_get_user_group").Raw(
-		`SELECT * FROM "UserGroups" AS ug WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
+		`SELECT * FROM "UserGroups" AS ug
+		WHERE ug.user_user_id = ? AND ug.group_group_id = ?
+		AND (ug.user_list_user_list_id = '' OR ug.user_list_user_list_id IS NULL)`, userID, groupID)
 	if err := rq.Take(userGroup); err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, nil
@@ -445,25 +447,7 @@ func (d *UserDB) isGroupEmpty(ctx context.Context, tx interfaces.DB, groupID str
 	if err != nil {
 		return false, err
 	}
-	if row.Count > 0 {
-		return false, nil
-	}
-	if authutil.UserListsEnabled() {
-		err := tx.NewQuery(ctx, "userdb_check_group_size_user_lists").Raw(`
-			SELECT COUNT(*) AS count
-			FROM "UserListGroups" AS ulg
-			JOIN "UserUserLists" AS ul
-				ON ul.user_list_user_list_id = ulg.user_list_user_list_id
-			WHERE ulg.group_group_id = ?
-		`, groupID).Take(row)
-		if err != nil {
-			return false, err
-		}
-		if row.Count > 0 {
-			return false, nil
-		}
-	}
-	return true, nil
+	return row.Count == 0, nil
 }
 
 func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
@@ -497,6 +481,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 				SET membership_status = ?, role = ?
 				WHERE user_user_id = ?
 				AND group_group_id = ?
+				AND (user_list_user_list_id = '' OR user_list_user_list_id IS NULL)
 				`,
 				grpb.GroupMembershipStatus_MEMBER,
 				r,
@@ -507,16 +492,28 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
 	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
-		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
-		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
+		`INSERT INTO "UserGroups" (user_user_id, group_group_id, user_list_user_list_id, membership_status, role) VALUES(?, ?, ?, ?, ?)`,
+		userID, groupID, "", int32(grpb.GroupMembershipStatus_MEMBER), r,
 	).Exec().Error
 }
 
+func (d *UserDB) addUserListMembershipRows(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) error {
+	return tx.NewQuery(ctx, "userdb_add_user_list_membership_rows").Raw(`
+		INSERT INTO "UserGroups" (user_user_id, group_group_id, user_list_user_list_id, membership_status, role)
+		SELECT uul.user_user_id, ?, ?, ?, ?
+		FROM "UserUserLists" AS uul
+		WHERE uul.user_list_user_list_id = ?
+	`, groupID, userListID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(listRole), userListID).Exec().Error
+}
+
 func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) (retErr error) {
-	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
+	if err := tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
 		`INSERT INTO "UserListGroups" (user_list_user_list_id, group_group_id, role) VALUES(?, ?, ?)`,
 		userListID, groupID, listRole,
-	).Exec().Error
+	).Exec().Error; err != nil {
+		return err
+	}
+	return d.addUserListMembershipRows(ctx, tx, userListID, groupID, listRole)
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
@@ -561,10 +558,11 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
 		return tx.NewQuery(ctx, "userdb_create_join_group_request").Create(&tables.UserGroup{
-			UserUserID:       userID,
-			GroupGroupID:     groupID,
-			Role:             uint32(role.Default),
-			MembershipStatus: int32(membershipStatus),
+			UserUserID:         userID,
+			GroupGroupID:       groupID,
+			UserListUserListID: "",
+			Role:               uint32(role.Default),
+			MembershipStatus:   int32(membershipStatus),
 		})
 	})
 	if err != nil {
@@ -634,6 +632,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 			SELECT u.user_id, u.email, u.first_name, u.last_name, u.sub_id, ug.membership_status, ug.role
 			FROM "Users" AS u JOIN "UserGroups" AS ug ON u.user_id = ug.user_user_id`)
 	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
+	q = q.AddWhereClause(`(ug.user_list_user_list_id = '' OR ug.user_list_user_list_id IS NULL)`)
 
 	if opts.SubIDPrefix != "" {
 		q = q.AddWhereClause("u.sub_id LIKE ?", opts.SubIDPrefix+"%")
@@ -689,7 +688,8 @@ func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, user
 	}
 	if err := tx.NewQuery(ctx, "userdb_remove_user_from_group").Raw(`
 						DELETE FROM "UserGroups"
-						WHERE user_user_id = ? AND group_group_id = ?`,
+						WHERE user_user_id = ? AND group_group_id = ?
+						AND (user_list_user_list_id = '' OR user_list_user_list_id IS NULL)`,
 		userID,
 		groupID).Exec().Error; err != nil {
 		return err
@@ -723,6 +723,7 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 		UPDATE "UserGroups"
 		SET role = ?
 		WHERE user_user_id = ? AND group_group_id = ?
+		AND (user_list_user_list_id = '' OR user_list_user_list_id IS NULL)
 	`, newRole, userID, groupID,
 	).Exec().Error
 	if err != nil {
@@ -758,10 +759,22 @@ func (d *UserDB) updateUserListRole(ctx context.Context, tx interfaces.DB, userL
 	if err != nil {
 		return err
 	}
-	return nil
+	return tx.NewQuery(ctx, "userdb_update_user_list_membership_role").Raw(`
+		UPDATE "UserGroups"
+		SET role = ?
+		WHERE user_list_user_list_id = ? AND group_group_id = ?
+	`, newRole, userListID, groupID,
+	).Exec().Error
 }
 
 func (d *UserDB) removeUserListFromGroup(ctx context.Context, tx interfaces.DB, userListID string, groupID string) error {
+	if err := tx.NewQuery(ctx, "userdb_remove_user_list_memberships_from_group").Raw(`
+						DELETE FROM "UserGroups"
+						WHERE user_list_user_list_id = ? AND group_group_id = ?`,
+		userListID,
+		groupID).Exec().Error; err != nil {
+		return err
+	}
 	if err := tx.NewQuery(ctx, "userdb_remove_user_list_from_group").Raw(`
 						DELETE FROM "UserListGroups"
 						WHERE user_list_user_list_id = ? AND group_group_id = ?`,
@@ -951,9 +964,9 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 			r = role.Admin
 		}
 		err = tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
-			INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role)
-			VALUES (?, ?, ?, ?)
-			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(r),
+			INSERT INTO "UserGroups" (user_user_id, group_group_id, user_list_user_list_id, membership_status, role)
+			VALUES (?, ?, ?, ?, ?)
+			`, u.UserID, groupID, "", int32(grpb.GroupMembershipStatus_MEMBER), uint32(r),
 		).Exec().Error
 		if err != nil {
 			return err
@@ -1109,32 +1122,6 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	user, err := processUserGroupMemberships(rq, groupRoles)
 	if err != nil {
 		return nil, err
-	}
-
-	// Query indirect membership via user lists, if enabled.
-	if authutil.UserListsEnabled() {
-		qb := query_builder.NewQuery(`
-			SELECT u.*, g.*, ug.*
-			FROM "Users" u
-			LEFT JOIN "UserUserLists" AS ul 
-				ON u.user_id = ul.user_user_id
-			LEFT JOIN "UserListGroups" AS ug 
-				ON ug.user_list_user_list_id = ul.user_list_user_list_id
-			LEFT JOIN "Groups" AS g 
-				ON g.group_id = ug.group_group_id
-		`)
-
-		if err := addWhereClause(qb); err != nil {
-			return nil, err
-		}
-
-		q, qArgs := qb.Build()
-		rq := h.NewQuery(ctx, "userdb_get_user_indirect_memberships").Raw(q, qArgs...)
-
-		_, err = processUserGroupMemberships(rq, groupRoles)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Return the groups in a deterministic order.
@@ -1394,6 +1381,16 @@ func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
 		if err := rq.Exec().Error; err != nil {
 			return err
 		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list_group_links").Raw(`
+			DELETE FROM "UserListGroups" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list_group_memberships").Raw(`
+			DELETE FROM "UserGroups" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
 		rq = tx.NewQuery(ctx, "userdb_delete_user_list").Raw(`
 			DELETE FROM "UserLists" WHERE user_list_id = ?`, userListID)
 		if err := rq.Exec().Error; err != nil {
@@ -1412,6 +1409,27 @@ func (d *UserDB) addUserToUserList(ctx context.Context, tx interfaces.DB, userLi
 			return status.AlreadyExistsErrorf("User %q is already part of user list %q", userID, userListID)
 		}
 		return err
+	}
+	type listGroup struct {
+		GroupGroupID string
+		Role         role.Role
+	}
+	listGroups, err := db.ScanAll(tx.NewQuery(ctx, "userdb_get_user_list_groups").Raw(`
+		SELECT group_group_id, role
+		FROM "UserListGroups"
+		WHERE user_list_user_list_id = ?`, userListID), &listGroup{})
+	if err != nil {
+		return err
+	}
+	for _, lg := range listGroups {
+		err := tx.NewQuery(ctx, "userdb_add_denormalized_user_list_membership").Raw(`
+			INSERT INTO "UserGroups" ("user_user_id", "group_group_id", "user_list_user_list_id", "membership_status", "role")
+			VALUES (?, ?, ?, ?, ?)`,
+			userID, lg.GroupGroupID, userListID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(lg.Role),
+		).Exec().Error
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1445,7 +1463,9 @@ func (d *UserDB) removeUserFromUserList(ctx context.Context, tx interfaces.DB, u
 	if rv.RowsAffected == 0 {
 		return status.NotFoundErrorf("User %q is not part of user list %q", userID, userListID)
 	}
-	return nil
+	return tx.NewQuery(ctx, "userdb_remove_denormalized_user_list_memberships").Raw(`
+		DELETE FROM "UserGroups"
+		WHERE user_user_id = ? AND user_list_user_list_id = ?`, userID, userListID).Exec().Error
 }
 
 func (d *UserDB) UpdateUserListMembers(ctx context.Context, userListID string, updates []*ulpb.UpdateUserListMembershipRequest_Update) error {

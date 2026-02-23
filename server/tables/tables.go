@@ -276,6 +276,8 @@ func (g *Group) TableName() string {
 type UserGroup struct {
 	UserUserID   string `gorm:"primaryKey"`
 	GroupGroupID string `gorm:"primaryKey"`
+	// Empty if direct membership. Set to the user list ID if indirect.
+	UserListUserListID string `gorm:"primaryKey;default:''"`
 
 	// The user's role within the group.
 	// Constants are defined in the perms package.
@@ -935,6 +937,12 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		postMigrate = append(postMigrate, func() error {
 			return db.Exec(`UPDATE "UserGroups" SET role = ?`, uint32(role.Admin)).Error
 		})
+	}
+	// Track the source of membership rows (direct vs user-list derived).
+	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "user_list_user_list_id") {
+		if err := db.Exec(`ALTER TABLE "UserGroups" ADD user_list_user_list_id text NOT NULL DEFAULT ''`).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
