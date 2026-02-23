@@ -1,0 +1,218 @@
+---
+slug: configuring-remote-bazel-with-agents
+title: "Configuring Remote Bazel with agents"
+authors: maggie
+date: 2026-03-02 12:00:00
+tags: [performance, infrastructure, AI]
+---
+
+Configuring AI coding agents to use Remote Bazel can unlock significant performance improvements for builds and tests. With more compute, a warm analysis cache, and fast network access
+to co-located remote caches, our remote runners are optimized to ensure agents' time is well spent on logic and reasoning, instead of waiting for builds to complete.
+
+For more details on what Remote Bazel is and some sample use cases, see our [blog post on Remote Bazel](https://www.buildbuddy.io/blog/remote-bazel-with-agents). For more details on the technical setup
+of our remote runners, see this [blog post](https://www.buildbuddy.io/blog/fast-runners-at-scale).
+
+<!-- truncate -->
+
+## Skills file
+
+A [skills file](https://agentskills.io/home) (SKILL.md) contains instructions that AI agents can use to complete tasks more effectively. Many popular coding agents - like OpenAI's Codex, Anthropic's Claude, GitHub's
+Copilot, and Cursor - support skills files.
+
+Skills can be invoked directly, via the name of the skill configured in the markdown file. However skills are often most useful when the agent invokes them dynamically,
+when they're determined relevant to the task at hand.
+
+Each skill should have a directory containing a SKILL.md file. These skills directories can live in a specific repository if they should only apply to a specific project. Or they can
+live under the user's home directory if they should apply globally.
+
+Each AI coding tool expects skills files to live at different places:
+
+- Codex: `.codex/skills/<SKILL_NAME>/SKILL.md`
+- Claude: `.claude/skills/<SKILL_NAME>/SKILL.md`
+- Copilot: `.github/skills/<SKILL_NAME>/SKILL.md`
+- Cursor: `.cursor/skills/<SKILL_NAME>/SKILL.md`
+- etc.
+
+To configure your agents to use Remote Bazel for builds, you can create a `remote-run` skill. You can copy and paste one of the following sample skills files to get started.
+
+## Using Remote Bazel with agents
+
+There are 2 ways to use Remote Bazel with agents: using the BB CLI and with a curl request. With both methods, a snapshot of the runner will be taken after execution completion,
+so future runs start on a warm worker.
+
+The BB CLI [must be installed](https://www.buildbuddy.io/cli/), but supports some additional features out-of-the-box:
+
+- Streams output logs to the terminal in real time
+- Mirrors your local git state to the remote runner, including uncommitted changes
+- Automatically sets some environment variables and flags to optimize the remote run
+- The exit code of the remote execution is reflected locally
+
+If you prefer to use a curl request to trigger the remote run, output logs and execution status can be fetched with additional APIs.
+
+For convenience we've inlined our sample skills files, but they're also checked in to our repo and may be updated from time-to-time. For the most up-to-date version, use
+the files from our [repo directly](TODO).
+
+## Sample skills file using bb CLI
+
+```markdown
+---
+name: remote-run
+description: Run bazel commands in a remote runner. Use when the user asks to run `bazel build`, `bazel test` or `bazel run`.
+---
+
+`bb remote` runs commands in a remote runner. These runners can have more compute power, and workspaces are snapshotted between
+runs, speeding up subsequent runs.
+
+It also uploads any local git diffs to the remote runner.
+
+## Drop-in bazel replacement
+
+Instead of running bazel commands locally with `bazel`, run them on a remote runner using the `bb remote` command.
+
+For example, you should replace the command `bazel build :target` with `bb remote build :target`.
+`bazel run :target` should be replaced with `bb remote run :target`.
+
+You should preserve any bazel startup flags and options.
+`bazel --host_jvm_args=-Xmx4g test :target --config=X` should become `bb --host_jvm_args=-Xmx4g remote test :target --config=X`.
+
+## Run any bash command remotely
+
+You can also use `bb remote` to run commands that would be expensive to run locally. For non-bazel commands, you can run them with
+`--script`.
+
+For example, you could run `bb remote --script="echo HELLO!"`.
+
+## Failure
+
+On failure, you should warn the user and print the invocation URL for the remote run. This will be at the top of the logs, and will look like
+`Streaming remote runner logs to: https://app.buildbuddy.io/invocation/d70a1719-4cb6-4568-a19e-9b6f8e2b3ec3`
+
+You should then ask the user if you should run the command locally.
+
+## Configuration
+
+You can configure the OS and architecture of the remote runner with the flags `--os` and `--arch`.
+Valid values of `os` are: `linux` and `darwin`.
+Valid values of `arch` are: `amd64` and `arm64`.
+By default, the remote runner will match the local architecture.
+
+If a remote runner is corrupted and you want a clean one, you can set `--runner_exec_properties=salt=<NEW_VALUE>`. Just make sure
+you preserve this flag if you want future runs to resume from this new runner.
+
+## Auth
+
+The cleanest way to authorize requests is to run `bb login` and encourage the user to follow the login flow in the UI.
+An API key will be stored in .git/config under:
+```
+
+[buildbuddy]
+api-key = <API_KEY_HERE>
+
+```
+
+If you have the user's API key, you can also add it to the end of commands with `--remote_header=x-buildbuddy-api-key=<API_KEY_HERE>`.
+
+```
+
+## Sample skills file using curl requests
+
+```md
+---
+name: remote-run-curl
+description: Run bazel commands in a remote runner. Use when the user asks to run `bazel build`, `bazel test` or `bazel run`.
+---
+
+The `Run` API runs commands in a remote runner. These runners can have more compute power, and workspaces are snapshotted between runs, speeding up subsequent runs.
+
+Any bash command can be run in a remote runner, but bazel commands may benefit the most from proximity
+to our cache servers and workspace snapshotting.
+
+## Initiating a remote run
+
+The `Run` API can be made with a curl request.
+
+For bazel commands, make sure to preserve the entire command, including startup flags and options, in the `steps` field.
+
+To clone a GitHub repo and run `steps` within that workspace, set the fields `repo`, `branch` and/or `commit_sha`. This is optional if a GitHub workspace is not needed for the steps.
+
+By default, the `Run` API will return once the remote runner has started. You can poll for completion using the `GetInvocation` API. If you want the `Run` API to wait until the commands are finished, add `"wait_until": "COMPLETED"` to the request.
+
+Multi-line steps are supported.
+
+Sample request:
+```
+
+curl --data '{
+"repo": "git@github.com:buildbuddy-io/buildbuddy.git",
+"branch": "master",
+"steps": [{"run": "bazel build :target"}],
+"wait_until": "COMPLETED"
+}' \
+--header "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+--header "Content-Type: application/json" \
+https://app.buildbuddy.io/api/v1/Run
+
+```
+
+Parse `invocationId` from the response and share `https://app.buildbuddy.io/invocation/<INVOCATION_ID>` with the user so they can view logs for the remote run.
+
+## Reading remote logs
+
+Logs for the remote run can be fetched with the `GetLog` API. Logs are streamed live and can be fetched in parallel with the remote run.
+
+The invocation ID should be parsed from the results of the `Run` API.
+
+Sample request:
+
+```
+
+curl -d '{
+"selector": {"invocation_id":"<INVOCATION_ID>"}
+}' \
+-H "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+-H "Content-Type: application/json" \
+https://app.buildbuddy.io/api/v1/GetLog
+
+```
+
+If `next_page_token` is present in the GetLog response, keep calling GetLog and passing the token to the `page_token` field until all log chunks are fetched.
+
+## Fetching invocation metadata
+
+Invocation metadata can be fetched with the `GetInvocation` API. Metadata includes the exit code of the run after it's finished and whether it completed successfully.
+
+All steps must complete successfully for the invocation to be considered a success. If any steps fail,
+subsequent steps will not be run.
+
+```
+
+curl -d '{
+"selector": {"invocation_id":"<INVOCATION_ID>"}
+}' \
+-H "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+-H "Content-Type: application/json" \
+https://app.buildbuddy.io/api/v1/GetInvocation
+
+```
+
+## Configuration
+
+Environment variables can be set on the remote runner with the `env` field. It expects a map as input.
+
+Other configuration can be set in the `platform_properties` field, which is also a map.
+Valid values of `OSFamily` are `linux` and `darwin`.
+Valid values of `Arch` are `amd64` and `arm64`.
+
+If a remote runner is corrupted and you want a clean one, you can set the property `salt` to a new value. Just make sure you preserve this flag if you want future runs to resume from this new runner.
+
+## Auth
+
+Users can get an API key from the `Settings` page of the BuildBuddy UI.
+```
+
+## Conclusion
+
+AI coding agents accelerate developers. At BuildBuddy, we hope to accelerate the agents themselves.
+
+We're just beginning to build more features in support of coding agents and would love to hear from our users. If you're facing
+challenges with setup, have anecdotes about how you're using Remote Bazel with agents, or feature requests, please reach out. You can find me on our open source Slack channel @maggie or by email at maggie@buildbuddy.io.
