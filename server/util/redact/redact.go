@@ -91,10 +91,12 @@ var (
 	// Here we match 20 alphanumeric characters preceded by the api key header flag
 	apiKeyHeaderPattern = regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
 
-	// Match sequences that look like API keys immediately followed '@',
+	// Match sequences that look like API keys immediately followed by '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
 	// or "bes_backend=$API_KEY@domain.com".
-	apiKeyAtPattern = regexp.MustCompile("(^|[/=])[[:alnum:]]{20}@")
+	// The trailing `([^@]|$)` prevents matching `@@` which is the bzlmod
+	// canonical-label separator (e.g. `//pkg@@repo++ext+target`).
+	apiKeyAtPattern = regexp.MustCompile("(^|[/=])([[:alnum:]]{20})@([^@]|$)")
 
 	// Option names which may contain gRPC headers that should be redacted.
 	headerOptionNames = []string{
@@ -258,7 +260,7 @@ func redactBuildBuddyAPIKeys(txt string) string {
 	// Replace sequences that look like API keys immediately followed by '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
 	// or "bes_backend=$API_KEY@domain.com".
-	txt = apiKeyAtPattern.ReplaceAllString(txt, "$1<REDACTED>@")
+	txt = apiKeyAtPattern.ReplaceAllString(txt, "${1}<REDACTED>@${3}")
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.

@@ -1009,6 +1009,11 @@ func TestRedactAPIKeys(t *testing.T) {
 			txt:      "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
 			expected: "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
 		},
+		{
+			name:     "do not redact bzlmod canonical label with 20-char path segment after slash",
+			txt:      "FAILED: //abcdefghijklmnopqrst@@aspect_bazel_lib++toolchains+copy_to_directory_linux_amd64; starting 13s",
+			expected: "FAILED: //abcdefghijklmnopqrst@@aspect_bazel_lib++toolchains+copy_to_directory_linux_amd64; starting 13s",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
