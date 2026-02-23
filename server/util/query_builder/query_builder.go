@@ -82,14 +82,35 @@ func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	return q
 }
 
-// Add a where in clause.
-// For example: "WHERE foo in (SELECT foo FROM bar)
+// AddWhereInClause adds a WHERE column IN (subquery) clause.
+// For example: WHERE foo IN (SELECT foo FROM bar)
 func (q *Query) AddWhereInClause(variable string, subQuery *Query) *Query {
 	subQueryStr, args := subQuery.Build()
 	clause := variable + " IN (" + subQueryStr + ") "
 	q.whereClauses = append(q.whereClauses, clause)
 	q.arguments = append(q.arguments, args...)
 	return q
+}
+
+// addWhereInSlice adds a WHERE column IN (?,?,...) clause with the given values.
+// N.B. This is a top level function so that it can accept a slice of a generic type.
+func addWhereInSlice[T any](q *Query, column string, values []T) *Query {
+	n := len(values)
+	if n == 0 {
+		return q
+	}
+	placeholders := "(?" + strings.Repeat(",?", n-1) + ")"
+	q.whereClauses = append(q.whereClauses, column+" IN "+placeholders)
+	for _, v := range values {
+		q.arguments = append(q.arguments, v)
+	}
+	return q
+}
+
+// AddWhereInStringSlice adds a WHERE column IN (?, ?, ...) clause for the
+// given string values.
+func (q *Query) AddWhereInStringSlice(variable string, vals []string) *Query {
+	return addWhereInSlice(q, variable, vals)
 }
 
 func (q *Query) AddJoinClause(subQuery *Query, alias string, onClause string) *Query {
