@@ -1456,7 +1456,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
