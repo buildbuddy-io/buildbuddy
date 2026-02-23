@@ -1404,6 +1404,91 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
+// cleanupOrphanedVeths scans for host-side veth interfaces ("veth1" prefix)
+// that were left behind by a previous executor process (e.g. after SIGKILL).
+// A veth is considered orphaned if:
+//   - Its name starts with "veth1" (host-side naming convention)
+//   - It has a 192.168.x.x/30 address from our allocation range
+//   - The corresponding IP range is NOT locked by any running process
+//
+// Deleting a host-side veth also removes its peer and associated routes.
+func cleanupOrphanedVeths(ctx context.Context, allocator *HostNetAllocator) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to list network interfaces for orphan cleanup: %s", err)
+		return
+	}
+
+	baseAddr := allocator.baseAddr
+
+	for _, link := range links {
+		name := link.Attrs().Name
+		if !strings.HasPrefix(name, "veth1") {
+			continue
+		}
+
+		// Get addresses on this interface.
+		addrs, err := netlink.AddrList(link, 0 /* FAMILY_ALL; we filter IPv4 below */)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to list addresses on %s: %s", name, err)
+			continue
+		}
+
+		for _, addr := range addrs {
+			ip := addr.IP.To4()
+			if ip == nil {
+				continue
+			}
+			// Check that the IP is in our allocation range (matches base /16).
+			if ip[0] != baseAddr[0] || ip[1] != baseAddr[1] {
+				continue
+			}
+			ones, _ := addr.Mask.Size()
+			if ones != 30 {
+				continue
+			}
+
+			// Reverse the IP to a netIdx.
+			// From HostIP(): ip[2] = netIdx / 30, ip[3] = (netIdx % 30) * 8 + 5
+			thirdOctet := int(ip[2])
+			fourthOctet := int(ip[3])
+			if (fourthOctet-5)%8 != 0 || fourthOctet < 5 {
+				continue // Not a valid host IP from our allocation scheme
+			}
+			withinGroup := (fourthOctet - 5) / 8
+			if withinGroup < 0 || withinGroup >= 30 {
+				continue
+			}
+			netIdx := thirdOctet*30 + withinGroup
+			if netIdx < 0 || netIdx >= numAssignableNetworks {
+				continue
+			}
+
+			// Check if this network index is locked by another process.
+			if *networkLockDir != "" {
+				f, err := allocator.tryFlock(netIdx)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to check lock for net index %d: %s", netIdx, err)
+					continue
+				}
+				if f == nil {
+					// Locked by another process — not orphaned.
+					continue
+				}
+				// Release the lock immediately; we just needed to check.
+				_ = f.Close()
+			}
+
+			// This veth is orphaned — delete it.
+			log.CtxInfof(ctx, "Cleaning up orphaned veth %s (netIdx=%d, ip=%s)", name, netIdx, ip.String())
+			if err := runCommand(ctx, "ip", "link", "delete", name); err != nil {
+				log.CtxWarningf(ctx, "Failed to delete orphaned veth %s: %s", name, err)
+			}
+			break // address matched; move on to the next link
+		}
+	}
+}
+
 // Configure setups networking related infrastructure, such as traffic isolation
 // and IP allocation.
 func Configure(ctx context.Context) error {
@@ -1412,6 +1497,12 @@ func Configure(ctx context.Context) error {
 		return status.WrapError(err, "could not create host network allocator")
 	}
 	hostNetAllocator = a
+
+	// Clean up orphaned veth devices from previous executor runs
+	// (e.g. after SIGKILL where flock was released but veths persist).
+	// Note: orphaned net namespaces are already cleaned up by
+	// DeleteNetNamespaces() which runs before Configure().
+	cleanupOrphanedVeths(ctx, a)
 
 	if IsSecondaryNetworkEnabled() {
 		// Adds a new routing table
