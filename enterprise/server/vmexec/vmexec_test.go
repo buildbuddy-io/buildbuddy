@@ -1,4 +1,4 @@
-package vmexec_test
+package vmexec
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,6 +154,59 @@ func TestExecStreamed_Crash(t *testing.T) {
 	assert.Equal(t, commandutil.KilledExitCode, res.ExitCode)
 }
 
+func TestUpdatePeakFileSystemUsage_KeepsHigherBytePeakSample(t *testing.T) {
+	peakAvailableBytes := new(int64(5))
+	currentAvailableBytes := new(int64(20))
+
+	peak := []*repb.UsageStats_FileSystemUsage{
+		{
+			Target:         "/",
+			UsedBytes:      95,
+			TotalBytes:     100,
+			AvailableBytes: peakAvailableBytes,
+		},
+	}
+	current := []*repb.UsageStats_FileSystemUsage{
+		{
+			Target:         "/",
+			UsedBytes:      80,
+			TotalBytes:     100,
+			AvailableBytes: currentAvailableBytes,
+		},
+	}
+
+	merged := updatePeakFileSystemUsage(peak, current)
+	if assert.Len(t, merged, 1) {
+		assert.Equal(t, int64(95), merged[0].GetUsedBytes())
+		assert.Equal(t, int64(5), merged[0].GetAvailableBytes())
+		assert.InDelta(t, 0.95, fsutil.FileSystemUtilization(merged[0]), 1e-9)
+	}
+}
+
+func TestUpdatePeakFileSystemUsage_UpdatesToHigherUtilizationSample(t *testing.T) {
+	peakAvailableBytes := new(int64(50))
+	currentAvailableBytes := new(int64(5))
+
+	peak := &repb.UsageStats_FileSystemUsage{
+		Target:         "/",
+		UsedBytes:      50,
+		TotalBytes:     100,
+		AvailableBytes: peakAvailableBytes,
+	}
+	current := &repb.UsageStats_FileSystemUsage{
+		Target:         "/",
+		UsedBytes:      95,
+		TotalBytes:     100,
+		AvailableBytes: currentAvailableBytes,
+	}
+
+	merged := updatePeakFileSystemUsage([]*repb.UsageStats_FileSystemUsage{peak}, []*repb.UsageStats_FileSystemUsage{current})
+	require.Len(t, merged, 1)
+	assert.Equal(t, int64(95), merged[0].GetUsedBytes())
+	assert.Equal(t, int64(5), merged[0].GetAvailableBytes())
+	assert.InDelta(t, 0.95, fsutil.FileSystemUtilization(merged[0]), 1e-9)
+}
+
 func startExecService(t *testing.T) vmxpb.ExecClient {
 	lis, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
@@ -161,7 +214,7 @@ func startExecService(t *testing.T) vmxpb.ExecClient {
 		lis.Close()
 	})
 	server := grpc.NewServer()
-	execServer, err := vmexec.NewServer("" /*=workspaceDevice*/)
+	execServer, err := NewServer("" /*=workspaceDevice*/)
 	require.NoError(t, err)
 	vmxpb.RegisterExecServer(server, execServer)
 	go server.Serve(lis)

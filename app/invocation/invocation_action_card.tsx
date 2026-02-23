@@ -997,12 +997,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div>
           <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
-          {usageStats.peakFileSystemUsage?.map((fs) => (
-            <div>
-              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}
-              {format.bytesIEC(fs.totalBytes)}
-            </div>
-          ))}
+          {usageStats.peakFileSystemUsage?.map((fs) => {
+            const usedBytes = Number(fs.usedBytes ?? 0);
+            const totalBytes = Number(fs.totalBytes ?? 0);
+            const availableBytes = fs.availableBytes !== undefined ? Number(fs.availableBytes) : undefined;
+            const usableBytes =
+              availableBytes !== undefined && usedBytes + availableBytes > 0 ? usedBytes + availableBytes : totalBytes;
+            const hasSeparateTotal = totalBytes > 0 && totalBytes !== usableBytes;
+            return (
+              <div key={fs.target}>
+                Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(usedBytes)} of{" "}
+                {format.bytesIEC(usableBytes)}
+                {hasSeparateTotal && <> usable ({format.bytesIEC(totalBytes)} total)</>}
+              </div>
+            );
+          })}
           {usageStats.cgroupIoStats && (
             <>
               <div>Disk bytes read: {format.bytesIEC(usageStats.cgroupIoStats.rbytes)}</div>

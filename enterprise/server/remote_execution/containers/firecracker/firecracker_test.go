@@ -151,7 +151,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "d6e20637585cf821192d1b13d34b87316307ae286b4c31d27307052a3d7df45c"
+		expectedHash    = "7eead93aaacc3d261df5b0f7b78fb842965ab05a114a88ff26ba15c9bc573d8d"
 		expectedVersion = "18"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -1955,8 +1955,6 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		Arguments: []string{"sh", "-c", `
 			find -name '*.txt' -exec cp {} {}.out \;
 			</dev/zero head -c ` + fmt.Sprint(scratchTestFileSizeBytes) + ` > ~/scratch_file.txt
-			# Sleep a bit to ensure we get a good disk usage sample.
-			sleep 1
 		`},
 	}
 	expectedResult := &interfaces.CommandResult{
@@ -2054,6 +2052,59 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
+}
+
+func TestFirecrackerRootDiskUsageUsesAvailableBytes(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			set -e
+			# Fill the root disk. Keep the command successful even after ENOSPC
+			# so that usage stats are still returned.
+			dd if=/dev/zero of=/root/disk_fill bs=1M status=none || true
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 50,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.NotNil(t, res.UsageStats)
+
+	var rootFSU *repb.UsageStats_FileSystemUsage
+	for _, fsu := range res.UsageStats.GetPeakFileSystemUsage() {
+		if fsu.GetTarget() == "/" {
+			rootFSU = fsu
+			break
+		}
+	}
+	require.NotNil(t, rootFSU, "root (/) disk usage was not reported")
+	require.NotNil(t, rootFSU.AvailableBytes, "expected root disk usage to include available bytes")
+
+	used := rootFSU.GetUsedBytes()
+	avail := rootFSU.GetAvailableBytes()
+	usable := used + avail
+	require.Greater(t, usable, int64(0), "expected non-zero usable root disk size")
+
+	// The root disk should be effectively maxed out from the action's
+	// perspective when using used/(used+avail) utilization.
+	utilization := float64(used) / float64(usable)
+	assert.GreaterOrEqual(t, utilization, 0.99)
 }
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
