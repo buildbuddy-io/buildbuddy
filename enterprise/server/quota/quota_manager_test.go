@@ -199,7 +199,7 @@ func TestLoadQuotasFromFlagd(t *testing.T) {
 		assert.Equal(t, int64(5), config.maxBurst)
 	})
 
-	t.Run("skip loading if b	ucket already exists", func(t *testing.T) {
+	t.Run("skip loading if bucket already exists", func(t *testing.T) {
 		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
 
 		originalBucket := qm.findBucket("rpc:/namespace1", "key1")

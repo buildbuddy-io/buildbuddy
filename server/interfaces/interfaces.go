@@ -658,6 +658,15 @@ type UsageTracker interface {
 	Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error
 }
 
+type UsageLimiter interface {
+	// Check returns ResourceExhaustedError if the authenticated group has
+	// exceeded the configured usage limit for the given usage metric. We
+	// intentionally use the same user-facing metric enum as usage alerting so
+	// limits are defined in terms of values shown in the Usage UI. Check does
+	// not record usage.
+	Check(ctx context.Context, metric usagepb.UsageAlertingMetric_Value, quantity int64) error
+}
+
 type ApiService interface {
 	apipb.ApiServiceServer
 	GetFileHandler() http.Handler
