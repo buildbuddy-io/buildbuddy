@@ -31,6 +31,7 @@ import (
 )
 
 const scheme = "kube"
+const apiMaxBackoff = 30 * time.Second
 
 // podTarget holds the parsed components of a pod FQDN target.
 type podTarget struct {
@@ -78,7 +79,7 @@ type podWatcher struct {
 	namespace string
 	podName   string
 
-	// Only accessed from the watch goroutine.
+	// Only accessed from the resolveAndWatch goroutine.
 	resourceVersion string
 
 	mu               sync.Mutex
@@ -96,7 +97,7 @@ func newPodWatcher(ctx context.Context, client kubernetes.Interface, namespace, 
 		subscribers: make(map[*kubeResolver]func(podResolution)),
 		cancel:      cancel,
 	}
-	go pw.watch(ctx)
+	go pw.resolveAndWatch(ctx)
 	return pw
 }
 
@@ -148,26 +149,43 @@ func (pw *podWatcher) resolve(ctx context.Context) bool {
 	return true
 }
 
-func (pw *podWatcher) watch(ctx context.Context) {
-	backoff := time.Second
-	maxBackoff := 30 * time.Second
+// resolveAndWatch retrieves the pod information and then watches the pod for
+// changes using the k8s Watch API.
+func (pw *podWatcher) resolveAndWatch(ctx context.Context) {
+	for {
+		// Resolve the pod via a Get call. Retry until it succeeds so
+		// that the watch has a valid resourceVersion to start from.
+		backoff := time.Second
+		for !pw.resolve(ctx) {
+			select {
+			case <-time.After(backoff):
+				backoff = min(backoff*2, apiMaxBackoff)
+			case <-ctx.Done():
+				return
+			}
+		}
 
-	// Resolve the pod before starting the watch loop. Retry until it
-	// succeeds so that the watch has a valid resourceVersion to start from.
-	for !pw.resolve(ctx) {
-		select {
-		case <-time.After(backoff):
-			backoff = min(backoff*2, maxBackoff)
-		case <-ctx.Done():
+		if done := pw.watch(ctx); done {
 			return
 		}
+		// If the watch failed, retry the entire Get+Watch loop.
+		pw.resourceVersion = ""
 	}
-	backoff = time.Second
+}
+
+// watch uses the k8s Watch API to watch the pod for changes.
+// The watch is started at version pw.resourceVersion.
+// The return value indicates if the watch process is terminated (because the
+// the context was done). If the value is false, the caller should retrieve
+// the pod information and retry the watch call with a new pw.resourceVersion
+// value.
+func (pw *podWatcher) watch(ctx context.Context) (done bool) {
+	backoff := time.Second
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		default:
 		}
 
@@ -177,24 +195,32 @@ func (pw *podWatcher) watch(ctx context.Context) {
 			ResourceVersion: pw.resourceVersion,
 		})
 		if err != nil {
+			if errors.IsResourceExpired(err) {
+				log.Infof("Failed to watch pod %s/%s due to old resource version, will refetch pod: %s", pw.namespace, pw.podName, err)
+				return false
+			}
 			log.Warningf("Failed to watch pod %s/%s: %s", pw.namespace, pw.podName, err)
 			select {
 			case <-time.After(backoff):
-				backoff = min(backoff*2, maxBackoff)
+				backoff = min(backoff*2, apiMaxBackoff)
 			case <-ctx.Done():
-				return
+				return true
 			}
 			continue
 		}
 
 		if err := pw.processWatchEvents(ctx, watcher); err != nil {
-			log.Warningf("Watch for pod %s/%s ended abruptly: %s", pw.namespace, pw.podName, err)
 			watcher.Stop()
+			if errors.IsResourceExpired(err) {
+				log.Infof("Watch for for pod %s/%s failed due to old resource version, will refetch pod", pw.namespace, pw.podName)
+				return false
+			}
+			log.Warningf("Watch for pod %s/%s ended abruptly: %s", pw.namespace, pw.podName, err)
 			select {
 			case <-time.After(backoff):
-				backoff = min(backoff*2, maxBackoff)
+				backoff = min(backoff*2, apiMaxBackoff)
 			case <-ctx.Done():
-				return
+				return true
 			}
 			continue
 		}
@@ -204,8 +230,8 @@ func (pw *podWatcher) watch(ctx context.Context) {
 	}
 }
 
-// processWatchEvents processes events received from the watch stream.
-// A non-nil error is returned when the watch ends abruptly.
+// processWatchEvents processes events received from the resolveAndWatch stream.
+// A non-nil error is returned when the resolveAndWatch ends abruptly.
 func (pw *podWatcher) processWatchEvents(ctx context.Context, watcher watch.Interface) error {
 	for {
 		select {

@@ -3,16 +3,19 @@ package kuberesolver
 import (
 	"context"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestParsePodTarget(t *testing.T) {
@@ -318,5 +321,81 @@ func TestSharedWatcher(t *testing.T) {
 		require.Equal(t, "10.0.0.2:9090", state.Addresses[0].Addr)
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "timed out waiting for update after closing r1")
+	}
+}
+
+func TestWatchRecoveryFromResourceExpired(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+
+	// Intercept the first watch call to return a 410 Gone error,
+	// simulating an expired resource version.
+	var watchCount atomic.Int32
+	client.PrependWatchReactor("pods", func(action k8stesting.Action) (bool, watch.Interface, error) {
+		if watchCount.Add(1) == 1 {
+			fw := watch.NewFake()
+			go func() {
+				fw.Error(&metav1.Status{
+					Status:  metav1.StatusFailure,
+					Code:    410,
+					Reason:  metav1.StatusReasonExpired,
+					Message: "too old resource version: 123 (456)",
+				})
+			}()
+			return true, fw, nil
+		}
+		return false, nil, nil
+	})
+
+	cc := newFakeClientConn()
+	builder := &kubeResolverBuilder{client: client}
+	r, err := builder.Build(
+		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:8080"),
+		cc,
+		resolver.BuildOptions{},
+	)
+	require.NoError(t, err)
+	defer r.Close()
+
+	// Wait for initial resolve.
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		require.Equal(t, "10.0.0.1:8080", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for initial resolve")
+	}
+
+	// After the 410, the resolver should re-resolve and establish a new watch.
+	require.Eventually(t, func() bool {
+		return watchCount.Load() >= 2
+	}, 5*time.Second, 10*time.Millisecond, "expected watch to be retried after 410")
+
+	// Drain any re-resolve state updates.
+	for len(cc.states) > 0 {
+		<-cc.states
+	}
+
+	// Update the pod IP and verify the recovered watch picks it up.
+	pod.Status.PodIP = "10.0.0.2"
+	_, err = client.CoreV1().Pods("ns").Update(
+		context.Background(), pod, metav1.UpdateOptions{},
+	)
+	require.NoError(t, err)
+
+	select {
+	case state := <-cc.states:
+		require.Len(t, state.Addresses, 1)
+		require.Equal(t, "10.0.0.2:8080", state.Addresses[0].Addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for updated address after 410 recovery")
 	}
 }
