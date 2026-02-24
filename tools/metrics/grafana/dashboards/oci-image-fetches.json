@@ -213,7 +213,7 @@
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Success Ratio (excl. on-disk)",
+      "title": "OCI Image Fetch Success Ratio by Isolation Type (excl. on-disk)",
       "type": "timeseries"
     },
     {
@@ -309,7 +309,7 @@
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Latency p90 (excl. on-disk)",
+      "title": "OCI Image Fetch Latency p90 by Isolation Type (excl. on-disk)",
       "type": "timeseries"
     },
     {
