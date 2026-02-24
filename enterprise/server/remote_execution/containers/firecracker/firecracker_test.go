@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/race"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -149,6 +150,10 @@ func TestGuestAPIVersion(t *testing.T) {
 	//
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
+
+	if race.Enabled {
+		t.Skip("Skipping guest API version test with race detector enabled, since the race detector adds extra code which changes the guest API hash.")
+	}
 	const (
 		expectedHash    = "191f52e28234e175942b3514a0ba39c20c7de1c30a164e9a04ced625acff8aa0"
 		expectedVersion = "17"

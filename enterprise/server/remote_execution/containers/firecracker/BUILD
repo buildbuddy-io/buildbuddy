@@ -157,6 +157,7 @@ go_test(
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
+        "//enterprise/server/util/race",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
