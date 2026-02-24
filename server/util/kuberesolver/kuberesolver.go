@@ -135,17 +135,27 @@ func (pw *podWatcher) notifySubscribers(r podResolution) {
 	}
 }
 
-// resolve does a one-shot Get and notifies subscribers. Returns true on success.
+// resolve does a one-shot List for the pod and notifies subscribers.
+// Returns true on success.
 func (pw *podWatcher) resolve(ctx context.Context) bool {
 	log.Infof("Resolving pod %s/%s", pw.namespace, pw.podName)
-	pod, err := pw.client.CoreV1().Pods(pw.namespace).Get(ctx, pw.podName, metav1.GetOptions{})
+	podList, err := pw.client.CoreV1().Pods(pw.namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: "metadata.name=" + pw.podName,
+	})
 	if err != nil {
-		log.Warningf("Failed to get pod %s/%s from k8s: %s", pw.namespace, pw.podName, err)
-		pw.notifySubscribers(podResolution{err: fmt.Errorf("failed to get pod: %w", err)})
+		log.Warningf("Failed to list pod %s/%s from k8s: %s", pw.namespace, pw.podName, err)
+		pw.notifySubscribers(podResolution{err: fmt.Errorf("failed to list pod: %w", err)})
 		return false
 	}
-	pw.notifySubscribers(podResolution{pod: pod})
-	pw.resourceVersion = pod.ResourceVersion
+	pw.resourceVersion = podList.ResourceVersion
+	if len(podList.Items) == 0 {
+		log.Infof("Failed to list pod %s/%s from k8s: pod not found", pw.namespace, pw.podName)
+		pw.notifySubscribers(podResolution{err: fmt.Errorf("pod %s/%s not found", pw.namespace, pw.podName)})
+		// Treat this as a success since we can rely on the Watch API to
+		// tell us when the pod comes into existence.
+		return true
+	}
+	pw.notifySubscribers(podResolution{pod: &podList.Items[0]})
 	return true
 }
 
