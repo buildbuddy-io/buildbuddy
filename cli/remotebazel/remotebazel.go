@@ -110,6 +110,19 @@ func consoleDeleteLines(n int) {
 	fmt.Print(escapeSeq + strconv.Itoa(n) + "M")
 }
 
+func resetTerminalStyles() {
+	// Streamed remote logs can include ANSI style sequences. Ensure styles are
+	// reset before returning so subsequent local CLI output and the shell prompt
+	// do not inherit stale formatting.
+	if terminal.IsTTY(os.Stderr) {
+		fmt.Fprint(os.Stderr, escapeSeq+"0m")
+		return
+	}
+	if terminal.IsTTY(os.Stdout) {
+		fmt.Fprint(os.Stdout, escapeSeq+"0m")
+	}
+}
+
 type RunOpts struct {
 	Server string
 	APIKey string
@@ -596,6 +609,8 @@ func splitLogBuffer(buf []byte) []string {
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 	moveBack := 0
 
@@ -661,6 +676,8 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 
 // printLogs prints the logs with real-time streaming updates disabled
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 
 	for {
