@@ -1068,14 +1068,12 @@ func (s *Store) getNHIDToPodIndex() map[string]int {
 // next, is tried last). Ready connections are preferred within each tier.
 // Previously-attempted replicas are deprioritized to the end so retries
 // cycle through the candidate list.
-func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64, nhidToPodIndex map[string]int, attempted []uint64) uint64 {
+func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64, nhidToPodIndex map[string]int, attempted set.Set[uint64]) uint64 {
 	type candidate struct {
 		repl     *rfpb.ReplicaDescriptor
 		podIndex int
 		known    bool // whether we have a pod index for this replica
 	}
-
-	attemptedSet := set.From(attempted...)
 
 	myPodIndex, havePodIndex := 0, false
 	var candidates, deprioritized []candidate
@@ -1086,7 +1084,7 @@ func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDesc
 			continue
 		}
 		c := candidate{repl: repl, podIndex: idx, known: known}
-		if attemptedSet.Contains(repl.GetReplicaId()) {
+		if attempted.Contains(repl.GetReplicaId()) {
 			deprioritized = append(deprioritized, c)
 			continue
 		}
@@ -1150,7 +1148,7 @@ func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDesc
 // tryDroppingLeadership tries to drop leadership, returns the number of
 // remaining leaders and error. attempted tracks all previously-tried targets
 // per shard so retries cycle through candidates.
-func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[string]int, attempted map[uint64][]uint64) (int, error) {
+func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[string]int, attempted map[uint64]set.Set[uint64]) (int, error) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
@@ -1194,7 +1192,7 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 	}
 	err := eg.Wait()
 	for _, r := range results {
-		attempted[r.shardID] = append(attempted[r.shardID], r.targetReplicaID)
+		attempted[r.shardID].Add(r.targetReplicaID)
 	}
 	return remainingLeader, err
 }
@@ -1206,7 +1204,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	nhidToPodIndex := s.getNHIDToPodIndex()
 	log.Debugf("Drop leadership: nhidToPodIndex=%v", nhidToPodIndex)
 
-	attempted := make(map[uint64][]uint64)
+	attempted := make(map[uint64]set.Set[uint64]) // shardID -> set of previously attempted target replicaIDs
 	remainingLeaders := 0
 	var err error
 
