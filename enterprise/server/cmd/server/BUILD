@@ -137,13 +137,15 @@ image_manifest(
     entrypoint = [
         "/buildbuddy",
     ],
+    entrypoint = [
+        "/app/enterprise/server/cmd/server/buildbuddy",
+    ],
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
     },
     layers = select({
-        "@platforms//cpu:arm64":
-        [
+        "@platforms//cpu:arm64": [
             "//images/distroless/base-nossl:layer_arm64",
             ":buildbuddy_layer",
         ],
@@ -153,16 +155,13 @@ image_manifest(
         ],
     }),
     user = "root",
-    entrypoint = [
-        "/app/enterprise/server/cmd/server/buildbuddy",
-    ],
 )
 
 image_load(
     name = "buildbuddy_image",
+    daemon = "containerd",  # Explicitly use containerd
     image = ":manifest",  # References an image_manifest
     tag = "buildbuddy_image:latest",
-    daemon = "containerd",  # Explicitly use containerd
 )
 
 # TODO(sluongng): Verify the layering of the image.

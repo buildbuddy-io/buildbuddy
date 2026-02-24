@@ -75,7 +75,6 @@ java_keystore(
             "@trixie//netbase:netbase",
             "@trixie//tzdata:tzdata",
             "@trixie//media-types:media-types",
-
             ":groups",
             ":passwd",
             ":ca_certificates",
@@ -122,7 +121,7 @@ image_index(
 image_load(
     name = "load",
     daemon = "docker",  # Explicitly use docker
+    daemon = "docker",  # Explicitly use docker
     image = ":index",  # References an image_index
     tag = "bb-distroless_static:latest",
-    daemon = "docker",  # Explicitly use docker
 )
