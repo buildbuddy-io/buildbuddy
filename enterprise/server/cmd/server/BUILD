@@ -142,12 +142,13 @@ image_manifest(
         "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
     },
     layers = select({
-        "@platforms//cpu:arm64": [
-            "//images/distroless_cc:layer_arm64",
+        "@platforms//cpu:arm64":
+        [
+            "//images/distroless_static:layer_arm64",
             ":buildbuddy_layer",
         ],
         "@platforms//cpu:x86_64": [
-            "//images/distroless_cc:layer_amd64",
+            "//images/distroless_static:layer_amd64",
             ":buildbuddy_layer",
         ],
     }),

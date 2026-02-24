@@ -26,7 +26,7 @@ packages:
 
   # CC packages
   - libc6
-  - libgomp1
-  - libstdc++6
-  - libgcc-s1
-  - gcc-14-base
+  # - libgomp1
+  # - libstdc++6
+  # - libgcc-s1
+  # - gcc-14-base
