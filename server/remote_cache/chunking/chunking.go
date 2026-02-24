@@ -317,38 +317,71 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	}, nil
 }
 
-// TODO(buildbuddy-internal#6426): Consider prefetching readers using a
-// buffered channel of size 1 to reduce latency between chunk reads.
+// verifyChunks pipelines chunk verification using 2 goroutines:
+// a producer that opens readers sequentially (1 ahead of the consumer),
+// and a closer that asynchronously closes readers after hashing.
 func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) error {
 	hasher, err := digest.HashForDigestType(cm.DigestFunction)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
 	}
 
-	var totalSize int64
-	for i, chunkDigest := range cm.ChunkDigests {
-		chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
-		if err := chunkRN.Validate(); err != nil {
-			return status.InvalidArgumentErrorf("invalid chunk digest at index %d for blob %s: %s", i, cm.BlobDigest.GetHash(), err)
-		}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		reader, err := cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
-		if err != nil {
-			if status.IsNotFoundError(err) {
-				return status.InvalidArgumentErrorf("invalid manifest: chunk %d not found in the CAS: %s", i, chunkDigest.GetHash())
+	readers := make(chan io.ReadCloser, 1)
+	var eg errgroup.Group
+	eg.Go(func() error {
+		defer close(readers)
+		for i, chunkDigest := range cm.ChunkDigests {
+			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
+			if err := chunkRN.Validate(); err != nil {
+				return status.InvalidArgumentErrorf("invalid chunk digest at index %d for blob %s: %s", i, cm.BlobDigest.GetHash(), err)
 			}
-			return status.InternalErrorf("read chunk %d for blob %s from CAS: %w", i, cm.BlobDigest.GetHash(), err)
+			r, err := cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
+			if err != nil {
+				if r != nil {
+					_ = r.Close()
+				}
+				if status.IsNotFoundError(err) {
+					return status.InvalidArgumentErrorf("invalid manifest: chunk %d not found in the CAS: %s", i, chunkDigest.GetHash())
+				}
+				return status.WrapErrorf(err, "read chunk %d for blob %s from CAS", i, cm.BlobDigest.GetHash())
+			}
+			select {
+			case readers <- r:
+			case <-ctx.Done():
+				_ = r.Close()
+				return ctx.Err()
+			}
 		}
+		return nil
+	})
 
-		n, err := io.Copy(hasher, reader)
-		if err != nil {
-			reader.Close()
-			return status.InternalErrorf("hash chunk %d for blob %s: %w", i, cm.BlobDigest.GetHash(), err)
+	closers := make(chan io.Closer, 10)
+	defer close(closers)
+	go func() {
+		for c := range closers {
+			_ = c.Close()
 		}
-		if err := reader.Close(); err != nil {
-			return status.InternalErrorf("close chunk %d reader for blob %s: %w", i, cm.BlobDigest.GetHash(), err)
+	}()
+
+	var (
+		totalSize int64
+		chunkIdx  int
+	)
+	for reader := range readers {
+		n, err := io.Copy(hasher, reader)
+		closers <- reader
+		if err != nil {
+			return status.WrapErrorf(err, "hash chunk %d for blob %s", chunkIdx, cm.BlobDigest.GetHash())
 		}
 		totalSize += n
+		chunkIdx++
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
 	computedDigest := &repb.Digest{

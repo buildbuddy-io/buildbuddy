@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
@@ -133,54 +135,112 @@ func TestStoreAndLoad(t *testing.T) {
 			if salt != "" {
 				flags.Set(t, "cache.chunking.ac_key_salt", salt)
 			}
-
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 			cache := te.GetCache()
 
-			chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
-			chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
-			chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 200)
-
-			require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
-			require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
-			require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
-
-			allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
-			blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+			const blobSize = 100 * 1024 * 1024
+			blobData := make([]byte, blobSize)
+			_, err = rand.Read(blobData)
 			require.NoError(t, err)
+			blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			var chunkDigests []*repb.Digest
+			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+				if err != nil {
+					return err
+				}
+				buf := make([]byte, len(data))
+				copy(buf, data)
+				rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+				if err := cache.Set(ctx, rn.ToProto(), buf); err != nil {
+					return err
+				}
+				chunkDigests = append(chunkDigests, d)
+				return nil
+			})
+			require.NoError(t, err)
+			_, err = c.Write(blobData)
+			require.NoError(t, err)
+			require.NoError(t, c.Close())
+			require.Greater(t, len(chunkDigests), 1)
 
 			cm := &chunking.Manifest{
 				BlobDigest:     blobDigest,
-				ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
-				InstanceName:   "test-instance",
+				ChunkDigests:   chunkDigests,
 				DigestFunction: repb.DigestFunction_SHA256,
 			}
 
-			badDigest, err := digest.Compute(bytes.NewReader([]byte("random data")), repb.DigestFunction_SHA256)
+			// Wrong blob digest should fail verification.
+			badDigest, err := digest.Compute(bytes.NewReader([]byte("bad")), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			cm.BlobDigest = badDigest
-
 			require.Error(t, cm.Store(ctx, cache))
 			cm.BlobDigest = blobDigest
+
 			require.NoError(t, cm.Store(ctx, cache))
 
-			loadedCM, err := chunking.LoadManifest(ctx, cache, blobDigest, "test-instance", repb.DigestFunction_SHA256)
+			loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
 			require.NoError(t, err)
-
-			assert.Equal(t, cm.BlobDigest.GetHash(), loadedCM.BlobDigest.GetHash())
-			assert.Equal(t, cm.BlobDigest.GetSizeBytes(), loadedCM.BlobDigest.GetSizeBytes())
-			assert.Equal(t, len(cm.ChunkDigests), len(loadedCM.ChunkDigests))
+			assert.Equal(t, cm.BlobDigest.GetHash(), loaded.BlobDigest.GetHash())
+			assert.Equal(t, cm.BlobDigest.GetSizeBytes(), loaded.BlobDigest.GetSizeBytes())
+			require.Equal(t, len(cm.ChunkDigests), len(loaded.ChunkDigests))
 			for i := range cm.ChunkDigests {
-				assert.Equal(t, cm.ChunkDigests[i].GetHash(), loadedCM.ChunkDigests[i].GetHash())
-				assert.Equal(t, cm.ChunkDigests[i].GetSizeBytes(), loadedCM.ChunkDigests[i].GetSizeBytes())
+				assert.Equal(t, cm.ChunkDigests[i].GetHash(), loaded.ChunkDigests[i].GetHash())
+				assert.Equal(t, cm.ChunkDigests[i].GetSizeBytes(), loaded.ChunkDigests[i].GetSizeBytes())
 			}
-			assert.Equal(t, cm.InstanceName, loadedCM.InstanceName)
-			assert.Equal(t, cm.DigestFunction, loadedCM.DigestFunction)
 		})
 	}
+}
+
+func TestStore_MissingChunk(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	const blobSize = 100 * 1024 * 1024
+	blobData := make([]byte, blobSize)
+	_, err = rand.Read(blobData)
+	require.NoError(t, err)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		if err != nil {
+			return err
+		}
+		buf := make([]byte, len(data))
+		copy(buf, data)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+		if err := cache.Set(ctx, rn.ToProto(), buf); err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, d)
+		return nil
+	})
+	require.NoError(t, err)
+	_, err = c.Write(blobData)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+
+	// Replace one chunk digest with one that doesn't exist in the cache.
+	missingRN, _ := testdigest.RandomCASResourceBuf(t, 1024)
+	cm := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   append([]*repb.Digest{missingRN.GetDigest()}, chunkDigests[1:]...),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err = cm.Store(ctx, cache)
+	require.True(t, status.IsInvalidArgumentError(err), "got: %v", err)
 }
 
 func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
@@ -371,7 +431,12 @@ func BenchmarkStore(b *testing.B) {
 			te := testenv.GetTestEnv(b)
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(b, err)
-			cache := te.GetCache()
+
+			cache := &slowReaderOpenAndReadCache{
+				Cache:     te.GetCache(),
+				openDelay: 10 * time.Millisecond,
+				readDelay: 5 * time.Millisecond,
+			}
 
 			blobRN, blobData := testdigest.RandomCASResourceBuf(b, int64(size))
 
@@ -397,11 +462,60 @@ func BenchmarkStore(b *testing.B) {
 				DigestFunction: repb.DigestFunction_SHA256,
 			}
 
+			b.ReportAllocs()
 			for b.Loop() {
 				if err := cm.Store(ctx, cache); err != nil {
 					b.Fatal(err)
 				}
 			}
 		})
+	}
+}
+
+type slowReaderOpenAndReadCache struct {
+	interfaces.Cache
+	openDelay time.Duration
+	readDelay time.Duration
+}
+
+func (c *slowReaderOpenAndReadCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	if err := sleepWithContext(ctx, c.openDelay); err != nil {
+		return nil, err
+	}
+	reader, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &slowReadCloser{
+		ReadCloser: reader,
+		readDelay:  c.readDelay,
+	}, nil
+}
+
+type slowReadCloser struct {
+	io.ReadCloser
+	readDelay time.Duration
+	readCount int
+}
+
+func (r *slowReadCloser) Read(p []byte) (int, error) {
+	if r.readCount > 0 {
+		time.Sleep(r.readDelay)
+	}
+	r.readCount++
+	return r.ReadCloser.Read(p)
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
