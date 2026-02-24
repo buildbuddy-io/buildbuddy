@@ -1,9 +1,13 @@
 load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "java_keystore", "passwd")
-load("@rules_distroless//apt:defs.bzl", "dpkg_statusd")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
 
 package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "custom-ca.crt",
+    "internal-root.crt",
+])
 
 # Create group entries (similar to groupadd)
 group(
@@ -49,8 +53,8 @@ cacerts(
 java_keystore(
     name = "custom_java_keystore",
     certificates = [
-        "//images:custom-ca.crt",
-        "//images:internal-root.crt",
+        ":custom-ca.crt",
+        ":internal-root.crt",
     ],
 )
 
@@ -67,20 +71,10 @@ java_keystore(
             }[arch],
         ],
         tars = [
-            # "@trixie//:dpkg_status",
-            "@trixie//base-files/%s:data" % arch,
-            "@trixie//netbase/%s:data" % arch,
-            "@trixie//tzdata/%s:data" % arch,
-            "@trixie//media-types/%s:data" % arch,
-            "@trixie//libc6/%s:data" % arch,
-
-            # These are included in the distroless base image for debian, but
-            # not *currently* needed for buildbuddy. We can uncomment these if
-            # we start depending on them.
-
-            # "@trixie//libssl3t64/%s:data" % arch,
-            # "@trixie//libzstd1/%s:data" % arch,
-            # "@trixie//zlib1g/%s:data" % arch,
+            "@trixie//base-files:base-files",
+            "@trixie//netbase:netbase",
+            "@trixie//tzdata:tzdata",
+            "@trixie//media-types:media-types",
 
             ":groups",
             ":passwd",
