@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
     flatten(
         name = "layer_%s" % arch,
         compress = "gzip",
+        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -26,9 +27,7 @@ package(default_visibility = ["//visibility:public"])
             # "@trixie//libssl3t64/%s:data" % arch,
             # "@trixie//libzstd1/%s:data" % arch,
             # "@trixie//zlib1g/%s:data" % arch,
-
         ],
-        tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -69,7 +68,7 @@ image_index(
 # Load a multi-platform image
 image_load(
     name = "load",
+    daemon = "docker",  # Explicitly use docker
     image = ":index",  # References an image_index
     tag = "bb-distroless_base-nossl:latest",
-    daemon = "docker",  # Explicitly use docker
 )
