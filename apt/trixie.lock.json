@@ -67,18 +67,7 @@
 		},
 		{
 			"arch": "amd64",
-			"dependencies": [
-				{
-					"key": "libc6_2.41-12-p-deb13u1_amd64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_amd64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
+			"dependencies": [],
 			"key": "libgcc-s1_14.2.0-19_amd64",
 			"name": "libgcc-s1",
 			"sha256": "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150",
@@ -261,60 +250,6 @@
 			"version": "1.5.7+dfsg-1"
 		},
 		{
-			"arch": "amd64",
-			"dependencies": [
-				{
-					"key": "libc6_2.41-12-p-deb13u1_amd64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "libgcc-s1_14.2.0-19_amd64",
-					"name": "libgcc-s1",
-					"version": "14.2.0-19"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_amd64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
-			"key": "libgomp1_14.2.0-19_amd64",
-			"name": "libgomp1",
-			"sha256": "72b7a1a33c48f3195efeb044111b34ae684b1e640bb6495c832443b798601cd5",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/gcc-14/libgomp1_14.2.0-19_amd64.deb"
-			],
-			"version": "14.2.0-19"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [
-				{
-					"key": "libgcc-s1_14.2.0-19_amd64",
-					"name": "libgcc-s1",
-					"version": "14.2.0-19"
-				},
-				{
-					"key": "libc6_2.41-12-p-deb13u1_amd64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_amd64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
-			"key": "libstdc-p--p-6_14.2.0-19_amd64",
-			"name": "libstdc++6",
-			"sha256": "ab1fa05837aa7a92aae748fd07a18a35f7d18bb4a71c4724fe2bbf0e32089de0",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/gcc-14/libstdc++6_14.2.0-19_amd64.deb"
-			],
-			"version": "14.2.0-19"
-		},
-		{
 			"arch": "arm64",
 			"dependencies": [
 				{
@@ -381,18 +316,7 @@
 		},
 		{
 			"arch": "arm64",
-			"dependencies": [
-				{
-					"key": "libc6_2.41-12-p-deb13u1_arm64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_arm64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
+			"dependencies": [],
 			"key": "libgcc-s1_14.2.0-19_arm64",
 			"name": "libgcc-s1",
 			"sha256": "1108bc87879833d6d9a145f22a4a15cddb34e065b4b5f4b97bee586adbac2851",
@@ -573,60 +497,6 @@
 				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_arm64.deb"
 			],
 			"version": "1.5.7+dfsg-1"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [
-				{
-					"key": "libc6_2.41-12-p-deb13u1_arm64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "libgcc-s1_14.2.0-19_arm64",
-					"name": "libgcc-s1",
-					"version": "14.2.0-19"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_arm64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
-			"key": "libgomp1_14.2.0-19_arm64",
-			"name": "libgomp1",
-			"sha256": "43e84cb7971d8a4d8870cab6204e998ea4f23ee1339bb0ff556dd881bac82d25",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/gcc-14/libgomp1_14.2.0-19_arm64.deb"
-			],
-			"version": "14.2.0-19"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [
-				{
-					"key": "libgcc-s1_14.2.0-19_arm64",
-					"name": "libgcc-s1",
-					"version": "14.2.0-19"
-				},
-				{
-					"key": "libc6_2.41-12-p-deb13u1_arm64",
-					"name": "libc6",
-					"version": "2.41-12+deb13u1"
-				},
-				{
-					"key": "gcc-14-base_14.2.0-19_arm64",
-					"name": "gcc-14-base",
-					"version": "14.2.0-19"
-				}
-			],
-			"key": "libstdc-p--p-6_14.2.0-19_arm64",
-			"name": "libstdc++6",
-			"sha256": "6669b0c52a2e7c6af9adfdabce3ff6e286065cdfbc7b85280862b5f799daebee",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/gcc-14/libstdc++6_14.2.0-19_arm64.deb"
-			],
-			"version": "14.2.0-19"
 		}
 	],
 	"version": 1

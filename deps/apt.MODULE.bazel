@@ -15,8 +15,8 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
 # Configure Debian trixie packages for distroless-cc
 apt.install(
-    name = "trixie_cc",
-    lock = "//images/distroless_cc:apt.lock.json",
-    manifest = "//images/distroless_cc:apt.yaml",
+    name = "trixie",
+    lock = "//apt:trixie.lock.json",
+    manifest = "//apt:trixie.yaml",
 )
-use_repo(apt, "trixie_cc")
+use_repo(apt, "trixie")
