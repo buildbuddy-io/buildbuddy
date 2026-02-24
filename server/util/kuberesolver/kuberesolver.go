@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/resolver"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/watch"
@@ -225,6 +226,10 @@ func (pw *podWatcher) watch(ctx context.Context) (done bool) {
 				log.Infof("Watch for for pod %s/%s failed due to old resource version, will refetch pod", pw.namespace, pw.podName)
 				return false
 			}
+			if status.IsCanceledError(err) {
+				log.Infof("Watch for for pod %s/%s closed by server, will refetch pod", pw.namespace, pw.podName)
+				return false
+			}
 			log.Warningf("Watch for pod %s/%s ended abruptly: %s", pw.namespace, pw.podName, err)
 			select {
 			case <-time.After(backoff):
@@ -249,7 +254,9 @@ func (pw *podWatcher) processWatchEvents(ctx context.Context, watcher watch.Inte
 			return nil
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
-				return fmt.Errorf("watch channel closed")
+				// There's a limit on how long the server will keep the watch
+				// open and the server can restart at any time as well.
+				return status.CanceledErrorf("watch closed by server")
 			}
 			if obj, ok := event.Object.(metav1.ObjectMetaAccessor); ok {
 				if rv := obj.GetObjectMeta().GetResourceVersion(); rv != "" {
