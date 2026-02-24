@@ -44,6 +44,7 @@ go_test(
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
