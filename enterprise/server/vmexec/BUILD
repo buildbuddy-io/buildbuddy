@@ -17,7 +17,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/remote_cache/digest",
-        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/networking",
