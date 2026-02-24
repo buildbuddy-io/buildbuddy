@@ -73,6 +73,16 @@ type podResolution struct {
 	err error
 }
 
+func (pr *podResolution) String() string {
+	if pr.err != nil {
+		return fmt.Sprintf("error: %s", pr.err)
+	}
+	if pr.pod.Status.PodIP == "" {
+		return "no pod IP available yet"
+	}
+	return fmt.Sprintf("pod resolved to IP %s", pr.pod.Status.PodIP)
+}
+
 // podWatcher owns a single Get+Watch loop for a specific (namespace, podName)
 // pair. Multiple kubeResolvers can subscribe to the same podWatcher.
 type podWatcher struct {
@@ -109,7 +119,9 @@ func (pw *podWatcher) subscribe(r *kubeResolver, cb func(podResolution)) {
 	pw.mu.Lock()
 	pw.subscribers[r] = cb
 	if pw.latestResolution != nil {
+		log.Infof("Sending existing state to new subscriber for pod %s/%s. Notification: %s", pw.namespace, pw.podName, pw.latestResolution)
 		cb(*pw.latestResolution)
+		log.Infof("Finished sending existing state to new subscriber for pod %s/%s.", pw.namespace, pw.podName)
 	}
 	pw.mu.Unlock()
 }
@@ -131,9 +143,11 @@ func (pw *podWatcher) notifySubscribers(r podResolution) {
 	}
 	pw.mu.Unlock()
 
+	log.Infof("Notifying %d subscribers for pod %s/%s. Notification: %s", len(callbacks), pw.namespace, pw.podName, r)
 	for _, cb := range callbacks {
 		cb(r)
 	}
+	log.Infof("Finished notifying %d subscribers for pod %s/%s", len(callbacks), pw.namespace, pw.podName)
 }
 
 // resolve does a one-shot List for the pod and notifies subscribers.
@@ -372,7 +386,6 @@ func (r *kubeResolver) updateStateFromPod(pod *corev1.Pod) {
 	ip := pod.Status.PodIP
 	// This will happen when a pod restarts.
 	if ip == "" {
-		log.Infof("Pod %s/%s doesn't have an IP yet", r.podTarget.namespace, r.podTarget.podName)
 		// If we previously reported an IP, reporting an error should cause
 		// the balancer to close existing connections to the old IP.
 		r.cc.ReportError(fmt.Errorf("pod %s/%s doesn't have an IP yet", r.podTarget.namespace, r.podTarget.podName))
@@ -383,8 +396,6 @@ func (r *kubeResolver) updateStateFromPod(pod *corev1.Pod) {
 	if r.podTarget.port != "" {
 		addr = ip + ":" + r.podTarget.port
 	}
-
-	log.Infof("Pod %s/%s resolved to IP %s", r.podTarget.namespace, r.podTarget.podName, ip)
 
 	err := r.cc.UpdateState(resolver.State{
 		Addresses: []resolver.Address{{Addr: addr}},
