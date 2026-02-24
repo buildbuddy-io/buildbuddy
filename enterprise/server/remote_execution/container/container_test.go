@@ -88,17 +88,17 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 
-	err := container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should pull the image if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should not need to immediately re-authenticate with the remote registry")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds2, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds2, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(
@@ -123,15 +123,15 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 		Password: "trying-to-guess-the-real-secret",
 	}
 
-	err := container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef, false)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef, false)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied on subsequent attempts as well")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef, false)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
 }
@@ -148,7 +148,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 	eg := errgroup.Group{}
 	for i := 0; i < 20; i++ {
-		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef) })
+		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef, false) })
 	}
 	require.NoError(t, eg.Wait())
 	assert.Equal(t, 1, c.PullCount, "image should only be pulled once")

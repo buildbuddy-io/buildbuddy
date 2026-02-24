@@ -632,7 +632,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 	c.cid = cid
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef, c.useOCIFetcher); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
 	}
 	if err := c.createNetwork(ctx); err != nil {

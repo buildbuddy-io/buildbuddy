@@ -257,7 +257,7 @@ func run(ctx context.Context, env environment.Env) error {
 			}
 		}()
 		creds := oci.Credentials{Username: *registryUser, Password: *registryPassword}
-		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage, opts.UseOCIFetcher); err != nil {
 			return status.WrapError(err, "pull image")
 		}
 		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

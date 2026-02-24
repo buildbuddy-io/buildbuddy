@@ -290,7 +290,7 @@ func TestSlowRun(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{
@@ -336,7 +336,7 @@ func TestRun_Timeout(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage, false)
 	require.NoError(t, err)
 
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -390,7 +390,7 @@ func TestExec_Timeout(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage, false)
 	require.NoError(t, err)
 
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

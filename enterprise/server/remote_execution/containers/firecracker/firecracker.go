@@ -2025,7 +2025,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// there's no need to Create the machine.
 	if c.machine == nil {
 		log.CtxInfof(ctx, "Pulling image %q", c.containerImage)
-		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage, c.useOCIFetcher); err != nil {
 			return nonCmdExit(ctx, err)
 		}
 

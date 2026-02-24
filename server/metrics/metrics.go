@@ -368,6 +368,8 @@ const (
 	ImageFetchHasCredsLabel = "has_creds"
 	// Label name for what triggered the image fetch.
 	ImageFetchTriggerLabel = "trigger"
+	// Label name for whether the OCI fetcher service was used for the image fetch.
+	ImageFetchUseOCIFetcherLabel = "use_oci_fetcher"
 )
 
 // Label value constants
@@ -3810,6 +3812,7 @@ var (
 		ImageFetchOnDiskLabel,
 		ImageFetchHasCredsLabel,
 		ImageFetchTriggerLabel,
+		ImageFetchUseOCIFetcherLabel,
 	})
 
 	// Custom gRPC metrics

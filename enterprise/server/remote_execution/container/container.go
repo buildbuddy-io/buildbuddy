@@ -495,25 +495,26 @@ type VM interface {
 
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
-func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds bool, err error, duration time.Duration) {
+func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
 	statusLabel := metrics.OCIFetcherStatusOK
 	if err != nil {
 		statusLabel = metrics.OCIFetcherStatusError
 	}
 	labels := prometheus.Labels{
-		metrics.IsolationTypeLabel:      isolation,
-		metrics.ImageFetchRegistryLabel: registry,
-		metrics.StatusLabel:             statusLabel,
-		metrics.ImageFetchOnDiskLabel:   strconv.FormatBool(onDisk),
-		metrics.ImageFetchHasCredsLabel: strconv.FormatBool(hasCreds),
-		metrics.ImageFetchTriggerLabel:  trigger,
+		metrics.IsolationTypeLabel:           isolation,
+		metrics.ImageFetchRegistryLabel:      registry,
+		metrics.StatusLabel:                  statusLabel,
+		metrics.ImageFetchOnDiskLabel:        strconv.FormatBool(onDisk),
+		metrics.ImageFetchHasCredsLabel:      strconv.FormatBool(hasCreds),
+		metrics.ImageFetchTriggerLabel:       trigger,
+		metrics.ImageFetchUseOCIFetcherLabel: strconv.FormatBool(useOCIFetcher),
 	}
 	metrics.ImageFetchDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string, useOCIFetcher bool) error {
 	if *debugUseLocalImagesOnly || imageRef == "" {
 		return nil
 	}
@@ -535,6 +536,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		metrics.ImageFetchTriggerExecution,
 		cached,
 		!creds.IsEmpty(),
+		useOCIFetcher,
 		err,
 		time.Since(start),
 	)

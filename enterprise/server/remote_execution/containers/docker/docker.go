@@ -216,7 +216,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}

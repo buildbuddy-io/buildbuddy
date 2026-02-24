@@ -276,6 +276,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
+		r.PlatformProperties.UseOCIFetcher,
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -428,6 +429,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		err = container.PullImageIfNecessary(
 			ctx, r.env,
 			r.Container, creds, r.PlatformProperties.ContainerImage,
+			r.PlatformProperties.UseOCIFetcher,
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
@@ -971,6 +973,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		metrics.ImageFetchTriggerWarmup,
 		onDisk,
 		!creds.IsEmpty(),
+		platProps.UseOCIFetcher,
 		pullErr,
 		time.Since(pullStart),
 	)

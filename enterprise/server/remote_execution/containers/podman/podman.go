@@ -371,7 +371,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
