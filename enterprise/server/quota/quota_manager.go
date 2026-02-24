@@ -73,8 +73,8 @@ func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
 		return nil
 	}
 
-	// Allow impersonating requests and requests without an API key (web UI requests)
-	if c.IsImpersonating() || c.GetAPIKeyInfo().ID == "" {
+	// Allow impersonating requests.
+	if c.IsImpersonating() {
 		return nil
 	}
 
