@@ -121,6 +121,9 @@ message Group {
 
     // The group is blocked.
     BLOCKED_GROUP_STATUS = 4;
+
+    // The group is on the self-serve premium plan.
+    PREMIUM_GROUP_STATUS = 5;
   }
 
   // The status of the group.

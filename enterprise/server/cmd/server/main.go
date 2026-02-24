@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/server/wiring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
@@ -331,6 +332,10 @@ func main() {
 
 	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+
+	if err := wiring.ApplyInternalEnvWiring(realEnv); err != nil {
+		log.Fatalf("Error applying internal env wiring: %s", err)
 	}
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown

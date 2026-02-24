@@ -634,6 +634,15 @@ type UsageTracker interface {
 	Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error
 }
 
+// BillingManager handles self-serve billing handlers.
+type BillingManager interface {
+	Enabled(ctx context.Context) bool
+	CheckoutPath() string
+	WebhookPath() string
+	CheckoutHandler() http.Handler
+	WebhookHandler() http.Handler
+}
+
 type ApiService interface {
 	apipb.ApiServiceServer
 	GetFileHandler() http.Handler
