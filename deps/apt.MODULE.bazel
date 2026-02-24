@@ -18,5 +18,8 @@ apt.install(
     name = "trixie",
     lock = "//apt:trixie.lock.json",
     manifest = "//apt:trixie.yaml",
+    mergedusr = True,
+    package_template = "apt/package.BUILD.tmpl",
+    resolve_transitive = False,
 )
 use_repo(apt, "trixie")
