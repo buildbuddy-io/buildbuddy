@@ -1163,6 +1163,11 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 	var mu sync.Mutex
 	var results []result
 
+	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
+		if attempted[clusterInfo.ShardID] == nil {
+			attempted[clusterInfo.ShardID] = set.From[uint64]()
+		}
+	}
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
@@ -1173,9 +1178,6 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 		}
 
 		remainingLeader++
-		if attempted[clusterInfo.ShardID] == nil {
-			attempted[clusterInfo.ShardID] = set.From[uint64]()
-		}
 		eg.Go(func() error {
 			rd := s.GetRange(clusterInfo.ShardID)
 			targetReplicaID := s.pickLeaderTransferTarget(ctx, rd, clusterInfo.ReplicaID, nhidToPodIndex, attempted[clusterInfo.ShardID])
