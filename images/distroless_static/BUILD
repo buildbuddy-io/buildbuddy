@@ -1,4 +1,5 @@
 load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "java_keystore", "passwd")
+load("@rules_distroless//apt:defs.bzl", "dpkg_statusd")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
 
@@ -36,7 +37,7 @@ passwd(
 # Generate CA certificates bundle
 cacerts(
     name = "ca_certificates",
-    package = "@trixie_cc//ca-certificates/amd64:data",
+    package = "@trixie//ca-certificates/amd64:data",
     # the cacerts rule currently doesn't support running on Windows
     target_compatible_with = select({
         "@platforms//os:windows": ["@platforms//:incompatible"],
@@ -66,16 +67,21 @@ java_keystore(
             }[arch],
         ],
         tars = [
-            "@trixie_cc//:dpkg_status",
-            "@trixie_cc//base-files/%s:data" % arch,
-            "@trixie_cc//netbase/%s:data" % arch,
-            "@trixie_cc//tzdata/%s:data" % arch,
-            "@trixie_cc//media-types/%s:data" % arch,
-            "@trixie_cc//libgomp1/%s:data" % arch,
-            "@trixie_cc//libc6/%s:data" % arch,
-            "@trixie_cc//libstdc++6/%s:data" % arch,
-            "@trixie_cc//libgcc-s1/%s:data" % arch,
-            "@trixie_cc//gcc-14-base/%s:data" % arch,
+            # "@trixie//:dpkg_status",
+            "@trixie//base-files/%s:data" % arch,
+            "@trixie//netbase/%s:data" % arch,
+            "@trixie//tzdata/%s:data" % arch,
+            "@trixie//media-types/%s:data" % arch,
+            "@trixie//libc6/%s:data" % arch,
+
+            # These are included in the distroless base image for debian, but
+            # not *currently* needed for buildbuddy. We can uncomment these if
+            # we start depending on them.
+
+            # "@trixie//libssl3t64/%s:data" % arch,
+            # "@trixie//libzstd1/%s:data" % arch,
+            # "@trixie//zlib1g/%s:data" % arch,
+
             ":groups",
             ":passwd",
             ":ca_certificates",
@@ -88,7 +94,7 @@ java_keystore(
     ]
 ]
 
-# Create a complete distroless cc image with all features
+# Create a complete distroless static image with all features
 image_manifest(
     name = "manifest",
     env = {
@@ -123,5 +129,6 @@ image_load(
     name = "load",
     daemon = "docker",  # Explicitly use docker
     image = ":index",  # References an image_index
-    tag = "bb-distroless_cc:latest",
+    tag = "bb-distroless_static:latest",
+    daemon = "docker",  # Explicitly use docker
 )
