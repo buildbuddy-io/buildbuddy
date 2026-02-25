@@ -57,9 +57,10 @@ import (
 const (
 	BuildBuddyArtifactDir = "bb-out"
 
-	escapeSeq                  = "\u001B["
-	gitConfigSection           = "buildbuddy"
-	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	escapeSeq                         = "\u001B["
+	gitConfigSection                  = "buildbuddy"
+	gitConfigRemoteBazelRemote        = "remote-bazel-remote-name"
+	gitConfigRemoteBazelDefaultBranch = "remote-bazel-default-branch"
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
@@ -258,18 +259,32 @@ func parseRemote(s string) (*gitRemote, error) {
 // We expect `remoteData` to contain a string looking like
 // `ref: refs/heads/main	HEAD`
 // and this function would return `main`.
-func determineDefaultBranch(remoteData string) (string, error) {
+func determineDefaultBranch(remoteData string, cachedDefaultBranch string) (string, error) {
 	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
 	if defaultBranch != "" {
 		return defaultBranch, nil
 	}
 
+	if cachedDefaultBranch != "" {
+		return cachedDefaultBranch, nil
+	}
+
+	if remoteData == "" {
+		return "", fmt.Errorf("no remote data to determine default branch")
+	}
+
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
+
+	if len(match) == 0 {
+		return "", fmt.Errorf("failed to parse default branch from:\n%s", remoteData)
 	}
-	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
+
+	defaultBranch = match[1]
+	if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+		log.Warnf("failed to cache default branch in .git/config: %s", err)
+	}
+	return defaultBranch, nil
 }
 
 func runGit(args ...string) (string, error) {
@@ -333,8 +348,9 @@ func Config() (*RepoConfig, error) {
 
 	// Fetching remote data from GitHub can be slow. If we don't need the data
 	// because the user has passed in enough information manually, skip the fetch.
+	cachedDefaultBranch, _ := storage.ReadRepoConfig(gitConfigRemoteBazelDefaultBranch)
 	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
-	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
+	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == "" && cachedDefaultBranch == ""
 	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
 	var remoteData string
 	if shouldFetchRemote {
@@ -344,12 +360,12 @@ func Config() (*RepoConfig, error) {
 		}
 	}
 
-	branch, commit, err := getBaseBranchAndCommit(remoteData)
+	branch, commit, err := getBaseBranchAndCommit(remoteData, cachedDefaultBranch)
 	if err != nil {
 		return nil, status.WrapError(err, "get base branch and commit")
 	}
 
-	defaultBranch, err := determineDefaultBranch(remoteData)
+	defaultBranch, err := determineDefaultBranch(remoteData, cachedDefaultBranch)
 	if err != nil {
 		log.Warnf("Failed to fetch default branch: %s", err)
 	}
@@ -376,7 +392,7 @@ func Config() (*RepoConfig, error) {
 // should be based off
 //
 // remoteData is the output from `git remote show origin`
-func getBaseBranchAndCommit(remoteData string) (branch string, commit string, err error) {
+func getBaseBranchAndCommit(remoteData string, cachedDefaultBranch string) (branch string, commit string, err error) {
 	branch = *runFromBranch
 	commit = *runFromCommit
 	if branch != "" || commit != "" {
@@ -411,7 +427,7 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 	// not be able to fetch it. In this case, use the default branch for the repo.
 	// Your local changes will be applied as a patchset to the remote runner.
 	if branch == "" || commit == "" {
-		defaultBranch, err := determineDefaultBranch(remoteData)
+		defaultBranch, err := determineDefaultBranch(remoteData, cachedDefaultBranch)
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch")
 		}
