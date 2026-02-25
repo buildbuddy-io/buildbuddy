@@ -35,6 +35,7 @@ go_library(
         "//server/util/error_util",
         "//server/util/flag",
         "//server/util/grpc_client",
+        "//server/util/retry",
         "//server/util/rexec",
         "//server/util/shlex",
         "//server/util/status",

@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1100,23 +1101,26 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		return nil
 	})
 	eg.Go(func() error {
-		var execution *espb.GetExecutionResponse
-		for {
-			var err error
-			execution, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+		execution, err := retry.Do(ctx, &retry.Options{
+			InitialBackoff: 500 * time.Millisecond,
+			MaxBackoff:     5 * time.Second,
+			Multiplier:     2,
+		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
+			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
 				InvocationId: iid,
 			}})
 			if err != nil {
-				return fmt.Errorf("could not retrieve ci_runner execution: %w", err)
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("could not retrieve ci_runner execution: %w", err)
 			}
-			if len(execution.GetExecution()) > 0 {
-				break
+			if len(execution.GetExecution()) == 0 {
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("ci_runner execution not found")
 			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(500 * time.Millisecond):
-			}
+			return execution, nil
+		})
+		if err != nil {
+			return err
 		}
 		executionID := execution.GetExecution()[0].GetExecutionId()
 		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
