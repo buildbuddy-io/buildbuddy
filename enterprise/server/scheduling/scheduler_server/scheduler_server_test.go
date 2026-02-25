@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -115,6 +116,10 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	require.NoError(t, err)
 	err = redis_execution_collector.Register(env)
 	require.NoError(t, err)
+
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+
 	err = execution_server.Register(env)
 	require.NoError(t, err)
 	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
@@ -122,7 +127,6 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
 	go runFunc()
 

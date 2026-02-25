@@ -253,6 +253,8 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	libmain.RegisterLocalServersAndClients(realEnv)
+
 	if err := execution_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -326,8 +328,6 @@ func main() {
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	libmain.RegisterLocalServersAndClients(realEnv)
 
 	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)

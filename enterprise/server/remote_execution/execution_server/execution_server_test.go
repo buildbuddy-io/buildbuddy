@@ -119,13 +119,14 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 
 	tasksize.Register(env)
 
+	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
 	env.SetUsageTracker(testusage.NewTracker())
 
-	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
-	testcache.Setup(t, env, lis)
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 

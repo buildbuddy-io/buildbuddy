@@ -67,6 +67,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/testutil/testauth",
+        "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/log",

@@ -173,6 +173,7 @@ type ExecutionServer struct {
 	executionCollector                interfaces.ExecutionCollector
 	invocationDB                      interfaces.InvocationDB
 	taskSizer                         interfaces.TaskSizer
+	actionCacheClient                 repb.ActionCacheClient
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -221,6 +222,10 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if taskSizer == nil {
 		return nil, status.FailedPreconditionErrorf("A task sizer is required for remote execution")
 	}
+	actionCacheClient := env.GetActionCacheClient()
+	if actionCacheClient == nil {
+		return nil, status.FailedPreconditionErrorf("An action cache client is required for remote execution")
+	}
 	return &ExecutionServer{
 		env:                               env,
 		cache:                             cache,
@@ -233,6 +238,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		executionCollector:                executionCollector,
 		invocationDB:                      invocationDB,
 		taskSizer:                         taskSizer,
+		actionCacheClient:                 actionCacheClient,
 	}, nil
 }
 
@@ -1467,14 +1473,14 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	ar := &repb.ActionResult{StdoutRaw: b}
 
-	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
+	return cachetools.UploadActionResult(ctx, s.actionCacheClient, arn, ar)
 }
 
 func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
-	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
+	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
 }
 
 // markTaskComplete contains logic to be run when the task is complete but
