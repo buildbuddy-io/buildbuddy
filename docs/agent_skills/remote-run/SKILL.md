@@ -29,12 +29,12 @@ You should preserve any bazel startup flags and options.
 
 ## Flag persistence
 
-Whenever the user provides flags not already in the `Persistent flags` section, follow this workflow before running the command:
+Whenever the user provides flags not already in the persistent-flags.md file, follow this workflow before running the command:
 
 1. Ask: `Do you want me to persist <FLAG> in this SKILL file so it is automatically applied to all future remote runs?`
 2. Wait for explicit confirmation before editing this file.
 3. Show: `I will add: \`<FLAG>\`: Example: \`bb remote build :target <FLAG>\`` and ask the user to confirm syntax.
-4. If the user confirms, edit only the `## Persistent flags` section below.
+4. If the user confirms, edit only the persistent-flags.md file.
 5. Ensure the flag is not already present.
 6. Preserve alphabetical ordering.
 7. Add one example command per flag.
@@ -66,12 +66,14 @@ By default, the remote runner will match the local architecture.
 
 You can configure the image of the remote runner with `--container_image=docker://<URL>`.
 
-You can request more resources for the remote runner with `--runner_exec_properties=EstimatedCPU=X`, `--runner_exec_properties=EstimatedFreeDiskBytes=XGB`
-and `EstimatedMemory=XGB`. We strongly recommend not setting these and using the defaults unless absolutely necessary. Remote runners are billed based on
-resource requests, and requesting more resources is more expensive. Only suggest increasing resources if the logs explicitly report OOM errors or disk exhaustion.
-
 If a remote runner is corrupted and you want a clean one, you can set `--runner_exec_properties=salt=<VALUE>`. Just make sure
 you preserve this flag if you want future runs to resume from this new runner.
+
+## Requesting more resources
+
+We strongly recommend not setting these and using the defaults unless absolutely necessary. Only suggest increasing resources if the logs explicitly report OOM errors or disk exhaustion.
+
+You can request more resources for the remote runner with `--runner_exec_properties=EstimatedCPU=X`, `--runner_exec_properties=EstimatedFreeDiskBytes=XGB` and `EstimatedMemory=XGB`.
 
 ## Auth
 
@@ -88,7 +90,3 @@ If you have the user's API key, you can also add it to the end of commands with 
 ## Pre-requisites
 
 If `bb` is not installed, it can be installed with `curl -fsSL https://install.buildbuddy.io | bash`.
-
-## Persistent flags
-
-- `--remote_cache=grpcs://remote.buildbuddy.io`: Example: `bb remote build :target --remote_cache=grpcs://remote.buildbuddy.io`

@@ -12,6 +12,12 @@ to our cache servers and workspace snapshotting.
 
 If you don't know how to accomplish a task, you should consult the docs at https://www.buildbuddy.io/docs/remote-bazel. Do not try to run `bb remote --help` or `bb help`.
 
+## Pre-run gate
+
+Before initiating a remote run, you should check if the user asked to add any fields to the request.
+
+If they did, follow the field persistence steps below.
+
 ## Initiating a remote run
 
 The `Run` API can be made with a curl request.
@@ -93,3 +99,17 @@ If a remote runner is corrupted and you want a clean one, you can set the proper
 ## Auth
 
 Users can get an API key from the `Settings` page of the BuildBuddy UI.
+
+## Field persistence
+
+Whenever the user provides fields not already in the persistent-fields.md file, follow this workflow before initiating the remote run:
+
+1. Ask: `Do you want me to persist <FIELD> in this SKILL file so it is automatically applied to all future remote runs?`
+1. Wait for explicit confirmation before editing this file.
+1. If the user confirms, edit only the persistent-fields.md file.
+1. Ensure the field is not already present.
+1. Preserve alphabetical ordering.
+
+Entry format:
+
+- `{ "KEY": "VALUE" }`: Example: `{"wait_until": "COMPLETED"}`
