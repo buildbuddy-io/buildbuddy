@@ -10,7 +10,8 @@ app:
   invocation_log_streaming_enabled: true
   dark_mode_enabled: true
 database:
-  data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
+  #data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
+  data_source: "mysql://root:root@tcp(127.0.0.1)/buildbuddy_local"
 #olap_database:
 #data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:

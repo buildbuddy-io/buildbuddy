@@ -10,6 +10,10 @@
 //	conn, err := grpc.Dial("kube:///pod-name.service.namespace.svc.cluster.local:4772", ...)
 //
 // The client pod must have get/list/watch pod API permissions.
+//
+// Non-gRPC consumers can use the PodWatcherManager directly:
+//
+//	cancel, err := kuberesolver.DefaultManager().WatchPodIP("pod.svc.ns.svc.cluster.local:7238", func(ipPort string, err error) { ... })
 package kuberesolver
 
 import (
@@ -83,54 +87,71 @@ func (pr podResolution) String() string {
 	return fmt.Sprintf("pod resolved to IP %s", pr.pod.Status.PodIP)
 }
 
+// subscription is an opaque token returned by subscribe, used as a map key
+// for unsubscribing. The dummy field ensures each &subscription{} allocation
+// has a unique address (zero-sized types in Go may share addresses).
+type subscription struct{ _ int }
+
 // podWatcher owns a single Get+Watch loop for a specific (namespace, podName)
-// pair. Multiple kubeResolvers can subscribe to the same podWatcher.
+// pair. Multiple consumers can subscribe to the same podWatcher.
 type podWatcher struct {
 	client    kubernetes.Interface
 	namespace string
 	podName   string
+	ctx       context.Context
+
+	// startOnce ensures the resolveAndWatch goroutine is started exactly once,
+	// on the first subscribe call. This guarantees at least one subscriber is
+	// registered before the goroutine begins resolving.
+	startOnce sync.Once
 
 	// Only accessed from the resolveAndWatch goroutine.
 	resourceVersion string
 
 	mu               sync.Mutex
-	subscribers      map[*kubeResolver]func(podResolution)
+	subscribers      map[*subscription]func(podResolution)
 	cancel           context.CancelFunc
 	latestResolution *podResolution
 }
 
 func newPodWatcher(ctx context.Context, client kubernetes.Interface, namespace, podName string) *podWatcher {
 	ctx, cancel := context.WithCancel(ctx)
-	pw := &podWatcher{
+	return &podWatcher{
 		client:      client,
 		namespace:   namespace,
 		podName:     podName,
-		subscribers: make(map[*kubeResolver]func(podResolution)),
+		ctx:         ctx,
+		subscribers: make(map[*subscription]func(podResolution)),
 		cancel:      cancel,
 	}
-	go pw.resolveAndWatch(ctx)
-	return pw
 }
 
 // subscribe adds a subscriber with callback cb. cb will be called immediately
-// with the latestResolution known state (pod or error) and then whenever the pod state
-// changes. cb must not block.
-func (pw *podWatcher) subscribe(r *kubeResolver, cb func(podResolution)) {
+// with the latest known state (pod or error) and then whenever the pod state
+// changes. cb must not block. Returns a subscription token for unsubscribing.
+func (pw *podWatcher) subscribe(cb func(podResolution)) *subscription {
+	s := &subscription{}
 	pw.mu.Lock()
-	pw.subscribers[r] = cb
+	pw.subscribers[s] = cb
 	if pw.latestResolution != nil {
 		log.Infof("Sending existing state to new subscriber for pod %s/%s. Notification: %s", pw.namespace, pw.podName, pw.latestResolution)
 		cb(*pw.latestResolution)
 		log.Infof("Finished sending existing state to new subscriber for pod %s/%s.", pw.namespace, pw.podName)
 	}
 	pw.mu.Unlock()
+	// Start the resolve goroutine after the first subscriber is registered,
+	// ensuring it won't miss any subscribers when it calls notifySubscribers.
+	pw.startOnce.Do(func() {
+		go pw.resolveAndWatch(pw.ctx)
+	})
+	return s
 }
 
 // unsubscribe removes a subscriber. It returns true if no subscribers remain.
-func (pw *podWatcher) unsubscribe(r *kubeResolver) bool {
+func (pw *podWatcher) unsubscribe(s *subscription) bool {
 	pw.mu.Lock()
 	defer pw.mu.Unlock()
-	delete(pw.subscribers, r)
+	delete(pw.subscribers, s)
 	return len(pw.subscribers) == 0
 }
 
@@ -298,14 +319,114 @@ func (pw *podWatcher) processWatchEvents(ctx context.Context, watcher watch.Inte
 	}
 }
 
-type kubeResolverBuilder struct {
+// PodWatcherManager manages pod watchers. One watcher is created per unique
+// (namespace, podName) pair regardless of how many consumers subscribe.
+// It can be used by both the gRPC resolver and non-gRPC consumers (e.g., the
+// raft registry) to get instant pod IP updates via the k8s Watch API.
+type PodWatcherManager struct {
 	mu       sync.Mutex
 	client   kubernetes.Interface
 	watchers map[string]*podWatcher
 }
 
+// NewPodWatcherManager creates a PodWatcherManager. If client is nil,
+// the manager will lazily create a client using InClusterConfig.
+func NewPodWatcherManager(client kubernetes.Interface) *PodWatcherManager {
+	return &PodWatcherManager{
+		client:   client,
+		watchers: make(map[string]*podWatcher),
+	}
+}
+
+func (m *PodWatcherManager) getOrCreateClient() (kubernetes.Interface, error) {
+	// Caller must hold m.mu or call from a context where client is already set.
+	if m.client != nil {
+		return m.client, nil
+	}
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("could not create k8s client: %w", err)
+	}
+	m.client, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("could not create k8s client: %w", err)
+	}
+	return m.client, nil
+}
+
+func (m *PodWatcherManager) removeWatcherIfEmpty(pw *podWatcher) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := watcherKey(pw.namespace, pw.podName)
+	if current, ok := m.watchers[key]; ok && current == pw {
+		pw.cancel()
+		delete(m.watchers, key)
+	}
+}
+
+// WatchPodIP starts watching the pod IP for the given hostPort string
+// (format: "podName.serviceName.namespace[.svc.cluster.local]:port").
+// The callback is called immediately with the current state and then on
+// every change. The returned function stops the watch.
+// If hostPort cannot be parsed as a pod FQDN, returns an error.
+func (m *PodWatcherManager) WatchPodIP(hostPort string, cb func(ipPort string, err error)) (cancel func(), retErr error) {
+	pt, err := parsePodTarget(hostPort)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	client, err := m.getOrCreateClient()
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	key := watcherKey(pt.namespace, pt.podName)
+	pw := m.watchers[key]
+	if pw == nil {
+		pw = newPodWatcher(context.Background(), client, pt.namespace, pt.podName)
+		m.watchers[key] = pw
+	}
+	m.mu.Unlock()
+
+	sub := pw.subscribe(func(r podResolution) {
+		if r.err != nil {
+			cb("", r.err)
+			return
+		}
+		ip := r.pod.Status.PodIP
+		if ip == "" {
+			cb("", fmt.Errorf("pod %s/%s doesn't have an IP yet", pt.namespace, pt.podName))
+			return
+		}
+		addr := ip
+		if pt.port != "" {
+			addr = ip + ":" + pt.port
+		}
+		cb(addr, nil)
+	})
+
+	return func() {
+		if pw.unsubscribe(sub) {
+			m.removeWatcherIfEmpty(pw)
+		}
+	}, nil
+}
+
+var defaultManager = NewPodWatcherManager(nil)
+
+// DefaultManager returns the package-level PodWatcherManager instance.
+// This is the same manager used by the gRPC resolver registered via init().
+func DefaultManager() *PodWatcherManager {
+	return defaultManager
+}
+
 func watcherKey(namespace, podName string) string {
 	return namespace + "/" + podName
+}
+
+type kubeResolverBuilder struct {
+	manager *PodWatcherManager
 }
 
 func (b *kubeResolverBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
@@ -315,47 +436,22 @@ func (b *kubeResolverBuilder) Build(target resolver.Target, cc resolver.ClientCo
 		return nil, err
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.client == nil {
-		config, err := rest.InClusterConfig()
-		if err != nil {
-			return nil, fmt.Errorf("could not create k8s client: %w", err)
-		}
-		b.client, err = kubernetes.NewForConfig(config)
-		if err != nil {
-			return nil, fmt.Errorf("could not create k8s client: %w", err)
-		}
-	}
-
-	// gRPC creates one resolver per connection.
-	// To avoid making redundant calls to the k8s APIs we create a single
-	// watcher for each namespace/pod pair.
-	key := watcherKey(pt.namespace, pt.podName)
-	pw := b.watchers[key]
-	if pw == nil {
-		if b.watchers == nil {
-			b.watchers = make(map[string]*podWatcher)
-		}
-		pw = newPodWatcher(context.Background(), b.client, pt.namespace, pt.podName)
-		b.watchers[key] = pw
-	}
-
 	r := &kubeResolver{
 		cc:        cc,
 		podTarget: pt,
-		watcher:   pw,
-		builder:   b,
 	}
 
-	pw.subscribe(r, func(result podResolution) {
-		if result.err != nil {
-			r.cc.ReportError(result.err)
+	cancel, err := b.manager.WatchPodIP(endpoint, func(addr string, watchErr error) {
+		if watchErr != nil {
+			r.cc.ReportError(watchErr)
 			return
 		}
-		r.updateStateFromPod(result.pod)
+		r.updateState(addr)
 	})
-
+	if err != nil {
+		return nil, err
+	}
+	r.cancel = cancel
 	return r, nil
 }
 
@@ -363,40 +459,13 @@ func (b *kubeResolverBuilder) Scheme() string {
 	return scheme
 }
 
-// removeWatcher unsubscribes a resolver from its podWatcher and cleans up
-// the watcher if no subscribers remain.
-func (b *kubeResolverBuilder) removeWatcher(r *kubeResolver) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	pw := r.watcher
-	if pw.unsubscribe(r) {
-		pw.cancel()
-		delete(b.watchers, watcherKey(pw.namespace, pw.podName))
-	}
-}
-
 type kubeResolver struct {
 	cc        resolver.ClientConn
 	podTarget podTarget
-	watcher   *podWatcher
-	builder   *kubeResolverBuilder
+	cancel    func()
 }
 
-func (r *kubeResolver) updateStateFromPod(pod *corev1.Pod) {
-	ip := pod.Status.PodIP
-	// This will happen when a pod restarts.
-	if ip == "" {
-		// If we previously reported an IP, reporting an error should cause
-		// the balancer to close existing connections to the old IP.
-		r.cc.ReportError(fmt.Errorf("pod %s/%s doesn't have an IP yet", r.podTarget.namespace, r.podTarget.podName))
-		return
-	}
-
-	addr := ip
-	if r.podTarget.port != "" {
-		addr = ip + ":" + r.podTarget.port
-	}
-
+func (r *kubeResolver) updateState(addr string) {
 	err := r.cc.UpdateState(resolver.State{
 		Addresses: []resolver.Address{{Addr: addr}},
 	})
@@ -412,9 +481,9 @@ func (r *kubeResolver) ResolveNow(_ resolver.ResolveNowOptions) {
 }
 
 func (r *kubeResolver) Close() {
-	r.builder.removeWatcher(r)
+	r.cancel()
 }
 
 func init() {
-	resolver.Register(&kubeResolverBuilder{})
+	resolver.Register(&kubeResolverBuilder{manager: defaultManager})
 }

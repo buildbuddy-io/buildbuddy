@@ -49,6 +49,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -181,6 +182,7 @@ type registryHolder struct {
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	nhLog := log.NamedSubLogger(nhid)
 	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
+	r.SetPodWatcherManager(kuberesolver.DefaultManager())
 	rc.r = r
 	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
 	return r, nil

@@ -144,7 +144,7 @@ func TestResolveExistingPod(t *testing.T) {
 	client := fake.NewClientset(pod)
 
 	cc := newFakeClientConn()
-	builder := &kubeResolverBuilder{client: client}
+	builder := &kubeResolverBuilder{manager: NewPodWatcherManager(client)}
 	r, err := builder.Build(
 		makeTarget("k8s:///metadata-server-0.headless.metadata-server-dev.svc.cluster.local:4772"),
 		cc,
@@ -175,7 +175,7 @@ func TestResolvePodIPChanges(t *testing.T) {
 	client := fake.NewClientset(pod)
 
 	cc := newFakeClientConn()
-	builder := &kubeResolverBuilder{client: client}
+	builder := &kubeResolverBuilder{manager: NewPodWatcherManager(client)}
 	r, err := builder.Build(
 		makeTarget("k8s:///metadata-server-0.headless.metadata-server-dev.svc.cluster.local:4772"),
 		cc,
@@ -228,7 +228,7 @@ func TestResolveNonExistentPod(t *testing.T) {
 	client := fake.NewClientset()
 
 	cc := newFakeClientConn()
-	builder := &kubeResolverBuilder{client: client}
+	builder := &kubeResolverBuilder{manager: NewPodWatcherManager(client)}
 	r, err := builder.Build(
 		makeTarget("k8s:///nonexistent-0.headless.ns.svc.cluster.local:4772"),
 		cc,
@@ -258,7 +258,7 @@ func TestSharedWatcher(t *testing.T) {
 	}
 	client := fake.NewClientset(pod)
 
-	builder := &kubeResolverBuilder{client: client}
+	builder := &kubeResolverBuilder{manager: NewPodWatcherManager(client)}
 
 	// Build two resolvers for the same pod but different ports.
 	cc1 := newFakeClientConn()
@@ -324,6 +324,243 @@ func TestSharedWatcher(t *testing.T) {
 	}
 }
 
+func TestWatchPodIPExistingPod(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	m := NewPodWatcherManager(client)
+
+	type result struct {
+		addr string
+		err  error
+	}
+	results := make(chan result, 10)
+	cancel, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:7238", func(ipPort string, watchErr error) {
+		results <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+	defer cancel()
+
+	// Should get the initial IP.
+	select {
+	case r := <-results:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.1:7238", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for initial IP")
+	}
+}
+
+func TestWatchPodIPUpdates(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	m := NewPodWatcherManager(client)
+
+	type result struct {
+		addr string
+		err  error
+	}
+	results := make(chan result, 10)
+	cancel, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:7238", func(ipPort string, watchErr error) {
+		results <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+	defer cancel()
+
+	// Wait for initial resolve.
+	select {
+	case r := <-results:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.1:7238", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for initial IP")
+	}
+
+	// Wait for the watch to be established before updating.
+	require.Eventually(t, func() bool {
+		for _, a := range client.Actions() {
+			if a.GetVerb() == "watch" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for watch")
+
+	// Update the pod IP.
+	pod.Status.PodIP = "10.0.0.2"
+	_, err = client.CoreV1().Pods("ns").Update(
+		context.Background(), pod, metav1.UpdateOptions{},
+	)
+	require.NoError(t, err)
+
+	select {
+	case r := <-results:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.2:7238", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for updated IP")
+	}
+}
+
+func TestWatchPodIPNonExistentPod(t *testing.T) {
+	client := fake.NewClientset()
+	m := NewPodWatcherManager(client)
+
+	type result struct {
+		addr string
+		err  error
+	}
+	results := make(chan result, 10)
+	cancel, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:7238", func(ipPort string, watchErr error) {
+		results <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+	defer cancel()
+
+	// Should get an error since the pod doesn't exist.
+	select {
+	case r := <-results:
+		require.Error(t, r.err)
+		require.Contains(t, r.err.Error(), "not found")
+		require.Empty(t, r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for error")
+	}
+}
+
+func TestWatchPodIPCancel(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	m := NewPodWatcherManager(client)
+
+	type result struct {
+		addr string
+		err  error
+	}
+	results := make(chan result, 10)
+	cancel, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:7238", func(ipPort string, watchErr error) {
+		results <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+
+	// Wait for initial resolve.
+	select {
+	case r := <-results:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.1:7238", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for initial IP")
+	}
+
+	// Cancel the watch.
+	cancel()
+
+	// The watcher should be cleaned up from the manager.
+	m.mu.Lock()
+	require.Empty(t, m.watchers, "watcher should be removed after cancel")
+	m.mu.Unlock()
+}
+
+func TestWatchPodIPInvalidTarget(t *testing.T) {
+	client := fake.NewClientset()
+	m := NewPodWatcherManager(client)
+
+	_, err := m.WatchPodIP("not-a-pod-fqdn", func(string, error) {})
+	require.Error(t, err)
+}
+
+func TestWatchPodIPSharedWatcher(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	client := fake.NewClientset(pod)
+	m := NewPodWatcherManager(client)
+
+	type result struct {
+		addr string
+		err  error
+	}
+
+	// Two watchers for the same pod but different ports should share a
+	// single underlying podWatcher.
+	results1 := make(chan result, 10)
+	cancel1, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:7238", func(ipPort string, watchErr error) {
+		results1 <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+	defer cancel1()
+
+	results2 := make(chan result, 10)
+	cancel2, err := m.WatchPodIP("pod-0.svc.ns.svc.cluster.local:9090", func(ipPort string, watchErr error) {
+		results2 <- result{addr: ipPort, err: watchErr}
+	})
+	require.NoError(t, err)
+	defer cancel2()
+
+	// Both should resolve with their respective ports.
+	select {
+	case r := <-results1:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.1:7238", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for first watcher")
+	}
+
+	select {
+	case r := <-results2:
+		require.NoError(t, r.err)
+		require.Equal(t, "10.0.0.1:9090", r.addr)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for second watcher")
+	}
+
+	// Only one underlying watcher should exist.
+	m.mu.Lock()
+	require.Len(t, m.watchers, 1, "expected a single shared watcher")
+	m.mu.Unlock()
+
+	// Cancelling one should keep the watcher alive.
+	cancel1()
+	m.mu.Lock()
+	require.Len(t, m.watchers, 1, "watcher should survive after one cancel")
+	m.mu.Unlock()
+
+	// Cancelling both should remove the watcher.
+	cancel2()
+	m.mu.Lock()
+	require.Empty(t, m.watchers, "watcher should be removed after all cancels")
+	m.mu.Unlock()
+}
+
 func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -356,7 +593,7 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	})
 
 	cc := newFakeClientConn()
-	builder := &kubeResolverBuilder{client: client}
+	builder := &kubeResolverBuilder{manager: NewPodWatcherManager(client)}
 	r, err := builder.Build(
 		makeTarget("k8s:///pod-0.svc.ns.svc.cluster.local:8080"),
 		cc,

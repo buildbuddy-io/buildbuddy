@@ -4,13 +4,19 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/kubernetes/fake"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func init() {
@@ -141,6 +147,72 @@ func TestDynamicRegistryRemoveShard(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 	_, _, err = dnr.Resolve(1, 2)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestStaticRegistryResolveWithPodWatcher(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "server-0",
+			Namespace: "ns",
+		},
+		Status: corev1.PodStatus{
+			PodIP: "10.0.0.1",
+		},
+	}
+	k8sClient := fake.NewClientset(pod)
+	m := kuberesolver.NewPodWatcherManager(k8sClient)
+
+	nr := registry.NewStaticNodeRegistry(1, nil, log.Logger{})
+	nr.SetPodWatcherManager(m)
+
+	raftAddr := "server-0.headless.ns.svc.cluster.local:7238"
+	nr.Add(1, 1, "nhid-1")
+	nr.AddNode("nhid-1", raftAddr, "grpcaddress:1")
+
+	// Resolve should return the resolved pod IP instead of the hostname.
+	require.Eventually(t, func() bool {
+		addr, _, err := nr.Resolve(1, 1)
+		return err == nil && addr == "10.0.0.1:7238"
+	}, 5*time.Second, 10*time.Millisecond, "expected Resolve to return resolved IP")
+
+	// Connection key should use the resolved IP, not the hostname.
+	addr, key1, err := nr.Resolve(1, 1)
+	require.NoError(t, err)
+	require.Equal(t, "10.0.0.1:7238", addr)
+	require.Contains(t, key1, "10.0.0.1:7238")
+	require.NotContains(t, key1, "server-0.headless")
+
+	// ResolveGRPC is unaffected by pod watcher (resolves by NHID).
+	grpcAddr, err := nr.ResolveGRPC(context.Background(), "nhid-1")
+	require.NoError(t, err)
+	require.Equal(t, "grpcaddress:1", grpcAddr)
+
+	// Wait for the watch to be established before updating.
+	require.Eventually(t, func() bool {
+		for _, a := range k8sClient.Actions() {
+			if a.GetVerb() == "watch" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for watch")
+
+	// Simulate a pod restart with a new IP.
+	pod.Status.PodIP = "10.0.0.2"
+	_, err = k8sClient.CoreV1().Pods("ns").Update(
+		context.Background(), pod, metav1.UpdateOptions{},
+	)
+	require.NoError(t, err)
+
+	// Resolve should return the new IP and a different connection key.
+	require.Eventually(t, func() bool {
+		addr, _, err := nr.Resolve(1, 1)
+		return err == nil && addr == "10.0.0.2:7238"
+	}, 5*time.Second, 10*time.Millisecond, "expected Resolve to return updated IP")
+
+	_, key2, err := nr.Resolve(1, 1)
+	require.NoError(t, err)
+	require.NotEqual(t, key1, key2, "connection key should change when IP changes")
 }
 
 func TestDynamicRegistryResolution(t *testing.T) {
