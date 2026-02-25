@@ -36,12 +36,12 @@ Sample request:
 
 ```
 curl --data '{
-  "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
-  "branch": "master",
+  "repo": "git@github.com:<REPO_NAME>.git",
+  "branch": "<BRANCH_NAME>",
   "steps": [{"run": "bazel build :target"}],
   "wait_until": "COMPLETED"
 }' \
---header "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
+--header "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY?}" \
 --header "Content-Type: application/json" \
 https://app.buildbuddy.io/api/v1/Run
 ```
@@ -92,13 +92,17 @@ Valid values of `OSFamily` are `linux` and `darwin`.
 Valid values of `Arch` are `amd64` and `arm64`.
 The `container-image` field expects a docker URL like `docker://<URL>`.
 
-More resources can be requested for the remote runner with the properties `EstimatedCPU`, `EstimatedFreeDiskBytes` and `EstimatedMemory`. The disk and memory fields expect values in the syntax `XGB`. We strongly recommend not setting these and using the defaults unless absolutely necessary. Remote runners are billed based on resource requests, and requesting more resources is more expensive. Only suggest increasing resources if the logs explicitly report OOM errors or disk exhaustion.
-
 If a remote runner is corrupted and you want a clean one, you can set the property `salt` to a new value. Just make sure you preserve this flag if you want future runs to resume from this new runner.
+
+## Requesting more resources
+
+We strongly recommend not setting these and using the defaults unless absolutely necessary. Only suggest increasing resources if the logs explicitly report OOM errors or disk exhaustion.
+
+More resources can be requested for the remote runner with the properties `EstimatedCPU`, `EstimatedFreeDiskBytes` and `EstimatedMemory`. The disk and memory fields expect values in the syntax `XGB`.
 
 ## Auth
 
-Users can get an API key from the `Settings` page of the BuildBuddy UI.
+Users can get an API key from the `Settings` page of the BuildBuddy UI. If running in non-interactive mode, the user should save the API key as a secret.
 
 ## Field persistence
 

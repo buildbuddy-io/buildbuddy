@@ -33,7 +33,7 @@ Whenever the user provides flags not already in the persistent-flags.md file, fo
 
 1. Ask: `Do you want me to persist <FLAG> in this SKILL file so it is automatically applied to all future remote runs?`
 2. Wait for explicit confirmation before editing this file.
-3. Show: `I will add: \`<FLAG>\`: Example: \`bb remote build :target <FLAG>\`` and ask the user to confirm syntax.
+3. Ask the user to confirm the syntax of the flag via an example.
 4. If the user confirms, edit only the persistent-flags.md file.
 5. Ensure the flag is not already present.
 6. Preserve alphabetical ordering.
@@ -55,8 +55,6 @@ For example, you could run `bb remote --script="echo HELLO!"`.
 On failure, you should warn the user and print the invocation URL for the remote run. This will be at the top of the logs, and will look like
 `Streaming remote runner logs to: https://app.buildbuddy.io/invocation/d70a1719-4cb6-4568-a19e-9b6f8e2b3ec3`
 
-You should then ask the user if you should run the command locally.
-
 ## Configuration
 
 You can configure the OS and architecture of the remote runner with the flags `--os` and `--arch`.
@@ -77,7 +75,8 @@ You can request more resources for the remote runner with `--runner_exec_propert
 
 ## Auth
 
-The cleanest way to authorize requests is to run `bb login` and encourage the user to follow the login flow in the UI.
+If the request is not authorized, tell the user to run `bb login` and follow the login flow in the UI. Don't try to run `bb login` yourself because some manual steps are required.
+
 An API key will be stored in .git/config under:
 
 ```
@@ -85,7 +84,7 @@ An API key will be stored in .git/config under:
   api-key = <API_KEY_HERE>
 ```
 
-If you have the user's API key, you can also add it to the end of commands with `--remote_header=x-buildbuddy-api-key=<API_KEY_HERE>`.
+If running in non-interactive mode, the user should save the API key as a secret, and you can pass it with `--remote_header=x-buildbuddy-api-key=<API_KEY_HERE>`.
 
 ## Pre-requisites
 
