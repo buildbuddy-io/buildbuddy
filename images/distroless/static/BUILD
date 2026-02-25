@@ -49,15 +49,6 @@ cacerts(
     }),
 )
 
-# Create a Java keystore with custom certificates
-java_keystore(
-    name = "custom_java_keystore",
-    certificates = [
-        ":custom-ca.crt",
-        ":internal-root.crt",
-    ],
-)
-
 [
     flatten(
         name = "layer_%s" % arch,
@@ -78,7 +69,6 @@ java_keystore(
             ":groups",
             ":passwd",
             ":ca_certificates",
-            ":custom_java_keystore",
         ],
     )
     for arch in [
