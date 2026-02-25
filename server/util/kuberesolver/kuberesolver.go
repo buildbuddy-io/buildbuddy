@@ -73,7 +73,7 @@ type podResolution struct {
 	err error
 }
 
-func (pr *podResolution) String() string {
+func (pr podResolution) String() string {
 	if pr.err != nil {
 		return fmt.Sprintf("error: %s", pr.err)
 	}
