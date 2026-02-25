@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -104,7 +104,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 	// Use kube:/// resolver when running in k8s for instant IP updates on
 	// pod restarts. Fall back to default grpc:// resolver otherwise (e.g. tests).
 	target := "grpc://" + peer
-	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+	if kuberesolver.RunningInKubernetes() {
 		target = "kube:///" + peer
 	}
 	conn, err := grpc_client.DialSimple(target, grpc.WithConnectParams(grpc.ConnectParams{

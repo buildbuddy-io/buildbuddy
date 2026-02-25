@@ -15,6 +15,7 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/util/grpc_client",
+        "//server/util/kuberesolver",
         "//server/util/lockmap",
         "//server/util/log",
         "//server/util/proto",

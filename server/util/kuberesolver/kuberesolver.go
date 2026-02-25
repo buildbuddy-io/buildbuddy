@@ -19,6 +19,7 @@ package kuberesolver
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// RunningInKubernetes reports whether the process is running inside a
+// Kubernetes cluster, based on the KUBERNETES_SERVICE_HOST env var that
+// the kubelet injects into every pod.
+func RunningInKubernetes() bool {
+	return os.Getenv("KUBERNETES_SERVICE_HOST") != ""
+}
 
 const scheme = "kube"
 const apiMaxBackoff = 30 * time.Second
