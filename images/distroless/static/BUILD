@@ -4,11 +4,6 @@ load("@rules_img//img:load.bzl", "image_load")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "custom-ca.crt",
-    "internal-root.crt",
-])
-
 # Create group entries (similar to groupadd)
 group(
     name = "groups",
@@ -110,8 +105,7 @@ image_index(
 # Load a multi-platform image
 image_load(
     name = "load",
-    daemon = "docker",  # Explicitly use docker
-    daemon = "docker",  # Explicitly use docker
+    daemon = "containerd",  # Explicitly use containerd
     image = ":index",  # References an image_index
     tag = "bb-distroless_static:latest",
 )
