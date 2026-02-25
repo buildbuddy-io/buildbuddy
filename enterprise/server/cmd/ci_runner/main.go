@@ -2307,6 +2307,7 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		"common:buildbuddy_bes_results_url --bes_results_url=" + *besResultsURL,
 	}...)
 	if *cacheBackend != "" {
+		lines = append(lines, "common --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_experimental_remote_downloader --experimental_remote_downloader="+*cacheBackend)
 	}
