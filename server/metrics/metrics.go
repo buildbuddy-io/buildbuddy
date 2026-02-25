@@ -991,6 +991,15 @@ var (
 		TreeCacheOperation,
 	})
 
+	ChunkedManifestValidationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "chunked_manifest_validation_count",
+		Help:      "Number of chunked manifest Store() calls, labeled by whether the shared validation marker was a hit (skipped re-hashing) or miss (full chunk verification performed).",
+	}, []string{
+		CacheHitMissStatus,
+	})
+
 	GetTreeDirectoryLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

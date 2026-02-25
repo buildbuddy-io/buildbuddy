@@ -2,6 +2,7 @@
 package chunking
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -30,8 +32,9 @@ var (
 )
 
 const (
-	chunkedManifestPrefix = "_bb_chunked_manifest_v2_/"
-	chunkOutputFilePrefix = "chunk_"
+	chunkedManifestPrefix        = "_bb_chunked_manifest_v2_/"
+	chunkOutputFilePrefix        = "chunk_"
+	sharedValidationMarkerDomain = "cas-validation-marker-v1"
 )
 
 func AvgChunkSizeBytes() int64 {
@@ -242,11 +245,8 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return nil
 	})
 	g.Go(func() error {
-		// TODO(buildbuddy-internal#6426): This could be skipped if this manifest was previously verified, since AC is not shared between
-		// groups, but the result validity could be shared.
-		return cm.verifyChunks(goCtx, cache)
+		return cm.checkOrVerifyChunks(goCtx, cache)
 	})
-
 	if err := g.Wait(); err != nil {
 		return err
 	}
@@ -315,6 +315,39 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 		InstanceName:   instanceName,
 		DigestFunction: digestFunction,
 	}, nil
+}
+
+// checkOrVerifyChunks checks the shared validation marker in the CAS. If it
+// exists (a previous SpliceBlob already validated this manifest), it records a
+// hit and returns immediately. Otherwise it hashes all chunks to verify the
+// manifest, records a miss, and writes the marker so future calls can skip the
+// rehash. Validation markers require salt.
+func (cm *Manifest) checkOrVerifyChunks(ctx context.Context, cache interfaces.Cache) error {
+	// Without a salt, anyone can forge an AC manifest. A shared CAS
+	// validation marker would then let it skip verification for all groups.
+	if *chunkedManifestSalt == "" {
+		return cm.verifyChunks(ctx, cache)
+	}
+	sharedValRN, sharedValContent, err := sharedValidationResourceName(cm)
+	if err != nil {
+		return err
+	}
+	validated, err := cache.Contains(ctx, sharedValRN)
+	if err != nil {
+		validated = false
+	}
+	if validated {
+		metrics.ChunkedManifestValidationCount.WithLabelValues(metrics.HitStatusLabel).Inc()
+		return nil
+	}
+	if err := cm.verifyChunks(ctx, cache); err != nil {
+		return err
+	}
+	metrics.ChunkedManifestValidationCount.WithLabelValues(metrics.MissStatusLabel).Inc()
+	if err := cache.Set(ctx, sharedValRN, sharedValContent); err != nil {
+		log.CtxWarningf(ctx, "Failed to set shared validation marker for blob %s: %v", cm.BlobDigest.GetHash(), err)
+	}
+	return nil
 }
 
 // verifyChunks pipelines chunk verification using 2 goroutines:
@@ -393,6 +426,50 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 		return status.InvalidArgumentErrorf("computed digest %s does not match expected %s", digest.String(computedDigest), digest.String(cm.BlobDigest))
 	}
 	return nil
+}
+
+// sharedValidationResourceName returns a CAS resource name for the shared
+// validation marker and the content to store there. Storing in the CAS means
+// the marker is not scoped to the AC's per-group keyspace, giving better
+// cross-group sharing. The content is the pre-image of the CAS digest, so
+// only identical manifests produce the same key.
+//
+// To keep the CAS entry constant-size (32 bytes) regardless of blob size, the
+// marker uses a double-hash scheme:
+//
+//	content = H(domain || salt || blob_hash || chunk_hashes...)   [32 bytes]
+//	CAS key = H(content)                                          [32 bytes]
+//
+// This avoids writing O(numChunks * digestSize) bytes to the CAS for large blobs.
+func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, error) {
+	inner, err := digest.HashForDigestType(cm.DigestFunction)
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key: %s", err)
+	}
+	inner.Write([]byte(sharedValidationMarkerDomain))
+	inner.Write([]byte{0})
+	inner.Write([]byte(*chunkedManifestSalt))
+	inner.Write([]byte{0})
+
+	blobHashBytes, err := hex.DecodeString(cm.BlobDigest.GetHash())
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key: malformed blob digest %q: %s", cm.BlobDigest.GetHash(), err)
+	}
+	inner.Write(blobHashBytes)
+	for i, d := range cm.ChunkDigests {
+		chunkHashBytes, err := hex.DecodeString(d.GetHash())
+		if err != nil {
+			return nil, nil, status.InvalidArgumentErrorf("compute shared validation key: malformed chunk digest at index %d %q: %s", i, d.GetHash(), err)
+		}
+		inner.Write(chunkHashBytes)
+	}
+
+	content := inner.Sum(nil)
+	d, err := digest.Compute(bytes.NewReader(content), cm.DigestFunction)
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key digest: %s", err)
+	}
+	return digest.NewCASResourceName(d, "", cm.DigestFunction).ToProto(), content, nil
 }
 
 func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {

@@ -330,6 +330,49 @@ func (c *contextCheckingCache) Set(ctx context.Context, r *rspb.ResourceName, da
 	return c.Cache.Set(ctx, r, data)
 }
 
+func TestStore_SharedValidationMarkerIsManifestSpecific(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 200)
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
+
+	validData := append(chunk1Data, chunk2Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(validData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	validManifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "instance-a",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, validManifest.Store(ctx, cache))
+
+	invalidManifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "instance-b",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	err = invalidManifest.Store(ctx, cache)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected invalid argument error, got: %v", err)
+
+	invalidData := append(chunk1Data, chunk3Data...)
+	computedInvalidDigest, err := digest.Compute(bytes.NewReader(invalidData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.False(t, digest.Equal(computedInvalidDigest, blobDigest))
+}
+
 func TestDigestsSummary(t *testing.T) {
 	d := func(hash string, size int64) *repb.Digest {
 		return &repb.Digest{Hash: hash, SizeBytes: size}
