@@ -139,7 +139,7 @@ pkg_tar(
 image_manifest(
     name = "manifest",
     base = "//images/distroless/base-nossl:manifest",
-    layers = [":buildbuddy_layer"],
+    layers = [":tar"],
     entrypoint = [
         "/app/enterprise/server/cmd/server/buildbuddy",
     ],
