@@ -4,6 +4,7 @@ package rexec
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -31,7 +32,7 @@ import (
 func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 	m, err := parsePairs(pairs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse environment variables: %w", err)
 	}
 	names := slices.Sorted(maps.Keys(m))
 	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
@@ -50,7 +51,7 @@ func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	m, err := parsePairs(pairs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse platform properties: %w", err)
 	}
 	names := slices.Sorted(maps.Keys(m))
 	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
@@ -136,7 +137,7 @@ func parsePairs(pairs []string) (map[string]string, error) {
 	for _, pair := range pairs {
 		parts := strings.SplitN(pair, "=", 2)
 		if len(parts) != 2 {
-			return nil, status.InvalidArgumentErrorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+			return nil, status.InvalidArgumentErrorf("invalid syntax %q (expected NAME=VALUE)", pair)
 		}
 		m[parts[0]] = parts[1]
 	}
