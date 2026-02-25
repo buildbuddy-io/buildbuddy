@@ -58,9 +58,10 @@ import (
 const (
 	BuildBuddyArtifactDir = "bb-out"
 
-	escapeSeq                  = "\u001B["
-	gitConfigSection           = "buildbuddy"
-	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	escapeSeq                         = "\u001B["
+	gitConfigSection                  = "buildbuddy"
+	gitConfigRemoteBazelRemote        = "remote-bazel-remote-name"
+	gitConfigRemoteBazelDefaultBranch = "remote-bazel-default-branch"
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
@@ -265,6 +266,11 @@ func determineDefaultBranch(remoteName string) (string, error) {
 		return defaultBranch, nil
 	}
 
+	cachedDefaultBranch, _ := storage.ReadRepoConfig(gitConfigRemoteBazelDefaultBranch)
+	if cachedDefaultBranch != "" {
+		return cachedDefaultBranch, nil
+	}
+
 	remoteData, err := runGit("ls-remote", "--symref", remoteName)
 	if err != nil {
 		return "", status.WrapErrorf(err, "git ls-remote --symref %s", remoteName)
@@ -272,10 +278,16 @@ func determineDefaultBranch(remoteName string) (string, error) {
 
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
+
+	if len(match) == 0 {
+		return "", fmt.Errorf("failed to parse default branch from:\n%s", remoteData)
 	}
-	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
+
+	defaultBranch = match[1]
+	if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+		log.Warnf("failed to cache default branch in .git/config: %s", err)
+	}
+	return defaultBranch, nil
 }
 
 func runGit(args ...string) (string, error) {
