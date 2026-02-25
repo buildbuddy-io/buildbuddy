@@ -3,7 +3,6 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//rules:utils.bzl", "runfiles_directory")
 
@@ -139,17 +138,17 @@ pkg_tar(
 image_manifest(
     name = "manifest",
     base = "//images/distroless/base-nossl:manifest",
-    layers = [":tar"],
     entrypoint = [
         "/app/enterprise/server/cmd/server/buildbuddy",
     ],
+    layers = [":tar"],
     tags = ["manual"],
 )
 
 image_load(
     name = "buildbuddy_image",
+    daemon = "containerd",  # Explicitly use containerd
     image = ":manifest",
     tag = "buildbuddy_image:latest",
-    daemon = "containerd",  # Explicitly use containerd
     tags = ["manual"],
 )
