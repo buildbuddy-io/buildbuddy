@@ -8,11 +8,17 @@ The `Run` API runs commands in a remote runner. These runners can have more comp
 Any bash command can be run in a remote runner, but bazel commands may benefit the most from proximity
 to our cache servers and workspace snapshotting.
 
+## Getting help
+
+If you don't know how to accomplish a task, you should consult the docs at https://www.buildbuddy.io/docs/remote-bazel. Do not try to run `bb remote --help` or `bb help`.
+
 ## Initiating a remote run
 
 The `Run` API can be made with a curl request.
 
 For bazel commands, make sure to preserve the entire command, including startup flags and options, in the `steps` field.
+
+Also make sure to always add the `--remote_cache` flag to bazel commands. For example if you are intending to run `bazel build :target`, the request should be: `{"run": "bazel build :target --remote_cache=grpcs://remote.buildbuddy.io"}`.
 
 To clone a GitHub repo and run `steps` within that workspace, set the fields `repo`, `branch` and/or `commit_sha`. This is optional if a GitHub workspace is not needed for the steps.
 

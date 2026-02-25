@@ -8,6 +8,15 @@ runs, speeding up subsequent runs.
 
 It also uploads any local git diffs to the remote runner.
 
+## Getting help
+
+If you don't know how to accomplish a task, you should consult the docs at https://www.buildbuddy.io/docs/remote-bazel. Do not try to run `bb remote --help` or `bb help`.
+
+## Pre-run gate
+
+Before running any `bb remote` command, you should check if the user asked to add a flag to the command (either configuring Remote Bazel or bazel).
+If they did, follow the flag persistence steps below.
+
 ## Drop-in bazel replacement
 
 Instead of running bazel commands locally with `bazel`, run them on a remote runner using the `bb remote` command.
@@ -16,7 +25,23 @@ For example, you should replace the command `bazel build :target` with `bb remot
 `bazel run :target` should be replaced with `bb remote run :target`.
 
 You should preserve any bazel startup flags and options.
-`bazel --host_jvm_args=-Xmx4g test :target --config=X` should become `bb --host_jvm_args=-Xmx4g remote test :target --config=X`.
+`bazel --output_base=X test :target --config=Y` should become `bb remote --output_base=X test :target --config=Y`.
+
+## Flag persistence
+
+Whenever the user provides flags not already in the `Persistent flags` section, follow this workflow before running the command:
+
+1. Ask: `Do you want me to persist <FLAG> in this SKILL file so it is automatically applied to all future remote runs?`
+2. Wait for explicit confirmation before editing this file.
+3. Show: `I will add: \`<FLAG>\`: Example: \`bb remote build :target <FLAG>\`` and ask the user to confirm syntax.
+4. If the user confirms, edit only the `## Persistent flags` section below.
+5. Ensure the flag is not already present.
+6. Preserve alphabetical ordering.
+7. Add one example command per flag.
+
+Entry format:
+
+- `--flag=value`: Example: `bb remote build :target --flag=value`
 
 ## Run any bash command remotely
 
@@ -63,3 +88,7 @@ If you have the user's API key, you can also add it to the end of commands with 
 ## Pre-requisites
 
 If `bb` is not installed, it can be installed with `curl -fsSL https://install.buildbuddy.io | bash`.
+
+## Persistent flags
+
+- `--remote_cache=grpcs://remote.buildbuddy.io`: Example: `bb remote build :target --remote_cache=grpcs://remote.buildbuddy.io`
