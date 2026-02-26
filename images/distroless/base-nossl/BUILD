@@ -40,8 +40,8 @@ image_index(
     name = "index",
     manifests = [":manifest"],
     platforms = [
-        "//platforms/configs:linux_x86_64",
-        "//platforms/configs:linux_arm64",
+        "//platforms:linux_x86_64",
+        "//platforms:linux_arm64",
     ],
     tags = ["manual"],
     target_compatible_with = select({
