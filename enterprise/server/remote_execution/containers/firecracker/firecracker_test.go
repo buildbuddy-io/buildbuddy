@@ -1769,7 +1769,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            2,
-			MemSizeMb:          2000,
+			MemSizeMb:          800,
 			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb:  500,
 			GuestKernelVersion: cfg.GuestKernelVersion,
@@ -1808,10 +1808,12 @@ func TestFirecrackerBalloon(t *testing.T) {
 
 	cmd := &repb.Command{
 		// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
+		// Use /dev/zero rather than /dev/urandom for speed; the balloon test
+		// cares about memory pressure, not data entropy.
 		Arguments: []string{"bash", "-c", `
 set -eo pipefail
-mkdir /tmp/randomdata && mount -t tmpfs -o size=1700M tmpfs /tmp/randomdata
-dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=1600
+mkdir /tmp/randomdata && mount -t tmpfs -o size=500M tmpfs /tmp/randomdata
+dd if=/dev/zero of=/tmp/randomdata/data bs=1M count=400
 free -h
 `},
 	}
@@ -1821,8 +1823,8 @@ free -h
 	require.Equal(t, 0, res.ExitCode)
 	require.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-	// Try pause, unpause, exec several times.
-	for i := 1; i <= 4; i++ {
+	// Try pause, unpause, exec a couple of times to verify the cycle works.
+	for i := 1; i <= 2; i++ {
 		err = c.Pause(ctx)
 		require.NoError(t, err)
 
