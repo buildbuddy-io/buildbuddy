@@ -829,10 +829,6 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		DigestFunction: digestFunction,
 	}
 
-	if err := manifest.Store(ctx, s.localCache); err != nil {
-		return writeChunkedResult{}, status.InternalErrorf("storing manifest locally: %s", err)
-	}
-
 	missingBlobs, err := s.remoteCAS.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest())
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("finding missing blobs on remote: %s", err)

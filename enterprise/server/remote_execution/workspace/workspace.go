@@ -510,7 +510,23 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		// cache and hard links across filesystems are not possible.
 		addToFileCache := ws.vfs == nil
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, executeResponse.Result, addToFileCache)
+
+		// TODO(tyler-french): Move experiment opt-in to capabilities; also use
+		// the seed from FastCdc2020Params instead of hardcoding 0.
+		chunkingEnabled := slices.Contains(ws.task.GetExperiments(), "executor.upload_outputs_chunked")
+		var avgChunkSizeBytes int64
+		if chunkingEnabled {
+			caps, err := ws.env.GetCapabilitiesClient().GetCapabilities(egCtx, &repb.GetCapabilitiesRequest{})
+			if err != nil {
+				return status.WrapError(err, "get capabilities for chunked upload")
+			}
+			avgChunkSizeBytes = int64(caps.GetCacheCapabilities().GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+			if avgChunkSizeBytes == 0 {
+				chunkingEnabled = false
+			}
+		}
+
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, executeResponse.Result, addToFileCache, chunkingEnabled, avgChunkSizeBytes)
 		return err
 	})
 	var logsMu sync.Mutex

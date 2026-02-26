@@ -9,8 +9,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -21,6 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -780,7 +784,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
@@ -802,7 +806,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1185,4 +1189,40 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 			require.Equal(t, buf, out.Bytes(), "downloaded blob should match original")
 		})
 	}
+}
+
+func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ctx := context.Background()
+	blobSize := int64(3 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), true /*=chunkingEnabled*/, chunking.AvgChunkSizeBytes() /*=avgChunkSizeBytes*/)
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
 }

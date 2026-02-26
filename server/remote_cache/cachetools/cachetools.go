@@ -18,10 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -64,11 +66,36 @@ var (
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
 )
 
+// readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
+// *os.File and *bytes.Reader, enabling concurrent random reads (e.g. via
+// io.SectionReader) alongside sequential operations.
+type readAtSeeker interface {
+	io.ReaderAt
+	io.ReadSeeker
+}
+
 func retryOptions(name string) *retry.Options {
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = 3
 	opts.Name = name
 	return opts
+}
+
+func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	return retry.Do(ctx, retryOptions("FindMissingBlobs"), func(ctx context.Context) (*repb.FindMissingBlobsResponse, error) {
+		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		defer cancel()
+		return casClient.FindMissingBlobs(ctx, req)
+	})
+}
+
+func spliceBlobWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.SpliceBlobRequest) error {
+	_, err := retry.Do(ctx, retryOptions("SpliceBlob"), func(ctx context.Context) (*repb.SpliceBlobResponse, error) {
+		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		defer cancel()
+		return casClient.SpliceBlob(ctx, req)
+	})
+	return err
 }
 
 type nopCloser struct {
@@ -352,6 +379,91 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	return r.GetDigest(), bytesUploaded, nil
 }
 
+// uploadFromReaderWithChunking uploads a blob to the CAS using FastCDC if
+// the blob is large enough. Missing chunks are uploaded and then SpliceBlob
+// is used to tell the server how to reassemble them. Blobs less than the
+// threshold are uploaded normally.
+func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, avgChunkSizeBytes int64) (*repb.Digest, int64, error) {
+	if !shouldUploadChunked(env, r.GetDigest(), avgChunkSizeBytes) {
+		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
+	}
+	if _, err := in.Seek(0, io.SeekStart); err != nil {
+		return nil, 0, status.UnavailableErrorf("seek input: %s", err)
+	}
+
+	var chunkDigests []*repb.Digest
+	chunker, err := chunking.NewChunker(ctx, int(avgChunkSizeBytes), func(chunkData []byte) error {
+		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction())
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, d)
+		return nil
+	})
+	if err != nil {
+		return nil, 0, status.UnavailableErrorf("create chunker: %s", err)
+	}
+	if _, err := io.Copy(chunker, in); err != nil {
+		_ = chunker.Close()
+		return nil, 0, status.UnavailableErrorf("chunk input: %s", err)
+	}
+	if err := chunker.Close(); err != nil {
+		return nil, 0, status.UnavailableErrorf("finalize chunking: %s", err)
+	}
+	if len(chunkDigests) <= 1 {
+		return nil, 0, status.InternalErrorf("chunking produced %d chunk(s) for blob size %d", len(chunkDigests), r.GetDigest().GetSizeBytes())
+	}
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     r.GetDigest(),
+		ChunkDigests:   chunkDigests,
+		InstanceName:   r.GetInstanceName(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+	casClient := env.GetContentAddressableStorageClient()
+	missingRsp, err := findMissingBlobsWithRetries(ctx, casClient, manifest.ToFindMissingBlobsRequest())
+	if err != nil {
+		return nil, 0, status.WrapError(err, "find missing chunks")
+	}
+
+	missingChunkHashes := make(set.Set[string], len(missingRsp.GetMissingBlobDigests()))
+	for _, d := range missingRsp.GetMissingBlobDigests() {
+		missingChunkHashes.Add(d.GetHash())
+	}
+
+	var uploadedBytes int64
+	var offset int64
+	for _, d := range chunkDigests {
+		if !missingChunkHashes.Contains(d.GetHash()) {
+			offset += d.GetSizeBytes()
+			continue
+		}
+		chunkRN := digest.NewCASResourceName(d, r.GetInstanceName(), r.GetDigestFunction())
+		chunkRN.SetCompressor(repb.Compressor_ZSTD)
+		sr := io.NewSectionReader(in, offset, d.GetSizeBytes())
+		_, uploaded, err := UploadFromReader(ctx, env.GetByteStreamClient(), chunkRN, sr)
+		uploadedBytes += uploaded
+		if err != nil {
+			return nil, uploadedBytes, err
+		}
+		missingChunkHashes.Remove(d.GetHash())
+		offset += d.GetSizeBytes()
+	}
+
+	if err := spliceBlobWithRetries(ctx, casClient, manifest.ToSpliceBlobRequest()); err != nil {
+		return nil, uploadedBytes, status.WrapError(err, "splice chunked blob")
+	}
+	return r.GetDigest(), uploadedBytes, nil
+}
+
+func shouldUploadChunked(env environment.Env, d *repb.Digest, avgChunkSizeBytes int64) bool {
+	return env != nil &&
+		env.GetByteStreamClient() != nil &&
+		env.GetContentAddressableStorageClient() != nil &&
+		avgChunkSizeBytes > 0 &&
+		d.GetSizeBytes() > avgChunkSizeBytes*4
+}
+
 type uploadRetryResult = struct {
 	digest        *repb.Digest
 	uploadedBytes int64
@@ -583,30 +695,36 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
-	ctx             context.Context
-	env             environment.Env
-	eg              *errgroup.Group
-	unsentBatchReq  *repb.BatchUpdateBlobsRequest
-	uploads         map[digest.Key]struct{}
-	instanceName    string
-	digestFunction  repb.DigestFunction_Value
-	unsentBatchSize int64
-	stats           UploadStats
+	ctx               context.Context
+	env               environment.Env
+	eg                *errgroup.Group
+	unsentBatchReq    *repb.BatchUpdateBlobsRequest
+	uploads           map[digest.Key]struct{}
+	instanceName      string
+	digestFunction    repb.DigestFunction_Value
+	unsentBatchSize   int64
+	stats             UploadStats
+	chunkingEnabled   bool
+	avgChunkSizeBytes int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, avgChunkSizeBytes int64) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
+	// TODO(tyler-french): Set a concurrency limit on ul.eg so total uploader
+	// file operations are globally bounded.
 	return &BatchCASUploader{
-		ctx:             ctx,
-		env:             env,
-		eg:              eg,
-		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
-		unsentBatchSize: 0,
-		instanceName:    instanceName,
-		digestFunction:  digestFunction,
-		uploads:         make(map[digest.Key]struct{}),
+		ctx:               ctx,
+		env:               env,
+		eg:                eg,
+		unsentBatchReq:    &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
+		unsentBatchSize:   0,
+		instanceName:      instanceName,
+		digestFunction:    digestFunction,
+		uploads:           make(map[digest.Key]struct{}),
+		chunkingEnabled:   chunkingEnabled,
+		avgChunkSizeBytes: avgChunkSizeBytes,
 	}
 }
 
@@ -632,9 +750,27 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		compressor = repb.Compressor_ZSTD
 	}
 
+	// Note: BatchUploadLimitBytes (2 MiB) and the default max chunk size
+	// (avgChunkSizeBytes*4 = 2 MiB) are currently equal, so all chunk-eligible
+	// blobs are also routed to bytestream. If BatchUploadLimitBytes were ever
+	// raised above the max chunk size, large blobs in that range would bypass
+	// chunking via BatchUpdateBlobs.
 	if d.GetSizeBytes() > BatchUploadLimitBytes {
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
+
+		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingEnabled && ul.avgChunkSizeBytes > 0 {
+			ul.eg.Go(func() error {
+				defer r.Close()
+				// BatchCASUploader already controls per-file concurrency, so keep
+				// per-file chunk uploads serialized to avoid multiplicative fanout.
+				// TODO(tyler-french): Support parallel chunk uploads while
+				// respecting the parent ul.eg concurrency budget.
+				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.avgChunkSizeBytes)
+				return err
+			})
+			return nil
+		}
 
 		byteStreamClient := ul.env.GetByteStreamClient()
 		if byteStreamClient == nil {
@@ -805,7 +941,7 @@ func (ul *BatchCASUploader) Stats() UploadStats {
 }
 
 type bytesReadSeekCloser struct {
-	io.ReadSeeker
+	readAtSeeker
 }
 
 func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
@@ -817,7 +953,7 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction)
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
