@@ -199,12 +199,12 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
-		groupIDForMetrics:           b.getGroupIDForMetrics(ctx),
+		groupIDForMetrics:           getGroupIDForMetrics(ctx, b.env),
 	}, nil
 }
 
-func (b *BuildEventHandler) getGroupIDForMetrics(ctx context.Context) string {
-	userInfo, err := b.env.GetAuthenticator().AuthenticatedUser(ctx)
+func getGroupIDForMetrics(ctx context.Context, env environment.Env) string {
+	userInfo, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -1165,6 +1165,7 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 		return false, nil
 	}
 	e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
+	e.groupIDForMetrics = getGroupIDForMetrics(e.ctx, e.env)
 	authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
 	if authError != nil {
 		if err, ok := authError.(error); ok {
