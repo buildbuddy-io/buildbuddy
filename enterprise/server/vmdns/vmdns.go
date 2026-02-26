@@ -3,21 +3,28 @@ package vmdns
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking/dnstypes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/miekg/dns"
 )
 
-type DNSServer struct {
-	remoteDNSClient interfaces.DNSClient
-	overrides       []*networking.DNSOverride
+// DNSClient is a lightweight interface for making DNS queries.
+// Defined locally to avoid importing the heavy server/interfaces package
+// (which pulls in gorm, serf, go-github, GCP longrunning, ~30 protos).
+type DNSClient interface {
+	Exchange(m *dns.Msg, address string) (r *dns.Msg, rtt time.Duration, err error)
 }
 
-func NewVMDNSServer(dnsOverrides []*networking.DNSOverride, dnsClient interfaces.DNSClient) *DNSServer {
+type DNSServer struct {
+	remoteDNSClient DNSClient
+	overrides       []*dnstypes.DNSOverride
+}
+
+func NewVMDNSServer(dnsOverrides []*dnstypes.DNSOverride, dnsClient DNSClient) *DNSServer {
 	server := &DNSServer{overrides: dnsOverrides, remoteDNSClient: dnsClient}
 	return server
 }
@@ -124,7 +131,7 @@ func (s *DNSServer) returnFailureMsg(w dns.ResponseWriter, req *dns.Msg) {
 // FetchDNSOverrides fetches DNS overrides from the metadata service.
 // TODO(Maggie): Support dynamically editing DNS overrides (Be careful in cases
 // where the DNS server is expected to be started or stopped)
-func FetchDNSOverrides() ([]*networking.DNSOverride, error) {
+func FetchDNSOverrides() ([]*dnstypes.DNSOverride, error) {
 	dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
 	if err != nil {
 		return nil, status.WrapError(err, "fetch dns_overrides from MMDS")
@@ -132,7 +139,7 @@ func FetchDNSOverrides() ([]*networking.DNSOverride, error) {
 	if len(dnsOverridesJSON) == 0 {
 		return nil, nil
 	}
-	var dnsOverrides []*networking.DNSOverride
+	var dnsOverrides []*dnstypes.DNSOverride
 	if err := json.Unmarshal(dnsOverridesJSON, &dnsOverrides); err != nil {
 		return nil, status.WrapError(err, "unmarshall dns_overrides")
 	}

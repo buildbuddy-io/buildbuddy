@@ -24,7 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking/dnstypes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
@@ -448,7 +448,7 @@ func runVMExecProcess(ctx context.Context) error {
 	eg := &errgroup.Group{}
 
 	// Only attempt to run the local DNS server if networking is enabled.
-	var dnsOverrides []*networking.DNSOverride
+	var dnsOverrides []*dnstypes.DNSOverride
 	if *setDefaultRoute {
 		var err error
 		dnsOverrides, err = vmdns.FetchDNSOverrides()

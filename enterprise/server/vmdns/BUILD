@@ -9,9 +9,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/util/firecrackerutil",
-        "//server/interfaces",
         "//server/util/log",
-        "//server/util/networking",
+        "//server/util/networking/dnstypes",
         "//server/util/status",
         "@com_github_miekg_dns//:dns",
     ],
@@ -22,7 +21,7 @@ go_test(
     srcs = ["vmdns_test.go"],
     deps = [
         ":vmdns",
-        "//server/util/networking",
+        "//server/util/networking/dnstypes",
         "@com_github_miekg_dns//:dns",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

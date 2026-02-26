@@ -14,7 +14,7 @@ go_library(
         "//enterprise/server/util/procstats",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
-        "//server/interfaces",
+        "//server/util/commandtypes",
         "//server/util/log",
         "//server/util/status",
         "@com_github_mitchellh_go_ps//:go-ps",

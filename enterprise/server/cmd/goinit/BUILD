@@ -15,7 +15,7 @@ go_library(
         "//enterprise/server/vmexec",
         "//enterprise/server/vmvfs:vmvfs_lib",
         "//server/util/log",
-        "//server/util/networking",
+        "//server/util/networking/dnstypes",
         "//server/util/rlimit",
         "//server/util/status",
         "@com_github_jsimonetti_rtnetlink//rtnl",

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking/dnstypes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -90,10 +91,10 @@ var (
 	}
 )
 
-type DNSOverride struct {
-	HostnameToOverride string `yaml:"hostname_to_override"`
-	RedirectToHostname string `yaml:"redirect_to_hostname"`
-}
+// DNSOverride is an alias for dnstypes.DNSOverride, kept here for backward
+// compatibility so that existing callers outside the goinit dependency tree
+// continue to compile without changes.
+type DNSOverride = dnstypes.DNSOverride
 
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.

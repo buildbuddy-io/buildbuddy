@@ -13,6 +13,7 @@ go_library(
         "//server/util/background",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/networking/dnstypes",
         "//server/util/random",
         "//server/util/status",
         "//server/util/tracing",

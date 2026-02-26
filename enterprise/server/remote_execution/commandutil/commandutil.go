@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/commandtypes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -83,9 +83,9 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+func constructExecCommand(command *repb.Command, workDir string, stdio *commandtypes.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
-		stdio = &interfaces.Stdio{}
+		stdio = &commandtypes.Stdio{}
 	}
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
@@ -148,7 +148,7 @@ func RetryIfTextFileBusy(fn func() error) error {
 
 type CommandRunner struct{}
 
-func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *commandtypes.Stdio) *commandtypes.CommandResult {
 	return Run(ctx, command, workDir, statsListener, stdio)
 }
 
@@ -159,7 +159,7 @@ func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir s
 // invoked each time stats are measured. In addition, the last recorded stats
 // will be returned in CommandResult.Stats. Note that enabling stats incurs some
 // overhead, so a nil callback should be used if stats aren't needed.
-func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *commandtypes.Stdio) *commandtypes.CommandResult {
 	return RunWithOpts(ctx, command, &RunOpts{
 		Dir:           workDir,
 		StatsListener: statsListener,
@@ -183,7 +183,7 @@ type RunOpts struct {
 	// Stdio defines how stdin/stdout/stderr should be handled.
 	// If Stdout/Stderr are provided, command output will not be buffered,
 	// and will instead *only* be written to those writers.
-	Stdio *interfaces.Stdio
+	Stdio *commandtypes.Stdio
 
 	// Signal is an optional channel that can be used to send signals to the
 	// process once started.
@@ -192,7 +192,7 @@ type RunOpts struct {
 
 // Run a command, retrying "text file busy" errors and killing the process tree
 // when the context is cancelled.
-func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *interfaces.CommandResult {
+func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *commandtypes.CommandResult {
 	if opts == nil {
 		opts = &RunOpts{}
 	}
@@ -212,7 +212,7 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
-	return &interfaces.CommandResult{
+	return &commandtypes.CommandResult{
 		ExitCode:           exitCode,
 		Error:              err,
 		Stdout:             stdoutBuf.Bytes(),
@@ -351,8 +351,8 @@ func ChildPids(pid int) ([]int, error) {
 	return out, nil
 }
 
-func ErrorResult(err error) *interfaces.CommandResult {
-	return &interfaces.CommandResult{
+func ErrorResult(err error) *commandtypes.CommandResult {
+	return &commandtypes.CommandResult{
 		Error:    err,
 		ExitCode: NoExitCode,
 	}

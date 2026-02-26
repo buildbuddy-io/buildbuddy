@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmdns"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking/dnstypes"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +22,7 @@ const (
 	notOverwrittenIP = "8.8.8.8"
 )
 
-// mockDNSClient implements interfaces.DNSClient.
+// mockDNSClient implements vmdns.DNSClient.
 type mockDNSClient struct{}
 
 func (d *mockDNSClient) Exchange(m *dns.Msg, address string) (r *dns.Msg, rtt time.Duration, err error) {
@@ -62,7 +62,7 @@ func (m *mockResponseWriter) WriteMsg(msg *dns.Msg) error {
 }
 
 func TestOverride(t *testing.T) {
-	overrides := []*networking.DNSOverride{
+	overrides := []*dnstypes.DNSOverride{
 		{
 			HostnameToOverride: hostnameToOverride,
 			RedirectToHostname: redirectToHostname,
@@ -93,7 +93,7 @@ func TestOverride(t *testing.T) {
 }
 
 func TestNotOverride(t *testing.T) {
-	overrides := []*networking.DNSOverride{
+	overrides := []*dnstypes.DNSOverride{
 		{
 			HostnameToOverride: hostnameToOverride,
 			RedirectToHostname: redirectToHostname,
@@ -116,7 +116,7 @@ func TestNotOverride(t *testing.T) {
 }
 
 func TestRequestRedirectHostname(t *testing.T) {
-	overrides := []*networking.DNSOverride{
+	overrides := []*dnstypes.DNSOverride{
 		{
 			HostnameToOverride: hostnameToOverride,
 			RedirectToHostname: redirectToHostname,

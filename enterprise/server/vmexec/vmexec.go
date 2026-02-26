@@ -19,9 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking/dnstypes"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
@@ -83,7 +83,18 @@ func NewServer(workspaceDevice string) (*execServer, error) {
 	return &execServer{workspaceDevice}, nil
 }
 
-func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd bool, enableDockerdTCP bool, dnsOverrides []*networking.DNSOverride) error {
+// alwaysServingHealthServer is a trivial gRPC health server that always
+// reports SERVING. It replaces the full healthcheck package to avoid
+// pulling server/interfaces, metrics, statusz, etc. into goinit.
+type alwaysServingHealthServer struct {
+	hlpb.UnimplementedHealthServer
+}
+
+func (*alwaysServingHealthServer) Check(context.Context, *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error) {
+	return &hlpb.HealthCheckResponse{Status: hlpb.HealthCheckResponse_SERVING}, nil
+}
+
+func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd bool, enableDockerdTCP bool, dnsOverrides []*dnstypes.DNSOverride) error {
 	listener, err := vsock.NewGuestListener(ctx, port)
 	if err != nil {
 		return err
@@ -100,11 +111,7 @@ func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd b
 		return err
 	}
 	vmxpb.RegisterExecServer(server, vmService)
-	hc := healthcheck.NewHealthChecker("vmexec")
-	// For now, don't register any explicit health checks; if we can ping the
-	// health check service at all (within a short timeframe) then assume all is
-	// well.
-	hlpb.RegisterHealthServer(server, hc)
+	hlpb.RegisterHealthServer(server, &alwaysServingHealthServer{})
 
 	// If applicable, wait for dockerd to start before accepting commands, so
 	// that commands depending on dockerd do not need to explicitly wait for it.
@@ -151,7 +158,7 @@ func waitForDockerd(ctx context.Context, enableDockerdTCP bool) error {
 }
 
 // Wait for the local DNS server to accept requests.
-func waitForVMDNS(ctx context.Context, dnsOverrides []*networking.DNSOverride) error {
+func waitForVMDNS(ctx context.Context, dnsOverrides []*dnstypes.DNSOverride) error {
 	if len(dnsOverrides) == 0 {
 		return nil
 	}
