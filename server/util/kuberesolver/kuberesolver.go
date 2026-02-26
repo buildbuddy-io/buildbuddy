@@ -108,11 +108,6 @@ type podWatcher struct {
 	podName   string
 	ctx       context.Context
 
-	// startOnce ensures the resolveAndWatch goroutine is started exactly once,
-	// on the first subscribe call. This guarantees at least one subscriber is
-	// registered before the goroutine begins resolving.
-	startOnce sync.Once
-
 	// Only accessed from the resolveAndWatch goroutine.
 	resourceVersion string
 
@@ -124,7 +119,7 @@ type podWatcher struct {
 
 func newPodWatcher(ctx context.Context, client kubernetes.Interface, namespace, podName string) *podWatcher {
 	ctx, cancel := context.WithCancel(ctx)
-	return &podWatcher{
+	pw := &podWatcher{
 		client:      client,
 		namespace:   namespace,
 		podName:     podName,
@@ -132,6 +127,8 @@ func newPodWatcher(ctx context.Context, client kubernetes.Interface, namespace, 
 		subscribers: make(map[*subscription]func(podResolution)),
 		cancel:      cancel,
 	}
+	go pw.resolveAndWatch(ctx)
+	return pw
 }
 
 // subscribe adds a subscriber with callback cb. cb will be called immediately
@@ -147,11 +144,6 @@ func (pw *podWatcher) subscribe(cb func(podResolution)) *subscription {
 		log.Infof("Finished sending existing state to new subscriber for pod %s/%s.", pw.namespace, pw.podName)
 	}
 	pw.mu.Unlock()
-	// Start the resolve goroutine after the first subscriber is registered,
-	// ensuring it won't miss any subscribers when it calls notifySubscribers.
-	pw.startOnce.Do(func() {
-		go pw.resolveAndWatch(pw.ctx)
-	})
 	return s
 }
 
@@ -362,16 +354,6 @@ func (m *PodWatcherManager) getOrCreateClient() (kubernetes.Interface, error) {
 	return m.client, nil
 }
 
-func (m *PodWatcherManager) removeWatcherIfEmpty(pw *podWatcher) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	key := watcherKey(pw.namespace, pw.podName)
-	if current, ok := m.watchers[key]; ok && current == pw {
-		pw.cancel()
-		delete(m.watchers, key)
-	}
-}
-
 // WatchPodIP starts watching the pod IP for the given hostPort string
 // (format: "podName.serviceName.namespace[.svc.cluster.local]:port").
 // The callback is called immediately with the current state and then on
@@ -415,8 +397,11 @@ func (m *PodWatcherManager) WatchPodIP(hostPort string, cb func(ipPort string, e
 	})
 
 	return func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		if pw.unsubscribe(sub) {
-			m.removeWatcherIfEmpty(pw)
+			pw.cancel()
+			delete(m.watchers, watcherKey(pw.namespace, pw.podName))
 		}
 	}, nil
 }
