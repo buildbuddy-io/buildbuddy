@@ -969,11 +969,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 		}
 
-		if latestErr == nil ||
-			!rexec.Retryable(latestErr) ||
-			status.IsPermissionDeniedError(latestErr) ||
-			status.IsDeadlineExceededError(latestErr) ||
-			ctx.Err() != nil {
+		if !shouldRetry(latestErr) || ctx.Err() != nil {
 			retry = false
 		}
 
@@ -1066,6 +1062,23 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
+// shouldRetry returns whether a remote run attempt that returned the given
+// error should be retried.
+func shouldRetry(err error) bool {
+	if err == nil {
+		return false
+	}
+	if !rexec.Retryable(err) {
+		return false
+	}
+	if status.IsPermissionDeniedError(err) ||
+		status.IsNotFoundError(err) ||
+		status.IsDeadlineExceededError(err) {
+		return false
+	}
+	return true
+}
+
 func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, req *rnpb.RunRequest) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
 	var inRsp *inpb.GetInvocationResponse
 	var execRsp *repb.ExecuteResponse
@@ -1132,7 +1145,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 			}
 			if len(execution.GetExecution()) == 0 {
 				log.Debugf("ci_runner execution not found, retrying...: %s", err)
-				return nil, fmt.Errorf("ci_runner execution not found")
+				return nil, status.NotFoundError("ci_runner execution not found")
 			}
 			return execution, nil
 		})

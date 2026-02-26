@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -385,5 +387,28 @@ func TestGeneratingPatches(t *testing.T) {
 		} else {
 			require.FailNowf(t, "unexpected patch %s", p)
 		}
+	}
+}
+
+func TestShouldRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"NotFound (e.g. execution not found after completion)", status.NotFoundError("ci_runner execution not found"), false},
+		{"PermissionDenied", status.PermissionDeniedError("forbidden"), false},
+		{"DeadlineExceeded", status.DeadlineExceededError("timed out"), false},
+		{"InvalidArgument (not retryable per rexec)", status.InvalidArgumentError("bad arg"), false},
+		{"FailedPrecondition (not retryable per rexec)", status.FailedPreconditionError("precondition"), false},
+		{"Unauthenticated (not retryable per rexec)", status.UnauthenticatedError("unauth"), false},
+		{"Unavailable (transient, should retry)", status.UnavailableError("server down"), true},
+		{"Internal (transient, should retry)", status.InternalError("oops"), true},
+		{"plain error (should retry)", fmt.Errorf("something went wrong"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, shouldRetry(tc.err))
+		})
 	}
 }
