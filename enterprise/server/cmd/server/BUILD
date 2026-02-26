@@ -123,6 +123,7 @@ go_binary(
 # TODO(sluongng): Verify the layering of the image.
 pkg_tar(
     name = "tar",
+    extension = "tar.gz",
     srcs = [
         ":buildbuddy",
     ],
