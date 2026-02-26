@@ -231,6 +231,54 @@ func TestDispatch_RecordsClientIP(t *testing.T) {
 	assert.Equal(t, testClientIP, exec.GetClientIp())
 }
 
+func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		wd      string
+		wantErr bool
+	}{
+		{name: "empty", wd: "", wantErr: false},
+		{name: "valid_subdir", wd: "src/main", wantErr: false},
+		{name: "path_traversal", wd: "../escape", wantErr: true},
+		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
+		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
+		{name: "dot_dot_only", wd: "..", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			cmd := &repb.Command{
+				Arguments:        []string{"test"},
+				WorkingDirectory: tc.wd,
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			taskID := arn.NewUploadString()
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
@@ -1008,6 +1056,15 @@ func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealE
 		Arguments:   []string{"test"},
 		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
 	}
+	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
+	require.NoError(t, err)
+	action.CommandDigest = cd
+	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
+	require.NoError(t, err)
+	return digest.NewCASResourceName(ad, instanceName, df)
+}
+
+func uploadActionWithCommand(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command) *digest.CASResourceName {
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
 	action.CommandDigest = cd

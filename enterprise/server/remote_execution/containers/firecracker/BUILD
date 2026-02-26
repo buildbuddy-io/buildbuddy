@@ -150,6 +150,7 @@ go_test(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",

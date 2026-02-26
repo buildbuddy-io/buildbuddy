@@ -760,7 +760,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab === "timing" && <TimingCardComponent model={this.state.model} />}
+          {activeTab === "timing" && (
+            <TimingCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
 
           {activeTab === "coverage" && <InvocationCoverageCardComponent model={this.state.model} />}
 

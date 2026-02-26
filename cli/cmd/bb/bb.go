@@ -321,7 +321,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		}
 	}()
 
-	plugins, bazelArgs, execArgs, sidecar, err := setup.Setup(args, tempDir)
+	plugins, bazelArgs, execArgs, sidecar, besBackend, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, err
 	}
@@ -338,7 +338,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		bazelArgs = picker.HandlePicker(bazelArgs)
 	}
 
-	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs)
+	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, besBackend)
 	if err != nil {
 		return 1, status.WrapErrorf(err, "error configuring run log streaming")
 	}

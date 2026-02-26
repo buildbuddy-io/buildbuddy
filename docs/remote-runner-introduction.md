@@ -184,7 +184,7 @@ cost considerations and maintain good performance:
 
 - `remote-snapshot-save-policy=none-available`
 - `snapshot-read-policy=local-first`
-- `max-stale-fallback-snapshot-age=1d`
+- `max-stale-fallback-snapshot-age=24h`
 
 For performance-sensitive or interactive workloads (like if you're using the Remote
 Bazel CLI to build interactively), we recommend the following platform properties.
@@ -367,7 +367,7 @@ platform property. Valid values are durations like `12h` or `1d`.
 This platform sets a limit on the max age of a fallback snapshot to prevent using very stale local snapshots that may cause performance degradation. The system will then fetch a newer remote snapshot.
 
 For example, let's say you set `snapshot-read-policy=local-first` and
-`max-stale-fallback-snapshot-age=1d`.
+`max-stale-fallback-snapshot-age=24h`.
 
 - The first run on your feature branch `my-feature` runs on Machine A and resumes from a fallback
   snapshot on the default branch `main`. There is no local snapshot for `main`

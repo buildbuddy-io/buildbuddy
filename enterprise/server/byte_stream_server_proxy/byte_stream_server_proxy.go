@@ -472,7 +472,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 
 	// TODO(buildbuddy-internal#6426): Read and write chunked blobs for encrypted requests.
 	encryptionRequested := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
-	if s.chunkingEnabled(ctx) && !encryptionRequested && !proxy_util.SkipRemote(ctx) {
+	if s.writeChunkingEnabled(ctx) && !encryptionRequested && !proxy_util.SkipRemote(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
 			recordWriteMetrics(byteStreamMetrics{
@@ -686,9 +686,10 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 	return s.ByteStream_WriteServer.Recv()
 }
 
-func (s *ByteStreamServerProxy) chunkingEnabled(ctx context.Context) bool {
+func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	return s.localCache != nil && s.remoteCAS != nil &&
-		chunking.Enabled(ctx, s.efp)
+		chunking.Enabled(ctx, s.efp) &&
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
 }
 
 type writeChunkedResult struct {
@@ -756,7 +757,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.MaxChunkSizeBytes()/4), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}
@@ -818,7 +819,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	// If there's only 1 chunk, the chunking threshold is misconfigured.
 	// It should be set higher than the max chunk size to avoid overlap.
 	if len(chunkDigests) == 1 {
-		return result, status.InternalErrorf("chunking produced only 1 chunk; only chunked blobs larger than max_chunk_size_bytes are supported")
+		return result, status.InternalErrorf("chunking produced only 1 chunk; only chunked blobs larger than 4x avg_chunk_size_bytes are supported")
 	}
 
 	manifest := &chunking.Manifest{
@@ -826,10 +827,6 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		ChunkDigests:   chunkDigests,
 		InstanceName:   instanceName,
 		DigestFunction: digestFunction,
-	}
-
-	if err := manifest.Store(ctx, s.localCache); err != nil {
-		return writeChunkedResult{}, status.InternalErrorf("storing manifest locally: %s", err)
 	}
 
 	missingBlobs, err := s.remoteCAS.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest())

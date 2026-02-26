@@ -73,17 +73,23 @@ func newMetricsTransport(inner http.RoundTripper, clientName string) http.RoundT
 	}
 }
 
-func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	host := in.URL.Hostname()
-	var hostLabel string
+// HostLabel returns a metrics-safe label for the given hostname.
+// IP addresses are replaced with "[IP_ADDRESS]", and domain names are
+// reduced to their eTLD+1 (e.g. "us.gcr.io" → "gcr.io"). Returns
+// "[UNKNOWN]" if the eTLD+1 cannot be determined.
+func HostLabel(host string) string {
 	if net.ParseIP(host) != nil {
-		hostLabel = "[IP_ADDRESS]"
-	} else {
-		hostLabel, err = publicsuffix.EffectiveTLDPlusOne(host)
-		if err != nil {
-			hostLabel = "[UNKNOWN]"
-		}
+		return "[IP_ADDRESS]"
 	}
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return "[UNKNOWN]"
+	}
+	return etld1
+}
+
+func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	hostLabel := HostLabel(in.URL.Hostname())
 	metrics.HTTPClientRequestCount.With(prometheus.Labels{
 		metrics.HTTPHostLabel:   hostLabel,
 		metrics.HTTPMethodLabel: in.Method,

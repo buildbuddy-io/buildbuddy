@@ -17,7 +17,7 @@ let browserifyPathPlugin = {
         entry = path.join(
           process.cwd(),
           "external",
-          "+_repo_rules+com_github_buildbuddy_io_buildbuddy",
+          "+git_repository+com_github_buildbuddy_io_buildbuddy",
           "node_modules"
         );
       }

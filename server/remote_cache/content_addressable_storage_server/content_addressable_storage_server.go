@@ -1163,8 +1163,12 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		}, nil
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
+	}
+
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
 	}
 
 	if req.GetBlobDigest() == nil {
@@ -1200,8 +1204,13 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "cache.split_splice_enabled", false) {
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
+	}
+
+	cf := req.GetChunkingFunction()
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
 	}
 
 	if req.GetBlobDigest() == nil {
@@ -1210,9 +1219,6 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 
 	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err != nil {
-		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
-		// exists but wasn't stored with chunking. In the future, we could return
-		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
 	}
 

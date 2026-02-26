@@ -191,13 +191,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		la.sendRangeEvent(events.EventRangeLeaseAcquired)
 		metrics.RaftLeases.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeID())),
 		}).Inc()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
+		la.sendRangeEvent(events.EventRangeLeaseAcquired)
 	case Drop:
 		// If the lease is already invalid, early-return here.
 		if !valid {
@@ -217,13 +217,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
-		la.sendRangeEvent(events.EventRangeLeaseDropped)
 		metrics.RaftLeases.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 		}).Dec()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
 		}).Observe(float64(dur.Milliseconds()))
+		la.sendRangeEvent(events.EventRangeLeaseDropped)
 	}
 }
 
@@ -291,9 +291,9 @@ func (lk *LeaseKeeper) watchLeases() {
 				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 			})
 			if leader {
-				rlGauge.Inc()
+				rlGauge.Set(1.0)
 			} else {
-				rlGauge.Dec()
+				rlGauge.Set(0.0)
 			}
 
 			lk.mu.Lock()

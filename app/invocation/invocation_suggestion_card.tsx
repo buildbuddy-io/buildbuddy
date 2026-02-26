@@ -397,7 +397,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     // Bazel pre-v5 doesn't support compression.
     if (version === null || version.major < 5) return null;
 
-    const flag = version.major >= 7 ? "--experimental_remote_cache_compression" : "--remote_cache_compression";
+    // --experimental_remote_cache_compression was renamed to --remote_cache_compression in Bazel 7.0.
+    const flag = version.major >= 7 ? "--remote_cache_compression" : "--experimental_remote_cache_compression";
 
     return {
       level: SuggestionLevel.INFO,
@@ -414,6 +415,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
     };
   },
+  // Suggest compression threshold for Bazel versions where threshold default is 0.
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
@@ -427,10 +429,14 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
 
     const version = model.getBazelVersion();
-    // threshold flag is available from Bazel 7.1 forward
-    if (version === null || version.major < 7 || (version.major == 7 && version.minor < 1)) return null;
-    // experimental_remote_cache_compression_threshold defaults to 100 from Bazel 8.0 forward
-    if (version === null || version.major >= 8) return null;
+    // Threshold flag first appears in Bazel 7.1, and defaults to 100 in Bazel 8.0+.
+    if (version === null || version.major < 7 || (version.major === 7 && version.minor < 1) || version.major >= 8) {
+      return null;
+    }
+
+    const compressionFlag = model.optionsMap.get("remote_cache_compression")
+      ? "--remote_cache_compression"
+      : "--experimental_remote_cache_compression";
 
     return {
       level: SuggestionLevel.INFO,
@@ -442,8 +448,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
       reason: (
         <>
-          Shown because this build is cache-enabled with <span className="inline-code">--remote_cache_compression</span>{" "}
-          set without <span className="inline-code">--experimental_remote_cache_compression_threshold</span> set.
+          Shown because this build is cache-enabled with <span className="inline-code">{compressionFlag}</span> set
+          without <span className="inline-code">--experimental_remote_cache_compression_threshold</span> set.
         </>
       ),
     };

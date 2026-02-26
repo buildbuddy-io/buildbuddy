@@ -473,7 +473,6 @@ type AuthDB interface {
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
-	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 
 	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
 	// group. It is only to be used in situations where the user has a
@@ -551,6 +550,7 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error

@@ -188,6 +188,18 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
 if [ ! -d "$KYTHE_DIR" ]; then
   mkdir -p "$KYTHE_DIR"
   curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi
+
+# Bazel 8+ removed proto_lang_toolchain from native rules.
+# Patch the Kythe BUILD file to load it from rules_proto.
+if ! grep -q 'proto_lang_toolchain.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
+  sed -i '1s|^|load("@rules_proto//proto:proto_lang_toolchain.bzl", "proto_lang_toolchain")\n|' "$KYTHE_DIR"/BUILD
+fi
+
+# Ensure the Kythe MODULE.bazel declares rules_proto as a dependency
+# (needed when the Kythe module is registered via local_path_override).
+if ! grep -q 'rules_proto' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
+  echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> "$KYTHE_DIR"/MODULE.bazel
 fi`, dirName, downloadURL)
 	return buf
 }
@@ -235,6 +247,11 @@ fi
 # These arguments make the extractors run on java generated code
 KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
+# Bazel 9 defaults config_setting visibility to private, which breaks selects
+if [ $BZL_MAJOR_VERSION -ge 9 ]; then
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
+fi
+
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
 bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 
@@ -245,9 +262,12 @@ func prepareKytheOutputs(dirName string) string {
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
-find -L bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+# Note: intentionally not using xargs -P for parallel indexing, because
+# parallel processes writing binary protobuf entries to a shared pipe can
+# produce interleaved/corrupt output that write_tables cannot decode.
+find -L bazel-out/ -name "*.go.kzip" | xargs -r -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out/ -name "*.proto.kzip" | xargs -r -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out -name '*.java.kzip' | xargs -r -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
 # and produces very large indices.
@@ -259,7 +279,7 @@ cxx_kzips=$(find -L bazel-out/*/extra_actions -name "*.cxx.kzip")
 if [ ! -z "$cxx_kzips" ]; then
   sudo apt update && sudo apt install -y memcached
   memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
-  echo "$cxx_kzips" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/cxx_indexer \
+  echo "$cxx_kzips" | xargs -n 1 $KYTHE_DIR/indexers/cxx_indexer \
     --experimental_alias_template_instantiations \
 	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
 	-cache="--SERVER=localhost:11211" \

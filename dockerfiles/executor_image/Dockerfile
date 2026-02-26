@@ -10,12 +10,6 @@ RUN \
     sed -i 's/^Suites: stable-security$/Suites: trixie-security/' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
     apt-get install -y \
-    # Necessary for rules_go
-    gcc \
-    # Necessary for rules_pkg
-    python3 \
-    # Necessary to build redis, for some reason???
-    libstdc++-14-dev \
     # Necessary for firecracker
     e2fsprogs \
     # FUSE support, used by vbd and vfs packages.

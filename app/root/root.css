@@ -10,6 +10,14 @@
   color-scheme: dark;
 }
 
+.dark .menu {
+  border-bottom: 1px solid var(--color-shelf-border);
+}
+
+.dark .side-menu {
+  border: 1px solid var(--color-shelf-border);
+}
+
 h1,
 h2,
 h3,
@@ -96,7 +104,7 @@ button {
   font-size: 24px;
   z-index: 2;
   position: relative;
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-header-bg);
   color: var(--color-text-inverted);
 }
 
@@ -181,7 +189,7 @@ button {
   position: absolute;
   top: 46px;
   right: 8px;
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-header-bg);
   color: var(--color-text-inverted);
   padding: 8px 32px 32px 32px;
   border-bottom-left-radius: 8px;

@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/google/uuid"
@@ -30,8 +29,7 @@ import (
 func TestWithBuild(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), testbazel.BinaryPath(t)),
-		"BUILD":         `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"BUILD": `sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": `#!/bin/bash
 echo "hello world"
 echo "goodbye world"
@@ -272,10 +270,7 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 }
 
 func runWithCLI(t *testing.T, ws string, cmdArgs []string) string {
-	cmd := testcli.BazeliskCommand(t, ws, cmdArgs...)
-	// Sidecar is not configured anyway. Don't try to connect to it (which will eventually timeout),
-	// which will make the test a bit faster.
-	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
+	cmd := testcli.BazelCommand(t, ws, cmdArgs...)
 	term := testcli.PTY(t)
 	term.Run(cmd)
 	fmt.Print(term.Render())

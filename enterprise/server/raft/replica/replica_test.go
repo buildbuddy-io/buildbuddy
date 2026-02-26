@@ -135,7 +135,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
 
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
-	wc.CommitFn = func(bytesWritten int64) error {
+	wc.SetCommitFn(func(bytesWritten int64) error {
 		now := time.Now()
 		md := &sgpb.FileMetadata{
 			FileRecord:      fileRecord,
@@ -162,7 +162,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 		require.Equal(t, 1, len(writeRsp))
 
 		return rbuilder.NewBatchResponse(writeRsp[0].Result.Data).AnyError()
-	}
+	})
 	return wc
 }
 

@@ -383,27 +383,18 @@ func TestConcurrentBucketAccess(t *testing.T) {
 func TestCheckGroupBlocked(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
+
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{})
+	domain := t.Name()
+	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
+	fp, err := experiments.NewFlagProvider(domain)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
 	qm, err := newQuotaManager(env, createTestBucket)
 	require.NoError(t, err)
 
-	t.Run("blocked group with flag enabled", func(t *testing.T) {
-		flags := map[string]memprovider.InMemoryFlag{
-			disallowBlockedGroupsFlagKey: {
-				State:          memprovider.Enabled,
-				DefaultVariant: "on",
-				Variants: map[string]any{
-					"on": true,
-				},
-			},
-		}
-		provider := memprovider.NewInMemoryProvider(flags)
-		domain := t.Name()
-		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-
-		fp, err := experiments.NewFlagProvider(domain)
-		require.NoError(t, err)
-		env.SetExperimentFlagProvider(fp)
-
+	t.Run("blocked group", func(t *testing.T) {
 		blockedClaims := &claims.Claims{
 			APIKeyID:    "AK001",
 			UserID:      "US001",
@@ -417,24 +408,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		assert.Equal(t, errBlocked, err)
 	})
 
-	t.Run("enterprise group with flag enabled", func(t *testing.T) {
-		flags := map[string]memprovider.InMemoryFlag{
-			disallowBlockedGroupsFlagKey: {
-				State:          memprovider.Enabled,
-				DefaultVariant: "on",
-				Variants: map[string]any{
-					"on": true,
-				},
-			},
-		}
-		provider := memprovider.NewInMemoryProvider(flags)
-		domain := t.Name()
-		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-
-		fp, err := experiments.NewFlagProvider(domain)
-		require.NoError(t, err)
-		env.SetExperimentFlagProvider(fp)
-
+	t.Run("enterprise group", func(t *testing.T) {
 		enterpriseClaims := &claims.Claims{
 			APIKeyID:    "AK001",
 			UserID:      "US001",
@@ -445,52 +419,7 @@ func TestCheckGroupBlocked(t *testing.T) {
 		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
 	})
 
-	t.Run("blocked group with flag disabled", func(t *testing.T) {
-		flags := map[string]memprovider.InMemoryFlag{
-			disallowBlockedGroupsFlagKey: {
-				State:          memprovider.Enabled,
-				DefaultVariant: "off",
-				Variants: map[string]any{
-					"off": false,
-				},
-			},
-		}
-		provider := memprovider.NewInMemoryProvider(flags)
-		domain := t.Name()
-		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-
-		fp, err := experiments.NewFlagProvider(domain)
-		require.NoError(t, err)
-		env.SetExperimentFlagProvider(fp)
-
-		blockedClaims := &claims.Claims{
-			APIKeyID:    "AK001",
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, blockedClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
-
 	t.Run("request without API key", func(t *testing.T) {
-		flags := map[string]memprovider.InMemoryFlag{
-			disallowBlockedGroupsFlagKey: {
-				State:          memprovider.Enabled,
-				DefaultVariant: "on",
-				Variants: map[string]any{
-					"on": true,
-				},
-			},
-		}
-		provider := memprovider.NewInMemoryProvider(flags)
-		domain := t.Name()
-		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-
-		fp, err := experiments.NewFlagProvider(domain)
-		require.NoError(t, err)
-		env.SetExperimentFlagProvider(fp)
-
 		webClaims := &claims.Claims{
 			UserID:      "US001",
 			GroupID:     "GR001",
@@ -501,23 +430,6 @@ func TestCheckGroupBlocked(t *testing.T) {
 	})
 
 	t.Run("impersonating request", func(t *testing.T) {
-		flags := map[string]memprovider.InMemoryFlag{
-			disallowBlockedGroupsFlagKey: {
-				State:          memprovider.Enabled,
-				DefaultVariant: "on",
-				Variants: map[string]any{
-					"on": true,
-				},
-			},
-		}
-		provider := memprovider.NewInMemoryProvider(flags)
-		domain := t.Name()
-		require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-
-		fp, err := experiments.NewFlagProvider(domain)
-		require.NoError(t, err)
-		env.SetExperimentFlagProvider(fp)
-
 		impersonatingClaims := &claims.Claims{
 			APIKeyID:      "AK001",
 			UserID:        "US001",

@@ -16,7 +16,7 @@ import requests
 import subprocess
 import sys
 
-from enterprise.tools.build_images.lib.check_buildx_support import check_buildx_support
+from lib.check_buildx_support import check_buildx_support
 
 def parse_program_arguments():
     """Parses the program arguments and returns a namespace representing them."""

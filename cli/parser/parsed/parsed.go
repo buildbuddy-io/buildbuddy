@@ -621,9 +621,9 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 			//
 			// On Unix, if $HOME variable is unset, fallback to finding home directory
 			// by syscall (getpwuid), which typically parse /etc/passwd for the information.
-			if homeDir, osErr := os.UserHomeDir(); osErr != nil && homeDir != "" {
+			if homeDir, osErr := os.UserHomeDir(); osErr == nil && homeDir != "" {
 				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
-			} else if currUser, userErr := user.Current(); userErr != nil && currUser.HomeDir != "" {
+			} else if currUser, userErr := user.Current(); userErr == nil && currUser != nil && currUser.HomeDir != "" {
 				rcFiles = append(rcFiles, filepath.Join(currUser.HomeDir, ".bazelrc"))
 			} else {
 				log.Debugf("Unable to locate home_rc: %s - %s", osErr, userErr)

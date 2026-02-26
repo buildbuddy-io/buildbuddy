@@ -640,7 +640,7 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 
 func TestSpliceBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -692,7 +692,7 @@ func TestSpliceBlob(t *testing.T) {
 
 func TestSplitBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{

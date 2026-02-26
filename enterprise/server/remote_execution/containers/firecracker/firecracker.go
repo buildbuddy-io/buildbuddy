@@ -120,7 +120,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "16"
+	GuestAPIVersion = "17"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -242,6 +242,33 @@ var (
 	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
+
+// Derives the desired Firecracker NetworkMode from the provided network and
+// init-dockerd platform properties enum.
+func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
+	if network == "external" || network == "" {
+		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
+	}
+	if network == "off" {
+		if initDockerd {
+			return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+		}
+		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
+	}
+	return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
+}
+
+// networkingEnabled returns true if the VM has any networking capability.
+func networkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode != fcpb.NetworkMode_NETWORK_MODE_OFF
+}
+
+// externalNetworkingEnabled returns true if the VM can access external networks.
+func externalNetworkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode == fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED || mode == fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+}
 
 func init() {
 	// Configure firecracker request timeout (default: 500ms).
@@ -547,12 +574,17 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if numCPUs > firecrackerMaxCPU {
 		numCPUs = firecrackerMaxCPU
 	}
+
+	networkMode, err := networkMode(args.Props.Network, args.Props.InitDockerd)
+	if err != nil {
+		return nil, err
+	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
 		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:  true,
+		NetworkMode:       networkMode,
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
@@ -567,7 +599,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupParent:           args.CgroupParent,
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
-		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
@@ -660,15 +691,14 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot      string               // the root dir the jailer will work in
-	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
-	cgroupParent    string               // parent cgroup path (root-relative)
-	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
-	blockDevice     *block_io.Device     // block device for cgroup IO settings
-	machine         *fcclient.Machine    // the firecracker machine object.
-	vmLog           *VMLog
-	env             environment.Env
-	resolver        *oci.Resolver
+	jailerRoot     string               // the root dir the jailer will work in
+	cgroupParent   string               // parent cgroup path (root-relative)
+	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice    *block_io.Device     // block device for cgroup IO settings
+	machine        *fcclient.Machine    // the firecracker machine object.
+	vmLog          *VMLog
+	env            environment.Env
+	resolver       *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -695,8 +725,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
 	}
-	if opts.VMConfiguration.InitDockerd && !opts.VMConfiguration.EnableNetworking {
-		return nil, status.FailedPreconditionError("InitDockerd set to true but EnableNetworking set to false. EnableNetworking must also be set to true to pass dockerd configuration over MMDS.")
+	if opts.VMConfiguration.InitDockerd && !networkingEnabled(opts.VMConfiguration.NetworkMode) {
+		return nil, status.FailedPreconditionError("InitDockerd set to true but NetworkMode set to OFF. Networking must be enabled to pass dockerd configuration over MMDS.")
 	}
 
 	vmLog, err := NewVMLog(vmLogTailBufSize)
@@ -731,7 +761,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:         opts.ContainerImage,
 		user:                   opts.User,
 		actionWorkingDir:       opts.ActionWorkingDirectory,
-		cpuWeightMillis:        opts.CPUWeightMillis,
 		cgroupParent:           opts.CgroupParent,
 		networkPool:            opts.NetworkPool,
 		cgroupSettings:         &scpb.CgroupSettings{},
@@ -796,8 +825,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 				return nil, err
 			}
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-				RemoteReadEnabled: c.supportsRemoteSnapshots,
-				ReadPolicy:        readPolicy,
+				SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+				SupportsRemoteManifest: c.supportsRemoteSnapshots,
+				ReadPolicy:             readPolicy,
 			})
 			c.createFromSnapshot = err == nil
 			label := ""
@@ -1253,7 +1283,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		maxFallbackAge = d
 	}
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled:           c.supportsRemoteSnapshots,
+		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
+		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
 		ReadPolicy:                  readPolicy,
 		MaxStaleFallbackSnapshotAge: maxFallbackAge,
 	})
@@ -1591,7 +1622,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"tsc=reliable",
 		"ipv6.disable=1",
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
 	}
 
@@ -1606,7 +1637,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableLogging {
 		initArgs = append(initArgs, "-enable_logging")
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
 	if vmConfig.InitDockerd {
@@ -1696,7 +1727,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		},
 	}...)
 
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
 			{
 				StaticConfiguration: &fcclient.StaticNetworkConfiguration{
@@ -1818,20 +1849,25 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
-	if !c.vmConfig.EnableNetworking {
+	if !networkingEnabled(c.vmConfig.NetworkMode) {
 		return nil
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.networkPool != nil {
+	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
+
+	// Pooled networks have external network access enabled. Only use them if
+	// that's the VM's configured state.
+	// TODO: add a pool for 'network=false' (if this bottlenecks).
+	if c.networkPool != nil && externalNetworking {
 		if network := c.networkPool.Get(ctx); network != nil {
 			c.network = network
 			return nil
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, externalNetworking)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}
@@ -2124,7 +2160,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// enabled and will fail if it isn't set, so make sure to always set it,
 	// even if it's empty.
 	metadata := map[string]string{}
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
 	if c.vmConfig.InitDockerd {
@@ -2366,6 +2402,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		defer cancel()
+
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
 		// Include whether the snapshot will be saved, so it can be displayed in the UI.
@@ -2462,7 +2501,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -3310,8 +3349,9 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 		return false
 	}
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: c.supportsRemoteSnapshots,
-		ReadPolicy:        readPolicy,
+		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+		SupportsRemoteManifest: c.supportsRemoteSnapshots,
+		ReadPolicy:             readPolicy,
 	})
 	return err == nil
 }
@@ -3321,8 +3361,9 @@ func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loade
 		return false
 	}
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: false,
-		ReadPolicy:        readPolicy,
+		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+		SupportsRemoteManifest: false,
+		ReadPolicy:             readPolicy,
 	})
 	return err == nil
 }

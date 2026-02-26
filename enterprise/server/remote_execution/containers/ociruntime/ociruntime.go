@@ -94,8 +94,8 @@ var (
 const (
 	ociVersion = "1.1.0-rc.3" // matches podman
 
-	// Execution root directory path relative to the container rootfs directory.
-	execrootPath = "/buildbuddy-execroot"
+	// Default execution root directory path relative to the container rootfs directory.
+	defaultExecrootPath = "/buildbuddy-execroot"
 
 	// Image cache layout version.
 	//
@@ -365,9 +365,20 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	networkMode := args.Props.DockerNetwork
+	networkMode, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 	if networkMode == "" {
 		networkMode = *defaultNetworkMode
+	}
+
+	execroot := args.Props.ExecrootPath
+	if execroot == "" {
+		execroot = defaultExecrootPath
+	}
+	if !filepath.IsAbs(execroot) {
+		return nil, status.InvalidArgumentErrorf("execroot-path platform property must be an absolute path, got %q", execroot)
 	}
 
 	container := &ociContainer{
@@ -390,6 +401,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
 		forceRoot:          args.Props.DockerForceRoot,
+		execrootPath:       execroot,
 		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
@@ -435,6 +447,7 @@ type ociContainer struct {
 	networkEnabled bool
 	user           string
 	forceRoot      bool
+	execrootPath   string
 
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
@@ -691,7 +704,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	args := []string{"exec", "--cwd=" + execrootPath}
+	args := []string{"exec", "--cwd=" + filepath.Join(c.execrootPath, cmd.GetWorkingDirectory())}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
 	// to it. So we specify the complete env here, including the base env,
@@ -1083,7 +1096,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Terminal: false,
 			User:     *user,
 			Args:     cmd.GetArguments(),
-			Cwd:      execrootPath,
+			Cwd:      filepath.Join(c.execrootPath, cmd.GetWorkingDirectory()),
 			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
@@ -1176,7 +1189,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Options:     []string{"bind", "rprivate", "ro"},
 			},
 			{
-				Destination: execrootPath,
+				Destination: c.execrootPath,
 				Type:        "bind",
 				Source:      c.workDir,
 				Options:     []string{"bind", "rprivate"},
@@ -1609,14 +1622,14 @@ func (s *ImageStore) populateFileCache() error {
 			layerPath := filepath.Join(algorithmDir, layerEntry.Name())
 			info, err := layerEntry.Info()
 			if err != nil {
-				log.Warningf("Failed to get info for layer %s: %s", layerPath, err)
+				log.CtxWarningf(ctx, "Failed to get info for layer %s: %s", layerPath, err)
 				continue
 			}
 
 			// Get the size of the layer directory.
 			size, err := disk.DirSize(layerPath)
 			if err != nil {
-				log.Warningf("Failed to get size of layer %s: %s", layerPath, err)
+				log.CtxWarningf(ctx, "Failed to get size of layer %s: %s", layerPath, err)
 				continue
 			}
 
@@ -1627,13 +1640,13 @@ func (s *ImageStore) populateFileCache() error {
 					// Layer not in cache yet, will be added when used.
 					continue
 				}
-				log.Warningf("Failed to track layer %s in filecache: %s", layerPath, err)
+				log.CtxWarningf(ctx, "Failed to track layer %s in filecache: %s", layerPath, err)
 				continue
 			}
 			// Immediately unlock since we're just populating the cache.
 			unlock()
 			populatedCount++
-			log.Debugf("Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
+			log.CtxDebugf(ctx, "Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
 		}
 	}
 

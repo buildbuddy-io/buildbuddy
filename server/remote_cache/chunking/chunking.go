@@ -4,8 +4,8 @@ package chunking
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -13,18 +13,20 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	fastcdc "github.com/jotfs/fastcdc-go/v2020"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
 	chunkedManifestSalt = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	maxChunkSizeBytes   = flag.Int64("cache.max_chunk_size_bytes", 2<<20, "Only blobs larger (non-inclusive) than this threshold will be chunked (default 2MB). This is also the maximum size of a chunk. The average chunk size will be 1/4 of this value, and the minimum will be 1/16 of this value.")
+	avgChunkSizeBytes   = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 )
 
 const (
@@ -32,14 +34,25 @@ const (
 	chunkOutputFilePrefix = "chunk_"
 )
 
+func AvgChunkSizeBytes() int64 {
+	return *avgChunkSizeBytes
+}
+
 func MaxChunkSizeBytes() int64 {
-	return *maxChunkSizeBytes
+	return *avgChunkSizeBytes * 4
+}
+
+func ValidateConfig() error {
+	v := *avgChunkSizeBytes
+	if v < 1024 || v > 1024*1024 {
+		return fmt.Errorf("cache.avg_chunk_size_bytes must be between 1024 and 1048576, got %d", v)
+	}
+	return nil
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
 	return efp != nil &&
-		efp.Boolean(ctx, "cache.chunking_enabled", false) &&
-		efp.Boolean(ctx, "cache.split_splice_enabled", false)
+		efp.Boolean(ctx, "cache.chunking_enabled", false)
 }
 
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
@@ -89,20 +102,33 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 		pw:   pw,
 		done: make(chan struct{}),
 	}
-	cdcOpts := fastcdc.Options{
-		AverageSize: averageSize,
+	chunker, err := fastcdc.NewChunker(
+		pr,
+		averageSize,
 
-		// Use the library default for MinSize and MaxSize. We explictly specified
-		// the default here to avoid accident change of the values by the library.
-		MinSize: averageSize / 4,
-		MaxSize: averageSize * 4,
+		// Min and Max size should always be 1/4x and 4x of the
+		// avg size respectively. Explicitly declare these to prevent
+		// the library modifying them unknowningly.
+		fastcdc.WithMinSize(averageSize/4),
+		fastcdc.WithMaxSize(averageSize*4),
 
 		// We want to keep the rolling hash the same to ensure that given the same
 		// file, the library will chunk the file in the same way.
-		Seed: 0,
-	}
+		fastcdc.WithSeed(0),
 
-	chunker, err := fastcdc.NewChunker(pr, cdcOpts)
+		// Normalization defaults to 2 from testing using Bazel build
+		// artifacts, since it provided the best balance of deduplication
+		// and chunk size consistency.
+		//
+		// Stats:
+		// Algorithm         │ Dedup%   │ Saved        │ Chunks/File avg
+		// ─────────────────────────────────────────────────────────────
+		// normalization-0  │   30.37% │     93.87 GB │     33.4 │
+		// normalization-1  │   31.30% │     96.73 GB │     34.4 │
+		// normalization-2  │   32.09% │     99.19 GB │     38.3 │
+		// normalization-3  │   32.07% │     99.10 GB │     41.4 │
+		fastcdc.WithNormalization(2),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +189,8 @@ type Manifest struct {
 
 func (cm *Manifest) ToSplitBlobResponse() *repb.SplitBlobResponse {
 	return &repb.SplitBlobResponse{
-		ChunkDigests: cm.ChunkDigests,
+		ChunkDigests:     cm.ChunkDigests,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 }
 
@@ -177,10 +204,11 @@ func (cm *Manifest) ToFindMissingBlobsRequest() *repb.FindMissingBlobsRequest {
 
 func (cm *Manifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 	return &repb.SpliceBlobRequest{
-		BlobDigest:     cm.BlobDigest,
-		ChunkDigests:   cm.ChunkDigests,
-		InstanceName:   cm.InstanceName,
-		DigestFunction: cm.DigestFunction,
+		BlobDigest:       cm.BlobDigest,
+		ChunkDigests:     cm.ChunkDigests,
+		InstanceName:     cm.InstanceName,
+		DigestFunction:   cm.DigestFunction,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
 	}
 }
 
@@ -243,7 +271,13 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return err
 	}
 
-	return cache.Set(ctx, acRNProto, arBytes)
+	if err := cache.Set(ctx, acRNProto, arBytes); err != nil {
+		if status.IsInternalError(err) {
+			log.CtxInfof(ctx, "Failed to set chunking manifest (blob %s, manifest key %s): %v", cm.BlobDigest.GetHash(), acRNProto.GetDigest().GetHash(), err)
+		}
+		return sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+	}
+	return nil
 }
 
 // LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
@@ -255,16 +289,10 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 
 	arBytes, err := cache.Get(ctx, acRNProto)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			blobRN := digest.NewCASResourceName(blobDigest, instanceName, digestFunction).ToProto()
-			if exists, existsErr := cache.Contains(ctx, blobRN); existsErr != nil {
-				return nil, errors.Join(existsErr, err)
-			} else if exists {
-				return nil, status.UnimplementedErrorf("blob %s exists but was not stored with chunking", blobDigest.GetHash())
-			}
-			return nil, err
+		if status.IsInternalError(err) {
+			log.CtxInfof(ctx, "Failed to get chunking manifest (blob %s, manifest key %s): %v", blobDigest.GetHash(), acRNProto.GetDigest().GetHash(), err)
 		}
-		return nil, status.InternalErrorf("retrieve chunked manifest from AC: %w", err)
+		return nil, sanitizeManifestError(err, acRNProto.GetDigest().GetHash(), blobDigest.GetHash())
 	}
 
 	ar := &repb.ActionResult{}
@@ -289,38 +317,71 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	}, nil
 }
 
-// TODO(buildbuddy-internal#6426): Consider prefetching readers using a
-// buffered channel of size 1 to reduce latency between chunk reads.
+// verifyChunks pipelines chunk verification using 2 goroutines:
+// a producer that opens readers sequentially (1 ahead of the consumer),
+// and a closer that asynchronously closes readers after hashing.
 func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) error {
 	hasher, err := digest.HashForDigestType(cm.DigestFunction)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
 	}
 
-	var totalSize int64
-	for i, chunkDigest := range cm.ChunkDigests {
-		chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
-		if err := chunkRN.Validate(); err != nil {
-			return status.InvalidArgumentErrorf("invalid chunk digest at index %d for blob %s: %s", i, cm.BlobDigest.GetHash(), err)
-		}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		reader, err := cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
-		if err != nil {
-			if status.IsNotFoundError(err) {
-				return status.InvalidArgumentErrorf("invalid manifest: chunk %d not found in the CAS: %s", i, chunkDigest.GetHash())
+	readers := make(chan io.ReadCloser, 1)
+	var eg errgroup.Group
+	eg.Go(func() error {
+		defer close(readers)
+		for i, chunkDigest := range cm.ChunkDigests {
+			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
+			if err := chunkRN.Validate(); err != nil {
+				return status.InvalidArgumentErrorf("invalid chunk digest at index %d for blob %s: %s", i, cm.BlobDigest.GetHash(), err)
 			}
-			return status.InternalErrorf("read chunk %d for blob %s from CAS: %w", i, cm.BlobDigest.GetHash(), err)
+			r, err := cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
+			if err != nil {
+				if r != nil {
+					_ = r.Close()
+				}
+				if status.IsNotFoundError(err) {
+					return status.InvalidArgumentErrorf("invalid manifest: chunk %d not found in the CAS: %s", i, chunkDigest.GetHash())
+				}
+				return status.WrapErrorf(err, "read chunk %d for blob %s from CAS", i, cm.BlobDigest.GetHash())
+			}
+			select {
+			case readers <- r:
+			case <-ctx.Done():
+				_ = r.Close()
+				return ctx.Err()
+			}
 		}
+		return nil
+	})
 
-		n, err := io.Copy(hasher, reader)
-		if err != nil {
-			reader.Close()
-			return status.InternalErrorf("hash chunk %d for blob %s: %w", i, cm.BlobDigest.GetHash(), err)
+	closers := make(chan io.Closer, 10)
+	defer close(closers)
+	go func() {
+		for c := range closers {
+			_ = c.Close()
 		}
-		if err := reader.Close(); err != nil {
-			return status.InternalErrorf("close chunk %d reader for blob %s: %w", i, cm.BlobDigest.GetHash(), err)
+	}()
+
+	var (
+		totalSize int64
+		chunkIdx  int
+	)
+	for reader := range readers {
+		n, err := io.Copy(hasher, reader)
+		closers <- reader
+		if err != nil {
+			return status.WrapErrorf(err, "hash chunk %d for blob %s", chunkIdx, cm.BlobDigest.GetHash())
 		}
 		totalSize += n
+		chunkIdx++
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
 	computedDigest := &repb.Digest{
@@ -356,6 +417,28 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 		return nil, err
 	}
 	return acRN.ToProto(), nil
+}
+
+// sanitizeManifestError replaces the salted AC key hash with the original blob hash in
+// the error message, so callers see the blob digest rather than the internal salted key.
+// The gRPC status code is preserved.
+func sanitizeManifestError(err error, saltedHash, blobHash string) error {
+	if err == nil || saltedHash == "" || saltedHash == blobHash {
+		return err
+	}
+	grpcStatus, ok := gstatus.FromError(err)
+	if !ok {
+		return fmt.Errorf("%s", sanitizeMsg(err.Error(), saltedHash, blobHash))
+	}
+	return gstatus.Error(grpcStatus.Code(), sanitizeMsg(grpcStatus.Message(), saltedHash, blobHash))
+}
+
+func sanitizeMsg(msg, saltedHash, blobHash string) string {
+	replacement := fmt.Sprintf("manifestKey(%s)", blobHash)
+	if replaced := strings.ReplaceAll(msg, saltedHash, replacement); replaced != msg {
+		return replaced
+	}
+	return fmt.Sprintf("%s (blob %s)", msg, blobHash)
 }
 
 func DigestsSummary(digests []*repb.Digest) string {

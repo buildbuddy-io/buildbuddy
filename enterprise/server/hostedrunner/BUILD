@@ -59,6 +59,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/platform",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

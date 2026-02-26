@@ -502,10 +502,10 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
 	buffer := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
-	wc.CommitFn = func(int64) error {
+	wc.SetCommitFn(func(int64) error {
 		c.setLookasideEntry(lookasideKey, buffer.Bytes())
 		return nil
-	}
+	})
 	return wc, nil
 }
 
@@ -527,13 +527,13 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 
 	c := io.MultiWriter(a, b)
 	cwc := ioutil.NewCustomCommitWriteCloser(c)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		if err := a.Commit(); err != nil {
 			return err
 		}
 		return b.Commit()
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		var firstErr error
 		if err := a.Close(); err != nil {
 			firstErr = err
@@ -542,7 +542,7 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 			firstErr = err
 		}
 		return firstErr
-	}
+	})
 	return cwc
 }
 
@@ -917,7 +917,24 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	if exists, err := c.remoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, rn, 0, 0)
+	if rn.GetDigest().GetSizeBytes() > 100 && c.SupportsCompressor(repb.Compressor_ZSTD) {
+		// If the file is large enough and we support ZSTD, then the source will
+		// have it compressed, and we want to store it compressed. 100 is the
+		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
+		rn.Compressor = repb.Compressor_ZSTD
+	}
+	// Don't use [Cache.remoteReader] here, because we don't want to check the
+	// lookaside or local caches when backfilling. If they had this digest, we
+	// wouldn't be backfilling it, because we wouldn't have even attempted to
+	// read from a remote peer.
+	//
+	// Also, we don't want to write to those caches during a backfill, because
+	// the backfill was triggered by either:
+	// 1) A FindMissing/Contains call, which doesn't write to those caches, so
+	//	  we shouldn't either, since the blob might never be read from this node.
+	// 2) A Get/Read call, which would have already written to those caches if
+	//    appropriate.
+	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
 	}

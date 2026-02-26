@@ -58,6 +58,7 @@ import (
 	"google.golang.org/grpc"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
@@ -160,6 +161,7 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
+	realEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(client))
 }
 
 func getExecutorHostID() string {

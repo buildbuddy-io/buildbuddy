@@ -94,6 +94,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//server/backends/invocationdb",
+        "//server/backends/memory_kvstore",
         "//server/build_event_protocol/build_event_handler",
         "//server/environment",
         "//server/http/interceptors",

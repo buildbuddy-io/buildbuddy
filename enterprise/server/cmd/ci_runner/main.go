@@ -126,6 +126,7 @@ const (
 
 	bazelBinaryName    = "bazel"
 	bazeliskBinaryName = "bazelisk"
+	bbBinaryName       = "bb"
 
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
@@ -771,10 +772,22 @@ func run() error {
 		}
 		*bazelCommand = bazeliskPath
 	}
+	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
+	if *bazelCommand == bbBinaryName {
+		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+		if _, err := os.Stat(bbPath); err != nil {
+			backendLog.Warningf("bb binary not found in workspace: %s", err)
+		} else {
+			if err := os.Setenv("BB_DISABLE_SIDECAR", "1"); err != nil {
+				backendLog.Warningf("could not set BB_DISABLE_SIDECAR: %s", err)
+			}
+			*bazelCommand = bbPath
+		}
+	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
-	if err := ws.writeBazelWrapperScript(); err != nil {
+	if err := ws.writeBazelWrapperScript(taskWorkspaceDir); err != nil {
 		return status.WrapError(err, "write bazel wrapper script")
 	}
 
@@ -1105,7 +1118,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		action.Steps = make([]*rnpb.Step, 0)
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
-		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName)) {
+		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName) || strings.HasPrefix(cmd, bbBinaryName)) {
 			cmd = "bazel " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
@@ -1443,7 +1456,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
@@ -1587,7 +1600,7 @@ func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
+	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName || tokens[0] == bbBinaryName {
 		tokens = tokens[1:]
 	}
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
@@ -2117,13 +2130,22 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
-// Also adds it to the PATH so it will be invoked whenever `bazel` or `bazelisk` are called.
+// Also adds it to the PATH so it will be invoked whenever `bazel`, `bazelisk`, or `bb` are called.
 // The wrapper script adds a startup option for the custom ci_runner .bazelrc to
 // all bazel commands.
-func (ws *workspace) writeBazelWrapperScript() error {
+func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
-		wrapperPath := filepath.Join(wrapperDir, c)
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+
+	wrapperBinaries := map[string]string{
+		bazelBinaryName:    *bazelCommand,
+		bazeliskBinaryName: *bazelCommand,
+	}
+	if _, err := os.Stat(bbPath); err == nil {
+		wrapperBinaries[bbBinaryName] = bbPath
+	}
+	for wrapperName, binaryPath := range wrapperBinaries {
+		wrapperPath := filepath.Join(wrapperDir, wrapperName)
 		_, err := os.Stat(wrapperPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -2137,7 +2159,7 @@ func (ws *workspace) writeBazelWrapperScript() error {
 
 		cmd := fmt.Sprintf(
 			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
-			*bazelCommand,
+			binaryPath,
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
 		)
@@ -2285,6 +2307,7 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		"common:buildbuddy_bes_results_url --bes_results_url=" + *besResultsURL,
 	}...)
 	if *cacheBackend != "" {
+		lines = append(lines, "common --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_experimental_remote_downloader --experimental_remote_downloader="+*cacheBackend)
 	}
@@ -2570,7 +2593,8 @@ func runBazelWrapper() error {
 	// our bazel options. This can happen if the command is a `bb` CLI command
 	// and `bb` is being invoked via bazelisk (e.g. by setting
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
-	if _, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs); cmdIdx == -1 {
+	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
+	if cmdIdx == -1 {
 		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
 
@@ -2578,7 +2602,7 @@ func runBazelWrapper() error {
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
 	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName) {
+		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName || arg == bbBinaryName) {
 			continue
 		}
 		if strings.Contains(arg, "--invocation_id") ||
@@ -2605,6 +2629,12 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+
+	// When using the bb CLI and running `bb run`, stream the run logs to the server.
+	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
+	}
 
 	// Parse and save the startup args (including our custom applied ones).
 	// We apply these on future bazel cleanup commands to make sure the running

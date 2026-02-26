@@ -366,7 +366,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 393
           },
           "id": 110,
           "options": {
@@ -520,7 +520,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 393
           },
           "id": 109,
           "options": {
@@ -674,7 +674,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 401
           },
           "id": 111,
           "options": {
@@ -823,7 +823,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1940
+            "y": 2324
           },
           "id": 84,
           "options": {
@@ -920,7 +920,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1940
+            "y": 2324
           },
           "id": 85,
           "options": {
@@ -1033,7 +1033,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 414
+            "y": 3
           },
           "id": 47,
           "options": {
@@ -1099,13 +1099,50 @@
                 ]
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "node"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 327
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "node_host_id"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 319
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pod_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 160
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 414
+            "y": 3
           },
           "id": 50,
           "options": {
@@ -1118,7 +1155,13 @@
               ],
               "show": false
             },
-            "showHeader": true
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "pod_name"
+              }
+            ]
           },
           "pluginVersion": "11.6.2",
           "targets": [
@@ -1129,7 +1172,7 @@
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "kube_pod_info{namespace=\"${namespace}\", pod=~\"metadata-server-.*\"}",
+              "expr": "avg(buildbuddy_raft_ranges{region=\"${region}\", namespace=\"${namespace}\"}) by (node_host_id, pod_name)\n  * on(pod_name) group_left(node)\n  label_replace(\n    kube_pod_info{namespace=\"${namespace}\", pod=~\"metadata-server-.*\"},\n    \"pod_name\", \"$1\", \"pod\", \"(.*)\"\n  )",
               "format": "table",
               "instant": true,
               "legendFormat": "__auto",
@@ -1137,14 +1180,24 @@
               "refId": "A"
             }
           ],
-          "title": "node <> pod",
+          "title": "pod  <> nhid <>  gke node",
           "transformations": [
             {
-              "id": "filterFieldsByName",
+              "id": "organize",
               "options": {
-                "include": {
-                  "pattern": "node|pod"
-                }
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true
+                },
+                "includeByName": {},
+                "indexByName": {
+                  "Time": 0,
+                  "Value": 4,
+                  "node": 3,
+                  "node_host_id": 2,
+                  "pod_name": 1
+                },
+                "renameByName": {}
               }
             }
           ],
@@ -1216,7 +1269,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 422
+            "y": 11
           },
           "id": 23,
           "options": {
@@ -1348,7 +1401,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 422
+            "y": 11
           },
           "id": 2,
           "options": {
@@ -1506,7 +1559,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 430
+            "y": 195
           },
           "id": 1,
           "options": {
@@ -1646,7 +1699,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 430
+            "y": 195
           },
           "id": 5,
           "options": {
@@ -1746,7 +1799,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 438
+            "y": 203
           },
           "id": 8,
           "options": {
@@ -1844,7 +1897,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 438
+            "y": 203
           },
           "id": 119,
           "options": {
@@ -1941,7 +1994,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 446
+            "y": 211
           },
           "id": 76,
           "options": {
@@ -2053,7 +2106,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 638
+            "y": 1022
           },
           "id": 102,
           "options": {
@@ -2155,7 +2208,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 638
+            "y": 1022
           },
           "id": 104,
           "options": {
@@ -2253,7 +2306,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 740
+            "y": 1124
           },
           "id": 105,
           "options": {
@@ -2365,7 +2418,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 647
+            "y": 1031
           },
           "id": 16,
           "options": {
@@ -2467,7 +2520,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 647
+            "y": 1031
           },
           "id": 51,
           "options": {
@@ -2565,7 +2618,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 725
+            "y": 1109
           },
           "id": 64,
           "options": {
@@ -2678,7 +2731,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2477
+            "y": 286
           },
           "id": 22,
           "options": {
@@ -2777,9 +2830,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2477
+            "y": 286
           },
-          "id": 60,
+          "id": 121,
           "options": {
             "legend": {
               "calcs": [],
@@ -2876,7 +2929,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2485
+            "y": 334
           },
           "id": 61,
           "options": {
@@ -2973,7 +3026,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2485
+            "y": 334
           },
           "id": 62,
           "options": {
@@ -3070,7 +3123,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2493
+            "y": 342
           },
           "id": 65,
           "options": {
@@ -3167,7 +3220,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2493
+            "y": 342
           },
           "id": 93,
           "options": {
@@ -3291,7 +3344,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1332
+            "y": 1716
           },
           "id": 87,
           "options": {
@@ -3397,7 +3450,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1333
+            "y": 1717
           },
           "id": 92,
           "options": {
@@ -3503,7 +3556,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 452
+            "y": 289
           },
           "id": 3,
           "options": {
@@ -3614,7 +3667,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 452
+            "y": 289
           },
           "id": 49,
           "options": {
@@ -3712,7 +3765,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 476
+            "y": 297
           },
           "id": 4,
           "options": {
@@ -3837,7 +3890,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 476
+            "y": 297
           },
           "id": 79,
           "options": {
@@ -3869,6 +3922,105 @@
             }
           ],
           "title": "Number of ranges w/o leases",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 305
+          },
+          "id": 60,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_lease_action_duration_msec_bucket{region=\"${region}\", namespace=\"${namespace}\", lease_action=\"Acquire\"}[${window}])) by (pod_name, le))",
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Lease Acquisition latency (q=${quantile})",
           "type": "timeseries"
         },
         {
@@ -3934,7 +4086,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 484
+            "y": 305
           },
           "id": 63,
           "options": {
@@ -4045,7 +4197,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2481
+            "y": 2865
           },
           "id": 81,
           "options": {
@@ -4138,7 +4290,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2481
+            "y": 2865
           },
           "id": 7,
           "options": {
@@ -4237,7 +4389,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2489
+            "y": 2873
           },
           "id": 6,
           "options": {
@@ -4361,7 +4513,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2489
+            "y": 2873
           },
           "id": 9,
           "options": {
@@ -4487,7 +4639,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2497
+            "y": 2881
           },
           "id": 82,
           "options": {
@@ -4593,7 +4745,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1336
+            "y": 1720
           },
           "id": 66,
           "options": {
@@ -4690,7 +4842,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1336
+            "y": 1720
           },
           "id": 67,
           "options": {
@@ -4787,7 +4939,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1390
+            "y": 1774
           },
           "id": 69,
           "options": {
@@ -4884,7 +5036,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1390
+            "y": 1774
           },
           "id": 68,
           "options": {
@@ -4995,7 +5147,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2893
+            "y": 3277
           },
           "id": 52,
           "options": {
@@ -5092,7 +5244,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2893
+            "y": 3277
           },
           "id": 53,
           "options": {
@@ -5204,7 +5356,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1948
+            "y": 2332
           },
           "id": 11,
           "options": {
@@ -5303,7 +5455,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1948
+            "y": 2332
           },
           "id": 94,
           "options": {
@@ -5404,7 +5556,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2100
+            "y": 2484
           },
           "id": 96,
           "options": {
@@ -5504,7 +5656,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2100
+            "y": 2484
           },
           "id": 97,
           "options": {
@@ -5603,7 +5755,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2228
+            "y": 2612
           },
           "id": 98,
           "options": {
@@ -5702,7 +5854,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2228
+            "y": 2612
           },
           "id": 99,
           "options": {
@@ -5815,7 +5967,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 465
+            "y": 849
           },
           "id": 80,
           "options": {
@@ -5912,7 +6064,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 465
+            "y": 849
           },
           "id": 120,
           "options": {
@@ -6009,7 +6161,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 473
+            "y": 857
           },
           "id": 77,
           "options": {
@@ -6106,7 +6258,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 473
+            "y": 857
           },
           "id": 118,
           "options": {
@@ -6213,7 +6365,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3382
+            "y": 3766
           },
           "id": 74,
           "options": {
@@ -6311,7 +6463,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3382
+            "y": 3766
           },
           "id": 72,
           "options": {
@@ -6409,7 +6561,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3390
+            "y": 3774
           },
           "id": 75,
           "options": {
@@ -6508,7 +6660,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3390
+            "y": 3774
           },
           "id": 73,
           "options": {
@@ -6620,7 +6772,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2105
+            "y": 2489
           },
           "id": 100,
           "options": {
@@ -6731,7 +6883,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2105
+            "y": 2489
           },
           "id": 101,
           "options": {
@@ -6844,7 +6996,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 2113
+            "y": 2497
           },
           "id": 24,
           "options": {
@@ -6976,7 +7128,7 @@
             "h": 8,
             "w": 24,
             "x": 12,
-            "y": 2113
+            "y": 2497
           },
           "id": 26,
           "options": {
@@ -7131,7 +7283,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 2121
+            "y": 2505
           },
           "id": 27,
           "options": {
@@ -7226,7 +7378,7 @@
             "h": 8,
             "w": 24,
             "x": 12,
-            "y": 2121
+            "y": 2505
           },
           "id": 28,
           "options": {
@@ -7321,7 +7473,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 2129
+            "y": 2513
           },
           "id": 29,
           "options": {
@@ -7416,7 +7568,7 @@
             "h": 9,
             "w": 24,
             "x": 12,
-            "y": 2129
+            "y": 2513
           },
           "id": 30,
           "options": {
@@ -7511,7 +7663,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 2138
+            "y": 2522
           },
           "id": 31,
           "options": {
@@ -7608,7 +7760,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 2138
+            "y": 2522
           },
           "id": 89,
           "options": {
@@ -7700,7 +7852,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 2147
+            "y": 2531
           },
           "id": 88,
           "options": {
@@ -7806,7 +7958,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1443
+            "y": 1827
           },
           "id": 32,
           "options": {
@@ -7903,7 +8055,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1443
+            "y": 1827
           },
           "id": 33,
           "options": {
@@ -8000,7 +8152,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1635
+            "y": 2019
           },
           "id": 34,
           "options": {
@@ -8097,7 +8249,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1635
+            "y": 2019
           },
           "id": 35,
           "options": {
@@ -8194,7 +8346,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1643
+            "y": 2027
           },
           "id": 38,
           "options": {
@@ -8291,7 +8443,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1643
+            "y": 2027
           },
           "id": 39,
           "options": {
@@ -8388,7 +8540,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1651
+            "y": 2035
           },
           "id": 40,
           "options": {
@@ -8485,7 +8637,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1651
+            "y": 2035
           },
           "id": 41,
           "options": {
@@ -8582,7 +8734,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1659
+            "y": 2043
           },
           "id": 42,
           "options": {
@@ -8679,7 +8831,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1659
+            "y": 2043
           },
           "id": 43,
           "options": {
@@ -8776,7 +8928,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1667
+            "y": 2051
           },
           "id": 44,
           "options": {
@@ -8873,7 +9025,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1667
+            "y": 2051
           },
           "id": 45,
           "options": {
@@ -8970,7 +9122,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1675
+            "y": 2059
           },
           "id": 46,
           "options": {
@@ -9080,10 +9232,10 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 10,
-            "w": 24,
+            "h": 11,
+            "w": 12,
             "x": 0,
-            "y": 668
+            "y": 18
           },
           "id": 12,
           "options": {
@@ -9203,10 +9355,10 @@
             ]
           },
           "gridPos": {
-            "h": 10,
-            "w": 24,
+            "h": 11,
+            "w": 12,
             "x": 12,
-            "y": 668
+            "y": 18
           },
           "id": 18,
           "options": {
@@ -9319,7 +9471,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 678
+            "y": 29
           },
           "id": 48,
           "options": {
@@ -9417,7 +9569,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 678
+            "y": 29
           },
           "id": 90,
           "options": {
@@ -9511,10 +9663,10 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
-            "w": 24,
+            "h": 10,
+            "w": 12,
             "x": 0,
-            "y": 687
+            "y": 38
           },
           "id": 14,
           "options": {
@@ -9610,10 +9762,10 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
-            "w": 24,
+            "h": 10,
+            "w": 12,
             "x": 12,
-            "y": 687
+            "y": 38
           },
           "id": 15,
           "options": {
@@ -9710,10 +9862,10 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
-            "w": 24,
+            "h": 10,
+            "w": 12,
             "x": 0,
-            "y": 696
+            "y": 48
           },
           "id": 19,
           "options": {
@@ -9772,10 +9924,10 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
-            "w": 24,
+            "h": 10,
+            "w": 12,
             "x": 12,
-            "y": 696
+            "y": 48
           },
           "id": 21,
           "maxDataPoints": 25,
@@ -9902,9 +10054,9 @@
           },
           "gridPos": {
             "h": 9,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 705
+            "y": 58
           },
           "id": 13,
           "options": {
@@ -10003,7 +10155,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 705
+            "y": 58
           },
           "id": 117,
           "options": {
@@ -10133,7 +10285,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 714
+            "y": 67
           },
           "id": 114,
           "options": {
@@ -10226,7 +10378,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 714
+            "y": 67
           },
           "id": 112,
           "options": {
@@ -10257,6 +10409,98 @@
             }
           ],
           "title": "GCS Eviction queue length",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 75
+          },
+          "id": 122,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum by (status)(rate(buildbuddy_raft_gcs_eviction_count{region=\"${region}\", namespace=\"${namespace}\"}[$window]))",
+              "legendFormat": "{{status}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "# gcs delete",
           "type": "timeseries"
         }
       ],
@@ -10336,7 +10580,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 731
+            "y": 195
           },
           "id": 115,
           "options": {
@@ -10429,7 +10673,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 731
+            "y": 195
           },
           "id": 116,
           "options": {

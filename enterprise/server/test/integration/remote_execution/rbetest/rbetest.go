@@ -342,6 +342,9 @@ type BuildBuddyServerOptions struct {
 
 	// EnvModifier modifies the environment before starting the BuildBuddy server.
 	EnvModifier func(env *testenv.TestEnv)
+
+	// GRPCServerConfig configures the gRPC server, allowing extra interceptors.
+	GRPCServerConfig grpc_server.GRPCServerConfig
 }
 
 // buildBuddyServerEnv is a specialized environment that allows us to return a random SchedulerClient for every
@@ -360,6 +363,7 @@ type BuildBuddyServer struct {
 	env  *buildBuddyServerEnv
 	port int
 
+	grpcServerConfig        grpc_server.GRPCServerConfig
 	grpcServer              *grpc.Server
 	schedulerServer         *scheduler_server.SchedulerServer
 	executionServer         repb.ExecutionServer
@@ -380,13 +384,15 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	env.SetTaskRouter(router)
 	err = tasksize.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up TaskSizer")
-	executionServer, err := execution_server.NewExecutionServer(env)
-	require.NoError(t, err, "could not set up ExecutionServer")
-	env.SetRemoteExecutionService(executionServer)
 
 	olapDBHandle := testolapdb.NewHandle()
 	env.SetOLAPDBHandle(olapDBHandle)
 	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
+	err = redis_execution_collector.Register(env.TestEnv)
+	require.NoError(t, err, "could not set up ExecutionCollector")
+	executionServer, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err, "could not set up ExecutionServer")
+	env.SetRemoteExecutionService(executionServer)
 
 	// Configure customer-managed encryption keys (enabled if set per-group)
 	kmsDir := testfs.MakeTempDir(t)
@@ -411,6 +417,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
+	env.SetSchedulerService(scheduler)
+
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, false)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
@@ -422,13 +430,11 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*zstd=*/ true,
 	)
 
-	err = redis_execution_collector.Register(env.TestEnv)
-	require.NoError(t, err, "could not set up ExecutionCollector")
-
 	server := &BuildBuddyServer{
 		t:                       t,
 		env:                     env,
 		port:                    port,
+		grpcServerConfig:        opts.GRPCServerConfig,
 		schedulerServer:         scheduler,
 		executionServer:         executionServer,
 		buildBuddyServiceServer: buildBuddyServiceServer,
@@ -452,8 +458,14 @@ func (s *BuildBuddyServer) start() {
 	if err != nil {
 		assert.FailNow(s.t, fmt.Sprintf("could not listen on port %d", s.port), err.Error())
 	}
-	grpcServer, grpcServerRunFunc := testenv.GRPCServer(s.env.TestEnv, lis)
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(s.env, s.grpcServerConfig)...)
 	s.grpcServer = grpcServer
+	s.env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
+	grpcServerRunFunc := func() {
+		if err = grpcServer.Serve(lis); err != nil {
+			log.Fatalf("Error starting gRPC server: %v", err)
+		}
+	}
 
 	// Configure services needed by remote execution.
 
@@ -698,6 +710,9 @@ type ExecutorOptions struct {
 	APIKey string
 	// Optional Pool name for the executor
 	Pool string
+	// Optional connection for the executor to use for CAS/AC/ByteStream.
+	// Defaults to the app proxy connection if unset.
+	CacheConn grpc.ClientConnInterface
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -847,10 +862,15 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	clientConn := r.appProxyConn
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
-	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
+
+	cacheConn := grpc.ClientConnInterface(clientConn)
+	if options.CacheConn != nil {
+		cacheConn = options.CacheConn
+	}
+	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(cacheConn))
 
 	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
@@ -964,7 +984,7 @@ func (r *Env) waitForExecutorRegistration() {
 type CacheProxy struct {
 	t    testing.TB
 	env  *testenv.TestEnv
-	port int
+	Port int
 	conn *grpc_client.ClientConnPool
 }
 
@@ -1024,7 +1044,7 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
-	return &CacheProxy{t: r.t, env: proxyEnv, conn: conn}
+	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {

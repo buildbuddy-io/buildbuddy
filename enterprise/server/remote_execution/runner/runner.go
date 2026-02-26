@@ -318,7 +318,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	}
 	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
-		if err := r.Workspace.AddCIRunner(ctx); err != nil {
+		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
 		}
 	}
@@ -962,8 +962,20 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
 	// the auth result, since it makes it tricker to debug per-action
 	// misconfiguration.
-	if err := c.PullImage(ctx, creds); err != nil {
-		return err
+	onDisk, _ := c.IsImageCached(ctx)
+	pullStart := time.Now()
+	pullErr := c.PullImage(ctx, creds)
+	container.RecordImageFetchMetrics(
+		c.IsolationType(),
+		oci.RegistryETLDPlusOne(platProps.ContainerImage),
+		metrics.ImageFetchTriggerWarmup,
+		onDisk,
+		!creds.IsEmpty(),
+		pullErr,
+		time.Since(pullStart),
+	)
+	if pullErr != nil {
+		return pullErr
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
 	return nil

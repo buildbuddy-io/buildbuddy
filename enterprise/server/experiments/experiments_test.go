@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -376,6 +377,50 @@ func TestTargetingGroupID(t *testing.T) {
 		})
 		s := fp.String(ctx, "test_flag", "")
 		require.Equal(t, "default", s)
+	})
+}
+
+func TestRegionTargeting(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "regional_feature": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "region" }, "us-west1"] },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("enabled in targeted region", func(t *testing.T) {
+		flags.Set(t, "app.region", "us-west1")
+		require.True(t, fp.Boolean(ctx, "regional_feature", false))
+	})
+
+	t.Run("disabled in non-targeted region", func(t *testing.T) {
+		flags.Set(t, "app.region", "us-central1")
+		require.False(t, fp.Boolean(ctx, "regional_feature", false))
 	})
 }
 
