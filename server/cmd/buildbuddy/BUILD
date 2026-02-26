@@ -69,6 +69,7 @@ go_library(
         "//server/config",
         "//server/janitor",
         "//server/libmain",
+        "//server/remote_cache/capabilities_server",
         "//server/telemetry",
         "//server/util/healthcheck",
         "//server/util/log",

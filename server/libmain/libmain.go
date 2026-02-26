@@ -36,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
@@ -396,9 +395,6 @@ func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 		log.Fatal(err.Error())
 	}
 	if err := fetch_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 }
