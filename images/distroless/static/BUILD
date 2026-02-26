@@ -48,7 +48,6 @@ cacerts(
     flatten(
         name = "layer_%s" % arch,
         compress = "gzip",
-        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -57,10 +56,10 @@ cacerts(
             }[arch],
         ],
         tars = [
-            "@trixie//base-files:base-files",
-            "@trixie//netbase:netbase",
-            "@trixie//tzdata:tzdata",
-            "@trixie//media-types:media-types",
+            "@trixie//base-files/%s" % arch,
+            "@trixie//netbase/%s" % arch,
+            "@trixie//tzdata/%s" % arch,
+            "@trixie//media-types/%s" % arch,
             ":groups",
             ":passwd",
             ":ca_certificates",
