@@ -8,7 +8,6 @@ package(default_visibility = ["//visibility:public"])
     flatten(
         name = "layer_%s" % arch,
         compress = "gzip",
-        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -16,7 +15,9 @@ package(default_visibility = ["//visibility:public"])
                 "arm64": "aarch64",
             }[arch],
         ],
-        tars = ["@trixie//libc6:libc6"],
+        tars = [
+            "@trixie//libc6/%s" % arch,
+        ],
     )
     for arch in [
         "amd64",
@@ -32,7 +33,6 @@ image_manifest(
         "@platforms//cpu:arm64": [":layer_arm64"],
         "@platforms//cpu:x86_64": [":layer_amd64"],
     }),
-    tags = ["manual"],
     user = "root",
 )
 
@@ -43,7 +43,6 @@ image_index(
         "//platforms:linux_x86_64",
         "//platforms:linux_arm64",
     ],
-    tags = ["manual"],
     target_compatible_with = select({
         # the cacerts target referenced
         # from here currently doesn't
@@ -59,5 +58,4 @@ image_load(
     daemon = "containerd",  # Explicitly use containerd
     image = ":index",  # References an image_index
     tag = "bb-distroless_base-nossl:latest",
-    tags = ["manual"],
 )
