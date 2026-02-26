@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -428,6 +430,9 @@ func TestWriteEventLog(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(auth)
+	kvStore, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	te.SetKeyValStore(kvStore)
 
 	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
 	require.NoError(t, err)
@@ -488,4 +493,74 @@ func TestWriteEventLog(t *testing.T) {
 	data, err := getLogStream.Recv()
 	require.NoError(t, err)
 	require.Equal(t, "Line 1\nLine 2\n", string(data.GetBuffer()))
+}
+
+func TestWriteEventLog_ServerTimeout(t *testing.T) {
+	// Use a short timeout for testing
+	originalTimeout := buildbuddy_server.WriteEventLogTimeout
+	buildbuddy_server.WriteEventLogTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { buildbuddy_server.WriteEventLogTimeout = originalTimeout })
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	kvStore, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	te.SetKeyValStore(kvStore)
+
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
+	require.NoError(t, err)
+
+	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	// Create an invocation
+	iid, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+		InvocationId: iid,
+		Status:       inspb.OverallStatus_IN_PROGRESS,
+	})
+	require.NoError(t, err)
+
+	// Open stream and send one message, but don't close the stream
+	stream, err := client.WriteEventLog(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 1\n"),
+	})
+	require.NoError(t, err)
+
+	// Wait until the server timeout has been exceeded.
+	time.Sleep(600 * time.Millisecond)
+
+	// The server should return a deadline exceeded error
+	_, err = stream.CloseAndRecv()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "DeadlineExceeded")
+
+	// Make sure we can read back the logs that were written before the timeout.
+	getLogStream, err := client.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: iid,
+		Type:         elpb.LogType_RUN_LOG,
+	})
+	require.NoError(t, err)
+
+	data, err := getLogStream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "Line 1\n", string(data.GetBuffer()))
 }

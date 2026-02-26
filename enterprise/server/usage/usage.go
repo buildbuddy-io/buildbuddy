@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
@@ -32,7 +33,6 @@ import (
 )
 
 var (
-	region      = flag.String("app.region", "", "The region in which the app is running.")
 	writeToOLAP = flag.Bool("app.write_usage_to_olap_db", false, "If true, write usage data to OLAP DB in addition to the primary DB write.")
 )
 
@@ -162,7 +162,8 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 }
 
 func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
-	if *region == "" {
+	appRegion := region.ConfiguredAppRegion()
+	if appRegion == "" {
 		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
 	}
 	if env.GetDefaultRedisClient() == nil {
@@ -177,11 +178,11 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    *region,
+		region:    appRegion,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
-		bufferID:  fmt.Sprintf("%s:redis", *region),
+		bufferID:  fmt.Sprintf("%s:redis", appRegion),
 	}, nil
 }
 
@@ -414,7 +415,7 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			if !ok {
 				// Collection contains a new column; let a newer app flush
 				// instead.
-				log.Infof("Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
+				log.CtxInfof(ctx, "Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
 				return nil
 			}
 		}
@@ -431,7 +432,15 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 				return err
 			}
 			if len(h) == 0 {
-				alert.UnexpectedEvent("usage_unexpected_empty_hash_in_redis", "Usage counts in Redis are unexpectedly empty for key %q", countsKey)
+				// Normally every collection key should have a corresponding
+				// counts key containing a non-empty hash, but sometimes we may
+				// be missing counts if there are transient redis issues such as
+				// restarts or resharding events (e.g. when adding redis shards
+				// or temporarily losing connection to a shard). Increment a
+				// metric so we can track how often this happens and alert if it
+				// happens too often.
+				log.CtxInfof(ctx, "Usage counts in Redis are empty for key %q", countsKey)
+				metrics.UsageTrackerMissingCollectionCountsCount.Inc()
 				continue
 			}
 			counts, err := stringMapToCounts(h)

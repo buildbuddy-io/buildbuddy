@@ -21,6 +21,8 @@ export default class InvocationLogsModel {
   // Length of the log prefix which has already been persisted. The remainder of
   // the log is considered "live" and may be updated on subsequent fetches.
   private stableLogLength = 0;
+  // Whether we've received an empty nextChunkId, indicating the log stream is complete.
+  private complete = false;
 
   // Polling-based state
   private responseSubscription?: Subscription;
@@ -36,6 +38,7 @@ export default class InvocationLogsModel {
 
   startFetching() {
     this.stopFetching();
+    this.complete = false;
     if (capabilities.config.streamingHttpEnabled && capabilities.config.invocationLogStreamingEnabled) {
       this.streamLogs();
     } else {
@@ -60,6 +63,10 @@ export default class InvocationLogsModel {
 
   isFetching(): boolean {
     return Boolean(this.responseSubscription);
+  }
+
+  isComplete(): boolean {
+    return this.complete;
   }
 
   private streamLogs() {
@@ -130,8 +137,9 @@ export default class InvocationLogsModel {
     // Empty next chunk ID means the invocation is complete and we've reached
     // the end of the log.
     if (!response.nextChunkId) {
+      this.complete = true;
       this.responseSubscription = undefined;
-      // Notify of change to `isFetching` state.
+      // Notify of change to `isFetching` and `isComplete` state.
       this.onChange.next();
       return;
     }

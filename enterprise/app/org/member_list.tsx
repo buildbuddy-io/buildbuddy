@@ -1,4 +1,4 @@
-import { HelpCircle, ShieldCheck, UserCircle, Users } from "lucide-react";
+import { CheckCircle, HelpCircle, ShieldCheck, UserCircle, Users, XCircle } from "lucide-react";
 import React from "react";
 import { accountName, User } from "../../../app/auth/user";
 import Banner from "../../../app/components/banner/banner";
@@ -38,6 +38,55 @@ export function getRoleLabel(role: grp.Group.Role): string {
     default:
       return "";
   }
+}
+
+// TODO: send up role=>capabilities mapping from server, and base these
+// descriptions on that.
+export function RoleDescription({ role }: { role: grp.Group.Role }) {
+  type Capability = {
+    description: React.ReactNode;
+    read: boolean;
+    write: boolean;
+  };
+  const caps: Capability[] = [
+    {
+      description: "Organization settings and users",
+      read: role === grp.Group.Role.ADMIN_ROLE,
+      write: role === grp.Group.Role.ADMIN_ROLE,
+    },
+    {
+      description: "Invocations",
+      read: role !== grp.Group.Role.UNKNOWN_ROLE,
+      write: role !== grp.Group.Role.UNKNOWN_ROLE,
+    },
+    {
+      description: "Content-addressable storage (CAS)",
+      read: role !== grp.Group.Role.UNKNOWN_ROLE,
+      write: role !== grp.Group.Role.UNKNOWN_ROLE && role !== grp.Group.Role.READER_ROLE,
+    },
+    {
+      description: "Action cache (AC)",
+      read: role !== grp.Group.Role.UNKNOWN_ROLE,
+      write: role === grp.Group.Role.WRITER_ROLE || role === grp.Group.Role.ADMIN_ROLE,
+    },
+  ];
+  const statusIcon = (ok: boolean) => (ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />);
+  return (
+    <table className="role-capabilities">
+      <tr className="role-capability-header">
+        <th>Object type</th>
+        <th>Read</th>
+        <th>Write</th>
+      </tr>
+      {caps.map((capability, i) => (
+        <tr key={i} className="role-capability-row">
+          <td>{capability.description}</td>
+          <td>{statusIcon(capability.read)}</td>
+          <td>{statusIcon(capability.write)}</td>
+        </tr>
+      ))}
+    </table>
+  );
 }
 
 export class MemberListMember {

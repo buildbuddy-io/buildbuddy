@@ -658,7 +658,7 @@ func TestUploadTree(t *testing.T) {
 			dirHelper := dirtools.NewDirHelper(rootDir, tc.cmd, fs.FileMode(0o755))
 
 			actionResult := &repb.ActionResult{}
-			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult, true /*=addToFileCache*/)
+			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult, true /*=addToFileCache*/, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.expectedInfo.FileCount, txInfo.FileCount)

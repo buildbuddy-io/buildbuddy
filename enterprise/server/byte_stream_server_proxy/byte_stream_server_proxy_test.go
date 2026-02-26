@@ -14,11 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -797,14 +797,6 @@ func TestReadChunked(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
@@ -865,7 +857,7 @@ func TestReadChunked(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunker.New(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -883,16 +875,11 @@ func TestReadChunked(t *testing.T) {
 		metrics.StatusLabel:     "OK",
 		metrics.CompressionType: "IDENTITY",
 	}
-	manifestLabels := prometheus.Labels{
-		metrics.StatusLabel:                "OK",
-		metrics.ChunkedManifestSourceLabel: "remote_hit",
-	}
 	readRequestsBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
 	readChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
-	manifestLookupsBefore := testutil.ToFloat64(metrics.ByteStreamChunkedManifestLookups.With(manifestLabels))
 
 	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
@@ -915,14 +902,12 @@ func TestReadChunked(t *testing.T) {
 	readChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
-	manifestLookupsAfter := testutil.ToFloat64(metrics.ByteStreamChunkedManifestLookups.With(manifestLabels))
 
 	require.Equal(t, float64(1), readRequestsAfter-readRequestsBefore, "one chunked read request for the blob")
 	require.Equal(t, float64(len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "blob bytes = original uncompressed size")
 	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
 	require.Equal(t, float64(0), readChunksLocalAfter-readChunksLocalBefore, "first read: no chunks in local cache yet")
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
-	require.Equal(t, float64(1), manifestLookupsAfter-manifestLookupsBefore, "manifest fetched from remote (not in local cache)")
 }
 
 func TestWriteChunked(t *testing.T) {
@@ -935,7 +920,7 @@ func TestWriteChunked(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -946,7 +931,6 @@ func TestWriteChunked(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	flags.Set(t, "cache_proxy.max_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1101,7 +1085,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1112,8 +1096,6 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
-	// Set threshold higher than our test blob size to trigger fallback
-	flags.Set(t, "cache_proxy.max_chunk_size_bytes", 10*1024*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1167,7 +1149,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	// Create a blob smaller than the threshold (1MB vs 10MB threshold)
+	// Create a blob smaller than the threshold (1MB vs 2MB default max)
 	_, originalData := testdigest.RandomCASResourceBuf(t, 1*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -1238,7 +1220,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
+		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1249,7 +1231,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache_proxy.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1432,18 +1413,9 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 				"false": false,
 			},
 		},
-		"cache.split_splice_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
 
-	flags.Set(b, "cache_proxy.max_chunk_size_bytes", 1024*1024)
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
@@ -1526,7 +1498,7 @@ func BenchmarkReadChunkedFromRemote(b *testing.B) {
 					compressedData := compression.CompressZstd(nil, chunkData)
 					return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), compressedData)
 				}
-				cdcChunker, err := chunker.New(ctx, 64*1024, writeChunkFn)
+				cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
 				require.NoError(b, err)
 				_, err = cdcChunker.Write(originalData)
 				require.NoError(b, err)

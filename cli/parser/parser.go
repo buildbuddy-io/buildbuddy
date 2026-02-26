@@ -50,6 +50,8 @@ var (
 		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
 		// Set to stream run logs to the server.
 		streamrunlogsoptdef.StreamRunLogs.Name(): streamrunlogsoptdef.StreamRunLogs,
+		// Set the failure mode for streaming run logs.
+		streamrunlogsoptdef.OnStreamRunLogsFailure.Name(): streamrunlogsoptdef.OnStreamRunLogsFailure,
 	}
 
 	// make this a var so the test can replace it.
@@ -1006,6 +1008,20 @@ func IsCLICommandOptionSet(parsedArgs *parsed.OrderedArgs, optionName string) (b
 	return isSet, nil
 }
 
+// GetCLICommandOptionVal returns the value of the requested CLI command option.
+//
+// Also removes the option from the parsed args, so CLI-specific options aren't passed to Bazel.
+func GetCLICommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string) (string, error) {
+	val, err := options.AccumulateValues[*parsed.IndexedOption](
+		"",
+		parsedArgs.RemoveCommandOptions(optionName),
+	)
+	if err != nil {
+		return "", status.WrapErrorf(err, "failed to accumulate %s option", optionName)
+	}
+	return val, nil
+}
+
 // GetBazelCommandOptionVal returns the value of the requested Bazel command option.
 // These options are expected *after* the Bazel subcommand:
 // Ex. `bazel run --bes_backend=XXX ...`
@@ -1025,8 +1041,10 @@ func GetBazelCommandOptionVal(parsedArgs *parsed.OrderedArgs, optionName string)
 // value of `--remote_header=x-buildbuddy-api-key=XXX`.
 // Returns an empty string if the header is not set.
 func GetRemoteHeaderVal(parsedArgs *parsed.OrderedArgs, headerKey string) string {
-	for _, opt := range parsedArgs.GetCommandOptionsByName("remote_header") {
-		if val, ok := strings.CutPrefix(opt.GetValue(), headerKey+"="); ok {
+	remoteHeaders := parsedArgs.GetCommandOptionsByName("remote_header")
+	// Iterate in reverse to get the last value set.
+	for _, remoteHeaderOpt := range slices.Backward(remoteHeaders) {
+		if val, ok := strings.CutPrefix(remoteHeaderOpt.GetValue(), headerKey+"="); ok {
 			return val
 		}
 	}

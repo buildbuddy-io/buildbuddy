@@ -98,6 +98,10 @@ const (
 	actioncacheProtocolPrefix = "actioncache://"
 )
 
+var (
+	WriteEventLogTimeout = 1 * time.Hour
+)
+
 type BuildBuddyServer struct {
 	env        environment.Env
 	sslService interfaces.SSLService
@@ -1552,13 +1556,46 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 	}
 	gid := authenticatedUser.GetGroupID()
 
+	ctx, cancel := context.WithTimeout(ctx, WriteEventLogTimeout)
+	defer cancel()
+
+	// Stream requests from the client in the background to ensure we don't block if the client stops sending requests.
+	type recvResult struct {
+		req *elpb.WriteEventLogRequest
+		err error
+	}
+	recvCh := make(chan recvResult)
+	go func() {
+		defer close(recvCh)
+		for {
+			req, err := stream.Recv()
+			select {
+			case recvCh <- recvResult{req, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			return stream.SendAndClose(&elpb.WriteEventLogResponse{})
-		} else if err != nil {
-			return err
+		var req *elpb.WriteEventLogRequest
+		select {
+		case <-ctx.Done():
+			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
+		case result, ok := <-recvCh:
+			if !ok {
+				return status.InternalErrorf("unexpected channel close")
+			}
+			if result.err == io.EOF {
+				return stream.SendAndClose(&elpb.WriteEventLogResponse{})
+			} else if result.err != nil {
+				return result.err
+			}
+			req = result.req
 		}
 
 		if eventLogWriter == nil {
@@ -1569,6 +1606,16 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			case elpb.LogType_RUN_LOG:
 				if req.GetMetadata().GetInvocationId() == "" {
 					return status.InvalidArgumentErrorf("missing invocation ID")
+				}
+
+				inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetMetadata().GetInvocationId())
+				if err != nil {
+					return status.NotFoundError("invocation not found")
+				}
+
+				acl := perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)
+				if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+					return err
 				}
 
 				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())

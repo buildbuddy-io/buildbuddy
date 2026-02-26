@@ -2,9 +2,11 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -353,7 +355,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
 		// the action timeout yet, so any DeadlineExceeded errors at this point
 		// would be internal timeouts.
-		if status.IsDeadlineExceededError(err) {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
 
@@ -538,6 +540,11 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 }
 
 func validateCommand(cmd *repb.Command) error {
+	if wd := cmd.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	for _, pathList := range [][]string{
 		cmd.GetOutputFiles(),
 		cmd.GetOutputDirectories(),

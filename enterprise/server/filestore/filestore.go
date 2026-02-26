@@ -4,7 +4,6 @@ package filestore
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -220,15 +219,11 @@ func (pmk *PebbleKey) createSyntheticHash() (string, error) {
 		rih = "0"
 	}
 	hashExtra += "|" + rih + "|" + pmk.hash
-	h, err := digest.HashForDigestType(pmk.digestFunction)
+	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction)
 	if err != nil {
 		return "", err
 	}
-	if _, err := h.Write([]byte(hashExtra)); err != nil {
-		return "", err
-	}
-	hashStr := hex.EncodeToString(h.Sum(nil))
-	return hashStr, nil
+	return d.GetHash(), nil
 }
 
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {

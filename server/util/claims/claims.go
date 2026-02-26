@@ -62,6 +62,8 @@ var (
 
 	es256PrivateKey *ecdsa.PrivateKey
 	es256PublicKeys []string = []string{}
+
+	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
 )
 
 func Init() error {
@@ -312,11 +314,11 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
-	authDB := env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
+	userDB := env.GetUserDB()
+	if userDB == nil {
+		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := authDB.LookupUserFromSubID(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
@@ -480,20 +482,19 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		if !*reparseJWTs {
-			return nil, status.InternalError("Unpermitted attempt to reparse JWT")
+	if *reparseJWTs {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			caller := "unknown"
+			if _, file, line, ok := runtime.Caller(1); ok {
+				caller = fmt.Sprintf("%s:%d", file, line)
+			}
+			reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			if err != nil {
+				return nil, err
+			}
+			return claims, nil
 		}
-		caller := "unknown"
-		if _, file, line, ok := runtime.Caller(1); ok {
-			caller = fmt.Sprintf("%s:%d", file, line)
-		}
-		log.Debugf("Reparsing JWT (caller: %s)", caller)
-		claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
-		if err != nil {
-			return nil, err
-		}
-		return claims, nil
 	}
 
 	// If there's no error or we have an assertion failure; just return a

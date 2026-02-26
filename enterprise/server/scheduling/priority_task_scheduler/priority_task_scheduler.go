@@ -147,13 +147,13 @@ func newTaskQueue(clock clockwork.Clock) *taskQueue {
 	}
 }
 
-func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRequest {
 	reservations := make([]*scpb.EnqueueTaskReservationRequest, 0, len(t.taskIDs))
 
 	for e := t.pqs.Front(); e != nil; e = e.Next() {
 		pq, ok := e.Value.(*groupPriorityQueue)
 		if !ok {
-			log.Error("not a *groupPriorityQueue!??!")
+			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			continue
 		}
 		for _, t := range pq.GetAll() {
@@ -167,7 +167,7 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 // Enqueue enqueues a task reservation request into the task queue.
 // If the task is already enqueued, it will not be enqueued again.
 // Returns true if the task was enqueued, false if it was already enqueued.
-func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
+func (t *taskQueue) Enqueue(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 	enqueuedAt := t.clock.Now()
 
 	// Don't enqueue the same task twice to avoid inflating queue length
@@ -183,7 +183,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		pq, ok = el.Value.(*groupPriorityQueue)
 		if !ok {
 			// Why would this ever happen?
-			log.Error("not a *groupPriorityQueue!??!")
+			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			return false
 		}
 	} else {
@@ -283,14 +283,14 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 	return req
 }
 
-func (t *taskQueue) Peek() *queuedTask {
+func (t *taskQueue) Peek(ctx context.Context) *queuedTask {
 	if t.currentPQ == nil {
 		return nil
 	}
 	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
-		log.Error("not a *groupPriorityQueue!??!")
+		log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 		return nil
 	}
 	v, _ := pq.Peek()
@@ -492,6 +492,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	ctx = q.enrichContext(ctx)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 
 	q.mu.Lock()
@@ -524,7 +525,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 
 	enqueueFn := func() {
 		q.mu.Lock()
-		ok := q.q.Enqueue(req)
+		ok := q.q.Enqueue(ctx, req)
 		q.mu.Unlock()
 		if !ok {
 			// Already enqueued. This normally shouldn't happen since we checked
@@ -561,6 +562,7 @@ func (q *PriorityTaskScheduler) remove(taskID string) bool {
 }
 
 func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskID string) {
+	ctx = q.enrichContext(ctx)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 	if removed := q.remove(taskID); removed {
 		log.CtxInfof(ctx, "Removed completed task from queue")
@@ -602,6 +604,7 @@ func (q *PriorityTaskScheduler) publishOperation(ctx context.Context, executionI
 }
 
 func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
+	ctx = q.enrichContext(ctx)
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
@@ -748,13 +751,13 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 	return true
 }
 
-func (q *PriorityTaskScheduler) nextTaskForPruning() *queuedTask {
+func (q *PriorityTaskScheduler) nextTaskForPruning(ctx context.Context) *queuedTask {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.shuttingDown || q.q.Len() == 0 {
 		return nil
 	}
-	return q.q.Peek()
+	return q.q.Peek(ctx)
 }
 
 // This function peeks at the front of the queue and checks to see if the task
@@ -772,7 +775,7 @@ func (q *PriorityTaskScheduler) nextTaskForPruning() *queuedTask {
 //
 // This function returns true if a task was successfully dequeued.
 func (q *PriorityTaskScheduler) trimQueue() bool {
-	nextTask := q.nextTaskForPruning()
+	nextTask := q.nextTaskForPruning(q.rootContext)
 	if nextTask == nil {
 		return false
 	}
@@ -781,7 +784,7 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, nextTask.GetTraceMetadata())
 	resp, err := q.env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: nextTask.GetTaskId()})
 	if err != nil {
-		log.Infof("Failed to check if task exists: %s", err)
+		log.CtxInfof(ctx, "Failed to check if task exists: %s", err)
 		return false
 	}
 	if resp.GetExists() {
@@ -793,7 +796,7 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if nextTask != q.q.Peek() {
+	if nextTask != q.q.Peek(ctx) {
 		return false
 	}
 
@@ -820,14 +823,14 @@ type queuePosition struct {
 
 // getNextSchedulableTask returns the next task that can be scheduled, and a
 // pointer to the task in the queue.
-func (q *PriorityTaskScheduler) getNextSchedulableTask() (*queuedTask, *queuePosition) {
+func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*queuedTask, *queuePosition) {
 	// Use custom resource configuration as a flag guard for the backfilling
 	// logic, since backfilling only helps if custom resources are configured
 	// anyway.
 	// TODO: add more tests for the multi-tenant case and turn this on
 	// unconditionally to simplify logic.
 	if len(q.resourceCapacity.Custom) == 0 {
-		nextTask := q.q.Peek()
+		nextTask := q.q.Peek(ctx)
 		if nextTask == nil {
 			return nil, nil
 		}
@@ -876,7 +879,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	if qLen == 0 {
 		return
 	}
-	nextTask, ref := q.getNextSchedulableTask()
+	nextTask, ref := q.getNextSchedulableTask(q.rootContext)
 	if nextTask == nil {
 		return
 	}
@@ -976,7 +979,7 @@ func (q *PriorityTaskScheduler) Stop() error {
 func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskReservationRequest {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.q.GetAll()
+	return q.q.GetAll(q.rootContext)
 }
 
 // QueueLength returns the current number of tasks in the queue.

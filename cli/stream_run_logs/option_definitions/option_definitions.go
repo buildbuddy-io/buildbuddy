@@ -9,4 +9,10 @@ var (
 		options.WithPluginID(options.NativeBuiltinPluginID),
 		options.WithSupportFor("run"),
 	)
+	OnStreamRunLogsFailure = options.NewDefinition(
+		"on_stream_run_logs_failure",
+		options.WithRequiresValue(),
+		options.WithPluginID(options.NativeBuiltinPluginID),
+		options.WithSupportFor("run"),
+	)
 )

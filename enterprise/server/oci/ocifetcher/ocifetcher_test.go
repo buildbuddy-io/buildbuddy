@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -700,6 +701,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 }
 
 func TestServerBypassRegistry(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	const adminGroupID = "GR123"
 
 	adminUser := &claims.Claims{

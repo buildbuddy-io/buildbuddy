@@ -1663,3 +1663,39 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 		require.Equal(t, pushedDiffID, result.diffID)
 	}
 }
+
+func TestRegistryETLDPlusOne(t *testing.T) {
+	tests := []struct {
+		imageRef string
+		want     string
+	}{
+		// Implicit docker.io
+		{"ubuntu", "docker.io"},
+		{"ubuntu:22.04", "docker.io"},
+		{"library/ubuntu:22.04", "docker.io"},
+		// Explicit docker.io
+		{"docker.io/library/ubuntu:22.04", "docker.io"},
+		{"docker.io/myuser/myimage@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "docker.io"},
+		// GCR
+		{"gcr.io/my-project/my-image:latest", "gcr.io"},
+		{"gcr.io/my-project/my-image@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "gcr.io"},
+		// ECR (amazonaws.com is a public suffix; eTLD+1 includes the region)
+		{"123456789.dkr.ecr.us-east-1.amazonaws.com/my-repo:latest", "ecr.us-east-1.amazonaws.com"},
+		// GitHub Container Registry
+		{"ghcr.io/owner/image:v1.0", "ghcr.io"},
+		// Custom registry with port
+		{"myregistry.example.com:5000/foo/bar:latest", "example.com"},
+		// Quay
+		{"quay.io/org/image:tag", "quay.io"},
+		// IP address with port
+		{"192.168.1.100:5000/myimage:latest", "[IP_ADDRESS]"},
+		// Empty string
+		{"", "[UNKNOWN]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.imageRef, func(t *testing.T) {
+			got := oci.RegistryETLDPlusOne(tt.imageRef)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

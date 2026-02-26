@@ -96,13 +96,6 @@ const (
 	listenerID = "replicaStatusWaiter"
 )
 
-type LogDBConfigType int
-
-const (
-	SmallMemLogDBConfigType LogDBConfigType = iota
-	LargeMemLogDBConfigType
-)
-
 type Store struct {
 	env                      environment.Env
 	rootDir                  string
@@ -176,8 +169,6 @@ type Store struct {
 	maxSingleOpTimeout time.Duration
 }
 
-// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
-// will call this method to create the registry and use it until nodehost close.
 type registryHolder struct {
 	raftAddr string
 	grpcAddr string
@@ -185,6 +176,8 @@ type registryHolder struct {
 	r        registry.NodeRegistry
 }
 
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
+// will call this method to create the registry and use it until nodehost close.
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	nhLog := log.NamedSubLogger(nhid)
 	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
@@ -193,47 +186,37 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 	return r, nil
 }
 
-func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
-	switch t {
-	case SmallMemLogDBConfigType:
-		return dbConfig.GetSmallMemLogDBConfig()
-	case LargeMemLogDBConfigType:
-		return dbConfig.GetLargeMemLogDBConfig()
-	default:
-		alert.UnexpectedEvent("unknown-raft-log-db-config-type", "unknown type: %d", t)
-	}
-	return dbConfig.GetDefaultLogDBConfig()
-}
-
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr, nhid string, partitions []disk.Partition, logDBConfigType LogDBConfigType, filestorer filestore.Store, gossipManager interfaces.GossipService) (*Store, error) {
-	rangeCache := rangecache.New()
-	raftListener := listener.NewRaftListener()
-	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
-	logDBConfig := getLogDbConfig(logDBConfigType)
+func getNodehostConfig(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig {
+	logDBConfig := raftConfig.GetLogDBConfig(cfg.LogDBConfigType)
 	logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
 	nhc := dbConfig.NodeHostConfig{
-		NodeHostID:     nhid,
-		WALDir:         filepath.Join(rootDir, "wal"),
-		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		DeploymentID:   cfg.DeploymentID,
+		NodeHostID:     cfg.NHID,
+		WALDir:         filepath.Join(cfg.RootDir, "wal"),
+		NodeHostDir:    filepath.Join(cfg.RootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,
-		RaftAddress:    raftAddr,
+		RaftAddress:    cfg.RaftAddr,
 		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: regHolder,
+			NodeRegistryFactory: nrf,
 			LogDB:               logDBConfig,
 		},
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,
 		EnableMetrics:       true,
 	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	if err != nil {
-		return nil, err
-	}
-	registry := regHolder.r
-	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
-	sender := sender.New(rangeCache, apiClient)
-	mc := &pebble.MetricsCollector{}
+	return nhc
+}
 
+func getNodehostConfigForTest(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig {
+	nhc := getNodehostConfig(cfg, raftListener, nrf)
+
+	nhc.RTTMillisecond = 1
+	nhc.Expert.LogDB = dbConfig.GetSmallMemLogDBConfig()
+	nhc.EnableMetrics = false
+	return nhc
+}
+
+func getPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 	pebbleOpts := &pebble.Options{
 		MemTableSize: 64 << 20, // 64 MB
 		MaxOpenFiles: 2000,     // double the default
@@ -246,19 +229,87 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr, nh
 	}
 	if *blockCacheSizeBytes > 0 {
 		c := pebble.NewCache(*blockCacheSizeBytes)
-		defer c.Unref()
 		pebbleOpts.Cache = c
 	}
+	return pebbleOpts
+}
 
-	db, err := pebble.Open(rootDir, "raft_store", pebbleOpts)
+type options struct {
+	nodeRegistryFactory dbConfig.NodeRegistryFactory
+	getNodehostConfigFn func(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig
+	getPebbleOptsFn     func(mc *pebble.MetricsCollector) *pebble.Options
+	getRegistryFn       func() registry.NodeRegistry
+}
+
+type Option func(*options)
+
+func WithTestNodeHostConfig() Option {
+	return func(o *options) {
+		o.getNodehostConfigFn = getNodehostConfigForTest
+	}
+}
+
+func WithPebbleOptsGetter(getter func(mc *pebble.MetricsCollector) *pebble.Options) Option {
+	return func(o *options) {
+		o.getPebbleOptsFn = getter
+	}
+}
+
+func WithNodeRegistryFactory(nrf dbConfig.NodeRegistryFactory) Option {
+	return func(o *options) {
+		o.nodeRegistryFactory = nrf
+	}
+}
+
+func WithRegistryGetter(getter func() registry.NodeRegistry) Option {
+	return func(o *options) {
+		o.getRegistryFn = getter
+	}
+}
+
+func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*Store, error) {
+	regHolder := &registryHolder{cfg.RaftAddr, cfg.GRPCAddr, cfg.GossipManager, nil}
+	o := &options{
+		nodeRegistryFactory: regHolder,
+		getPebbleOptsFn:     getPebbleOptions,
+		getNodehostConfigFn: getNodehostConfig,
+	}
+	o.getRegistryFn = func() registry.NodeRegistry {
+		return regHolder.r
+	}
+
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	if !*enableDriver && raftConfig.TargetRangeSizeBytes() > 0 {
+		return nil, status.FailedPreconditionError("misconfigured: enable_driver is false but target_range_size_bytes is set; splitting requires the driver to be enabled")
+	}
+
+	raftListener := listener.NewRaftListener()
+
+	nhc := o.getNodehostConfigFn(cfg, raftListener, o.nodeRegistryFactory)
+
+	nodeHost, err := dragonboat.NewNodeHost(nhc)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeRegistry := o.getRegistryFn()
+	apiClient := client.NewAPIClient(env, nodeHost.ID(), nodeRegistry)
+	rangeCache := rangecache.New()
+	sender := sender.New(rangeCache, apiClient)
+	mc := &pebble.MetricsCollector{}
+	pebbleOpts := o.getPebbleOptsFn(mc)
+	if pebbleOpts.Cache != nil {
+		defer pebbleOpts.Cache.Unref()
+	}
+	db, err := pebble.Open(cfg.RootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, grpcListeningAddr, partitions, db, leaser, mc, filestorer)
-}
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress, grpcListeningAddr string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector, filestorer filestore.Store) (*Store, error) {
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -273,13 +324,13 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s := &Store{
 		env:                 env,
-		rootDir:             rootDir,
-		grpcAddr:            grpcAddress,
+		rootDir:             cfg.RootDir,
+		grpcAddr:            cfg.GRPCAddr,
 		nodeHost:            nodeHost,
-		partitions:          partitions,
-		gossipManager:       gossipManager,
+		partitions:          cfg.Partitions,
+		gossipManager:       cfg.GossipManager,
 		sender:              sender,
-		registry:            registry,
+		registry:            nodeRegistry,
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
@@ -292,7 +343,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
+		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, raftListener, eventsChan, lkSession),
 		replicas:    sync.Map{},
 
 		eventsMu:       sync.Mutex{},
@@ -309,7 +360,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		maxSingleOpTimeout: raftConfig.SingleRaftOpTimeout(),
 	}
 
-	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
+	s.replicaInitStatusWaiter = newReplicaStatusWaiter(raftListener, nhLog)
 
 	updateTagsWorker := &updateTagsWorker{
 		store:          s,
@@ -322,10 +373,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock, filestorer)
+	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, s.sender, gossipManager, nhLog, apiClient, clock)
+		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
@@ -341,7 +392,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpc_server.Metrics().InitializeMetrics(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
-	lis, err := net.Listen("tcp", grpcListeningAddr)
+	lis, err := net.Listen("tcp", cfg.GRPCListeningAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +465,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		return nil, err
 	}
 
-	gossipManager.AddListener(s)
+	s.gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
 
 	// Whenever we bring up a brand new store with no ranges, we need to inform
@@ -976,15 +1027,144 @@ func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd
 	return targetReplicaID
 }
 
+// getNHIDToPodIndex builds a map from NHID to pod index using gossip members.
+func (s *Store) getNHIDToPodIndex() map[string]int {
+	members := s.gossipManager.Members()
+	m := make(map[string]int, len(members))
+	for _, member := range members {
+		usageTag := member.Tags[constants.StoreUsageTag]
+		if usageTag == "" {
+			continue
+		}
+		usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
+		if err != nil {
+			continue
+		}
+		usage := &rfpb.StoreUsage{}
+		if err := proto.Unmarshal(usageBuf, usage); err != nil {
+			continue
+		}
+		nhid := usage.GetNode().GetNhid()
+		if nhid == "" {
+			continue
+		}
+		pidStr := member.Tags[constants.PodIndexTag]
+		if pidStr == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+		m[nhid] = pid
+	}
+	return m
+}
+
+// pickLeaderTransferTarget picks exactly one replica to transfer leadership to
+// for a shard that is shutting down. When pod-index information is available it
+// prefers higher-index pods (already restarted and stable), then lower-index
+// pods sorted farthest-first (so the adjacent pod, which is about to restart
+// next, is tried last). Ready connections are preferred within each tier.
+// Previously-attempted replicas are deprioritized to the end so retries
+// cycle through the candidate list.
+func (s *Store) pickLeaderTransferTarget(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64, nhidToPodIndex map[string]int, attempted []uint64) uint64 {
+	type candidate struct {
+		repl     *rfpb.ReplicaDescriptor
+		podIndex int
+		known    bool // whether we have a pod index for this replica
+	}
+
+	attemptedSet := set.From(attempted...)
+
+	myPodIndex, havePodIndex := 0, false
+	var candidates, deprioritized []candidate
+	for _, repl := range rd.GetReplicas() {
+		idx, known := nhidToPodIndex[repl.GetNhid()]
+		if repl.GetReplicaId() == fromReplicaID {
+			myPodIndex, havePodIndex = idx, known
+			continue
+		}
+		c := candidate{repl: repl, podIndex: idx, known: known}
+		if attemptedSet.Contains(repl.GetReplicaId()) {
+			deprioritized = append(deprioritized, c)
+			continue
+		}
+		candidates = append(candidates, c)
+	}
+
+	if !havePodIndex {
+		// No pod-index info: pick first with ready connection, else first overall.
+		all := append(candidates, deprioritized...)
+		var backupReplicaID uint64
+		for _, c := range all {
+			if ready, err := s.apiClient.HaveReadyConnections(ctx, c.repl); err == nil && ready {
+				return c.repl.GetReplicaId()
+			}
+			if backupReplicaID == 0 {
+				backupReplicaID = c.repl.GetReplicaId()
+			}
+		}
+		return backupReplicaID
+	}
+
+	// Partition candidates into tiers.
+	var higher, lower, unknown []candidate
+	for _, c := range candidates {
+		if !c.known {
+			unknown = append(unknown, c)
+			continue
+		}
+		if c.podIndex > myPodIndex {
+			higher = append(higher, c)
+		} else if c.podIndex < myPodIndex {
+			lower = append(lower, c)
+		}
+		// Skip replicas with the same pod index.
+	}
+
+	// Sort higher ascending (prefer the next-higher pod).
+	slices.SortFunc(higher, func(a, b candidate) int { return a.podIndex - b.podIndex })
+	// Sort lower ascending (prefer the farthest lower pod — it's least
+	// likely to restart soon, with adjacent pods naturally last).
+	slices.SortFunc(lower, func(a, b candidate) int { return a.podIndex - b.podIndex })
+
+	ordered := make([]candidate, 0, len(higher)+len(lower)+len(unknown)+len(deprioritized))
+	ordered = append(ordered, higher...)
+	ordered = append(ordered, lower...)
+	ordered = append(ordered, unknown...)
+	ordered = append(ordered, deprioritized...)
+
+	var backupReplicaID uint64
+	for _, c := range ordered {
+		if ready, err := s.apiClient.HaveReadyConnections(ctx, c.repl); err == nil && ready {
+			return c.repl.GetReplicaId()
+		}
+		if backupReplicaID == 0 {
+			backupReplicaID = c.repl.GetReplicaId()
+		}
+	}
+	return backupReplicaID
+}
+
 // tryDroppingLeadership tries to drop leadership, returns the number of
-// remaining leaderes and error.
-func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
+// remaining leaders and error. attempted tracks all previously-tried targets
+// per shard so retries cycle through candidates.
+func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[string]int, attempted map[uint64][]uint64) (int, error) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
 	if nodeHostInfo == nil {
 		return 0, errors.New("missing nodehost info")
 	}
+
+	type result struct {
+		shardID         uint64
+		targetReplicaID uint64
+	}
+	var mu sync.Mutex
+	var results []result
+
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
@@ -997,31 +1177,36 @@ func (s *Store) tryDroppingLeadership(ctx context.Context) (int, error) {
 		remainingLeader++
 		eg.Go(func() error {
 			rd := s.GetRange(clusterInfo.ShardID)
-			log.Debugf("Dropping leadership of shard %d from replica %d", clusterInfo.ShardID, clusterInfo.ReplicaID)
-			// Try to transfer leadership to other replicas. Dragonboat doesn't
-			// retry on a different target if it fail to transfer the leader.
-			for _, repl := range rd.GetReplicas() {
-				if repl.GetReplicaId() == clusterInfo.ReplicaID {
-					continue
-				}
-				if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-					log.Debugf("Drop leadership of shard %d: skipping replica id %d on NHID %q b/c connReady = %t, err = %s", clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid(), connReady, err)
-					continue
-				}
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, repl.GetReplicaId()); err != nil {
-					s.log.Warningf("Error transferring leadership: %s", err)
-				}
-				log.Debugf("Dropping leadership of shard %d: attempt to transfer from c%dn%d to c%dn%d (nhid: %q)", clusterInfo.ShardID, clusterInfo.ShardID, clusterInfo.ReplicaID, clusterInfo.ShardID, repl.GetReplicaId(), repl.GetNhid())
+			targetReplicaID := s.pickLeaderTransferTarget(ctx, rd, clusterInfo.ReplicaID, nhidToPodIndex, attempted[clusterInfo.ShardID])
+			if targetReplicaID == 0 {
+				log.Debugf("Drop leadership of shard %d: no suitable target found", clusterInfo.ShardID)
+				return nil
+			}
+			mu.Lock()
+			results = append(results, result{shardID: clusterInfo.ShardID, targetReplicaID: targetReplicaID})
+			mu.Unlock()
+			log.Debugf("Dropping leadership of shard %d: transferring from c%dn%d to c%dn%d", clusterInfo.ShardID, clusterInfo.ShardID, clusterInfo.ReplicaID, clusterInfo.ShardID, targetReplicaID)
+			if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
+				s.log.Warningf("Error transferring leadership of shard %d to replica %d: %s", clusterInfo.ShardID, targetReplicaID, err)
 			}
 			return nil
 		})
 	}
-	return remainingLeader, eg.Wait()
+	err := eg.Wait()
+	for _, r := range results {
+		attempted[r.shardID] = append(attempted[r.shardID], r.targetReplicaID)
+	}
+	return remainingLeader, err
 }
 
 func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+
+	nhidToPodIndex := s.getNHIDToPodIndex()
+	log.Debugf("Drop leadership: nhidToPodIndex=%v", nhidToPodIndex)
+
+	attempted := make(map[uint64][]uint64)
 	remainingLeaders := 0
 	var err error
 
@@ -1033,7 +1218,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			log.Warningf("Timed out waiting for leadership transfer: %d leaders remaining", remainingLeaders)
 			return
 		case <-ticker.C:
-			remainingLeaders, err = s.tryDroppingLeadership(ctx)
+			remainingLeaders, err = s.tryDroppingLeadership(ctx, nhidToPodIndex, attempted)
 			if err != nil {
 				log.Warningf("failed to drop leadership: %s", err)
 				return
@@ -1298,6 +1483,10 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 		RaftAddress: s.nodeHost.RaftAddress(),
 		GrpcAddress: s.grpcAddr,
 	}
+}
+
+func (s *Store) LeaserForTest() pebble.Leaser {
+	return s.leaser
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -2294,6 +2483,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSizeBytes int64, jitterFactor float64) {
+	if s.driverQueue == nil {
+		return
+	}
 	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {

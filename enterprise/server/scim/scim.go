@@ -287,7 +287,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForUserName(email, g))
+	u, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(email, g))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -478,7 +478,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	// exist in our system. If we get a create request for such a user then
 	// we need to translate it to an update request.
 	updateExistingUser := false
-	user, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForUserName(ur.UserName, g))
+	user, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(ur.UserName, g))
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}

@@ -219,7 +219,13 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 
 // WithAuthenticatedUserInfo sets the authenticated user to the given user.
 func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
-	jwt, err := claims.AssembleJWT(userInfo.(*claims.Claims), jwt.SigningMethodHS256)
+	// Copy claims to avoid mutating shared state when AssembleJWT sets standard
+	// claims, then set them in context to avoid reparsing.
+	newClaims := *userInfo.(*claims.Claims)
+	c := &newClaims
+	ctx = claims.AuthContext(ctx, c)
+
+	jwt, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
 	if err != nil {
 		log.Errorf("Failed to mint JWT from UserInfo: %s", err)
 		return ctx

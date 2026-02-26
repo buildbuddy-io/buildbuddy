@@ -394,7 +394,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.CommitFn = func(bytesWritten int64) error {
+	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := c.opts.Clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
 			FileRecord:         fileRecord,
@@ -410,7 +410,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 		return fn(md)
-	}
+	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
 	shouldEncrypt, err := c.encryptionEnabled(ctx)

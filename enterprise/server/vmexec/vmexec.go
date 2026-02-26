@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -90,7 +89,11 @@ func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd b
 		return err
 	}
 	log.Infof("Starting vm exec listener on vsock port: %d", port)
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()))
+	// 50MB - matches the default from grpc_server.MaxRecvMsgSizeBytes() at the time of writing,
+	// but does not need to be kept in sync (this value should be fine for vmexec's purposes)
+	// Inlined here to avoid pulling in the heavy grpc_server package and
+	// all of its transitive deps into the goinit binary.
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(50_000_000))
 
 	vmService, err := NewServer(workspaceDevice)
 	if err != nil {

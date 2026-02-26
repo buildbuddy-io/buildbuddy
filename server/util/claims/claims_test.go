@@ -436,6 +436,49 @@ func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		authErr     error
+		expectedErr error
+	}{
+		{
+			name:        "UnauthenticatedError_PassedThrough",
+			authErr:     status.UnauthenticatedError("bad token"),
+			expectedErr: status.UnauthenticatedError("bad token"),
+		},
+		{
+			name:        "PermissionDeniedError_PassedThrough",
+			authErr:     status.PermissionDeniedError("no access"),
+			expectedErr: status.PermissionDeniedError("no access"),
+		},
+		{
+			name:        "OtherError_WrappedAsUnauthenticated",
+			authErr:     status.InternalError("internal error"),
+			expectedErr: status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, status.InternalError("internal error").Error()),
+		},
+		{
+			name:        "NoAuthError_ReturnsInternalError",
+			authErr:     status.UnauthenticatedError("bad token"),
+			expectedErr: status.UnauthenticatedError("bad token"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.reparse_jwts", false)
+
+			// Build a context with a JWT token string and an auth error.
+			ctx := context.WithValue(context.Background(), authutil.ContextTokenStringKey, "some.jwt.token")
+			if tc.authErr != nil {
+				ctx = authutil.AuthContextWithError(ctx, tc.authErr)
+			}
+
+			_, err := claims.ClaimsFromContext(ctx)
+			require.Error(t, err)
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
 func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	keyProvider := func(ctx context.Context) ([]string, error) {

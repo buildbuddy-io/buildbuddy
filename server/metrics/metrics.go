@@ -179,9 +179,6 @@ const (
 	// Whether the request was handled using chunking
 	ChunkedLabel = "chunked"
 
-	// Source of chunked manifest lookup (local_hit, remote_hit, remote_error)
-	ChunkedManifestSourceLabel = "manifest_source"
-
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -362,6 +359,15 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+
+	// Label name for the eTLD+1 of the container image registry.
+	ImageFetchRegistryLabel = "registry"
+	// Label name for whether the image was already on disk on the executor.
+	ImageFetchOnDiskLabel = "on_disk"
+	// Label name for whether credentials were provided for the image fetch.
+	ImageFetchHasCredsLabel = "has_creds"
+	// Label name for what triggered the image fetch.
+	ImageFetchTriggerLabel = "trigger"
 )
 
 // Label value constants
@@ -383,6 +389,9 @@ const (
 	OCIFetcherRoleWaiter      = "waiter"
 	OCIFetcherStatusOK        = "ok"
 	OCIFetcherStatusError     = "error"
+
+	ImageFetchTriggerExecution = "execution"
+	ImageFetchTriggerWarmup    = "warmup"
 )
 
 // Other constants
@@ -595,6 +604,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		GroupID,
 		UsageTracked,
 	})
 
@@ -652,6 +662,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		GroupID,
 		UsageTracked,
 	})
 
@@ -2157,6 +2168,15 @@ var (
 		StatusLabel,
 	})
 
+	// ### Usage tracker
+
+	UsageTrackerMissingCollectionCountsCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "usage_tracker",
+		Name:      "missing_collection_counts_count",
+		Help:      "The number of times the usage tracking system was missing counts for a particular collection period. This may happen if there are transient redis errors.",
+	})
+
 	// ### Webhooks
 	//
 	// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
@@ -3623,15 +3643,6 @@ var (
 		StatusLabel,
 		CompressionType,
 	})
-	ByteStreamChunkedManifestLookups = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "proxy",
-		Name:      "byte_stream_chunked_manifest_lookups",
-		Help:      "Manifest lookup outcomes (source: local_hit, remote_hit, remote_error).",
-	}, []string{
-		StatusLabel,
-		ChunkedManifestSourceLabel,
-	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3782,6 +3793,23 @@ var (
 		Subsystem: "disk",
 		Name:      "file_writer_in_progress_ops",
 		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
+	})
+
+	// ## Container image fetch metrics
+
+	ImageFetchDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "image_fetch_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 5),
+		Help:      "Duration of container image fetch attempts on executors, in **microseconds**. Use the _count suffix for fetch counts.",
+	}, []string{
+		IsolationTypeLabel,
+		ImageFetchRegistryLabel,
+		StatusLabel,
+		ImageFetchOnDiskLabel,
+		ImageFetchHasCredsLabel,
+		ImageFetchTriggerLabel,
 	})
 
 	// Custom gRPC metrics

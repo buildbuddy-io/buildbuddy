@@ -27,6 +27,7 @@ go_library(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/capabilities_server",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/remote_execution/config",
         "//server/tables",

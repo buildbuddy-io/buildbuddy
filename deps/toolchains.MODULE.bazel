@@ -54,6 +54,8 @@ toolchains_musl.config(
 )
 use_repo(toolchains_musl, "musl_toolchains_hub")
 
+register_toolchains("@musl_toolchains_hub//:all")
+
 # Bazel binaries for integration testing
 bazel_binaries = use_extension(
     "@rules_bazel_integration_test//:extensions.bzl",

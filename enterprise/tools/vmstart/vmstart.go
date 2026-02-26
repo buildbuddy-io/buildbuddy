@@ -209,7 +209,7 @@ func run(ctx context.Context, env environment.Env) error {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			ScratchDiskSizeMb: 100,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 		},
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,

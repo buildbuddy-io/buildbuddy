@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -29,8 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
-	"github.com/jotfs/fastcdc-go"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
@@ -843,7 +844,7 @@ func TestGetTreeMissingRoot(t *testing.T) {
 
 func TestSpliceAndSplitBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -873,14 +874,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	require.Greater(t, len(fileData), 0)
 
 	avgChunkSize := 64 << 10 // 64KB
-	cdcOpts := fastcdc.Options{
-		AverageSize: avgChunkSize,
-		MinSize:     avgChunkSize / 4,
-		MaxSize:     avgChunkSize * 4,
-		Seed:        0,
-	}
-
-	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), cdcOpts)
+	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), avgChunkSize)
 	require.NoError(t, err)
 
 	var chunks [][]byte
@@ -902,7 +896,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		chunkDigests = append(chunkDigests, chunkDigest)
 	}
 
-	require.Equal(t, len(chunks), 11)
+	require.Equal(t, len(chunks), 10)
 	batchReq := &repb.BatchUpdateBlobsRequest{
 		Requests:       make([]*repb.BatchUpdateBlobsRequest_Request, len(chunks)),
 		DigestFunction: repb.DigestFunction_BLAKE3,
@@ -955,7 +949,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 
 func TestSplitBlobNotFound(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -997,7 +991,7 @@ func TestSplitBlobNotFound(t *testing.T) {
 
 func TestSpliceBlobSingleChunk(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.split_splice_enabled": {
+		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1049,6 +1043,66 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 	_, err = casClient.SpliceBlob(ctx, spliceReq)
 	require.Error(t, err)
 	require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got: %v", err)
+}
+
+func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, cache))
+
+	regularBlob := []byte("small")
+	regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest, regularDigest},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, rsp.MissingBlobDigests, 1)
+	require.Equal(t, regularDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
 }
 
 func TestSpliceBlobReadOnlyKey(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -163,6 +164,7 @@ func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return ctx, err
 	}
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, c.env.GetAuthenticator())
 	return ctx, err
 }
 

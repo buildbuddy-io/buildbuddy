@@ -37,10 +37,6 @@ type ContainerOpts struct {
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
 
-	// CPUWeightMillis is the CPU weight to assign to this VM, expressed as
-	// CPU-millis. This is set to the task size.
-	CPUWeightMillis int64
-
 	// CgroupParent is the parent cgroup path relative to the cgroup root.
 	CgroupParent string
 

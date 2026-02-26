@@ -242,7 +242,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 		return nil
 	}
 
-	log.CtxInfof(ctx, "Authenticating with registry for %q", imageName)
+	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
 
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
@@ -316,7 +316,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
-	log.CtxInfof(ctx, "Resolving image %q", imageRef)
+	log.CtxDebugf(ctx, "Resolving image %q", imageRef)
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	puller, err := remote.NewPuller(remoteOpts...)
@@ -969,7 +969,7 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 			metadata.GetContentLength(),
 		)
 		if err != nil {
-			log.Warningf("Error fetching blob from cache: %s", err)
+			log.CtxWarningf(l.image.ctx, "Error fetching blob from cache: %s", err)
 			pw.CloseWithError(err)
 		}
 	}()
@@ -979,4 +979,22 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 func isAnonymousUser(ctx context.Context) bool {
 	_, err := claims.ClaimsFromContext(ctx)
 	return authutil.IsAnonymousUserError(err)
+}
+
+// RegistryETLDPlusOne extracts the eTLD+1 of the registry host from a
+// container image reference string. It uses go-containerregistry to parse the
+// reference, which handles implicit docker.io defaults, tags, digests, and
+// ports. For IP-address registries, it returns the raw IP. Returns
+// "[UNKNOWN]" if the reference cannot be parsed.
+func RegistryETLDPlusOne(imageRef string) string {
+	ref, err := gcrname.ParseReference(imageRef)
+	if err != nil {
+		return "[UNKNOWN]"
+	}
+	host := ref.Context().RegistryStr()
+	// Strip port if present (RegistryStr may include it).
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return httpclient.HostLabel(host)
 }

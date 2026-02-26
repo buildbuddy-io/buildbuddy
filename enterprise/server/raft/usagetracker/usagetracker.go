@@ -567,7 +567,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		lbls := prometheus.Labels{metrics.PartitionID: p.ID, metrics.CacheNameLabel: constants.CacheName}
 		partitionLabel := prometheus.Labels{metrics.PartitionID: p.ID}
 		metricSet := metricSet{
-			cachePartitionSizeBytes:     metrics.DiskCachePartitionCapacityBytes.With(lbls),
+			cachePartitionSizeBytes:     metrics.DiskCachePartitionSizeBytes.With(lbls),
 			cachePartitionCapacityBytes: metrics.DiskCachePartitionCapacityBytes.With(lbls),
 			gcsDeleteDropped:            metrics.RaftGCSDeleteDropped.With(partitionLabel),
 			cacheEvictionAgeMsec:        metrics.DiskCacheEvictionAgeMsec.With(lbls),

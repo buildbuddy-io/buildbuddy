@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
@@ -41,10 +42,12 @@ func Run(t *testing.T, args ...string) *app.App {
 
 func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
 	redisTarget := testredis.Start(t).Target
+	pebbleCacheDir := testfs.MakeTempDir(t)
 	commandArgs := []string{
 		"--app_directory=/enterprise/app",
 		"--app.default_redis_target=" + redisTarget,
 		"--telemetry_port=-1",
+		"--cache.pebble.root_directory=" + pebbleCacheDir,
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.RunWithApp(

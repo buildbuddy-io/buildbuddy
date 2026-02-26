@@ -1,4 +1,3 @@
-import { CheckCircle, XCircle } from "lucide-react";
 import React from "react";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
@@ -15,12 +14,11 @@ import Modal from "../../../app/components/modal/modal";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
-import { user_list } from "../../../proto/user_list_ts_proto";
 import * as member_list from "./member_list";
-import MemberListComponent, { MemberListMember } from "./member_list";
+import MemberListComponent, { MemberListMember, RoleDescription } from "./member_list";
 
 export type OrgMembersProps = {
   user: User;
@@ -29,8 +27,6 @@ export type OrgMembersProps = {
 type State = {
   loading?: boolean;
   response?: grp.GetGroupUsersResponse;
-  userLists?: user_list.UserList[];
-
   selectedMembers: Map<string, member_list.MemberListMember>;
 
   isEditRoleModalVisible?: boolean;
@@ -57,32 +53,19 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
   private fetch() {
     this.setState({ loading: true });
 
-    const fetches = new Array<CancelablePromise>();
-    fetches.push(
-      rpcService.service
-        .getGroupUsers(
-          new grp.GetGroupUsersRequest({
-            groupId: this.props.user.selectedGroup.id,
-            // Only show existing members in this table for now.
-            // TODO(bduffany): render 2 separate tables; one for membership
-            // requests and one for existing members.
-            groupMembershipStatus: [grp.GroupMembershipStatus.MEMBER],
-          })
-        )
-        .then((response) => this.setState({ response }))
-        .catch((e) => errorService.handleError(e))
-    );
-
-    if (capabilities.config.userListsUiEnabled) {
-      fetches.push(
-        rpcService.service
-          .getUserLists(new user_list.GetUserListsRequest())
-          .then((response) => this.setState({ userLists: response.userList }))
-          .catch((e) => errorService.handleError(e))
-      );
-    }
-
-    Promise.all(fetches).finally(() => this.setState({ loading: false }));
+    rpcService.service
+      .getGroupUsers(
+        new grp.GetGroupUsersRequest({
+          groupId: this.props.user.selectedGroup.id,
+          // Only show existing members in this table for now.
+          // TODO(bduffany): render 2 separate tables; one for membership
+          // requests and one for existing members.
+          groupMembershipStatus: [grp.GroupMembershipStatus.MEMBER],
+        })
+      )
+      .then((response) => this.setState({ response }))
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   // Edit role modal
@@ -122,15 +105,6 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
             role: this.state.roleToApply,
           })
         );
-      } else if (member.userList) {
-        let update = new grp.UpdateGroupUsersRequest.Update({
-          userListId: member.userList.userListId,
-          role: this.state.roleToApply,
-        });
-        if (member.role === undefined) {
-          update.membershipAction = grp.UpdateGroupUsersRequest.Update.MembershipAction.ADD;
-        }
-        req.update.push(update);
       }
     }
 
@@ -140,7 +114,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         // After changing your own role within an org, refresh the page to
         // trigger a user refresh and possibly a reroute, in case this settings
         // page is no longer accessible.
-        if (Array.from(this.state.selectedMembers.values()).some((m) => this.affectsLoggedInUser(m))) {
+        if (Array.from(this.state.selectedMembers.values()).some((m) => this.isLoggedInUser(m))) {
           window.location.reload();
           return;
         }
@@ -180,13 +154,6 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
             membershipAction: grp.UpdateGroupUsersRequest.Update.MembershipAction.REMOVE,
           })
         );
-      } else if (member.userList && member.role !== undefined) {
-        req.update.push(
-          new grp.UpdateGroupUsersRequest.Update({
-            userListId: member.userList.userListId,
-            membershipAction: grp.UpdateGroupUsersRequest.Update.MembershipAction.REMOVE,
-          })
-        );
       }
     }
 
@@ -195,7 +162,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       .then(() => {
         // After removing yourself from an org, refresh the page to trigger
         // group reselection or login page as appropriate.
-        if (Array.from(this.state.selectedMembers.values()).some((m) => this.affectsLoggedInUser(m))) {
+        if (Array.from(this.state.selectedMembers.values()).some((m) => this.isLoggedInUser(m))) {
           window.location.reload();
           return;
         }
@@ -214,19 +181,8 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     return member?.user?.userId?.id === this.props.user.displayUser?.userId?.id;
   }
 
-  private containsLoggedInUser(member: member_list.MemberListMember) {
-    return member.userList?.user.some((u) => u.userId?.id === this.props.user.displayUser.userId?.id);
-  }
-
-  private affectsLoggedInUser(member: member_list.MemberListMember) {
-    return this.isLoggedInUser(member) || this.containsLoggedInUser(member);
-  }
-
   private renderAffectedUsersList({ verb }: { verb: string }) {
-    let selectedMembers = Array.from(this.state.selectedMembers.values());
-    if (verb == "Removing") {
-      selectedMembers = selectedMembers.filter((u) => u.role !== undefined);
-    }
+    const selectedMembers = Array.from(this.state.selectedMembers.values());
     return (
       <>
         <div>
@@ -234,7 +190,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         </div>
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
-            <div className={`affected-users-list-item ${this.affectsLoggedInUser(member) ? "flagged-self-user" : ""}`}>
+            <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
               {member.displayName()} {member.icon()}
             </div>
           ))}
@@ -244,63 +200,6 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
             <b>Warning</b>: Your account is selected.
           </div>
         )}
-        {selectedMembers.some((member) => this.containsLoggedInUser(member)) && (
-          <div className="editing-self-warning">
-            <b>Warning</b>: Your account is a member of a selected group.
-          </div>
-        )}
-      </>
-    );
-  }
-
-  private renderRoleDescription(role: grp.Group.Role) {
-    // TODO: send up role=>capabilities mapping from server, and base these
-    // descriptions on that.
-    type Capability = {
-      description: React.ReactNode;
-      read: boolean;
-      write: boolean;
-    };
-    const capabilities: Capability[] = [
-      {
-        description: "Organization settings and users",
-        read: role === grp.Group.Role.ADMIN_ROLE,
-        write: role === grp.Group.Role.ADMIN_ROLE,
-      },
-      {
-        description: "Invocations",
-        read: true,
-        write: true,
-      },
-      {
-        description: "Content-addressable storage (CAS)",
-        read: true,
-        write: role !== grp.Group.Role.READER_ROLE,
-      },
-      {
-        description: "Action cache (AC)",
-        read: true,
-        write: role === grp.Group.Role.WRITER_ROLE || role === grp.Group.Role.ADMIN_ROLE,
-      },
-    ];
-    const statusIcon = (ok: boolean) =>
-      ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
-    return (
-      <>
-        <table className="role-capabilities">
-          <tr className="role-capability-header">
-            <th>Object type</th>
-            <th>Read</th>
-            <th>Write</th>
-          </tr>
-          {capabilities.map((capability, i) => (
-            <tr key={i} className="role-capability-row">
-              <td>{capability.description}</td>
-              <td>{statusIcon(capability.read)}</td>
-              <td>{statusIcon(capability.write)}</td>
-            </tr>
-          ))}
-        </table>
       </>
     );
   }
@@ -324,29 +223,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
 
     const removeButton = <Button className="destructive org-member-remove-button">Remove</Button>;
 
-    // All user list IDs that are already a member of the group and the
-    // associated role.
-    const userListRole = new Map<string, grp.Group.Role>(
-      this.state.response.user.filter((gu) => gu.userList).map((gu) => [gu.userList!.userListId, gu.role])
-    );
-
-    const members = new Array<MemberListMember>();
-
-    // Populate user lists at the top of the members list, above users.
-    if (capabilities.config.userListsUiEnabled) {
-      members.push(
-        ...this.state.userLists!.map((ul) => {
-          return new MemberListMember(undefined, ul, userListRole.get(ul.userListId));
-        })
-      );
-    }
-
-    // Then add direct user members.
-    members.push(
-      ...this.state.response.user
-        .filter((gu) => gu.user)
-        .map((gu) => new MemberListMember(gu.user!, undefined, gu.role))
-    );
+    const members = this.state.response.user
+      .filter((gu) => gu.user)
+      .map((gu) => new MemberListMember(gu.user!, undefined, gu.role));
 
     return (
       <>
@@ -395,7 +274,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
                     </Option>
                   </Select>
                 </div>
-                <div className="role-description">{this.renderRoleDescription(this.state.roleToApply)}</div>
+                <div className="role-description">
+                  <RoleDescription role={this.state.roleToApply} />
+                </div>
               </DialogBody>
               <DialogFooter>
                 <DialogFooterButtons>

@@ -363,15 +363,15 @@ func TestNewZstdCompressingWriteCommiter(t *testing.T) {
 	counter := &ioutil.Counter{}
 	wc := ioutil.NewCustomCommitWriteCloser(counter)
 	var commited int64
-	wc.CommitFn = func(bytesWritten int64) error {
+	wc.SetCommitFn(func(bytesWritten int64) error {
 		commited = bytesWritten
 		return nil
-	}
+	})
 	closed := false
-	wc.CloseFn = func() error {
+	wc.SetCloseFn(func() error {
 		closed = true
 		return nil
-	}
+	})
 	src := []byte("hello worldddddddddddddddddddddddddddddddddddddddddd")
 	compressWC, err := compression.NewZstdCompressingWriteCommiter(wc, bufPool, int64(len(src)), "test_cache")
 	require.NoError(t, err)
