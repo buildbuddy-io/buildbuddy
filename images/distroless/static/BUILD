@@ -1,3 +1,5 @@
+# Adapted from the example at https://github.com/bazel-contrib/rules_img/tree/main/e2e/generic/custom_distroless_base_image
+
 load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "java_keystore", "passwd")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
