@@ -132,7 +132,6 @@ pkg_tar(
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
-    tags = ["manual"],
 )
 
 image_manifest(
@@ -142,7 +141,6 @@ image_manifest(
         "/app/enterprise/server/cmd/server/buildbuddy",
     ],
     layers = [":tar"],
-    tags = ["manual"],
 )
 
 image_load(
@@ -150,5 +148,4 @@ image_load(
     daemon = "containerd",  # Explicitly use containerd
     image = ":manifest",
     tag = "buildbuddy_image:latest",
-    tags = ["manual"],
 )
