@@ -330,114 +330,296 @@ func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
 	return cfg
 }
 
-func TestFirecrackerRunSimple(t *testing.T) {
+// TestFirecrackerRun consolidates basic run/lifecycle tests that share the
+// same envOpts{} setup and don't require special flags. Each sub-test creates
+// its own VM — isolation is preserved. Sharing one getTestEnv() call saves
+// ~6 expensive env setups.
+//
+// Guarantees covered: G1 (basic lifecycle), G22 (non-root user), G23 (numeric
+// UID), G30 (zero disk), G31 (script from disk), G32 (large result).
+func TestFirecrackerRun(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
+	t.Run("Simple", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-
-	assertCommandResult(t, expectedResult, res)
-}
-
-func TestFirecrackerLifecycle(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cached, err := c.IsImageCached(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cached {
-		if err := c.PullImage(ctx, oci.Credentials{}); err != nil {
+		path := filepath.Join(workDir, "world.txt")
+		if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		log.Debugf("Cleaning up...")
-		if err := c.Remove(ctx); err != nil {
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GREETING", Value: "Hello"},
+			},
+		}
+		expectedResult := &interfaces.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Hello world"),
+			Stderr:   []byte("foo"),
+		}
+
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         2500,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		if err != nil {
 			t.Fatal(err)
 		}
+
+		// Run will handle the full lifecycle: no need to call Remove() here.
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		if res.Error != nil {
+			t.Fatal(res.Error)
+		}
+
+		assertCommandResult(t, expectedResult, res)
 	})
-	res := c.Exec(ctx, cmd, nil)
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-	assertCommandResult(t, expectedResult, res)
+
+	t.Run("Lifecycle", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+		path := filepath.Join(workDir, "world.txt")
+		if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
+			t.Fatal(err)
+		}
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GREETING", Value: "Hello"},
+			},
+		}
+		expectedResult := &interfaces.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Hello world"),
+			Stderr:   []byte("foo"),
+		}
+
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         2500,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cached, err := c.IsImageCached(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cached {
+			if err := c.PullImage(ctx, oci.Credentials{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			log.Debugf("Cleaning up...")
+			if err := c.Remove(ctx); err != nil {
+				t.Fatal(err)
+			}
+		})
+		res := c.Exec(ctx, cmd, nil)
+		if res.Error != nil {
+			t.Fatal(res.Error)
+		}
+		assertCommandResult(t, expectedResult, res)
+	})
+
+	t.Run("NonRoot", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		ws, err := workspace.New(env, rootDir, &workspace.Opts{})
+		require.NoError(t, err)
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `
+				# print out the uid/gid
+				id
+
+				# make sure the workspace root dir is writable
+				touch foo || exit 1
+				# make sure output directories are writable too
+				touch outputs/bar || exit 1
+				touch nested/outputs/baz || exit 1
+			`},
+			OutputDirectories: []string{"outputs", "nested/outputs"},
+		}
+		ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
+		err = ws.CreateOutputDirs()
+		require.NoError(t, err)
+
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			User:                   "nobody",
+			ActionWorkingDirectory: ws.Path(),
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         1000,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		if res.Error != nil {
+			t.Fatal(res.Error)
+		}
+		require.NoError(t, res.Error)
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
+	})
+
+	t.Run("NonExistentUser", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		ws, err := workspace.New(env, rootDir, &workspace.Opts{})
+		require.NoError(t, err)
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `
+				# print out the uid/gid
+				id
+				# make sure the workspace root dir is writable
+				touch foo || exit 1
+				# make sure output directories are writable too
+				touch outputs/bar || exit 1
+				touch nested/outputs/baz || exit 1
+			`},
+			OutputDirectories: []string{"outputs", "nested/outputs"},
+		}
+		ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
+		err = ws.CreateOutputDirs()
+		require.NoError(t, err)
+
+		opts := firecracker.ContainerOpts{
+			ContainerImage: busyboxImage,
+			// Numeric uid that doesn't correspond to a real user in /etc/passwd
+			// in the busybox image - this is valid.
+			User:                   "1234",
+			ActionWorkingDirectory: ws.Path(),
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         200,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		require.NoError(t, res.Error)
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", string(res.Stdout))
+	})
+
+	t.Run("ZeroDisk", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+		cmd := &repb.Command{Arguments: []string{"pwd"}}
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:     1,
+				MemSizeMb:   2500,
+				NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF,
+				// Request 0 disk; implementation should ensure the disk is at least as big
+				// as is required to run a NOP command. Otherwise, users might have to
+				// keep on top of our min disk requirements which is not really feasible.
+				ScratchDiskSizeMb: 0,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+
+		// Run will handle the full lifecycle: no need to call Remove() here.
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		require.NoError(t, res.Error)
+		assert.Equal(t, 0, res.ExitCode)
+		assert.Equal(t, "", string(res.Stderr))
+		assert.Equal(t, "/workspace\n", string(res.Stdout))
+	})
+
+	t.Run("LargeResult", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         2500,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+		const stdoutSize = 10_000_000
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+
+		require.NoError(t, res.Error)
+		assert.Equal(t, string(res.Stderr), "")
+		assert.Len(t, res.Stdout, stdoutSize)
+	})
+
+	t.Run("ScriptFromDisk", func(t *testing.T) {
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+		// Write an NOP script and exec it directly, to test a fork/exec that
+		// depends on the NBD in order to complete.
+		err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte("#!/usr/bin/env bash"), 0777)
+		require.NoError(t, err)
+		cmd := &repb.Command{Arguments: []string{"./script.sh"}}
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				// Important: NumCpus is 1 here to test that we can serve the NBD
+				// request for the script, and execute the script, while only having
+				// a single CPU core available (Go defaults GOMAXPROCS to this
+				// value).
+				NumCpus:           1,
+				MemSizeMb:         500,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+				ScratchDiskSizeMb: 200,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		require.NoError(t, res.Error)
+	})
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
@@ -2331,130 +2513,6 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	assert.Equal(t, expectedOutput, string(res.Stdout))
 }
 
-func TestFirecrackerNonRoot(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
-	require.NoError(t, err)
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			# print out the uid/gid
-			id
-
-			# make sure the workspace root dir is writable
-			touch foo || exit 1
-			# make sure output directories are writable too
-			touch outputs/bar || exit 1
-			touch nested/outputs/baz || exit 1
-		`},
-		OutputDirectories: []string{"outputs", "nested/outputs"},
-	}
-	ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
-	err = ws.CreateOutputDirs()
-	require.NoError(t, err)
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		User:                   "nobody",
-		ActionWorkingDirectory: ws.Path(),
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         1000,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
-	require.Equal(t, 0, res.ExitCode)
-	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
-}
-
-func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
-	require.NoError(t, err)
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			# print out the uid/gid
-			id
-			# make sure the workspace root dir is writable
-			touch foo || exit 1
-			# make sure output directories are writable too
-			touch outputs/bar || exit 1
-			touch nested/outputs/baz || exit 1
-		`},
-		OutputDirectories: []string{"outputs", "nested/outputs"},
-	}
-	ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
-	err = ws.CreateOutputDirs()
-	require.NoError(t, err)
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage: busyboxImage,
-		// Numeric uid that doesn't correspond to a real user in /etc/passwd
-		// in the busybox image - this is valid.
-		User:                   "1234",
-		ActionWorkingDirectory: ws.Path(),
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         200,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
-	require.Equal(t, 0, res.ExitCode)
-	require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", string(res.Stdout))
-}
-
-func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	cmd := &repb.Command{Arguments: []string{"pwd"}}
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:     1,
-			MemSizeMb:   2500,
-			NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF,
-			// Request 0 disk; implementation should ensure the disk is at least as big
-			// as is required to run a NOP command. Otherwise, users might have to
-			// keep on top of our min disk requirements which is not really feasible.
-			ScratchDiskSizeMb: 0,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-	assert.Equal(t, "/workspace\n", string(res.Stdout))
-}
-
 func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	if *skipDockerTests {
 		t.Skip()
@@ -3166,33 +3224,6 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		"should get partial output files even if the exec times out")
 }
 
-func TestFirecrackerLargeResult(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-	const stdoutSize = 10_000_000
-	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
-
-	require.NoError(t, res.Error)
-	assert.Equal(t, string(res.Stderr), "")
-	assert.Len(t, res.Stdout, stdoutSize)
-}
-
 func TestMergeDiffSnapshot(t *testing.T) {
 	for _, cow := range []bool{false, true} {
 		t.Run(fmt.Sprintf("COW=%v", cow), func(t *testing.T) {
@@ -3299,39 +3330,6 @@ func writeRandomPages(t *testing.T, f *os.File, n int, expectedBuf []byte) {
 		_, err := f.WriteAt(expectedBuf[offset:offset+length], int64(offset))
 		require.NoError(t, err)
 	}
-}
-
-func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	// Write an NOP script and exec it directly, to test a fork/exec that
-	// depends on the NBD in order to complete.
-	err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte("#!/usr/bin/env bash"), 0777)
-	require.NoError(t, err)
-	cmd := &repb.Command{Arguments: []string{"./script.sh"}}
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			// Important: NumCpus is 1 here to test that we can serve the NBD
-			// request for the script, and execute the script, while only having
-			// a single CPU core available (Go defaults GOMAXPROCS to this
-			// value).
-			NumCpus:           1,
-			MemSizeMb:         500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
-			ScratchDiskSizeMb: 200,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
 }
 
 func TestFirecrackerHealthChecking(t *testing.T) {
