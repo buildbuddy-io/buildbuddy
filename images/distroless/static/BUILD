@@ -90,8 +90,8 @@ image_index(
     name = "index",
     manifests = [":manifest"],
     platforms = [
-        "//platforms/config:linux_x86_64",
-        "//platforms/config:linux_arm64",
+        "//platforms/configs:linux_x86_64",
+        "//platforms/configs:linux_arm64",
     ],
     target_compatible_with = select({
         # the cacerts target referenced
