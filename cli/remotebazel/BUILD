@@ -54,6 +54,7 @@ go_test(
     deps = [
         "//cli/parser",
         "//cli/parser/test_data",
+        "//cli/storage",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "@com_github_stretchr_testify//require",

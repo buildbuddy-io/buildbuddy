@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
@@ -268,6 +270,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
 
 		if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
@@ -326,6 +329,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
 
 		if tc.multipleRemotes {
 			testshell.Run(t, localRepoPath, "git remote add extra "+remoteUrl)
@@ -353,6 +357,7 @@ func TestGeneratingPatches(t *testing.T) {
 	// is set correctly
 	err := os.Chdir(localRepoPath)
 	require.NoError(t, err)
+	resetRepoRootPathForTest(t)
 
 	testshell.Run(t, localRepoPath, `
 		# Generate a diff on a pre-existing file
@@ -386,4 +391,10 @@ func TestGeneratingPatches(t *testing.T) {
 			require.FailNowf(t, "unexpected patch %s", p)
 		}
 	}
+}
+
+func resetRepoRootPathForTest(t *testing.T) {
+	storage.RepoRootPath = sync.OnceValues(func() (string, error) {
+		return os.Getwd()
+	})
 }
