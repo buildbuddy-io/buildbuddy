@@ -75,8 +75,9 @@ const (
 	// Alternate image to use if getting rate-limited by docker hub
 	// busyboxImage = "gcr.io/google-containers/busybox:latest"
 
-	ubuntuImage              = "mirror.gcr.io/library/ubuntu:20.04"
-	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+	ubuntuImage                 = "mirror.gcr.io/library/ubuntu:20.04"
+	imageWithDockerInstalled    = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+	imageWithDockerV28Installed = platform.Ubuntu24_04Image
 
 	// Minimum memory needed for a firecracker VM. This may need to be increased
 	// if the size of initrd.cpio increases.
@@ -150,8 +151,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "25c5043d9c3d465c5fe2e974da0e532fe113365182aa8fe59c0c1e028064562b"
-		expectedVersion = "17"
+		expectedHash    = "d6e20637585cf821192d1b13d34b87316307ae286b4c31d27307052a3d7df45c"
+		expectedVersion = "18"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -2455,7 +2456,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
-func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
+func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -2472,7 +2473,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 			docker pull ` + busyboxImage + ` &>/dev/null
 
 			# Try running a few commands
-			docker run --rm ` + busyboxImage + ` echo Hello
+			docker run --rm -p 127.0.0.1:18080:80 ` + busyboxImage + ` echo Hello
 			docker run --rm ` + busyboxImage + ` echo world
 
 			# Check what storage driver docker is using
@@ -2481,7 +2482,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
+		ContainerImage:         containerImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
@@ -2510,6 +2511,14 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	}
 	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
+	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerInstalled)
+}
+
+func TestFirecrackerRunWithDockerV28OverUDS(t *testing.T) {
+	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerV28Installed)
 }
 
 func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
