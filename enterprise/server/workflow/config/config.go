@@ -236,6 +236,19 @@ fi
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 
 if [ "$BZLMOD_ENABLED" -eq 1 ]; then
+    # Ensure Kythe's dynamically loaded rule sets are visible from the main module.
+    # Under Bazel 9 strict bzlmod visibility, transitive deps are not visible by default.
+    if [ -f MODULE.bazel ]; then
+        if ! grep -q 'bazel_dep(name = "rules_java"' MODULE.bazel; then
+            echo "Adding rules_java dependency to MODULE.bazel"
+            echo -e '\nbazel_dep(name = "rules_java", version = "8.14.0")' >> MODULE.bazel
+        fi
+        if ! grep -q 'bazel_dep(name = "rules_proto"' MODULE.bazel; then
+            echo "Adding rules_proto dependency to MODULE.bazel"
+            echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> MODULE.bazel
+        fi
+    fi
+
     # with bzlmod enabled, override_repository will not work unless the repository is already defined
 	# inject_repository will work, but was added in Bazel 8, so we need to handle <8 by
 	# manually adding to MODULE.bazel.
