@@ -191,15 +191,22 @@ if [ ! -d "$KYTHE_DIR" ]; then
 fi
 
 # Bazel 8+ removed proto_lang_toolchain from native rules.
-# Patch the Kythe BUILD file to load it from rules_proto.
+# Bazel 9+ no longer exposes java rules as native symbols by default.
+# Patch the Kythe BUILD file to load these from external rule sets.
 if ! grep -q 'proto_lang_toolchain.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
   sed -i '1s|^|load("@rules_proto//proto:proto_lang_toolchain.bzl", "proto_lang_toolchain")\n|' "$KYTHE_DIR"/BUILD
 fi
+if ! grep -q '@rules_java//java:defs.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
+  sed -i '1s|^|load("@rules_java//java:defs.bzl", "java_binary", "java_import", "java_library")\n|' "$KYTHE_DIR"/BUILD
+fi
 
-# Ensure the Kythe MODULE.bazel declares rules_proto as a dependency
+# Ensure the Kythe MODULE.bazel declares required rule set dependencies
 # (needed when the Kythe module is registered via local_path_override).
 if ! grep -q 'rules_proto' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
   echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> "$KYTHE_DIR"/MODULE.bazel
+fi
+if ! grep -q 'rules_java' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
+  echo -e 'bazel_dep(name = "rules_java", version = "8.14.0")' >> "$KYTHE_DIR"/MODULE.bazel
 fi`, dirName, downloadURL)
 	return buf
 }
