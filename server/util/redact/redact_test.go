@@ -983,6 +983,39 @@ func TestRedactTxt(t *testing.T) {
 	}
 }
 
+func TestRedactTextWithValues(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		txt             string
+		redactionValues []string
+		expected        string
+	}{
+		{
+			name:            "applies default redactions and custom values",
+			txt:             "ok --remote_header=x-buildbuddy-api-key=secret token=super_secret and --repo_env=AWS_SECRET_ACCESS_KEY=abc",
+			redactionValues: []string{"super_secret"},
+			expected:        "ok --remote_header=<REDACTED> token=<REDACTED> and --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED>",
+		},
+		{
+			name:            "redacts overlapping values longest first",
+			txt:             "token=abcdef short=abc",
+			redactionValues: []string{"abc", "abcdef"},
+			expected:        "token=<REDACTED> short=<REDACTED>",
+		},
+		{
+			name:            "ignores empty values and deduplicates",
+			txt:             "x=secret y=secret",
+			redactionValues: []string{"", "secret", "secret"},
+			expected:        "x=<REDACTED> y=<REDACTED>",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactTextWithValues(tc.txt, tc.redactionValues)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
 func TestRedactAPIKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
