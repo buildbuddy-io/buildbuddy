@@ -3613,7 +3613,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_chunked_write_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Hour, 10),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Minute, 1.3),
 		Help:      "Total duration of chunked write operations, in **microseconds**.",
 	}, []string{
 		StatusLabel,
@@ -3623,7 +3623,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_chunked_write_chunking_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Hour, 10),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Minute, 1.3),
 		Help:      "Duration of the chunking phase (receive, decompress, chunk, compress, local write), in **microseconds**.",
 	}, []string{
 		StatusLabel,
@@ -3633,7 +3633,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "byte_stream_chunked_write_remote_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Hour, 10),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Minute, 1.3),
 		Help:      "Duration of the remote phase (FindMissingBlobs, upload, SpliceBlob), in **microseconds**.",
 	}, []string{
 		StatusLabel,
