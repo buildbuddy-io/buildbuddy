@@ -1769,7 +1769,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            2,
-			MemSizeMb:          800,
+			MemSizeMb:          2000,
 			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb:  500,
 			GuestKernelVersion: cfg.GuestKernelVersion,
@@ -1808,12 +1808,10 @@ func TestFirecrackerBalloon(t *testing.T) {
 
 	cmd := &repb.Command{
 		// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
-		// Use /dev/zero rather than /dev/urandom for speed; the balloon test
-		// cares about memory pressure, not data entropy.
 		Arguments: []string{"bash", "-c", `
 set -eo pipefail
-mkdir /tmp/randomdata && mount -t tmpfs -o size=500M tmpfs /tmp/randomdata
-dd if=/dev/zero of=/tmp/randomdata/data bs=1M count=400
+mkdir /tmp/randomdata && mount -t tmpfs -o size=1700M tmpfs /tmp/randomdata
+dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=1600
 free -h
 `},
 	}
