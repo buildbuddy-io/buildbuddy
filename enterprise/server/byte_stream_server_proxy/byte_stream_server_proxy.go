@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -402,6 +404,8 @@ type byteStreamMetrics struct {
 	chunksDeduped     int
 	chunkBytesTotal   int64
 	chunkBytesDeduped int64
+	chunkingDuration  time.Duration
+	remoteDuration    time.Duration
 }
 
 func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
@@ -486,6 +490,8 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 				chunksDeduped:     result.chunksDeduped,
 				chunkBytesTotal:   result.chunkBytesTotal,
 				chunkBytesDeduped: result.chunkBytesDeduped,
+				chunkingDuration:  result.chunkingDuration,
+				remoteDuration:    result.remoteDuration,
 			})
 			return nil
 		}
@@ -665,6 +671,10 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 		if bsm.chunkBytesDeduped > 0 {
 			metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesDeduped))
 		}
+		totalDuration := bsm.chunkingDuration + bsm.remoteDuration
+		metrics.ByteStreamChunkedWriteDurationUsec.With(chunkedLabels).Observe(float64(totalDuration.Microseconds()))
+		metrics.ByteStreamChunkedWriteChunkingDurationUsec.With(chunkedLabels).Observe(float64(bsm.chunkingDuration.Microseconds()))
+		metrics.ByteStreamChunkedWriteRemoteDurationUsec.With(chunkedLabels).Observe(float64(bsm.remoteDuration.Microseconds()))
 	}
 }
 
@@ -699,9 +709,14 @@ type writeChunkedResult struct {
 	chunksDeduped     int
 	chunkBytesTotal   int64
 	chunkBytesDeduped int64
+	chunkingDuration  time.Duration
+	remoteDuration    time.Duration
 }
 
 func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.ByteStream_WriteServer) (writeChunkedResult, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	firstReq, err := stream.Recv()
 	if err != nil {
 		return writeChunkedResult{}, status.WrapErrorf(err, "receive first request")
@@ -715,6 +730,13 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	blobSize := rn.GetDigest().GetSizeBytes()
 	if blobSize <= chunking.MaxChunkSizeBytes() {
 		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob too small for chunking")
+	}
+
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.Int64("blob_size", blobSize),
+			attribute.String("compressor", rn.GetCompressor().String()),
+		)
 	}
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.authenticator)
@@ -737,6 +759,9 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	// We write chunks to local first, then use FindMissingBlobs + upload for remote.
 	// Chunks are stored and read compressed with ZSTD.
 	chunkWriteFn := func(chunkData []byte) error {
+		chunkCtx, chunkSpn := tracing.StartNamedSpan(ctx, "chunkWriteFn")
+		defer chunkSpn.End()
+
 		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), digestFunction)
 		if err != nil {
 			return status.InternalErrorf("computing chunked digest for Write: %s", err)
@@ -745,13 +770,26 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
+
+		_, compressSpn := tracing.StartNamedSpan(chunkCtx, "CompressZstd")
 		compressedData := compression.CompressZstd(compressBuf, chunkData)
-		stream := &rawWriteStream{
-			ctx:          ctx,
+		compressSpn.End()
+
+		if chunkSpn.IsRecording() {
+			chunkSpn.SetAttributes(
+				attribute.Int("chunk_size", len(chunkData)),
+				attribute.Int("compressed_size", len(compressedData)),
+			)
+		}
+
+		localWriteCtx, localWriteSpn := tracing.StartNamedSpan(chunkCtx, "localChunkWrite")
+		defer localWriteSpn.End()
+		rawStream := &rawWriteStream{
+			ctx:          localWriteCtx,
 			resourceName: chunkRN.NewUploadString(),
 			data:         compressedData,
 		}
-		if err := s.local.Write(stream); err != nil {
+		if err := s.local.Write(rawStream); err != nil {
 			return status.InternalErrorf("writing chunk %s to local: %s", chunkRN.DownloadString(), err)
 		}
 		return nil
@@ -774,10 +812,16 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		chunkInput = decompressor
 	}
 
+	chunkingStart := time.Now()
 	req := firstReq
 	bytesReceived := int64(0)
 	for {
-		if _, err := chunkInput.Write(req.GetData()); err != nil {
+		// Backpressure: chunkInputWrite / streamRecv (compression/local-write is bottleneck).
+		// Forward pressure: streamRecv / chunkInputWrite (client send is bottleneck).
+		_, pipeWriteSpn := tracing.StartNamedSpan(ctx, "chunkInputWrite")
+		_, err := chunkInput.Write(req.GetData())
+		pipeWriteSpn.End()
+		if err != nil {
 			return writeChunkedResult{}, status.InternalErrorf("writing data to chunker: %s", err)
 		}
 		bytesReceived += int64(len(req.GetData()))
@@ -785,7 +829,9 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 			break
 		}
 
+		_, recvSpn := tracing.StartNamedSpan(ctx, "streamRecv")
 		req, err = stream.Recv()
+		recvSpn.End()
 		if err == io.EOF {
 			return writeChunkedResult{}, status.InvalidArgumentErrorf("received EOF before FinishWrite; stream cannot be recovered")
 		}
@@ -795,15 +841,22 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	if decompressor != nil {
-		if err := decompressor.Close(); err != nil {
+		_, closeSpn := tracing.StartNamedSpan(ctx, "closeDecompressor")
+		err := decompressor.Close()
+		closeSpn.End()
+		if err != nil {
 			return writeChunkedResult{}, status.InternalErrorf("closing decompressor: %s", err)
 		}
 	}
 
 	// Close blocks until all chunk writes complete, ensuring chunkDigests is fully populated.
-	if err := chunker.Close(); err != nil {
+	_, closeChunkerSpn := tracing.StartNamedSpan(ctx, "closeChunker")
+	err = chunker.Close()
+	closeChunkerSpn.End()
+	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("closing chunker: %s", err)
 	}
+	chunkingDuration := time.Since(chunkingStart)
 
 	var chunkBytesTotal int64
 	for _, d := range chunkDigests {
@@ -811,9 +864,17 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	result := writeChunkedResult{
-		blobBytes:       blobSize,
-		chunksTotal:     len(chunkDigests),
-		chunkBytesTotal: chunkBytesTotal,
+		blobBytes:        blobSize,
+		chunksTotal:      len(chunkDigests),
+		chunkBytesTotal:  chunkBytesTotal,
+		chunkingDuration: chunkingDuration,
+	}
+
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.Int("chunks_total", result.chunksTotal),
+			attribute.Int64("chunk_bytes_total", result.chunkBytesTotal),
+		)
 	}
 
 	// If there's only 1 chunk, the chunking threshold is misconfigured.
@@ -829,7 +890,11 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		DigestFunction: digestFunction,
 	}
 
-	missingBlobs, err := s.remoteCAS.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest())
+	remoteStart := time.Now()
+
+	fmbCtx, fmbSpn := tracing.StartNamedSpan(ctx, "remote.FindMissingBlobs")
+	missingBlobs, err := s.remoteCAS.FindMissingBlobs(fmbCtx, manifest.ToFindMissingBlobsRequest())
+	fmbSpn.End()
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("finding missing blobs on remote: %s", err)
 	}
@@ -852,14 +917,23 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		}
 	}
 
-	if _, err := s.remoteCAS.SpliceBlob(ctx, manifest.ToSpliceBlobRequest()); err != nil {
+	spliceCtx, spliceSpn := tracing.StartNamedSpan(ctx, "remote.SpliceBlob")
+	_, err = s.remoteCAS.SpliceBlob(spliceCtx, manifest.ToSpliceBlobRequest())
+	spliceSpn.End()
+	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("splice blob on remote: %s", err)
 	}
 
+	result.remoteDuration = time.Since(remoteStart)
 	return result, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: bytesReceived})
 }
 
 func (s *ByteStreamServerProxy) uploadMissingChunks(ctx context.Context, missingDigests []*repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("missing_chunks", len(missingDigests)))
+	}
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(*chunkUploadConcurrency)
 	for _, chunkDigest := range missingDigests {
