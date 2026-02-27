@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -27,11 +28,14 @@ import (
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -95,7 +99,22 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 		return rfspb.NewApiClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialSimple("grpc://" + peer)
+
+	// Use a backoff config allows for fast-reconnect during server rollout.
+	// Use kube:/// resolver when running in k8s for instant IP updates on
+	// pod restarts. Fall back to default grpc:// resolver otherwise (e.g. tests).
+	target := "grpc://" + peer
+	if kuberesolver.RunningInKubernetes() {
+		target = "kube:///" + peer
+	}
+	conn, err := grpc_client.DialSimple(target, grpc.WithConnectParams(grpc.ConnectParams{
+		Backoff: backoff.Config{
+			BaseDelay:  100 * time.Millisecond,
+			Multiplier: 1.6,
+			Jitter:     0.2,
+			MaxDelay:   1 * time.Second,
+		},
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +158,6 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 }
 
 func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
-
 	if deadline, ok := ctx.Deadline(); ok {
 		dur := time.Until(deadline)
 		if dur <= 0 {
@@ -164,15 +182,27 @@ func (e *aggErr) err() error {
 		return nil
 	}
 
-	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected || e.lastErr == dragonboat.ErrShardNotReady {
-		return e.lastErr
-	} else if status.IsOutOfRangeError(e.lastErr) {
-		return e.lastErr
-	} else if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
-		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
+	// Build the error to return
+	var err error
+	if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
+		err = fmt.Errorf("last error: %w, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {
-		return fmt.Errorf("last error: %s, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
+		err = fmt.Errorf("last error: %w, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
 	}
+
+	// If error already has a status code, return as-is
+	if !status.IsUnknownError(err) {
+		return err
+	}
+
+	// Add appropriate status code based on error type
+	if dragonboat.IsTempError(err) {
+		return status.WithCode(err, codes.Unavailable)
+	}
+	if errors.Is(err, dragonboat.ErrCanceled) {
+		return status.WithCode(err, codes.Canceled)
+	}
+	return status.WithCode(err, codes.Internal)
 }
 
 func (e *aggErr) Add(err error) {
@@ -307,11 +337,12 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 
-	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) (returnedErr error) {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
 		defer func() {
+			tracing.RecordErrorToSpan(spn, returnedErr)
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
 				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,

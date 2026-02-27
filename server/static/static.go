@@ -5,17 +5,17 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
@@ -29,6 +29,8 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
+
+var staticGoRlocation string
 
 const (
 	indexTemplateFilename = "index.html"
@@ -68,6 +70,8 @@ var (
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
 	targetsPageEnabled                     = flag.Bool("app.targets_page_enabled", true, "If true, show a targets page for exploring RBE usage by target in the UI.")
+	userListsUIEnabled                     = flag.Bool("app.user_lists_ui_enabled", false, "If set, show show user list management options in the UI.")
+	darkModeEnabled                        = flag.Bool("app.dark_mode_enabled", false, "If set, show dark mode option in user preferences.")
 	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
@@ -75,13 +79,14 @@ var (
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
-	// Figure out where our runfiles (static content bundled with the binary) live.
-	rfp, err := bazel.RunfilesPath()
+	// Get a filesystem containing the runfiles (static content bundled with the binary).
+	runfilesFS, err := runfiles.New()
 	if err != nil {
 		return nil, err
 	}
-	dirFS := os.DirFS(filepath.Join(rfp, relPath))
-	return dirFS, nil
+	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
+
+	return fs.Sub(runfilesFS, path.Clean(path.Join(moduleName, relPath)))
 }
 
 // StaticFileServer implements a static file http server that serves static
@@ -196,6 +201,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
+		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
@@ -221,6 +227,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		DefaultLoginSlug:                       *defaultLoginSlug,
 		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
+		UserListsUiEnabled:                     *userListsUIEnabled,
+		DarkModeEnabled:                        *darkModeEnabled,
 	}
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {

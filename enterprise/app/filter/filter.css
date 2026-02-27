@@ -37,14 +37,14 @@
 .global-filter .option-group-title {
   font-weight: 600;
   font-size: 15px;
-  background: white;
+  background: var(--color-popup-bg);
   padding: 4px 16px;
 }
 
 .global-filter .option-group-section-title {
   font-weight: 600;
   font-size: 15px;
-  background: white;
+  background: var(--color-popup-bg);
   padding: 4px 16px;
   margin-top: 16px;
 }
@@ -86,7 +86,7 @@
 
 .global-filter .status-badge {
   flex-grow: 1;
-  border: 1px solid #eee;
+  border: 1px solid var(--color-border-primary);
   border-left: 4px solid var(--status-color);
   border-radius: 4px;
   padding: 2px 8px;
@@ -113,7 +113,7 @@
 }
 
 .global-filter .role-badge.DEFAULT {
-  background: #eee;
+  background: var(--color-filter-badge-bg);
 }
 
 .global-filter .square {
@@ -161,8 +161,8 @@
   text-overflow: ellipsis;
   font-size: 14px;
   font-weight: 500;
-  background-color: #eceff1;
-  border: 1px solid #eee;
+  background-color: var(--color-filter-advanced-badge-bg);
+  border: 1px solid var(--color-filter-badge-bg);
   border-left: 4px solid var(--status-color);
   border-radius: 20px;
   padding: 2px 8px;
@@ -179,13 +179,13 @@
 }
 
 .global-filter .filter-menu-button-label {
-  color: #616161;
+  color: var(--color-filter-label);
 }
 
 .global-filter .filter-menu-advanced-filter-toggle {
   padding: 16px 16px 0 16px;
   font-weight: 600;
-  color: #9e9e9e;
+  color: var(--color-filter-toggle);
   cursor: pointer;
 }
 

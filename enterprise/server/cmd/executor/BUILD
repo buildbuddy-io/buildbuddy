@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:utils.bzl", "runfiles_directory")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -26,8 +27,8 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/executor",
+        "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/remote_execution/filecache",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/scheduling/priority_task_scheduler",
@@ -35,6 +36,7 @@ go_library(
         "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
+        "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/config",
@@ -58,10 +60,10 @@ go_library(
         "//server/util/statusz",
         "//server/util/tracing",
         "//server/util/usageutil",
-        "//server/util/vtprotocodec",
         "//server/version",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//encoding/gzip",
@@ -233,21 +235,25 @@ container_layer(
 
 container_image(
     name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = "@executor_image//image:dockerfile_image.tar",
     layers = [
         ":tini_layer",
         ":docker_credential_gcr_layer",
         ":docker_credential_gcr_docker_config_layer",
         ":containerd_layer",
+        ":runc_layer",
         # Updating these layers does not currently afford us any vulnerability
         # fixes; leave them out for now.
-        ":runc_layer",
-        ":rootlesskit_layer",
+        # ":rootlesskit_layer",
         ":executor_tools_layer",
         ":podman_static_layer",
     ],
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],
@@ -259,6 +265,10 @@ container_image(
 # This target can be run locally with enterprise/tools/run_executor_image.sh
 go_image(
     name = "executor_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":base_image",
     binary = ":executor",
     tags = ["manual"],
@@ -266,6 +276,10 @@ go_image(
 
 container_image(
     name = "executor_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":executor_go_image",
     entrypoint = [
         "/tini",

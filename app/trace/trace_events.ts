@@ -104,6 +104,11 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   ["Disk read IOPS", [{ argKey: "disk-read-iops" }]],
   ["Disk write bandwidth (MB/s)", [{ argKey: "disk-write-bw" }]],
   ["Disk write IOPS", [{ argKey: "disk-write-iops" }]],
+
+  // Event names/arg keys are from ninja. These are controlled
+  // by us.
+  ["CPU usage (ninja)", [{ argKey: "cpu", unit: "cores" }]],
+  ["Memory usage (ninja)", [{ argKey: "memory", unit: "MB" }]],
 ]);
 
 const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
@@ -274,7 +279,7 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
     }
     for (const m of currentMetadata) {
       const argVal = event.args[m.argKey];
-      if (!argVal) {
+      if (argVal === undefined) {
         continue; // Skip events that don't have the expected argKey
       }
       const timeSeries = currentSeries.get(m.argKey);

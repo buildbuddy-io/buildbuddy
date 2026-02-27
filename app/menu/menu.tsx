@@ -54,6 +54,9 @@ export default class MenuComponent extends React.Component<Props, State> {
   }
 
   render() {
+    const isDarkMode = this.props.preferences?.darkModeEnabled;
+    const useDarkLogo = this.props.light && !isDarkMode;
+
     return (
       <div>
         {this.state.menuExpanded && (
@@ -64,7 +67,7 @@ export default class MenuComponent extends React.Component<Props, State> {
             <div>
               <a href="/">
                 <div className="title">
-                  <img src={this.props.light ? "/image/logo_dark.svg" : "/image/logo_white.svg"} />
+                  <img src={useDarkLogo ? "/image/logo_dark.svg" : "/image/logo_white.svg"} />
                 </div>
               </a>
             </div>

@@ -1,4 +1,15 @@
-import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  Download,
+  File,
+  FileQuestion,
+  FileSymlink,
+  Folder,
+  History,
+  Info,
+  MoreVertical,
+} from "lucide-react";
 import React, { ReactElement } from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
@@ -25,6 +36,7 @@ import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
@@ -52,7 +64,11 @@ interface Props {
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
-  executionId?: string;
+  /**
+   * The execution fetched from the `getExecution` API.
+   * At minimum this should include the basic metadata that we store in the DB.
+   */
+  execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
@@ -208,6 +224,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        let inputFiles: TreeNode[] = inputRoot.files.map((node) => ({
+          obj: node,
+          type: "file",
+        }));
         let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
           obj: node,
           type: "dir",
@@ -216,7 +236,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: node,
           type: "symlink",
         }));
-        const inputNodes = [...inputDirectories, ...inputSymlinks];
+        const inputNodes = [...inputDirectories, ...inputFiles, ...inputSymlinks];
         this.setState({ inputRoot, inputNodes });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
@@ -249,6 +269,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
+  private executionRPC?: CancelablePromise<execution_stats.Execution | null>;
   private actionResultRPC?: Cancelable;
   private stdoutRPC?: Cancelable;
   private stderrRPC?: Cancelable;
@@ -257,6 +278,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
+    this.executionRPC?.cancel();
     this.actionResultRPC?.cancel();
     this.stdoutRPC?.cancel();
     this.stderrRPC?.cancel();
@@ -265,7 +287,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     this.setState({
       executeResponse: undefined,
-      executionId: undefined,
+      execution: undefined,
       actionResult: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -281,14 +303,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
     if (executeResponseDigestParam) {
-      // If we have the executeResponseDigest in the URL, we can skip the
-      // execution table lookup.
       const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
       if (!executeResponseDigest) {
         alert_service.error("Invalid execute response digest in URL");
         return;
       }
+      // TODO: once all servers support executionId filtering, request
+      // inlineExecuteResponse from the server instead of fetching the
+      // ExecuteResponse separately on the client.
       this.fetchExecuteResponseByDigest(executeResponseDigest);
+      // If we have an execution ID, also fetch the execution metadata from the DB.
+      const executionId = this.getExecutionId();
+      if (executionId) {
+        this.fetchExecution(executionId);
+      }
     } else {
       const actionDigest = parseActionDigest(actionDigestParam);
       if (!actionDigest) {
@@ -300,6 +328,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       //
       // If we don't have an execution ID, we can fall back to fetching the
       // ActionResult from the action cache.
+      //
+      // TODO: we should display a warning if we fetched the ActionResult from AC,
+      // since the AC entry could potentially be from a newer invocation, not the
+      // current one we're looking at, which is probably confusing.
       this.getExecutionId()
         ? this.fetchExecuteResponseByActionDigest(actionDigest)
         : this.fetchActionResult(actionDigest);
@@ -365,6 +397,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  fetchExecution(executionId: string) {
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    // TODO: remove redundant actionDigestHash filtering once all servers
+    // support executionId filtering.
+    const actionDigestHash = parseActionDigestHashFromExecutionId(executionId);
+    this.executionRPC = service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+          executionId,
+          actionDigestHash,
+        }),
+      })
+      .then((response) => {
+        const execution = response.execution?.[0];
+        if (execution) {
+          this.setState({ execution });
+        }
+        return execution;
+      });
+  }
+
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     this.executeResponseRPC = service
@@ -377,8 +431,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .then((response) => {
         const execution = response.execution?.[0];
-        if (execution?.executionId) {
-          this.setState({ executionId: execution.executionId });
+        if (execution) {
+          this.setState({ execution });
         }
         return execution?.executeResponse ?? null;
       });
@@ -468,7 +522,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     // If we got here from the executions page then we'll have the execution ID
     // in the URL; otherwise the execution ID gets fetched from the executions
     // linked to the invocation matching the actionDigest in the URL.
-    return this.props.search.get("executionId") || this.state.executionId;
+    return this.props.search.get("executionId") || this.state.execution?.executionId;
   }
 
   displayList(list: string[]) {
@@ -525,7 +579,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
           {this.state.profileLoading ? (
             <Spinner />
           ) : this.state.profile ? (
-            <TraceViewer profile={this.state.profile} fitToContent filterHidden />
+            <TraceViewer
+              profile={this.state.profile}
+              fitToContent
+              filterHidden
+              dark={this.props.preferences.darkModeEnabled}
+            />
           ) : null}
         </div>
       </>
@@ -936,26 +995,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
       <>
         <div className="metadata-title">Resource usage</div>
         <div>
-          <div>Peak memory: {format.bytes(usageStats.peakMemoryBytes)}</div>
+          <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
-              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
+              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}
+              {format.bytesIEC(fs.totalBytes)}
             </div>
           ))}
           {usageStats.cgroupIoStats && (
             <>
-              <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk bytes read: {format.bytesIEC(usageStats.cgroupIoStats.rbytes)}</div>
               <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
-              <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
+              <div>Disk bytes written: {format.bytesIEC(usageStats.cgroupIoStats.wbytes)}</div>
               <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
             </>
           )}
           {usageStats.networkStats && (
             <>
-              <div>Network bytes received: {format.bytes(usageStats.networkStats.bytesReceived)}</div>
+              <div>Network bytes received: {format.bytesIEC(usageStats.networkStats.bytesReceived)}</div>
               <div>Network packets received: {format.count(usageStats.networkStats.packetsReceived)}</div>
-              <div>Network bytes sent: {format.bytes(usageStats.networkStats.bytesSent)}</div>
+              <div>Network bytes sent: {format.bytesIEC(usageStats.networkStats.bytesSent)}</div>
               <div>Network packets sent: {format.count(usageStats.networkStats.packetsSent)}</div>
             </>
           )}
@@ -1033,8 +1093,42 @@ export default class InvocationActionCardComponent extends React.Component<Props
             <div className="content">
               {executionId && (
                 <>
-                  <div className="title">Execution details</div>
+                  <div className="action-header">
+                    <div className="title">Execution details</div>
+                    {this.state.execution?.targetLabel && this.state.execution?.actionMnemonic && (
+                      <OutlinedButton
+                        className="view-history-button"
+                        onClick={() =>
+                          router.navigateTo(
+                            getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
+                          )
+                        }>
+                        <History className="icon" />
+                        <span>View history</span>
+                      </OutlinedButton>
+                    )}
+                  </div>
                   <div className="details">
+                    {this.state.execution?.targetLabel && (
+                      <div className="action-section">
+                        <div className="action-property-title">Target label</div>
+                        <div debug-id="target-label">
+                          <TextLink
+                            className="target-label-link"
+                            href={`/invocation/${this.props.model.getInvocationId()}?${new URLSearchParams({
+                              target: this.state.execution.targetLabel,
+                            })}`}>
+                            {this.state.execution.targetLabel}
+                          </TextLink>
+                        </div>
+                      </div>
+                    )}
+                    {this.state.execution?.actionMnemonic && (
+                      <div className="action-section">
+                        <div className="action-property-title">Action mnemonic</div>
+                        <div>{this.state.execution?.actionMnemonic}</div>
+                      </div>
+                    )}
                     <div className="action-section">
                       <div className="action-property-title">Execution ID</div>
                       <div debug-id="execution-id">{executionId}</div>
@@ -1236,86 +1330,93 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 {vmMetadata.snapshotId && (
                                   <div className="snapshot-id-container">
                                     <div className="snapshot-id-details">
-                                      <div className="metadata-title">Saved to snapshot ID</div>
-                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                      {vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ? (
+                                        <>
+                                          <div className="metadata-title">Saved to snapshot ID</div>
+                                          <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                        </>
+                                      ) : (
+                                        <div className="metadata-title">No snapshot saved for this run</div>
+                                      )}
                                     </div>
                                     <div>
-                                      {vmMetadata.snapshotKey && (
-                                        <div className="invocation-menu-container">
-                                          <a
-                                            className="invalidate-button"
-                                            onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
-                                            Invalidate VM snapshot
-                                          </a>
-                                          <OutlinedButton
-                                            title="Snapshot options"
-                                            className="snapshot-more-button"
-                                            onClick={() => this.setState({ showSnapshotMenu: true })}>
-                                            <MoreVertical />
-                                          </OutlinedButton>
-                                          <Popup
-                                            isOpen={this.state.showSnapshotMenu}
-                                            onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
-                                            <Menu className="workflow-dropdown-menu">
-                                              <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
-                                                Copy snapshot key
-                                              </MenuItem>
-                                              <MenuItem
-                                                onClick={this.onClickCopyRemoteBazelCommand.bind(
-                                                  this,
-                                                  vmMetadata,
-                                                  this.state.actionResult.executionMetadata
-                                                )}>
-                                                Copy Remote Bazel command to run commands in snapshot
-                                              </MenuItem>
-                                            </Menu>
-                                          </Popup>
-                                          <Modal
-                                            isOpen={this.state.showInvalidateSnapshotModal}
-                                            onRequestClose={() =>
-                                              this.setState({
-                                                showInvalidateSnapshotModal: false,
-                                                isMenuOpen: false,
-                                              })
-                                            }>
-                                            <Dialog>
-                                              <DialogHeader>
-                                                <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
-                                              </DialogHeader>
-                                              <DialogBody>
-                                                <p>
-                                                  Are you sure you want to invalidate the VM snapshot used for this
-                                                  action?
-                                                </p>
-                                                <p>
-                                                  A new VM, instead of a recycled VM, will be used for the next run of
-                                                  this action, which may result in longer execution time.
-                                                </p>
-                                              </DialogBody>
-                                              <DialogFooter>
-                                                <DialogFooterButtons>
-                                                  <OutlinedButton
-                                                    onClick={() =>
-                                                      this.setState({
-                                                        showInvalidateSnapshotModal: false,
-                                                        isMenuOpen: false,
-                                                      })
-                                                    }>
-                                                    Cancel
-                                                  </OutlinedButton>
-                                                  <Button
-                                                    onClick={this.onClickInvalidateSnapshot.bind(
-                                                      this,
-                                                      vmMetadata.snapshotKey
-                                                    )}>
-                                                    Invalidate
-                                                  </Button>
-                                                </DialogFooterButtons>
-                                              </DialogFooter>
-                                            </Dialog>
-                                          </Modal>
-                                        </div>
-                                      )}
+                                      {vmMetadata.snapshotKey &&
+                                        (vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot) && (
+                                          <div className="invocation-menu-container">
+                                            <a
+                                              className="invalidate-button"
+                                              onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
+                                              Invalidate VM snapshot
+                                            </a>
+                                            <OutlinedButton
+                                              title="Snapshot options"
+                                              className="snapshot-more-button"
+                                              onClick={() => this.setState({ showSnapshotMenu: true })}>
+                                              <MoreVertical />
+                                            </OutlinedButton>
+                                            <Popup
+                                              isOpen={this.state.showSnapshotMenu}
+                                              onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
+                                              <Menu className="workflow-dropdown-menu">
+                                                <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
+                                                  Copy snapshot key
+                                                </MenuItem>
+                                                <MenuItem
+                                                  onClick={this.onClickCopyRemoteBazelCommand.bind(
+                                                    this,
+                                                    vmMetadata,
+                                                    this.state.actionResult.executionMetadata
+                                                  )}>
+                                                  Copy Remote Bazel command to run commands in snapshot
+                                                </MenuItem>
+                                              </Menu>
+                                            </Popup>
+                                            <Modal
+                                              isOpen={this.state.showInvalidateSnapshotModal}
+                                              onRequestClose={() =>
+                                                this.setState({
+                                                  showInvalidateSnapshotModal: false,
+                                                  isMenuOpen: false,
+                                                })
+                                              }>
+                                              <Dialog>
+                                                <DialogHeader>
+                                                  <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
+                                                </DialogHeader>
+                                                <DialogBody>
+                                                  <p>
+                                                    Are you sure you want to invalidate the VM snapshot used for this
+                                                    action?
+                                                  </p>
+                                                  <p>
+                                                    A new VM, instead of a recycled VM, will be used for the next run of
+                                                    this action, which may result in longer execution time.
+                                                  </p>
+                                                </DialogBody>
+                                                <DialogFooter>
+                                                  <DialogFooterButtons>
+                                                    <OutlinedButton
+                                                      onClick={() =>
+                                                        this.setState({
+                                                          showInvalidateSnapshotModal: false,
+                                                          isMenuOpen: false,
+                                                        })
+                                                      }>
+                                                      Cancel
+                                                    </OutlinedButton>
+                                                    <Button
+                                                      onClick={this.onClickInvalidateSnapshot.bind(
+                                                        this,
+                                                        vmMetadata.snapshotKey
+                                                      )}>
+                                                      Invalidate
+                                                    </Button>
+                                                  </DialogFooterButtons>
+                                                </DialogFooter>
+                                              </Dialog>
+                                            </Modal>
+                                          </div>
+                                        )}
                                     </div>
                                   </div>
                                 )}
@@ -1327,7 +1428,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div>
                                   <div>
                                     Peak memory:{" "}
-                                    {format.bytes(
+                                    {format.bytesIEC(
                                       this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMemoryBytes
                                     )}
                                   </div>
@@ -1448,4 +1549,25 @@ function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
 
 function timestampToUnixSeconds(timestamp: ITimestamp): number {
   return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
+}
+
+function parseActionDigestHashFromExecutionId(executionId: string): string | undefined {
+  const parts = executionId.split("/");
+  return parts[parts.length - 2];
+}
+
+function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string {
+  if (!targetLabel || !actionMnemonic) {
+    return "";
+  }
+  const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
+  return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
+}
+
+export function encodeTargetLabelUrlParam(targetLabel: string): string {
+  return `e2|${targetLabel.length}|${targetLabel}`;
+}
+
+export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
 }

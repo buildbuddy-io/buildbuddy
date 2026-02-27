@@ -167,6 +167,10 @@ type Invocation struct {
 	RunID                            string
 	BazelExitCode                    string
 
+	// For invocations with run logs, the status of the executable running.
+	// Type is `invocation_status.OverallStatus`.
+	RunStatus int64
+
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
 	DownloadOutputsOption int64
@@ -260,6 +264,9 @@ type Group struct {
 	// When a Group is designated as a "parent" then any Admin keys from that
 	// org also work for managing groups with the same SAML IDP Metadata URL.
 	IsParent bool `gorm:"not null;default:0"`
+
+	// The status of the group: free tier, enterprise, etc.
+	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {
@@ -812,6 +819,9 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+// DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 type QuotaBucket struct {
 	Model
 	// The namespace indicates a single resource to be protected from abusive
@@ -834,6 +844,9 @@ func (*QuotaBucket) TableName() string {
 	return "QuotaBuckets"
 }
 
+// DEPRECATED: QuotaGroup is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 // QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
 // example, user:X is in bucket:restricted.
 type QuotaGroup struct {

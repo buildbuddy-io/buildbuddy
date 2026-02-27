@@ -12,16 +12,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
+func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *executorplatform.ExecutorProperties) error {
 	if executor.SupportsIsolation(platform.DockerContainerType) {
 		dockerProvider, err := docker.NewProvider(p.env, p.hostBuildRoot())
 		if err != nil {

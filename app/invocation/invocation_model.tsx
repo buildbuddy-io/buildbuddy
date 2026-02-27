@@ -2,6 +2,7 @@ import { CheckCircle, Circle, HelpCircle, PlayCircle, XCircle } from "lucide-rea
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
+import * as varint from "varint";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -10,8 +11,10 @@ import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { options } from "../../proto/option_filters_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
 import { suggestion } from "../../proto/suggestion_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { IconType } from "../favicon/favicon";
@@ -24,6 +27,7 @@ import { quote } from "../util/shlex";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
+export const NINJA_ROLE = "NINJA";
 
 export const InvocationStatus = invocation_status.InvocationStatus;
 
@@ -74,6 +78,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   rootCauseTargetLabels: Set<String> = new Set<String>();
+
+  execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
@@ -272,14 +278,21 @@ export default class InvocationModel {
     return this.invocation.acl?.groupId === "";
   }
 
-  hasCacheWriteCapability(): boolean {
-    return Boolean(
-      this.invocation.createdWithCapabilities?.some(
-        (existingCapability) =>
-          existingCapability == capability.Capability.CACHE_WRITE ||
-          existingCapability == capability.Capability.CAS_WRITE
-      )
+  hasActionCacheWriteCapability(): boolean {
+    return this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ?? false;
+  }
+
+  hasCASWriteCapability(): boolean {
+    return (
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CAS_WRITE) ||
+      // CACHE_WRITE implies CAS_WRITE.
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ||
+      false
     );
+  }
+
+  hasCacheWriteCapability(): boolean {
+    return this.hasActionCacheWriteCapability() || this.hasCASWriteCapability();
   }
 
   getInvocationId(): string {
@@ -582,7 +595,11 @@ export default class InvocationModel {
   }
 
   isBazelInvocation() {
-    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
+    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation() && !this.isNinjaInvocation();
+  }
+
+  isNinjaInvocation() {
+    return this.getRole() === NINJA_ROLE;
   }
 
   getTool() {
@@ -591,6 +608,9 @@ export default class InvocationModel {
     }
     if (this.isHostedBazelInvocation()) {
       return "BuildBuddy hosted bazel";
+    }
+    if (this.isNinjaInvocation()) {
+      return `ninja v${this.started?.buildToolVersion} ` + this.started?.command || "";
     }
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
@@ -664,6 +684,19 @@ export default class InvocationModel {
   }
 
   getStatus() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "Succeeded";
+        case invocation_status.OverallStatus.FAILURE:
+          return "Run failed";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "Run in progress...";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "Run disconnected";
+        default:
+      }
+    }
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
@@ -677,6 +710,20 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "disconnected";
+        default:
+      }
+    }
+
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
@@ -700,6 +747,10 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isRunInProgress() {
+    return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
+  }
+
   /**
    * Returns whether basic invocation metadata has been received yet, such as
    * user, bazel command, target pattern etc.
@@ -712,6 +763,20 @@ export default class InvocationModel {
   }
 
   getFaviconType() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return IconType.Success;
+        case invocation_status.OverallStatus.FAILURE:
+          return IconType.Failure;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return IconType.InProgress;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return IconType.Unknown;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
@@ -729,6 +794,20 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
@@ -872,7 +951,7 @@ export default class InvocationModel {
       }
     }
 
-    return this.commandLineOptionsToShellCommand(this.optionsParsed?.explicitCmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.getExplicitCommandLineOptions());
   }
 
   /**
@@ -883,7 +962,39 @@ export default class InvocationModel {
    * false, from its default value of true).
    */
   effectiveCommandLine() {
-    return this.commandLineOptionsToShellCommand(this.optionsParsed?.cmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.getEffectiveCommandLineOptions());
+  }
+
+  getExplicitCommandLineOptions(): string[] {
+    const explicitOptions = this.getStructuredOptionCombinedForms("original", "command options");
+    if (explicitOptions.length) {
+      return explicitOptions;
+    }
+    return (this.optionsParsed?.explicitCmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveCommandLineOptions(): string[] {
+    const canonicalOptions = this.getStructuredOptionCombinedForms("canonical", "command options");
+    if (canonicalOptions.length) {
+      return canonicalOptions;
+    }
+    return (this.optionsParsed?.cmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getExplicitStartupOptions(): string[] {
+    const explicitStartup = this.getStructuredOptionCombinedForms("original", "startup options");
+    if (explicitStartup.length) {
+      return explicitStartup;
+    }
+    return (this.optionsParsed?.explicitStartupOptions || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveStartupOptions(): string[] {
+    const canonicalStartup = this.getStructuredOptionCombinedForms("canonical", "startup options");
+    if (canonicalStartup.length) {
+      return canonicalStartup;
+    }
+    return (this.optionsParsed?.startupOptions || []).filter((option) => Boolean(option));
   }
 
   /**
@@ -915,6 +1026,23 @@ export default class InvocationModel {
     return ["--", ...residual];
   }
 
+  private getStructuredCommandLineByLabel(label: string): command_line.CommandLine | undefined {
+    return this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === label);
+  }
+
+  private getStructuredOptionCombinedForms(label: string, sectionLabel: string): string[] {
+    const commandLine = this.getStructuredCommandLineByLabel(label);
+    if (!commandLine?.sections?.length) {
+      return [];
+    }
+    return commandLine.sections
+      .filter((section) => section.sectionLabel === sectionLabel)
+      .flatMap((section) => section.optionList?.option || [])
+      .filter((option) => option?.combinedForm)
+      .filter((option) => !(option.metadataTags || []).includes(options.OptionMetadataTag.HIDDEN))
+      .map((option) => option.combinedForm);
+  }
+
   private commandLineOptionsToShellCommand(options: string[]) {
     return [
       this.getExecutableName() ?? "bazel",
@@ -941,5 +1069,76 @@ export default class InvocationModel {
     if (segments.length < 2) return null;
     if (segments.slice(0, 2).some(isNaN)) return null;
     return { major: segments[0], minor: segments[1] };
+  }
+
+  hasExecutionLog(): boolean {
+    return Boolean(this.getExecutionLogFileUri());
+  }
+
+  getExecutionLogFileUri(): string | undefined {
+    return this.buildToolLogs?.log.find(
+      (log: build_event_stream.File) =>
+        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
+        log.uri &&
+        Boolean(log.uri.startsWith("bytestream://"))
+    )?.uri;
+  }
+
+  getExecutionLog() {
+    if (this.execLogEntryPromise) {
+      return this.execLogEntryPromise;
+    }
+
+    let logFileUri = this.getExecutionLogFileUri();
+    if (!logFileUri) throw new Error("Execution log file not found");
+
+    const init = {
+      // Set the stored encoding header to prevent the server from double-compressing.
+      headers: { "X-Stored-Encoding-Hint": "zstd" },
+    };
+
+    this.execLogEntryPromise = rpcService
+      .fetchBytestreamFile(logFileUri, this.getInvocationId(), "arraybuffer", { init })
+      .then(async (body) => {
+        if (body === null) throw new Error("response body is null");
+        let entries: tools.protos.ExecLogEntry[] = [];
+        let byteArray = new Uint8Array(body);
+        for (var offset = 0; offset < body.byteLength; ) {
+          let length = varint.decode(byteArray, offset);
+          let bytes = varint.decode.bytes || 0;
+          offset += bytes;
+          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
+          offset += length;
+        }
+        console.log(entries);
+        return entries;
+      });
+
+    return this.execLogEntryPromise;
+  }
+
+  downloadExecutionLog() {
+    let profileFileUri = this.getExecutionLogFileUri();
+    if (!profileFileUri) {
+      return;
+    }
+
+    try {
+      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
+    } catch {
+      console.error("Error downloading execution log");
+    }
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
+    }
   }
 }

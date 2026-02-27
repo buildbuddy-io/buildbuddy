@@ -28,11 +28,11 @@ This will print a **BuildBuddy URL** containing your build results at the beginn
 
 **Want more?** Get up and running quickly with our fully managed [BuildBuddy Cloud](https://buildbuddy.io) service. It's free for individuals, open source projects, and teams of up to 3.
 
-If you'd like to host your own instance **on-prem** or in the cloud, check out our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md).
+If you'd like to host your own instance **on-prem** or in the cloud, check out our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.mdx).
 
 # Documentation
 
-Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md) gives you a full look at how to set up and configure BuildBuddy.
+Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.mdx) gives you a full look at how to set up and configure BuildBuddy.
 
 # Questions?
 

@@ -105,6 +105,26 @@ message Group {
 
   // The authenticated user's capabilities within this group.
   repeated capability.Capability capabilities = 20;
+
+  enum GroupStatus {
+    // The group status is unknown.
+    UNKNOWN_GROUP_STATUS = 0;
+
+    // The group is on the free tier.
+    FREE_TIER_GROUP_STATUS = 1;
+
+    // This group is an enterprise user.
+    ENTERPRISE_GROUP_STATUS = 2;
+
+    // This group is an enterprise trial.
+    ENTERPRISE_TRIAL_GROUP_STATUS = 3;
+
+    // The group is blocked.
+    BLOCKED_GROUP_STATUS = 4;
+  }
+
+  // The status of the group.
+  GroupStatus status = 21;
 }
 
 message JoinGroupRequest {
@@ -340,6 +360,17 @@ message UpdateGroupRequest {
 }
 
 message UpdateGroupResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message SetGroupStatusRequest {
+  context.RequestContext request_context = 1;
+
+  // The status to set for the group.
+  Group.GroupStatus status = 2;
+}
+
+message SetGroupStatusResponse {
   context.ResponseContext response_context = 1;
 }
 

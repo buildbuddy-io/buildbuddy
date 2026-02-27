@@ -588,11 +588,15 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		ActionNames:    req.GetActionNames(),
 		PushedRepoUrl:  req.GetRepoUrl(),
 		PushedBranch:   branch,
-		CommitSha:      req.GetCommitSha(),
-		Visibility:     req.GetVisibility(),
-		Async:          req.GetAsync(),
-		Env:            req.GetEnv(),
-		DisableRetry:   req.GetDisableRetry(),
+		// Set target repo since we always use the target repo field for status
+		// publishing.
+		TargetRepoUrl: req.GetRepoUrl(),
+		TargetBranch:  branch,
+		CommitSha:     req.GetCommitSha(),
+		Visibility:    req.GetVisibility(),
+		Async:         req.GetAsync(),
+		Env:           req.GetEnv(),
+		DisableRetry:  req.GetDisableRetry(),
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
@@ -630,6 +634,11 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		})
 	}
 
+	var runnerFlags []string
+	if req.GetSkipAutoCheckout() {
+		runnerFlags = append(runnerFlags, "--skip_auto_checkout")
+	}
+
 	rsp, err := r.Run(ctx, &rnpb.RunRequest{
 		GitRepo: &gitpb.GitRepo{RepoUrl: req.GetRepo()},
 		RepoState: &gitpb.RepoState{
@@ -645,7 +654,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
-		RunnerFlags:    []string{fmt.Sprintf("--skip_auto_checkout=%v", req.GetSkipAutoCheckout())},
+		RunnerFlags:    runnerFlags,
 	})
 	if err != nil {
 		return nil, err

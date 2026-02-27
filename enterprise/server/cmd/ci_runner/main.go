@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -126,6 +126,7 @@ const (
 
 	bazelBinaryName    = "bazel"
 	bazeliskBinaryName = "bazelisk"
+	bbBinaryName       = "bb"
 
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
@@ -179,6 +180,7 @@ var (
 	triggerEvent          = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL         = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
 	pushedBranch          = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	pushedTag             = flag.String("pushed_tag", "", "Tag name of the commit to be checked out, if triggered by a tag push.")
 	commitSHA             = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
@@ -770,10 +772,22 @@ func run() error {
 		}
 		*bazelCommand = bazeliskPath
 	}
+	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
+	if *bazelCommand == bbBinaryName {
+		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+		if _, err := os.Stat(bbPath); err != nil {
+			backendLog.Warningf("bb binary not found in workspace: %s", err)
+		} else {
+			if err := os.Setenv("BB_DISABLE_SIDECAR", "1"); err != nil {
+				backendLog.Warningf("could not set BB_DISABLE_SIDECAR: %s", err)
+			}
+			*bazelCommand = bbPath
+		}
+	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
-	if err := ws.writeBazelWrapperScript(); err != nil {
+	if err := ws.writeBazelWrapperScript(taskWorkspaceDir); err != nil {
 		return status.WrapError(err, "write bazel wrapper script")
 	}
 
@@ -1038,9 +1052,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// wait until we've initialized the repo.
 	// Note that this has to happen after the BuildMetadata event is published.
 	publishedWorkspaceStatus := false
-	if *commitSHA == "" {
-		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
-	} else {
+	if *commitSHA != "" {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
 			return nil
 		}
@@ -1050,6 +1062,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	backendLog.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
+	// Remove any existing artifacts from previous workflow invocations
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+		return err
+	}
 	if !*skipAutomaticCheckout {
 		if err := ws.setup(ctx); err != nil {
 			return status.WrapError(err, "failed to set up git repo")
@@ -1102,7 +1118,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		action.Steps = make([]*rnpb.Step, 0)
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
-		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName)) {
+		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName) || strings.HasPrefix(cmd, bbBinaryName)) {
 			cmd = "bazel " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
@@ -1288,6 +1304,7 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 				{Key: "BUILD_USER", Value: buildUser},
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
+				{Key: "GIT_TAG", Value: *pushedTag},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
 				// Note: COMMIT_SHA may not actually reflect the current state
 				// of the repo since we merge the target branch before running
@@ -1439,7 +1456,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
 
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
@@ -1583,7 +1600,7 @@ func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
+	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName || tokens[0] == bbBinaryName {
 		tokens = tokens[1:]
 	}
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
@@ -1742,10 +1759,6 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
-	// Remove any existing artifacts from previous workflow invocations
-	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
-		return err
-	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
@@ -1813,8 +1826,8 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if *pushedBranch == "" && *commitSHA == "" {
-		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
+	if *pushedBranch == "" && *pushedTag == "" && *commitSHA == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch`, `pushed_tag`, or `commit_sha` to be set")
 	}
 
 	if err := ws.config(ctx); err != nil {
@@ -1858,6 +1871,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
@@ -1922,7 +1940,11 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 
 	refToFetch := *commitSHA
 	if refToFetch == "" {
-		refToFetch = *pushedBranch
+		if *pushedBranch != "" {
+			refToFetch = *pushedBranch
+		} else if *pushedTag != "" {
+			refToFetch = *pushedTag
+		}
 	}
 
 	// If the merge commit has not been generated, fetch the full history
@@ -1939,9 +1961,13 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 			writeCommandSummary(ws.log, "Git does not support fetching non-HEAD commits by default."+
 				" You must set the `uploadpack.allowAnySHA1InWant`"+
 				" config option in the repo that is being fetched.")
-			if refToFetch != *pushedBranch && *pushedBranch != "" {
-				writeCommandSummary(ws.log, "Attempting to fetch the branch with --depth=0 instead...")
-				refToFetch = *pushedBranch
+			branchOrTag := *pushedBranch
+			if branchOrTag == "" {
+				branchOrTag = *pushedTag
+			}
+			if refToFetch != branchOrTag && branchOrTag != "" {
+				writeCommandSummary(ws.log, "Attempting to fetch the ref with --depth=0 instead...")
+				refToFetch = branchOrTag
 				fetchDepth = 0
 				return ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth)
 			}
@@ -1962,7 +1988,13 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 	checkoutLocalBranchName := *pushedBranch
 	checkoutRef := *commitSHA
 	if checkoutRef == "" {
-		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+		if *pushedBranch != "" {
+			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+		} else {
+			// For tag pushes (or any case without a branch), use
+			// FETCH_HEAD which points to the ref that was just fetched.
+			checkoutRef = "FETCH_HEAD"
+		}
 	}
 
 	if checkoutLocalBranchName != "" {
@@ -1971,7 +2003,7 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 			return err
 		}
 	} else {
-		if _, err := git(ctx, ws.log, "checkout", checkoutRef); err != nil {
+		if _, err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
 			return err
 		}
 	}
@@ -2098,13 +2130,22 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
-// Also adds it to the PATH so it will be invoked whenever `bazel` or `bazelisk` are called.
+// Also adds it to the PATH so it will be invoked whenever `bazel`, `bazelisk`, or `bb` are called.
 // The wrapper script adds a startup option for the custom ci_runner .bazelrc to
 // all bazel commands.
-func (ws *workspace) writeBazelWrapperScript() error {
+func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
-		wrapperPath := filepath.Join(wrapperDir, c)
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+
+	wrapperBinaries := map[string]string{
+		bazelBinaryName:    *bazelCommand,
+		bazeliskBinaryName: *bazelCommand,
+	}
+	if _, err := os.Stat(bbPath); err == nil {
+		wrapperBinaries[bbBinaryName] = bbPath
+	}
+	for wrapperName, binaryPath := range wrapperBinaries {
+		wrapperPath := filepath.Join(wrapperDir, wrapperName)
 		_, err := os.Stat(wrapperPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -2118,7 +2159,7 @@ func (ws *workspace) writeBazelWrapperScript() error {
 
 		cmd := fmt.Sprintf(
 			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
-			*bazelCommand,
+			binaryPath,
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
 		)
@@ -2266,6 +2307,7 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		"common:buildbuddy_bes_results_url --bes_results_url=" + *besResultsURL,
 	}...)
 	if *cacheBackend != "" {
+		lines = append(lines, "common --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
 		lines = append(lines, "common:buildbuddy_experimental_remote_downloader --experimental_remote_downloader="+*cacheBackend)
 	}
@@ -2547,11 +2589,20 @@ func runBazelWrapper() error {
 
 	originalArgs := os.Args[1:]
 
+	// If we can't find a valid bazel command then don't attempt to apply any of
+	// our bazel options. This can happen if the command is a `bb` CLI command
+	// and `bb` is being invoked via bazelisk (e.g. by setting
+	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
+	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
+	if cmdIdx == -1 {
+		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
+	}
+
 	// Pass the original command as metadata, stripping the custom flags we've set,
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
 	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName) {
+		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName || arg == bbBinaryName) {
 			continue
 		}
 		if strings.Contains(arg, "--invocation_id") ||
@@ -2578,6 +2629,12 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+
+	// When using the bb CLI and running `bb run`, stream the run logs to the server.
+	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
+	}
 
 	// Parse and save the startup args (including our custom applied ones).
 	// We apply these on future bazel cleanup commands to make sure the running
@@ -2640,14 +2697,22 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 // Creates a marker file that prevents the runner from being recycled if bazel
 // still has the workspace lock.
 func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
-	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
-
-	var buf bytes.Buffer
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)
 	}
 
+	_, err = bazel.FindWorkspaceFile(bazelWorkspacePath)
+	if status.IsNotFoundError(err) {
+		// If not in a bazel workspace, don't check for the lock.
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("find bazel workspace file: %s", err)
+	}
+
+	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
+
+	var buf bytes.Buffer
 	lastUsedStartupOptions, err := ws.getLastUsedStartupOptions()
 	if err != nil {
 		backendLog.Errorf("Failed to get last used startup options when checking bazel lock: %s", err)

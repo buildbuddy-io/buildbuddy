@@ -5,10 +5,13 @@ set -e
 # and uploads the resulting kernel to GCS.
 # Prints out the deps.bzl snippet to update the kernel.
 #
-# Update VERSION below, then ensure microvm-kernel-<arch>.config is
-# up to date. Then, run this script:
+# Ensure microvm-kernel-<arch>-<version>.config is up to date, then run:
 #
 #     enterprise/vmsupport/kernel/rebuild.sh
+#
+# To build a non-default version, set KERNEL_VERSION:
+#
+#     KERNEL_VERSION=v5.15 enterprise/vmsupport/kernel/rebuild.sh
 #
 # Once it's done running, copy the output into deps.bzl.
 
@@ -17,7 +20,9 @@ set -e
 cd "$(dirname "$0")"
 ARCH=$(uname -m)
 
-if [[ "$ARCH" == "x86_64" ]]; then
+if [[ -n "${KERNEL_VERSION:-}" ]]; then
+  VERSION="$KERNEL_VERSION"
+elif [[ "$ARCH" == "x86_64" ]]; then
   VERSION=v6.1
 elif [[ "$ARCH" == "aarch64" ]]; then
   # TODO: update arm64 to v6.1 as well

@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -216,6 +215,7 @@ type apiKeyGroup struct {
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
+	Status                 int32
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -252,6 +252,10 @@ func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
 
 func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
+}
+
+func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
+	return grpb.Group_GroupStatus(g.Status)
 }
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
@@ -491,53 +495,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	return akg, nil
 }
 
-func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
-	rq := d.h.NewQueryWithOpts(ctx, "authdb_lookup_user_groups", db.Opts().WithStaleReads()).Raw(`
-		SELECT u.*, g.*, ug.*
-		FROM (
-			SELECT * FROM "Users" 
-			WHERE sub_id = ?
-			ORDER BY user_id ASC
-			LIMIT 1
-		) AS u
-			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id AND ug.membership_status = ?
-			LEFT JOIN "Groups" AS g
-				ON ug.group_group_id = g.group_id
-		ORDER BY u.user_id, g.group_id ASC
-		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
-	)
-	ugr, err := db.ScanAll(rq, &struct {
-		tables.User
-		*tables.Group
-		*tables.UserGroup
-	}{})
-	if err != nil {
-		return nil, err
-	}
-	if len(ugr) == 0 {
-		return nil, status.NotFoundErrorf("Sub id %s was not found in LookupUserFromSubID.", subID)
-	}
-	user := &ugr[0].User
-	if ugr[0].UserGroup == nil {
-		// no user groups matched this user ID
-		return user, nil
-	}
-	for _, v := range ugr {
-		if v.Group == nil {
-			// no group matched the user group (this shouldn't really happen)
-			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
-			continue
-		}
-		caps, err := role.ToCapabilities(role.Role(v.UserGroup.Role))
-		if err != nil {
-			return nil, status.WrapError(err, "could not convert role to capabilities")
-		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: &v.UserGroup.Role, Capabilities: caps})
-	}
-	return user, nil
-}
-
 func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) *query_builder.Query {
 	qb := query_builder.NewQuery(`
 		SELECT
@@ -548,7 +505,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
 			g.enforce_ip_rules,
-			g.is_parent
+			g.is_parent,
+			g.status
 		FROM "Groups" AS g,
 		"APIKeys" AS ak
 	`)
@@ -827,21 +785,16 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 }
 
 func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
-	q := d.env.GetDBHandle().NewQuery(ctx, "authdb_check_group_membership").Raw(`
-		SELECT *
-		FROM "UserGroups"
-		WHERE group_group_id = ?
-		AND user_user_id = ?
-		AND membership_status = ?
-	`, groupID, userID, grpb.GroupMembershipStatus_MEMBER)
-	ug := &tables.UserGroup{}
-	if err := q.Take(ug); err != nil {
-		if db.IsRecordNotFound(err) {
-			return false, nil
-		}
+	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	for _, g := range u.Groups {
+		if g.GroupID == groupID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {

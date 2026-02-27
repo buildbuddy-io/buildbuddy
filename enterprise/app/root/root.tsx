@@ -182,6 +182,15 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentDidMount() {
     errorService.register();
+    this.updateDarkModeClass();
+  }
+
+  private updateDarkModeClass() {
+    document.documentElement.classList.toggle("dark", this.state.preferences.darkModeEnabled);
+  }
+
+  componentWillUnmount() {
+    this.state.preferences.cleanup();
   }
 
   handlePathChange() {
@@ -197,6 +206,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
+    this.updateDarkModeClass();
     this.forceUpdate();
   }
 
@@ -264,11 +274,15 @@ export default class EnterpriseRootComponent extends React.Component {
     let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
     let menu = !sidebar && !repo && !code && !this.state.loading;
 
+    const rootClasses = ["root"];
+    if (this.state.preferences.denseModeEnabled) rootClasses.push("dense");
+    if (this.state.preferences.darkModeEnabled) rootClasses.push("dark");
+    if (sidebar || code) rootClasses.push("left");
+
     return (
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
-        <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
+        <div className={rootClasses.join(" ")}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent

@@ -22,6 +22,8 @@ interface Props {
   model: InvocationModel;
   search: URLSearchParams;
   filter: string;
+  /** Optional target label to filter executions by (exact match). */
+  targetLabel?: string;
 }
 
 interface State {
@@ -52,7 +54,14 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.model !== prevProps.model) {
+    const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
+    const invocationStatusChanged =
+      this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
+    const targetLabelChanged = this.props.targetLabel !== prevProps.targetLabel;
+
+    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged) {
+      clearTimeout(this.timeoutRef);
+      this.timeoutRef = undefined;
       this.fetchExecution();
     }
   }
@@ -65,6 +74,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
+    if (this.props.targetLabel) {
+      request.executionLookup.targetLabel = this.props.targetLabel;
+    }
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
     rpcService.service
       .getExecution(request)
@@ -210,6 +222,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
           execution.targetLabel?.toLowerCase()?.includes(filter) ||
           execution.actionMnemonic?.toLowerCase()?.includes(filter) ||
           execution.commandSnippet?.toLowerCase()?.includes(filter) ||
+          execution.primaryOutputPath?.toLowerCase()?.includes(filter) ||
           `${execution.actionDigest?.hash ?? ""}/${execution.actionDigest?.sizeBytes ?? ""}`
             .toLowerCase()
             .includes(filter)

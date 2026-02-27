@@ -5,4 +5,5 @@ go_library(
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/flag"],
 )

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "fix",
     srcs = ["fix.go"],
@@ -16,7 +18,6 @@ go_library(
         "//cli/workspace",
         "//server/util/flag",
         "@com_github_bazelbuild_buildtools//buildifier:buildifier_lib",
+        "@com_github_bazelbuild_buildtools//edit",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

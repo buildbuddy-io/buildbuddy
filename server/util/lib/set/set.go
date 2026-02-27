@@ -28,7 +28,9 @@ type mapView[E comparable, V any] map[E]V
 
 // From creates a new Set containing all the provided elements.
 func From[E comparable](s ...E) Set[E] {
-	return FromSeq(slices.Values(s))
+	set := make(Set[E], len(s))
+	set.AddSeq(slices.Values(s))
+	return set
 }
 
 // FromSeq creates a new Set containing all terms in the provided sequence.

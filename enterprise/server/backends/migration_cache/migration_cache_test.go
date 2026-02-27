@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
@@ -46,7 +48,7 @@ var (
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
 	setMigrationState(t, migration_cache.SrcPrimary)
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -87,6 +89,22 @@ func setDoubleReadPercentage(t *testing.T, doubleRead float64) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 }
 
+func setAsyncWrite(t *testing.T, asyncWrite bool) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migration_cache.SrcPrimary,
+				migration_cache.AsyncDestWriteField:           asyncWrite,
+				migration_cache.DoubleReadPercentageField:     0.0,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+}
+
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
@@ -109,6 +127,23 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for %v to be copied to dest cache", r)
+}
+
+func waitForValue(ctx context.Context, destCache interfaces.Cache, r *rspb.ResourceName, expected []byte) error {
+	for delay := 50 * time.Millisecond; delay < 3*time.Second; delay *= 2 {
+		actual, err := destCache.Get(ctx, r)
+		if err != nil && !status.IsNotFoundError(err) {
+			return err
+		}
+
+		if bytes.Equal(actual, expected) {
+			return nil
+		}
+
+		// Data has not been copied yet... Keep waiting
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("Timed out waiting for %v to be copied to dest cache", r)
 }
 
 // errorCache lets us mock errors to test error handling
@@ -180,7 +215,7 @@ func TestACIsolation(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r1, buf1 := testdigest.RandomACResourceBuf(t, 10)
 	require.NoError(t, mc.Set(ctx, r1, buf1))
@@ -209,7 +244,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf1 := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, "remote")
 	require.NoError(t, mc.Set(ctx, r, buf1))
@@ -235,7 +270,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -261,7 +296,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -281,7 +316,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	srcCache := &errorCache{}
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -300,11 +335,143 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err := mc.Set(ctx, r, buf)
 	require.Error(t, err)
+}
+
+func TestAsyncWrite_ACValueChanged(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &cache_config.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err := srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+
+	// Write a new value and make sure it gets copied too.
+	_, buf = testdigest.RandomACResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err = srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+}
+
+// delayedWriterCache wraps a Cache and delays commits until waitFunc returns.
+type delayedWriterCache struct {
+	interfaces.Cache
+	waitFunc func()
+}
+
+type delayedWriter struct {
+	interfaces.CommittedWriteCloser
+	waitFunc func()
+}
+
+func (dw *delayedWriter) Commit() error {
+	dw.waitFunc()
+	return dw.CommittedWriteCloser.Commit()
+}
+
+func (c *delayedWriterCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	w, err := c.Cache.Writer(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &delayedWriter{w, c.waitFunc}, nil
+}
+
+func TestAsyncWrite_SrcIsSlow(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &cache_config.MigrationConfig{}
+	config.SetConfigDefaults()
+	delayedSrcCache := &delayedWriterCache{srcCache, func() { time.Sleep(100 * time.Millisecond) }}
+	mc := migration_cache.NewMigrationCache(te, config, delayedSrcCache, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	srcData, err := srcCache.Get(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, srcData)
+
+	require.NoError(t, waitForValue(ctx, destCache, r, buf))
+}
+
+type failWritesCache struct {
+	interfaces.Cache
+}
+
+func (c *failWritesCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return nil, errors.New("simulated writer failure")
+}
+
+func TestAsyncWrite_SrcFails(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	setAsyncWrite(t, true)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	config := &cache_config.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, &failWritesCache{srcCache}, destCache)
+	require.NoError(t, mc.Start())
+	defer mc.Stop()
+
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
+	// Write to the src cache directly to avoid the simulated write failure.
+	err = srcCache.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	// This will fail to write to src cache, and so shouldn't copy to dest cache.
+	err = mc.Set(ctx, r, buf)
+	require.Error(t, err)
+
+	require.Error(t, waitForValue(ctx, destCache, r, buf))
 }
 
 func TestGetSet(t *testing.T) {
@@ -318,7 +485,7 @@ func TestGetSet(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
@@ -349,7 +516,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -370,7 +537,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 	destCache := &errorCache{}
 
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -392,7 +559,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	// Write data to dest cache only
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -417,7 +584,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, _ := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, []byte{})
@@ -449,7 +616,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			require.NoError(t, err)
 
 			numTests := 100
-			config := &migration_cache.MigrationConfig{
+			config := &cache_config.MigrationConfig{
 				CopyChanBufferSize: numTests + 1,
 				NumCopyWorkers:     2,
 			}
@@ -498,7 +665,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize:             1,
 		CopyChanFullWarningIntervalMin: 1,
 	}
@@ -541,7 +708,7 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize: 10,
 		MaxCopiesPerSec:    1,
 		NumCopyWorkers:     2,
@@ -591,7 +758,7 @@ func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 	require.NoError(t, err)
 
 	const writeCount = 10
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize: writeCount,
 		MaxCopiesPerSec:    writeCount,
 	}
@@ -642,7 +809,7 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	require.NoError(t, err)
 	destCache.Start()
 
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize: 10,
 		MaxCopiesPerSec:    10,
 	}
@@ -702,7 +869,7 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize: 10,
 		MaxCopiesPerSec:    10,
 	}
@@ -760,7 +927,7 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 			destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 			require.NoError(t, err)
 
-			config := &migration_cache.MigrationConfig{
+			config := &cache_config.MigrationConfig{
 				CopyChanBufferSize: 10,
 				LogNotFoundErrors:  true,
 			}
@@ -814,7 +981,7 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start()
@@ -845,7 +1012,7 @@ func TestContains_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -868,7 +1035,7 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start()
@@ -881,8 +1048,6 @@ func TestMetadata(t *testing.T) {
 	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.StoredSizeBytes)
-
-	waitForCopy(t, ctx, destCache, r)
 
 	notWrittenResource, _ := testdigest.RandomCASResourceBuf(t, 100)
 	md, err = mc.Metadata(ctx, notWrittenResource)
@@ -899,7 +1064,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -922,7 +1087,7 @@ func TestFindMissing(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{LogNotFoundErrors: true}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{LogNotFoundErrors: true}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 
@@ -954,7 +1119,7 @@ func TestFindMissing_DestSrcMismatch(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{LogNotFoundErrors: true}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{LogNotFoundErrors: true}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	r2, buf2 := testdigest.RandomCASResourceBuf(t, 100)
@@ -984,7 +1149,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	notSetR1, _ := testdigest.RandomCASResourceBuf(t, 100)
@@ -1039,7 +1204,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 			require.NoError(t, err)
 			err = destCache.Start()
 			require.NoError(t, err)
-			config := &migration_cache.MigrationConfig{}
+			config := &cache_config.MigrationConfig{}
 			config.SetConfigDefaults()
 			var mc *migration_cache.MigrationCache
 			if reverse {
@@ -1093,7 +1258,7 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 
@@ -1140,7 +1305,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = mc.Set(ctx, r, buf)
@@ -1188,7 +1353,7 @@ func TestReadsCopyData(t *testing.T) {
 	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	require.NoError(t, err)
 	destCache.Start()
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
@@ -1229,7 +1394,7 @@ func TestReadWrite(t *testing.T) {
 	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	require.NoError(t, err)
 	destCache.Start()
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
@@ -1239,53 +1404,55 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		r, buf := testdigest.RandomCASResourceBuf(t, testSize)
-		w, err := mc.Writer(ctx, r)
-		require.NoError(t, err)
+		t.Run(fmt.Sprintf("size=%d", testSize), func(t *testing.T) {
+			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+			w, err := mc.Writer(ctx, r)
+			require.NoError(t, err)
 
-		_, err = w.Write(buf)
-		require.NoError(t, err)
+			_, err = w.Write(buf)
+			require.NoError(t, err)
 
-		err = w.Commit()
-		require.NoError(t, err)
+			err = w.Commit()
+			require.NoError(t, err)
 
-		err = w.Close()
-		require.NoError(t, err)
+			err = w.Close()
+			require.NoError(t, err)
 
-		reader, err := mc.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			reader, err := mc.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf := make([]byte, len(buf))
-		n, err := reader.Read(actualBuf)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), n)
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf := make([]byte, len(buf))
+			n, err := reader.Read(actualBuf)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), n)
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = reader.Close()
-		require.NoError(t, err)
+			err = reader.Close()
+			require.NoError(t, err)
 
-		// Verify data was written to both caches
-		srcReader, err := srcCache.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			// Verify data was written to both caches
+			srcReader, err := srcCache.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf, err = ioutil.ReadAll(srcReader)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), len(actualBuf))
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf, err = ioutil.ReadAll(srcReader)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), len(actualBuf))
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = srcReader.Close()
-		require.NoError(t, err)
+			err = srcReader.Close()
+			require.NoError(t, err)
 
-		destReader, err := destCache.Reader(ctx, r, 0, 0)
-		require.NoError(t, err)
+			destReader, err := destCache.Reader(ctx, r, 0, 0)
+			require.NoError(t, err)
 
-		actualBuf, err = ioutil.ReadAll(destReader)
-		require.NoError(t, err)
-		require.Equal(t, int(testSize), len(actualBuf))
-		require.True(t, bytes.Equal(buf, actualBuf))
+			actualBuf, err = ioutil.ReadAll(destReader)
+			require.NoError(t, err)
+			require.Equal(t, int(testSize), len(actualBuf))
+			require.True(t, bytes.Equal(buf, actualBuf))
 
-		err = destReader.Close()
-		require.NoError(t, err)
+			err = destReader.Close()
+			require.NoError(t, err)
+		})
 	}
 }
 
@@ -1298,7 +1465,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	config := &migration_cache.MigrationConfig{}
+	config := &cache_config.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
@@ -1344,10 +1511,10 @@ func testOnlyOneCache(t *testing.T, reverse bool) {
 	var mc *migration_cache.MigrationCache
 	if reverse {
 		setMigrationState(t, migration_cache.DestOnly)
-		mc = migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, destCache, srcCache)
+		mc = migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, destCache, srcCache)
 	} else {
 		setMigrationState(t, migration_cache.SrcOnly)
-		mc = migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+		mc = migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 	}
 
 	// Write using all the write methods
@@ -1417,4 +1584,155 @@ func TestOnlySrc(t *testing.T) {
 
 func TestOnlyDest(t *testing.T) {
 	testOnlyOneCache(t, true)
+}
+
+func TestValidateCacheConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		config      cache_config.CacheConfig
+		expectError bool
+	}{
+		{
+			name: "valid disk config only",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid pebble config only",
+			config: cache_config.CacheConfig{
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid meta config only",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid disk + distributed",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid pebble + distributed",
+			config: cache_config.CacheConfig{
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "invalid no configs",
+			config:      cache_config.CacheConfig{},
+			expectError: true,
+		},
+		{
+			name: "invalid both disk and pebble",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + disk",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + pebble",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid meta + distributed",
+			config: cache_config.CacheConfig{
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid only distributed",
+			config: cache_config.CacheConfig{
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid all configs",
+			config: cache_config.CacheConfig{
+				DiskConfig: &cache_config.DiskCacheConfig{
+					RootDirectory: "/tmp/disk",
+				},
+				PebbleConfig: &cache_config.PebbleCacheConfig{
+					RootDirectory: "/tmp/pebble",
+				},
+				DistributedConfig: &cache_config.DistributedCacheConfig{
+					ListenAddr: "localhost:1985",
+				},
+				MetaConfig: &cache_config.MetaCacheConfig{
+					MetadataBackend: "mysql",
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := migration_cache.ValidateCacheConfig(tc.config)
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

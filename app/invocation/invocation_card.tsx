@@ -113,6 +113,20 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.props.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "card-success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "card-failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "card-in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "card-disconnected";
+        default:
+      }
+    }
+
     if (this.isInProgress()) {
       return "card-in-progress";
     }
@@ -129,6 +143,20 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
   }
 
   renderStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.props.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     if (this.isInProgress()) {
       return <PlayCircle className="icon blue" />;
     }
@@ -191,6 +219,18 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     }
 
     return format.durationUsec(this.props.invocation.durationUsec);
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.props.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
+    }
   }
 
   render() {

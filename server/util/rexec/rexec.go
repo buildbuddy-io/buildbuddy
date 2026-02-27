@@ -4,11 +4,13 @@ package rexec
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -17,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -31,7 +32,7 @@ import (
 func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 	m, err := parsePairs(pairs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse environment variables: %w", err)
 	}
 	names := slices.Sorted(maps.Keys(m))
 	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
@@ -50,7 +51,7 @@ func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	m, err := parsePairs(pairs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse platform properties: %w", err)
 	}
 	names := slices.Sorted(maps.Keys(m))
 	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
@@ -136,7 +137,7 @@ func parsePairs(pairs []string) (map[string]string, error) {
 	for _, pair := range pairs {
 		parts := strings.SplitN(pair, "=", 2)
 		if len(parts) != 2 {
-			return nil, status.InvalidArgumentErrorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+			return nil, status.InvalidArgumentErrorf("invalid syntax %q (expected NAME=VALUE)", pair)
 		}
 		m[parts[0]] = parts[1]
 	}
@@ -346,7 +347,7 @@ func (s *RetryingStream) CloseSend() error {
 
 // Response contains an operation along with its execution-specific payload.
 type Response struct {
-	*longrunning.Operation
+	*longrunningpb.Operation
 
 	// ExecuteOperationMetadata contains any metadata unpacked from the
 	// operation.
@@ -359,7 +360,7 @@ type Response struct {
 
 // UnpackOperation unmarshals all expected execution-specific fields from the
 // given operationn.
-func UnpackOperation(op *longrunning.Operation) (*Response, error) {
+func UnpackOperation(op *longrunningpb.Operation) (*Response, error) {
 	msg := &Response{Operation: op}
 	if op.GetResponse() != nil {
 		msg.ExecuteResponse = &repb.ExecuteResponse{}
@@ -377,12 +378,12 @@ func UnpackOperation(op *longrunning.Operation) (*Response, error) {
 	return msg, nil
 }
 
-// AuxiliaryMetadata searches for auxiliary metadata for a type matching the
-// full name of the given proto message descriptor. If one is found, it
-// unmarshals the type into the given message.
+// FindFirstAuxiliaryMetadata searches for the first auxiliary metadata entry
+// with a type matching the full name of the given proto message descriptor. If
+// one is found, it unmarshals the type into the given message.
 // It returns whether the type was found as well as whether there was an error
 // unmarshaling.
-func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bool, err error) {
+func FindFirstAuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bool, err error) {
 	typeURL := "type.googleapis.com/" + string(pb.ProtoReflect().Descriptor().FullName())
 	for _, m := range md.GetAuxiliaryMetadata() {
 		if m.TypeUrl == typeURL {

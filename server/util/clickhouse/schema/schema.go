@@ -36,7 +36,7 @@ const (
 // are present in clickhouse Table definition or in ExcludedFields()
 type Table interface {
 	TableName() string
-	TableOptions() string
+	TableOptions(clickhouseVersion string) string
 	// Fields that are in the primary DB Table schema; but not in the clickhouse schema.
 	ExcludedFields() []string
 	// Fields that are in the clickhouse Table schema; but not in the primary DB Table Schema.
@@ -113,6 +113,7 @@ type Invocation struct {
 	Tags                              []string `gorm:"type:Array(String);"`
 	RunID                             string
 	ParentRunID                       string
+	RunStatus                         int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -134,7 +135,7 @@ func (i *Invocation) TableName() string {
 	return "Invocations"
 }
 
-func (i *Invocation) TableOptions() string {
+func (i *Invocation) TableOptions(clickhouseVersion string) string {
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine())
@@ -153,6 +154,7 @@ type Execution struct {
 	UserID             string
 	Worker             string
 	ExecutorHostname   string
+	ClientIP           string
 
 	// Executor metadata
 	SelfHosted bool
@@ -228,6 +230,14 @@ type Execution struct {
 	ExecutionPriority      int32
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
+	RequestedPool          string
+	EffectivePool          string
+
+	// Runner metadata
+	RunnerID            string
+	RunnerTaskNumber    int64
+	PlatformHash        string
+	PersistentWorkerKey string
 
 	RequestedTimeoutUsec int64
 	EffectiveTimeoutUsec int64
@@ -257,7 +267,7 @@ func (e *Execution) TableName() string {
 	return "Executions"
 }
 
-func (e *Execution) TableOptions() string {
+func (e *Execution) TableOptions(clickhouseVersion string) string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine())
 }
 
@@ -317,12 +327,19 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
+		"RequestedPool",
+		"EffectivePool",
+		"RunnerID",
+		"RunnerTaskNumber",
+		"PlatformHash",
+		"PersistentWorkerKey",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
 		"Region",
 		"SelfHosted",
 		"ExecutorHostname",
 		"Experiments",
+		"ClientIP",
 	}
 }
 
@@ -367,8 +384,14 @@ func (t *TestTargetStatus) TableName() string {
 	return "TestTargetStatuses"
 }
 
-func (t *TestTargetStatus) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+func (t *TestTargetStatus) TableOptions(clickhouseVersion string) string {
+	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+	if clickhouseVersion > "24.8" {
+		// Clickhouse 24.8 added a table setting, deduplicate_merge_projection_mode,
+		// that is required when adding projections with on tables with merge engines.
+		options += " SETTINGS deduplicate_merge_projection_mode = 'rebuild'"
+	}
+	return options
 }
 
 type AuditLog struct {
@@ -405,7 +428,7 @@ func (i *AuditLog) TableName() string {
 	return "AuditLogs"
 }
 
-func (i *AuditLog) TableOptions() string {
+func (i *AuditLog) TableOptions(clickhouseVersion string) string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, audit_log_id)", getEngine())
 }
 
@@ -447,7 +470,7 @@ func (u *RawUsage) TableName() string {
 	return "RawUsage"
 }
 
-func (i *RawUsage) TableOptions() string {
+func (i *RawUsage) TableOptions(clickhouseVersion string) string {
 	return "ENGINE=" + getEngine() +
 		" ORDER BY (group_id, period_start, sku, labels, buffer_id)" +
 		// When using FINAL to deduplicate, partitioning by month allows
@@ -463,6 +486,16 @@ func (i *RawUsage) ExcludedFields() []string {
 
 func (i *RawUsage) AdditionalFields() []string {
 	return nil
+}
+
+// Usage represents a row queried from the Usage view, which is the deduped
+// and aggregated version of RawUsage.
+type Usage struct {
+	GroupID     string
+	PeriodStart time.Time
+	SKU         sku.SKU
+	Labels      map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+	Count       int64
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
@@ -542,12 +575,16 @@ func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{}
 }
 
 func RunMigrations(gdb *gorm.DB) error {
+	versionStr := ""
+	if err := gdb.Raw("select version()").Scan(&versionStr).Error; err != nil {
+		log.Warningf("Failed to get clickhouse version: %v", err)
+	}
 	log.Info("Auto-migrating clickhouse DB")
 	if clusterOpts := getTableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
 	for _, t := range getAllTables() {
-		gdb = gdb.Set("gorm:table_options", t.TableOptions())
+		gdb = gdb.Set("gorm:table_options", t.TableOptions(versionStr))
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
 		}
@@ -606,5 +643,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
+		RunStatus:                         ti.RunStatus,
 	}
 }

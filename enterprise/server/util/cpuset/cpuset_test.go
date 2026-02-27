@@ -77,6 +77,11 @@ func TestParseCPUs(t *testing.T) {
 			input:         "1:0",
 			expectedError: `invalid node: 1 for CPU 0: does not match OS-reported node: 0`,
 		},
+		{
+			name:          "invalid CPU ID",
+			input:         "0:600",
+			expectedError: `invalid CPU 600 in cpuset flag: CPU does not exist on this machine`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			flags.Set(t, "executor.cpu_leaser.enable", true)

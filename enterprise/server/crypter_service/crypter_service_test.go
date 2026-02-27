@@ -14,9 +14,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -220,7 +221,7 @@ func TestEncryptDecrypt(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -229,7 +230,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -264,7 +265,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -273,7 +274,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -307,7 +308,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -316,7 +317,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
@@ -360,7 +361,7 @@ func TestKeyLookup(t *testing.T) {
 	group2KeyID := "EK456"
 	userID3 := "US999"
 	groupID3 := "GR999"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2, userID3, groupID3))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2, userID3, groupID3))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
@@ -373,7 +374,7 @@ func TestKeyLookup(t *testing.T) {
 	createKey(t, env, clock, group1KeyID, groupID1, group1KeyURI)
 	createKey(t, env, clock, group2KeyID, groupID2, group2KeyURI)
 
-	crypter, err := New(env, clockwork.NewRealClock())
+	crypter, err := new(env, clockwork.NewRealClock())
 	defer crypter.Stop()
 	require.NoError(t, err)
 
@@ -537,7 +538,7 @@ func TestKeyCaching(t *testing.T) {
 	userID2 := "US456"
 	groupID2 := "GR456"
 	group2KeyID := "EK456"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
@@ -555,7 +556,7 @@ func TestKeyCaching(t *testing.T) {
 
 	// Back to back operations should only fetch the keys once.
 	{
-		crypter, err := New(env, clockwork.NewRealClock())
+		crypter, err := new(env, clockwork.NewRealClock())
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		testEncryptDecrypt(ctx, t, auther, crypter, userID1, group1KeyID)
@@ -568,7 +569,9 @@ func TestKeyCaching(t *testing.T) {
 	// Various cache refresh conditions.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -609,7 +612,9 @@ func TestKeyCaching(t *testing.T) {
 	// Test refresh error handling.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -633,7 +638,7 @@ func TestKeyCaching(t *testing.T) {
 
 		// But we should try again once we get past the retry interval.
 		oldCount = kms.GetFetchCount(group1KeyURI)
-		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshRetryInterval)
+		contAdvanceTimeAndWaitForRefresh(clock, crypter, keyRefreshScanFrequency)
 		require.Greater(t, kms.GetFetchCount(group1KeyURI), oldCount)
 
 		// Encryption should continue to use the cached key until we reach
@@ -648,7 +653,10 @@ func TestKeyCaching(t *testing.T) {
 	// Test error caching.
 	{
 		clock := clockwork.NewFakeClock()
-		crypter, err := New(env, clock)
+		keyRefreshScanFrequency := 10 * time.Hour
+		keyErrCacheTime := 10 * time.Second
+		opts := crypter_key_cache.Opts{KeyRefreshScanFrequency: keyRefreshScanFrequency, KeyErrCacheTime: keyErrCacheTime}
+		crypter, err := newWithOpts(env, clock, &opts)
 		require.NoError(t, err)
 		kms.ResetFetchCount(group1KeyURI)
 		kms.ResetFetchCount(group2KeyURI)
@@ -726,7 +734,7 @@ func TestConfigAPI(t *testing.T) {
 	defer pc.Stop()
 
 	clock := clockwork.NewFakeClock()
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	env.SetCrypter(crypter)
 
@@ -784,6 +792,8 @@ func TestConfigAPI(t *testing.T) {
 }
 
 func TestKeyReencryption(t *testing.T) {
+	ttl := time.Minute
+	flags.Set(t, "crypter.key_ttl", ttl)
 	env, kms := getEnv(t)
 
 	userID1 := "US123"
@@ -792,13 +802,13 @@ func TestKeyReencryption(t *testing.T) {
 	userID2 := "US456"
 	groupID2 := "GR456"
 	group2KeyID := "EK456"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
 	group2KeyURI := generateKMSKey(t, kms, "group2Key")
 	clock := clockwork.NewFakeClock()
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 
 	// Add separate keys for the first and second users.
@@ -818,7 +828,7 @@ func TestKeyReencryption(t *testing.T) {
 
 	// Allow the keys to be expired from the cache now so we don't have to
 	// worry about the cached values when re-encryption happens.
-	advanceTimeAndWaitForRefresh(clock, crypter, *keyTTL+1*time.Minute)
+	advanceTimeAndWaitForRefresh(clock, crypter, ttl+1*time.Minute)
 
 	clock.Advance(*keyReencryptInterval * 2)
 
@@ -866,13 +876,13 @@ func TestGetEncryptionKey(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
@@ -891,13 +901,13 @@ func TestGetEncryptionKey_NoGroup(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	// ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
@@ -912,13 +922,13 @@ func TestGetEncryptionKey_NoClientIdentity(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
@@ -934,13 +944,13 @@ func TestGetEncryptionKey_BadClientIdentity(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
@@ -956,13 +966,13 @@ func TestGetEncryptionKey_WrongId(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
@@ -985,13 +995,13 @@ func TestGetEncryptionKey_WrongVersion(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
 	clock := clockwork.NewRealClock()
 	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
-	crypter, err := New(env, clock)
+	crypter, err := new(env, clock)
 	require.NoError(t, err)
 	defer crypter.Stop()
 	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)

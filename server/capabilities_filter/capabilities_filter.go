@@ -116,6 +116,8 @@ var (
 		"CancelExecutions",
 		"ExecuteWorkflow",
 		"InvalidateSnapshot",
+		"WriteEventLog",
+		"UpdateRunStatus",
 		// Org API keys (implementation only returns developer-visible keys
 		// for developers; admins can see all keys).
 		"GetApiKeys",
@@ -166,6 +168,7 @@ var (
 		"GetGitHubAppInstallPath",
 		"LinkGitHubRepo",
 		"UnlinkGitHubRepo",
+		"UpdateGitHubRepoSettings",
 		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",
@@ -213,6 +216,9 @@ var (
 
 		// Impersonation
 		"CreateImpersonationApiKey",
+
+		// Org management
+		"SetGroupStatus",
 	}
 )
 

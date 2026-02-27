@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 
@@ -638,8 +639,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
-	if err != nil {
+	if err := writeArgsFile(argsFile.Name(), args); err != nil {
 		return nil, nil, err
 	}
 
@@ -652,8 +652,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		execArgsFile.Close()
 		os.Remove(execArgsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(execArgs, "\n")+"\n"))
-	if err != nil {
+	if err := writeArgsFile(execArgsFile.Name(), execArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -694,8 +693,8 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 
-	log.Debugf("New bazel args: %s", newArgs)
-	log.Debugf("New executable args: %s", newExecArgs)
+	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
+	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
 	// Canonicalize args after each plugin is run, so that every plugin gets
 	// canonicalized args as input.
@@ -862,7 +861,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	// post_bazel output will get intermingled with bazel output.
 	defer wc.Close()
 
-	log.Debugf("Calling bazelisk with %+v", args)
+	log.Debugf("Calling bazelisk with %s", shlex.Quote(args...))
 
 	// Create the output file where the original bazel output will be written,
 	// for post-bazel plugins to read.
@@ -938,23 +937,27 @@ func (o *overrideCloser) Close() error {
 
 // readArgsFile reads the arguments from the file at the given path.
 // Each arg is expected to be placed on its own line.
-// Blank lines are ignored.
+// Blank lines are intentionally preserved, since some commands accept
+// empty arguments, e.g.: bazel mod dump_repo_mapping ""
 func readArgsFile(path string) ([]string, error) {
-	b, err := disk.ReadFile(context.TODO(), path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to read arguments: %s", err)
 	}
-
-	lines := strings.Split(string(b), "\n")
-	// Construct args from non-blank lines.
-	newArgs := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if line != "" {
-			newArgs = append(newArgs, line)
-		}
+	if len(b) == 0 {
+		return nil, nil
 	}
+	s := string(b)
+	s = strings.TrimSuffix(s, "\n")
+	return strings.Split(s, "\n"), nil
+}
 
-	return newArgs, nil
+func writeArgsFile(path string, args []string) error {
+	lines := make([]string, 0, len(args))
+	for _, arg := range args {
+		lines = append(lines, arg+"\n")
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "")), 0644)
 }
 
 func realpath(path string) (string, error) {

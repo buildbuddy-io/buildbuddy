@@ -17,8 +17,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -28,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -43,8 +46,6 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
-
-const TreeCacheRemoteInstanceName = "_bb_treecache_"
 
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
@@ -120,7 +121,34 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, missing...)
+
+	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		checker := chunking.NewMissingChunkChecker(s.cache)
+
+		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
+		stillMissing := missing[:0]
+		for _, d := range missing {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+			if err != nil {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
+			if err != nil {
+				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
+			}
+			if anyMissing {
+				stillMissing = append(stillMissing, d)
+			}
+		}
+		missing = stillMissing
+	}
+
+	rsp.MissingBlobDigests = missing
 	return rsp, nil
 }
 
@@ -168,6 +196,16 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 		}
 		return rsp, nil
+	}
+
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		totalUploadSize := int64(0)
+		for _, uploadRequest := range req.Requests {
+			totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
+		}
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize); err != nil {
+			return nil, err
+		}
 	}
 
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
@@ -225,7 +263,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		checksum.Write(decompressedData)
 		computedDigest := hex.EncodeToString(checksum.Sum(nil))
 		if computedDigest != rn.GetDigest().GetHash() {
-			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
+			err := status.InvalidArgumentErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
@@ -233,7 +271,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		if int64(len(decompressedData)) != rn.GetDigest().GetSizeBytes() {
-			err := status.DataLossErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
+			err := status.InvalidArgumentErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
@@ -295,6 +333,16 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
+	}
+
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		totalDownloadSize := int64(0)
+		for _, readDigest := range req.GetDigests() {
+			totalDownloadSize += readDigest.GetSizeBytes()
+		}
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
+			return nil, err
+		}
 	}
 
 	type closeTrackerFunc func(data downloadTrackerData)
@@ -437,7 +485,7 @@ func makeTreeCachePointer(directoryNode *rspb.ResourceName, digestFunction repb.
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := digest.GetTreeCacheInstanceName(d)
 	// N.B: This is a AC digest, not a CAS one like the pointer below.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction), nil
 }
@@ -447,7 +495,7 @@ func makeTreeCacheDigest(digestFunction repb.DigestFunction_Value, buf []byte) (
 	if err != nil {
 		return nil, err
 	}
-	instanceName := fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	instanceName := digest.GetTreeCacheInstanceName(d)
 	// N.B: This is a CAS digest, not an AC one like the pointer above.
 	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction), nil
 }
@@ -456,7 +504,7 @@ func makeTreeCacheActionResult(blob *rspb.ResourceName) ([]byte, error) {
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
 			{
-				Path:   TreeCacheRemoteInstanceName,
+				Path:   digest.TreeCacheRemoteInstanceName,
 				Digest: blob.GetDigest(),
 			},
 		},
@@ -479,7 +527,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		return nil
 	}
 
-	var childBytesWritten = 0
+	childBytesWritten := 0
 	if len(childCaches) > 0 {
 		mu := &sync.Mutex{}
 		eg, egCtx := errgroup.WithContext(ctx)
@@ -622,7 +670,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	if pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto()); err == nil {
 		ar := &repb.ActionResult{}
 		if err := proto.Unmarshal(pointerBuf, ar); err == nil {
-			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == TreeCacheRemoteInstanceName {
+			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == digest.TreeCacheRemoteInstanceName {
 				treeCacheRN := digest.NewResourceName(ar.OutputFiles[0].Digest, treeCachePointer.GetInstanceName(), rspb.CacheType_CAS, treeCachePointer.GetDigestFunction())
 				children, bytesRead, err := s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
 				if err == nil {
@@ -1094,10 +1142,90 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 	return true
 }
 
+// SpliceBlob is used to tell the server how it can assemble a blob from a list of CAS digests.
+// The server will verify the chunks assembled from the digests match the expected blob digest.
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// For read-only API keys, behave like a no-op success to be consistent with
+		// other write methods (e.g. UpdateActionResult, BatchUpdateBlobs) and avoid
+		// breaking builds that rely on read-only credentials.
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
+
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
+	}
+
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.UnimplementedError("SpliceBlob with no blob_digest is not supported")
+	}
+	if nDigests := len(req.GetChunkDigests()); nDigests == 0 {
+		return nil, status.InvalidArgumentError("chunk_digests cannot be empty")
+	} else if nDigests == 1 {
+		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
+	}
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     req.GetBlobDigest(),
+		ChunkDigests:   req.GetChunkDigests(),
+		InstanceName:   req.GetInstanceName(),
+		DigestFunction: req.GetDigestFunction(),
+	}
+
+	if err := manifest.Store(ctx, s.cache); err != nil {
+		return nil, err
+	}
+
+	return &repb.SpliceBlobResponse{
+		BlobDigest: req.GetBlobDigest(),
+	}, nil
 }
 
+// SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
+// any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
+	}
+
+	cf := req.GetChunkingFunction()
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+	}
+
+	if req.GetBlobDigest() == nil {
+		return nil, status.InvalidArgumentError("blob_digest is required")
+	}
+
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+
+	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+		return nil, err
+	} else if len(resp.GetMissingBlobDigests()) > 0 {
+		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))
+	}
+	return manifest.ToSplitBlobResponse(), nil
 }

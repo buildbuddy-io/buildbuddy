@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -32,13 +32,13 @@ func TestOciconv(t *testing.T) {
 
 	reg := testregistry.Run(t, testregistry.Opts{})
 
-	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest")
+	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest", nil)
 
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 
-	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	path, err := ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/)
 	require.NoError(t, err)
 
 	fi, err := os.Stat(path)
@@ -131,14 +131,14 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 
 	// Bypass auth while pushing the image.
 	authEnabled = false
-	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest")
+	ref, _ := reg.PushNamedImage(t, "test-empty-image:latest", nil)
 	authEnabled = true
 
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 	// This should fail because the credentials are invalid.
-	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
@@ -146,12 +146,12 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
 		Username: "test",
 		Password: "test",
-	})
+	}, false /*=useOCIFetcher*/)
 	require.NoError(t, err)
 
 	// Now that the image is cached, try pulling again with invalid credentials.
 	// This should still fail.
-	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{})
+	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
@@ -160,6 +160,6 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	_, err = ociconv.CreateDiskImage(ctx, resolver, root, ref, oci.Credentials{
 		Username: "test",
 		Password: "test",
-	})
+	}, false /*=useOCIFetcher*/)
 	require.NoError(t, err)
 }

@@ -84,3 +84,20 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 		})
 	}
 }
+
+func TestBasicMIMETypeFromExtension(t *testing.T) {
+	for _, tc := range []struct {
+		ext      string
+		expected string
+	}{
+		{".png", "image/png"},
+		{".jpg", "image/jpeg"},
+		{".jpeg", "image/jpeg"},
+		{".webm", "video/webm"},
+		{".svg", "application/octet-stream"},
+		{".js", "application/octet-stream"},
+		{".pdf", "application/octet-stream"},
+	} {
+		assert.Equal(t, tc.expected, BasicMIMETypeFromExtension(tc.ext))
+	}
+}

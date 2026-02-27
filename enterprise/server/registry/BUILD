@@ -6,7 +6,6 @@ go_library(
     name = "registry",
     srcs = [
         "github_registry.go",
-        "npm_registry.go",
         "registry_server.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",

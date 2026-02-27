@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "ociregistry",
     srcs = ["ociregistry.go"],
@@ -28,15 +30,13 @@ go_test(
     deps = [
         ":ociregistry",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/testutil/testregistry",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
-        "//server/testutil/testregistry",
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

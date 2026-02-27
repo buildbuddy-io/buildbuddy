@@ -15,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -31,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -60,6 +60,7 @@ var (
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
+	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 )
 
 const (
@@ -487,6 +488,17 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		<-timeout.C
 	}
 
+	// Track this executor in Redis if proactive cancellation is enabled and
+	// the executor supports it.
+	if *proactiveCancellationEnabled {
+		registration := h.getRegistration()
+		if registration.GetSupportsProactiveCancellation() {
+			if err := h.scheduler.recordProbeForProactiveCancellation(ctx, req.GetTaskId(), registration.GetExecutorId()); err != nil {
+				log.CtxWarningf(ctx, "Failed to record task probe for proactive cancellation: %s", err)
+			}
+		}
+	}
+
 	if !waitForResponse {
 		return nil
 	}
@@ -557,6 +569,28 @@ func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
 		},
 	}
 	h.requests <- enqueueTaskReservationRequest{proto: msg}
+}
+
+// sendProactiveCancellation sends a cancellation request for the given task ID
+// to the executor. This is a best-effort operation - errors are not returned.
+func (h *executorHandle) sendProactiveCancellation(ctx context.Context, taskID string) {
+	if !h.getRegistration().GetSupportsProactiveCancellation() {
+		// This should never happen since we only add executors to the list of
+		// sent probes if they claimed to support proactive cancellation when
+		// they registered, but it doesn't hurt to double-check.
+		return
+	}
+	msg := &scpb.RegisterAndStreamWorkResponse{
+		CancelTaskReservationRequest: &scpb.CancelTaskReservationRequest{
+			TaskId: taskID,
+		},
+	}
+	select {
+	case h.requests <- enqueueTaskReservationRequest{proto: msg}:
+	default:
+		// Channel full, skip sending cancellation.
+		log.CtxWarningf(ctx, "Failed to send proactive cancellation to executor %s: channel full", h.getRegistration().GetExecutorId())
+	}
 }
 
 func (h *executorHandle) startTaskReservationStreamer() {
@@ -684,6 +718,32 @@ func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, patter
 	for _, n := range nodes {
 		if p.MatchString(n.GetHost()) {
 			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func filterToRoutingConfig(ctx context.Context, nodes []*executionNode, routingConfig *scpb.RoutingConfig) []*executionNode {
+	if routingConfig.GetHostnamePattern() == "" || len(nodes) == 0 {
+		return nodes
+	}
+	p, err := regexp.Compile(routingConfig.GetHostnamePattern())
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", routingConfig.GetHostnamePattern())
+		return nodes
+	}
+	var out []*executionNode
+	for _, n := range nodes {
+		if p.MatchString(n.GetHost()) {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		if routingConfig.GetBestEffort() {
+			alert.CtxUnexpectedEvent(ctx, "no_executors_matched_by_best_effort_routing_config", "Routing config does not match any executor nodes - returning all nodes instead. config: %q", routingConfig)
+			out = nodes
+		} else {
+			alert.CtxUnexpectedEvent(ctx, "no_executors_matched_by_routing_config", "Routing config does not match any executor nodes. Execution will fail.")
 		}
 	}
 	return out
@@ -1131,7 +1191,7 @@ func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
 	return *sharedExecutorPoolGroupID
 }
 
-func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, originalPool *interfaces.PoolInfo) *interfaces.PoolInfo {
+func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, requestedPool *interfaces.PoolInfo, originalPool string) *interfaces.PoolInfo {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
 		return nil
@@ -1142,8 +1202,13 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		ctx, experimentName, map[string]any{},
 		experiments.WithContext("os", os),
 		experiments.WithContext("arch", arch),
-		experiments.WithContext("pool", originalPool.Name),
-		experiments.WithContext("self_hosted", originalPool.IsSelfHosted),
+		experiments.WithContext("pool", requestedPool.Name),
+		experiments.WithContext("self_hosted", requestedPool.IsSelfHosted),
+		// OriginalPool in this case is referring to a pool from another remote
+		// execution platform. Some users may set this to inform BB about how
+		// traffic is being routed in their current setup, without having to
+		// actually set the Pool property.
+		experiments.WithContext("OriginalPool", originalPool),
 	)
 
 	// If null or empty, don't override.
@@ -1153,7 +1218,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 
 	log.CtxInfof(ctx, "Pool override: %+#v", obj)
 
-	override := *originalPool // shallow copy
+	override := *requestedPool // shallow copy
 	if groupIDValue, ok := obj["group_id"]; ok {
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
@@ -1177,7 +1242,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 	return &override
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
 	if err != nil {
 		return nil, err
@@ -1185,14 +1250,14 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	// Now that we know the pool we would normally route to, feed that into the
 	// experiment context and use that to potentially reroute to a different
 	// pool.
-	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo); override != nil {
+	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo, originalPool); override != nil {
 		return override, nil
 	}
 
 	return poolInfo, nil
 }
 
-func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -1212,7 +1277,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.
-	if os == platform.LinuxOperatingSystemName && workflowID != "" && poolType != interfaces.PoolTypeSelfHosted {
+	if os == platform.LinuxOperatingSystemName && workflowID != "" && poolType != platform.PoolTypeSelfHosted {
 		return sharedPool, nil
 	}
 
@@ -1225,7 +1290,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
 			}
-			if poolType == interfaces.PoolTypeSelfHosted {
+			if poolType == platform.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
 			return sharedPool, nil
@@ -1237,7 +1302,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 		IsSelfHosted: true,
 		Name:         requestedPool,
 	}
-	if user.GetUseGroupOwnedExecutors() && poolType != interfaces.PoolTypeShared {
+	if user.GetUseGroupOwnedExecutors() && poolType != platform.PoolTypeShared {
 		return selfHostedPool, nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
@@ -1246,7 +1311,7 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 	if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 		return selfHostedPool, nil
 	}
-	if poolType == interfaces.PoolTypeSelfHosted {
+	if poolType == platform.PoolTypeSelfHosted {
 		return selfHostedPool, nil
 	}
 	return sharedPool, nil
@@ -1398,6 +1463,68 @@ func (s *SchedulerServer) redisKeyForTask(taskID string) string {
 	}
 }
 
+func (s *SchedulerServer) redisKeyForTaskReservations(taskID string) string {
+	if s.enableRedisAvailabilityMonitoring {
+		return fmt.Sprintf("taskReservations/{%s}", taskID)
+	} else {
+		return fmt.Sprintf("taskReservations/%s", taskID)
+	}
+}
+
+// recordProbeForProactiveCancellation adds an executor ID to the set of
+// executors that have received a task reservation request for the given task.
+// This allows us to later request proactive cancellation when the task
+// completes, which results in more accurate queue length metrics (for better
+// autoscaling) and also improves throughput by removing large, blocking tasks
+// at the head of the queue sooner, preventing them from blocking other tasks.
+func (s *SchedulerServer) recordProbeForProactiveCancellation(ctx context.Context, taskID, executorID string) error {
+	key := s.redisKeyForTaskReservations(taskID)
+	pipe := s.rdb.TxPipeline()
+	pipe.SAdd(ctx, key, executorID)
+	pipe.Expire(ctx, key, taskTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// sendCancellationRequests sends CancelTaskReservationRequest to all
+// executors that have received a task reservation for the given task, then
+// deletes the Redis tracking set.
+func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID string) error {
+	key := s.redisKeyForTaskReservations(taskID)
+	executorIDs, err := s.rdb.SMembers(ctx, key).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	if len(executorIDs) == 0 {
+		return nil
+	}
+
+	// Find all connected executors across all pools.
+	s.mu.RLock()
+	pools := make([]*nodePool, 0, len(s.pools))
+	for _, pool := range s.pools {
+		pools = append(pools, pool)
+	}
+	s.mu.RUnlock()
+
+	// Send cancellation requests to matching executors.
+	for _, executorID := range executorIDs {
+		for _, pool := range pools {
+			if node := pool.FindConnectedExecutorByID(executorID); node != nil && node.handle != nil {
+				node.handle.sendProactiveCancellation(ctx, taskID)
+				break // Found the executor, no need to check other pools.
+			}
+		}
+	}
+
+	// Clean up the Redis set.
+	if err := s.rdb.Del(ctx, key).Err(); err != nil {
+		log.CtxWarningf(ctx, "Failed to clean up task reservations set: %s", err)
+	}
+
+	return nil
+}
+
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1447,6 +1574,13 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	}
 
 	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
+	// Send cancellation requests to executors that have the task queued.
+	if *proactiveCancellationEnabled {
+		if err := s.sendCancellationRequests(ctx, taskID); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel task reservations for task %q: %s", taskID, err)
+		}
+	}
 
 	return nil
 }
@@ -1587,6 +1721,17 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 			if err != nil {
 				alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
 			} else if !p.MatchString(node.GetHost()) {
+				continue
+			}
+		}
+		if pattern := task.metadata.GetRoutingConfig().GetHostnamePattern(); pattern != "" {
+			p, err := regexp.Compile(pattern)
+			if err != nil {
+				alert.CtxUnexpectedEvent(ctx, "invalid_hostname_pattern", "invalid hostname pattern %q in experiment config", pattern)
+			} else if !p.MatchString(node.GetHost()) {
+				// Regardless of whether the routing config is best-effort or
+				// not, don't allow tasks to be stolen by executors that don't
+				// match the hostname pattern.
 				continue
 			}
 		}
@@ -1932,22 +2077,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 	plat := taskProto.PlatformOverrides
 
-	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
-	// and "control" as the values rather than the variant names, since we
-	// didn't have the Details methods at the time which allow retrieving the
-	// variant name. Going forward, we can store "treatment" / "control" as the
-	// variant name and set the platform property values as the flag value.
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
-	if strings.EqualFold(skipResavingGroup, "treatment") {
-		plat.Properties = append(plat.Properties, &repb.Platform_Property{
-			Name:  platform.SkipResavingActionSnapshotsPropertyName,
-			Value: "true",
-		})
-	}
-	if skipResavingGroup != "" {
-		taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
-	}
-
 	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
 	if persistentVolumes != "" {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
@@ -2006,6 +2135,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
 	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
+	routingConfig := enqueueRequest.GetSchedulingMetadata().GetRoutingConfig()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -2087,6 +2217,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				log.CtxWarningf(ctx, "No executors found matching hostname pattern %q in pool %q with os %q with arch %q", hostnamePattern, pool, os, arch)
 				return status.UnavailableErrorf("no executors found matching hostname pattern")
+			}
+			candidateNodes = filterToRoutingConfig(ctx, candidateNodes, routingConfig)
+			if len(candidateNodes) == 0 {
+				log.CtxWarningf(ctx, "No executors found matching routing config %q in pool %q with os %q with arch %q", routingConfig, pool, os, arch)
+				return status.UnavailableErrorf("no executors found matching routing config")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}

@@ -37,7 +37,7 @@ func RegisterRemoteExecutionClient(env *real_environment.RealEnv) error {
 }
 
 func RegisterRemoteExecutionRedisPubSubClient(env *real_environment.RealEnv) error {
-	opts := redis_client.RemoteExecutionRedisClientOpts()
+	opts := redis_client.RemoteExecutionRedisClientOpts(env)
 	if opts == nil {
 		if !remote_execution_config.RemoteExecutionEnabled() {
 			return nil

@@ -32,10 +32,30 @@ func (discardWriteCloser) Close() error {
 	return nil
 }
 
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// LimitReadCloser returns a readCloser with a LimitReader.
+func LimitReadCloser(reader io.ReadCloser, limit int64) io.ReadCloser {
+	return &readCloser{
+		io.LimitReader(reader, limit),
+		reader,
+	}
+}
+
 type CloseFunc func() error
 type CommitFunc func(int64) error
 
-type CustomCommitWriteCloser struct {
+type CustomCommitWriteCloser interface {
+	interfaces.CommittedWriteCloser
+
+	SetCloseFn(CloseFunc)
+	SetCommitFn(CommitFunc)
+}
+
+type customCommitWriteCloser struct {
 	w            io.Writer
 	bytesWritten int64
 	committed    bool
@@ -44,13 +64,13 @@ type CustomCommitWriteCloser struct {
 	CommitFn CommitFunc
 }
 
-func (c *CustomCommitWriteCloser) Write(buf []byte) (int, error) {
+func (c *customCommitWriteCloser) Write(buf []byte) (int, error) {
 	n, err := c.w.Write(buf)
 	c.bytesWritten += int64(n)
 	return n, err
 }
 
-func (c *CustomCommitWriteCloser) Commit() error {
+func (c *customCommitWriteCloser) Commit() error {
 	if c.committed {
 		return status.FailedPreconditionError("CommitWriteCloser already committed, cannot commit again")
 	}
@@ -78,7 +98,7 @@ func (c *CustomCommitWriteCloser) Commit() error {
 	return nil
 }
 
-func (c *CustomCommitWriteCloser) Close() error {
+func (c *customCommitWriteCloser) Close() error {
 	var firstErr error
 
 	// Close may free resources, so all Close functions should be called.
@@ -97,14 +117,35 @@ func (c *CustomCommitWriteCloser) Close() error {
 	return firstErr
 }
 
+func (c *customCommitWriteCloser) SetCloseFn(fn CloseFunc) {
+	c.CloseFn = fn
+}
+
+func (c *customCommitWriteCloser) SetCommitFn(fn CommitFunc) {
+	c.CommitFn = fn
+}
+
+type customCommitWriteSeekCloser struct {
+	*customCommitWriteCloser
+	io.Seeker
+}
+
 // NewCustomCommitWriteCloser wraps an io.Writer/interfaces.CommittedWriteCloser
-// and returns a pointer to a CustomCommitWriteCloser, which implements
+// and returns a customCommitWriteCloser, which implements
 // interfaces.CommittedWriteCloser but allows adding on custom logic that will
-// be called when Commit or Close methods are called.
-func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
-	return &CustomCommitWriteCloser{
+// be called when Commit or Close methods are called. If the wrapped writer
+// implements io.Seeker, the returned value will also implement io.Seeker.
+func NewCustomCommitWriteCloser(w io.Writer) CustomCommitWriteCloser {
+	cwc := &customCommitWriteCloser{
 		w: w,
 	}
+	if seeker, ok := w.(io.Seeker); ok {
+		return &customCommitWriteSeekCloser{
+			customCommitWriteCloser: cwc,
+			Seeker:                  seeker,
+		}
+	}
+	return cwc
 }
 
 // Counter keeps a count of all bytes written, discarding any written bytes.
@@ -316,4 +357,57 @@ func (w *DoubleBufferWriter) Close() error {
 		w.bufPool.Put(buf)
 	}
 	return w.w.Close()
+}
+
+// PreserveNewlinesSplitFunc is a [bufio.SplitFunc] that can be used with
+// [bufio.Scanner]. It keeps the newlines at the end if present, so that
+// concatenating the scanned Text() reproduces the original input exactly. By
+// contrast, the default split function splits on newlines but discards all
+// trailing newline characters, which can be undesired.
+func PreserveNewlinesSplitFunc(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	// Search for newline characters
+	for i := range data {
+		if data[i] == '\n' {
+			// Include up to and including the '\n'
+			return i + 1, data[0 : i+1], nil
+		}
+	}
+	// If at EOF, return the remaining data (may not have newline)
+	if atEOF {
+		return len(data), data, nil
+	}
+	// Request more data
+	return 0, nil, nil
+}
+
+type MultiReadCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+// NewMultiReadCloser returns a new io.ReadCloser that reads from the
+// readers in order. It closes all of the readers in order when
+// Close is called.
+func NewMultiReadCloser(rcs ...io.ReadCloser) io.ReadCloser {
+	rs := make([]io.Reader, len(rcs))
+	cs := make([]io.Closer, len(rcs))
+	for i, rc := range rcs {
+		rs[i] = rc
+		cs[i] = rc
+	}
+	return &MultiReadCloser{
+		Reader:  io.MultiReader(rs...),
+		closers: cs,
+	}
+}
+
+func (m *MultiReadCloser) Close() error {
+	errs := make([]error, len(m.closers))
+	for i, c := range m.closers {
+		errs[i] = c.Close()
+	}
+	return errors.Join(errs...)
 }

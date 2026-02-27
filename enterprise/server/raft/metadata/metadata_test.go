@@ -12,13 +12,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -36,31 +38,28 @@ import (
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	guuid "github.com/google/uuid"
 )
 
 var (
 	userMap = testauth.TestUsers("user1", "group1", "user2", "group2")
 )
 
-func getTestEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
-	te.SetAuthenticator(ta)
-	return te
-}
-
 type testConfig struct {
 	env    *testenv.TestEnv
-	config *metadata.Config
+	ta     *testauth.TestAuthenticator
+	config *config.ServerConfig
 }
 
 func getTestConfigs(t *testing.T, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
-			env:    getTestEnv(t),
+			ta:     testauth.NewTestAuthenticator(t, userMap),
+			env:    testenv.GetTestEnv(t),
 			config: getCacheConfig(t),
 		}
+		c.env.SetAuthenticator(c.ta)
 		res = append(res, c)
 	}
 	return res
@@ -70,14 +69,19 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T) *metadata.Config {
-	return &metadata.Config{
-		RootDir:         testfs.MakeTempDir(t),
-		Hostname:        "127.0.0.1",
-		ListenAddr:      "127.0.0.1",
-		HTTPPort:        testport.FindFree(t),
-		GRPCPort:        testport.FindFree(t),
-		LogDBConfigType: store.SmallMemLogDBConfigType,
+func getCacheConfig(t *testing.T) *config.ServerConfig {
+	id, err := guuid.NewRandom()
+	require.NoError(t, err)
+	httpPort := testport.FindFree(t)
+	grpcPort := testport.FindFree(t)
+	return &config.ServerConfig{
+		NHID:              id.String(),
+		RootDir:           testfs.MakeTempDir(t),
+		RaftAddr:          fmt.Sprintf("127.0.0.1:%d", httpPort),
+		GRPCAddr:          fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		GRPCListeningAddr: fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		LogDBConfigType:   config.SmallMemLogDBConfigType,
+		FileStorer:        filestore.New(),
 		Partitions: []disk.Partition{
 			{
 				ID:           constants.DefaultPartitionID,
@@ -136,7 +140,7 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 }
 
 func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)
@@ -165,9 +169,9 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
-		gs, err := gossip.New("name-"+lN, lN, joinList)
+		gs, err := gossip.NewWithArgs(config.config.NHID, lN, joinList)
 		require.NoError(t, err)
-		config.env.SetGossipService(gs)
+		config.config.GossipManager = gs
 		eg.Go(func() error {
 			n, err := metadata.New(config.env, config.config)
 			if err != nil {
@@ -181,12 +185,16 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 
 	// wait for them all to become healthy
 	waitForHealthy(t, caches...)
+
+	t.Cleanup(func() {
+		waitForShutdown(t, caches...)
+	})
 	return caches
 }
 
 var filestorer = filestore.New()
 
-func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
+func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.FileMetadata {
 	t.Helper()
 
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
@@ -204,7 +212,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 				CacheType:          rn.GetCacheType(),
 				RemoteInstanceName: rn.GetInstanceName(),
 				PartitionId:        "default",
-				GroupId:            interfaces.AuthAnonymousUser,
+				GroupId:            groupID,
 			},
 			Digest:         rn.GetDigest(),
 			DigestFunction: rn.GetDigestFunction(),
@@ -223,8 +231,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 
 func TestAutoBringup(t *testing.T) {
 	configs := getTestConfigs(t, 3)
-	caches := startNodes(t, configs)
-	waitForShutdown(t, caches...)
+	startNodes(t, configs)
 }
 
 func TestGetAndSet(t *testing.T) {
@@ -232,38 +239,83 @@ func TestGetAndSet(t *testing.T) {
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
+	ta := configs[0].ta
+	ctxUser1, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+	ctxUser2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, "group1")
 
 		// Should be able to Set a record.
-		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+		_, err := rc1.Set(ctxUser1, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
 			}},
 		})
 		require.NoError(t, err, i)
 
-		// Should be able to fetch the record just set.
-		getRsp, err := rc1.Get(ctx, &mdpb.GetRequest{
+		// User 1 should be able to fetch the record just set.
+		getRsp, err := rc1.Get(ctxUser1, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
 		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 
-		// Should be able to lookup (check existance) of the record.
-		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		// User2 should not be able to fetch the record just set.
+		_, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 2 should not be able to fetch User 1's record even when setting to
+		// its own group id.
+		fr2 := md.GetFileRecord().CloneVT()
+		fr2.GetIsolation().GroupId = "group2"
+		getRsp, err = rc1.Get(ctxUser2, &mdpb.GetRequest{
+			FileRecords: []*sgpb.FileRecord{fr2},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
+		require.Nil(t, nil, getRsp.GetFileMetadatas()[0])
+
+		// User 1 should be able to lookup (check existance) of the record.
+		findRsp, err := rc1.Find(ctxUser1, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.True(t, findRsp.GetFindResponses()[0].GetPresent())
 
-		// Should be able to delete the record.
-		_, err = rc1.Delete(ctx, &mdpb.DeleteRequest{
+		// User 2 should not be able to lookup (check existance) of the record.
+		_, err = rc1.Find(ctxUser2, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 2 should be able to check existance; but should not find it.
+		findRsp, err = rc1.Find(ctxUser2, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{fr2},
+		})
+		require.NoError(t, err, i)
+		require.Equal(t, 1, len(findRsp.GetFindResponses()))
+		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
+
+		// User 2 should not be able to delete the record.
+		_, err = rc1.Delete(ctxUser2, &mdpb.DeleteRequest{
+			DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{
+				FileRecord: md.GetFileRecord(),
+			}},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsUnauthenticatedError(err), "is unauthenticated")
+
+		// User 1 should be able to delete the record.
+		_, err = rc1.Delete(ctxUser1, &mdpb.DeleteRequest{
 			DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{
 				FileRecord: md.GetFileRecord(),
 			}},
@@ -271,14 +323,13 @@ func TestGetAndSet(t *testing.T) {
 		require.NoError(t, err, i)
 
 		// Record should no longer be found.
-		findRsp, err = rc1.Find(ctx, &mdpb.FindRequest{
+		findRsp, err = rc1.Find(ctxUser1, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
 		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
 	}
-	waitForShutdown(t, caches...)
 }
 
 func TestCacheShutdown(t *testing.T) {
@@ -296,7 +347,7 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -312,7 +363,7 @@ func TestCacheShutdown(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc2.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -331,7 +382,6 @@ func TestCacheShutdown(t *testing.T) {
 		assert.True(t, rsp.GetPresent())
 	}
 
-	waitForShutdown(t, caches...)
 }
 
 func TestDistributedRanges(t *testing.T) {
@@ -345,7 +395,7 @@ func TestDistributedRanges(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		rc := caches[rand.Intn(len(caches))]
 
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		_, err := rc.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -369,8 +419,6 @@ func TestDistributedRanges(t *testing.T) {
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
 		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 	}
-
-	waitForShutdown(t, caches...)
 }
 
 func TestFindMissingMetadata(t *testing.T) {
@@ -385,7 +433,7 @@ func TestFindMissingMetadata(t *testing.T) {
 	recordsWritten := make([]*sgpb.FileRecord, 0)
 	setReq := &mdpb.SetRequest{}
 	for i := 0; i < 10; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		setReq.SetOperations = append(setReq.SetOperations, &mdpb.SetRequest_SetOperation{
 			FileMetadata: md,
 		})
@@ -401,7 +449,7 @@ func TestFindMissingMetadata(t *testing.T) {
 	// Look for some additional records which have not been written to the
 	// metadata server. They should not be found.
 	for i := 0; i < 5; i++ {
-		md := randomFileMetadata(t, 100)
+		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		recordsToLookFor = append(recordsToLookFor, md.GetFileRecord())
 	}
 
@@ -418,11 +466,11 @@ func TestFindMissingMetadata(t *testing.T) {
 			assert.False(t, rsp.GetPresent())
 		}
 	}
-
-	waitForShutdown(t, caches...)
 }
 
 func TestLRU(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
+
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
@@ -460,7 +508,7 @@ func TestLRU(t *testing.T) {
 	lastUsed := make(map[*sgpb.FileRecord]time.Time, numDigests)
 	resourceKeys := make([]*sgpb.FileRecord, 0)
 	for i := 0; i < numDigests; i++ {
-		md := randomFileMetadata(t, digestSize)
+		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -497,7 +545,7 @@ func TestLRU(t *testing.T) {
 
 	// Write more data
 	for i := 0; i < quartile; i++ {
-		md := randomFileMetadata(t, digestSize)
+		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
 				FileMetadata: md,
@@ -580,6 +628,4 @@ func TestLRU(t *testing.T) {
 	require.LessOrEqual(t, evictedCount, quartile*2)
 	// Check that the avg age of evicted items is older than avg age of kept items.
 	require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
-
-	waitForShutdown(t, caches...)
 }

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "invocation_webhook_test",
     srcs = ["invocation_webhook_test.go"],
@@ -20,5 +22,3 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

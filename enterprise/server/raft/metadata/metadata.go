@@ -8,35 +8,39 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-
-	stdFlag "flag"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
+	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 var (
@@ -46,7 +50,6 @@ var (
 	hostName      = flag.String("cache.raft.host_name", "", "The hostname of the raft store.")
 	listen        = flag.String("cache.raft.listen", "0.0.0.0", "The interface to listen on (default:0.0.0.0)")
 
-	clearCacheOnStartup     = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
 	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings       = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
@@ -54,11 +57,8 @@ var (
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
-	// TODO(tylerw): remove after dev.
-	// Store raft content in a subdirectory with the same name as the gossip
-	// key, so that we can easily start fresh in dev by just changing the
-	// gossip key.
-	subdir = types.Alias[string](stdFlag.CommandLine, "gossip.secret_key")
+	deploymentID = flag.Uint64("cache.raft.deployment_id", 0, "Deployment ID is used to determine whether to raft node hosts belong to the same deployment and thus allowed to communicate with each other. Note: when you change deploymentID and has --cache.raft.clear_prev_cache_on_startup = true, the data from non-current deployments will be wiped out.")
+	gcsConfig    = flag.Struct("cache.raft.gcs", cache_config.GCSConfig{}, "Config to specify gcs")
 )
 
 const (
@@ -66,39 +66,21 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+
+	configDirName = "config"
 )
-
-type Config struct {
-	// Required fields.
-	RootDir string
-
-	Hostname string
-
-	ListenAddr string
-
-	HTTPPort int
-	GRPCPort int
-
-	Partitions        []disk.Partition
-	PartitionMappings []disk.PartitionMapping
-
-	LogDBConfigType store.LogDBConfigType
-}
 
 // data needed to update last access time.
 type accessTimeUpdate struct {
-	key []byte
+	key         []byte
+	gcsMetadata *sgpb.StorageMetadata_GCSMetadata
 }
 
 type Server struct {
 	env  environment.Env
-	conf *Config
+	conf *config.ServerConfig
 
-	raftAddr string
-	grpcAddr string
-
-	registry      registry.NodeRegistry
-	gossipManager interfaces.GossipService
+	registry registry.NodeRegistry
 
 	store          *store.Store
 	clusterStarter *bringup.ClusterStarter
@@ -113,6 +95,8 @@ type Server struct {
 	egCancel context.CancelFunc
 
 	clock clockwork.Clock
+
+	gcsTTLDays int64
 }
 
 func clearPrevCache(dir string, currentSubDir string) error {
@@ -121,7 +105,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
+		return status.InternalErrorf("failed to read directory %q: %w", dir, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -132,7 +116,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 		}
 		path := filepath.Join(dir, e.Name())
 		if err := os.RemoveAll(path); err != nil {
-			return status.InternalErrorf("failed to delete dir %q: %s", path, err)
+			return status.InternalErrorf("failed to delete dir %q: %w", path, err)
 		}
 	}
 	return nil
@@ -164,7 +148,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		partitionSet.Add(constants.DefaultPartitionID)
 		ps = append(ps, disk.Partition{
 			ID:           constants.DefaultPartitionID,
-			MaxSizeBytes: cache_config.MaxSizeBytes(),
+			MaxSizeBytes: oss_cache_config.MaxSizeBytes(),
 			NumRanges:    1,
 		})
 	}
@@ -176,55 +160,100 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
-	if *clearCacheOnStartup {
-		log.Warningf("Clearing cache dir %q on startup!", *rootDirectory)
-		if err := os.RemoveAll(*rootDirectory); err != nil {
+	subdir := fmt.Sprint(*deploymentID)
+
+	if *clearPrevCacheOnStartup {
+		if err := clearPrevCache(*rootDirectory, subdir); err != nil {
+			return nil, status.InternalErrorf("failed to delete cache from previous run: %w", err)
+		}
+	}
+
+	rootDir := filepath.Join(*rootDirectory, subdir)
+	configDir := filepath.Join(rootDir, configDirName)
+	if err := disk.EnsureDirectoryExists(configDir); err != nil {
+		return nil, err
+	}
+	nhid, err := hostid.GetHostID(configDir)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get host id from %s: %s", configDir, err)
+	}
+	gossipManager, err := gossip.New(nhid)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create gossip manager with name %q: %s", nhid, err)
+	}
+
+	// Create fileStorer from GCS config if needed
+	var fileStorer filestore.Store
+	filestoreOpts := make([]filestore.Option, 0)
+	if gcsConfig.Bucket != "" {
+		// Create a new GCS Client with compression disabled. This cache
+		// will already compress blobs before storing them, so we don't
+		// want the gcs lib to attempt to compress them too.
+		gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), gcsConfig.Bucket, "", gcsConfig.Credentials, gcsConfig.ProjectID, false /*=enableCompression*/)
+		if err != nil {
 			return nil, err
 		}
-	} else if *clearPrevCacheOnStartup {
-		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
-			return nil, status.InternalErrorf("failed to delete cache from previous run: %s", err)
-		}
+		// Not going to  set custom time ttl here since meta cache should take care of this.
+		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, gcsConfig.AppName))
+	}
+	fileStorer = filestore.New(filestoreOpts...)
+
+	var opts []Option
+	if gcsConfig.TTLDays != nil {
+		opts = append(opts, WithGCSTTLDays(*gcsConfig.TTLDays))
 	}
 
-	rcConfig := &Config{
-		RootDir:           filepath.Join(*rootDirectory, *subdir),
-		Hostname:          *hostName,
-		ListenAddr:        *listen,
-		HTTPPort:          *httpPort,
-		GRPCPort:          *gRPCPort,
+	raftAddr := fmt.Sprintf("%s:%d", *hostName, *httpPort)
+	grpcAddr := fmt.Sprintf("%s:%d", *hostName, *gRPCPort)
+	grpcListeningAddr := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
+
+	serverConfig := &config.ServerConfig{
+		RootDir:           rootDir,
+		RaftAddr:          raftAddr,
+		GRPCAddr:          grpcAddr,
+		GRPCListeningAddr: grpcListeningAddr,
+		NHID:              nhid,
 		Partitions:        ps,
-		PartitionMappings: *partitionMappings,
-		LogDBConfigType:   store.LargeMemLogDBConfigType,
+		LogDBConfigType:   config.LargeMemLogDBConfigType,
+		FileStorer:        fileStorer,
+		GossipManager:     gossipManager,
 	}
-	return New(env, rcConfig)
+
+	return New(env, serverConfig, opts...)
 }
 
-func New(env environment.Env, conf *Config) (*Server, error) {
+type Option func(*Server)
+
+func WithGCSTTLDays(days int64) Option {
+	return func(s *Server) {
+		s.gcsTTLDays = days
+	}
+}
+
+func New(env environment.Env, conf *config.ServerConfig, opts ...Option) (*Server, error) {
 	rc := &Server{
 		env:          env,
 		conf:         conf,
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer:   filestore.New(),
 		accesses:     make(chan *accessTimeUpdate, *atimeBufferSize),
 		clock:        env.GetClock(),
+		fileStorer:   conf.FileStorer,
+	}
+
+	for _, opt := range opts {
+		opt(rc)
 	}
 
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
 		return nil, err
 	}
 
-	if env.GetGossipService() == nil {
+	if conf.GossipManager == nil {
 		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
 	}
-	rc.gossipManager = env.GetGossipService()
 
-	rc.raftAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.HTTPPort)
-	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
-	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
-
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType)
+	store, err := store.New(env, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +264,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter, err := bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
+	clusterStarter, err := bringup.New(rc.conf.GRPCAddr, conf.GossipManager, rc.store, conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -270,8 +299,8 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 func (rc *Server) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
-	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.raftAddr)
-	buf += fmt.Sprintf("GRPC addr: %s\n", rc.grpcAddr)
+	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.conf.RaftAddr)
+	buf += fmt.Sprintf("GRPC addr: %s\n", rc.conf.GRPCAddr)
 	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
 	buf += "</pre>"
 	return buf
@@ -323,8 +352,8 @@ func (rc *Server) Stop(ctx context.Context) error {
 		}
 		rc.store.Stop(ctx)
 		log.Infof("raft cache store stopped")
-		rc.gossipManager.Leave()
-		rc.gossipManager.Shutdown()
+		rc.conf.GossipManager.Leave()
+		rc.conf.GossipManager.Shutdown()
 
 	})
 	return nil
@@ -335,7 +364,7 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version5)
+	return pebbleKey.Bytes(filestore.Version6)
 }
 
 func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
@@ -350,9 +379,10 @@ func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*send
 	return keys, nil
 }
 
-type keyAndLastAccessUsec struct {
+type atimeUpdateData struct {
 	key            []byte
 	lastAccessUsec int64
+	gcsMetadata    *sgpb.StorageMetadata_GCSMetadata
 }
 
 func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool {
@@ -360,14 +390,15 @@ func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool 
 	return age >= threshold
 }
 
-func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
-	atime := time.UnixMicro(lastAccessUsec)
+func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
+	atime := time.UnixMicro(a.lastAccessUsec)
 	if rc.clock.Since(atime) < *atimeUpdateThreshold {
 		return
 	}
 
 	up := &accessTimeUpdate{
-		key: key,
+		key:         a.key,
+		gcsMetadata: a.gcsMetadata,
 	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
@@ -380,10 +411,26 @@ func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		case rc.accesses <- up:
 			return
 		default:
-			log.Warningf("Dropping atime update for %q", key)
+			log.Warningf("Dropping atime update for %q", a.key)
 		}
 	}
 }
+
+func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.StorageMetadata_GCSMetadata) error {
+	if gcsMetadata != nil {
+		return nil
+	}
+	if gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays) {
+		return nil
+	}
+	// Note: we are not using the atime that was provided in the atime udpate
+	// task. This is fine because we just want to make sure the gcs file that were
+	// recently accessed are not deleted through GCS lifecycle management. Also,
+	// we want to prevent atime from moving backwards by a lot.
+	newAtime := rc.clock.Now()
+	return rc.fileStorer.UpdateBlobAtime(ctx, gcsMetadata, newAtime)
+}
+
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
@@ -396,7 +443,10 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 			return
 		}
 
-		_, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		start := rc.clock.Now()
+		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
+
+		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
 				batch.Add(&rfpb.UpdateAtimeRequest{
@@ -425,8 +475,18 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 	for {
 		select {
 		case accessTimeUpdate := <-rc.accesses:
+			key := accessTimeUpdate.key
+			err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
+			metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
+				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+			}).Inc()
+			if err != nil {
+				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
+				continue
+			}
 			keys = append(keys, &sender.KeyMeta{
-				Key:  accessTimeUpdate.key,
+				Key:  key,
 				Meta: rc.clock.Now().UnixMicro(),
 			})
 			if len(keys) >= atimeWriteBatchSize {
@@ -445,17 +505,33 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 
 type getMetadataResult struct {
 	found        map[*sgpb.FileRecord]*sgpb.FileMetadata
-	atimeUpdates []keyAndLastAccessUsec
+	atimeUpdates []atimeUpdateData
+}
+
+func (rc *Server) userGroupID(ctx context.Context) string {
+	user, err := rc.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return user.GetGroupID()
 }
 
 func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, fr := range req.GetFileRecords() {
+		if fr.GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
+		}
+	}
+
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.GetRequest{
@@ -482,9 +558,10 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 			if err == nil {
 				fr := k.Meta.(*sgpb.FileRecord)
 				res.found[fr] = r.GetFileMetadata()
-				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
 					lastAccessUsec: r.GetFileMetadata().GetLastAccessUsec(),
+					gcsMetadata:    r.GetFileMetadata().GetStorageMetadata().GetGcsMetadata(),
 				})
 			}
 		}
@@ -507,7 +584,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 		}
 
 		for _, p := range res.atimeUpdates {
-			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
+			rc.sendAccessTimeUpdate(p)
 		}
 	}
 
@@ -523,17 +600,25 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 
 type findMetadataResult struct {
 	found        map[*sgpb.FileRecord]bool
-	atimeUpdates []keyAndLastAccessUsec
+	atimeUpdates []atimeUpdateData
 }
 
 func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, fr := range req.GetFileRecords() {
+		if fr.GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
+		}
+	}
+
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.FindRequest{
@@ -563,9 +648,10 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 			present := findRsp.GetPresent()
 			res.found[k.Meta.(*sgpb.FileRecord)] = present
 			if present {
-				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
 					lastAccessUsec: findRsp.GetLastAccessUsec(),
+					gcsMetadata:    findRsp.GetGcsMetadata(),
 				})
 			}
 		}
@@ -588,7 +674,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 		}
 
 		for _, p := range res.atimeUpdates {
-			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
+			rc.sendAccessTimeUpdate(p)
 		}
 	}
 
@@ -619,13 +705,21 @@ func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOp
 }
 
 func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, op := range req.GetSetOperations() {
+		if op.GetFileMetadata().GetFileRecord().GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
+		}
+	}
+
 	keys, err := rc.setOperationsToKeyMetas(req.GetSetOperations())
 	if err != nil {
 		return nil, err
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
 		// always return nil for the interface, even on success.
@@ -672,13 +766,20 @@ func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequ
 }
 
 func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.DeleteResponse, error) {
+	groupID := rc.userGroupID(ctx)
+
+	for _, op := range req.GetDeleteOperations() {
+		if op.GetFileRecord().GetIsolation().GetGroupId() != groupID {
+			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
+		}
+	}
 	keys, err := rc.deleteOperationsToKeyMetas(req.GetDeleteOperations())
 	if err != nil {
 		return nil, err
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
 		// always return nil for the interface, even on success.

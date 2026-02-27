@@ -485,6 +485,8 @@ func GetBazelBuildFlags(wt *WebTester, appBaseURL string, opts ...SetupPageOptio
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "build ") {
 			buildFlags = append(buildFlags, strings.TrimPrefix(line, "build "))
+		} else if strings.HasPrefix(line, "common ") {
+			buildFlags = append(buildFlags, strings.TrimPrefix(line, "common "))
 		}
 	}
 	return buildFlags

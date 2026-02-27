@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "replay_action_lib",
     srcs = ["replay_action.go"],
@@ -9,12 +11,14 @@ go_library(
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/clientidentity",
         "//enterprise/server/remote_execution/operation",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
+        "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/build_event_publisher",
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -25,15 +29,17 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
         "//server/util/bazel_request",
+        "//server/util/canary",
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/ioutil",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/shlex",
         "//server/util/status",
-        "//server/util/uuid",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/types",
@@ -52,5 +58,3 @@ go_binary(
     embed = [":replay_action_lib"],
     visibility = ["//visibility:public"],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

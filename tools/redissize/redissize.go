@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/docker/go-units"
@@ -24,6 +25,7 @@ var (
 	target              = flag.String("target", "localhost:6380", "")
 	printThresholdBytes = flag.Int("print_larger_than", 0, "Print keys larger than this size in bytes")
 	outputFormat        = flag.String("output_format", "human_readable", "Output format: human_readable or csv")
+	maxRemainingTTL     = flag.Duration("max_ttl", 0*time.Second, "Only includes keys if the remaining TTL is less than this value, for measuring data expiring soon")
 )
 
 func main() {
@@ -33,11 +35,6 @@ func main() {
 
 	sizes := make(map[string]int64)
 	counts := make(map[string]int64)
-
-	type prefixSize struct {
-		prefix string
-		size   int64
-	}
 
 	ctx := context.Background()
 	cursor := uint64(0)
@@ -55,6 +52,9 @@ func main() {
 
 		cmds, err := c.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			for _, k := range keys {
+				if *maxRemainingTTL > 0 {
+					pipe.TTL(ctx, k)
+				}
 				pipe.MemoryUsage(ctx, k)
 			}
 			return nil
@@ -64,56 +64,32 @@ func main() {
 		}
 
 		for i, k := range keys {
-			p := strings.Split(k, "/")[0]
-			v, err := cmds[i].(*redis.IntCmd).Result()
+			usageCmdIdx := i
+			if *maxRemainingTTL > 0 {
+				usageCmdIdx = 2*i + 1
+				ttl, err := cmds[2*i].(*redis.DurationCmd).Result()
+				if err != nil && err != redis.Nil {
+					log.Warningf("ttl err: %s", err)
+				}
+				if ttl > *maxRemainingTTL {
+					continue
+				}
+			}
+
+			usage, err := cmds[usageCmdIdx].(*redis.IntCmd).Result()
 			if err != nil && err != redis.Nil {
 				log.Warningf("memusage err: %s", err)
 			}
-			if *printThresholdBytes > 0 && v > int64(*printThresholdBytes) {
-				fmt.Println("Large entry:", k, "; size="+units.BytesSize(float64(v)))
+			if *printThresholdBytes > 0 && usage > int64(*printThresholdBytes) {
+				fmt.Println("Large entry:", k, "; size="+units.BytesSize(float64(usage)))
 			}
-			if _, err := uuid.Parse(p); err == nil {
-				p = "invocation_logs"
-			}
-			if strings.HasPrefix(p, "warning-") {
-				p = "warning-*"
-			}
-			if p == "hit_tracker" && strings.HasSuffix(k, "/results") {
-				p = "hit_tracker/*/results"
-			} else if p == "hit_tracker" {
-				p = "hit_tracker_counts"
-			}
-			totalSize += v
-			sizes[p] += v
+			p := keyType(k)
+			totalSize += usage
+			sizes[p] += usage
 			counts[p] += 1
 			count++
 			if count%1000 == 0 {
-				fmt.Println("===")
-				fmt.Printf("Keys scanned: %d\n", count)
-				fmt.Printf("Average size: %.2f bytes\n", float64(totalSize)/float64(count))
-				var s []prefixSize
-				for k, v := range sizes {
-					s = append(s, prefixSize{k, v})
-				}
-				slices.SortFunc(s, func(a, b prefixSize) int {
-					if a.size > b.size {
-						return -1
-					} else if a.size == b.size {
-						return 0
-					} else {
-						return 1
-					}
-				})
-				if *outputFormat == "csv" {
-					fmt.Println("key_type,total_size_bytes,average_size_bytes,key_count")
-				}
-				for _, v := range s {
-					if *outputFormat == "human_readable" {
-						fmt.Printf("%s  %s\tavg=%s\tn=%d\n", padRight(v.prefix, 24), padRight(units.BytesSize(float64(v.size)), 10), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
-					} else {
-						fmt.Printf("%s,%d,%d,%d\n", v.prefix, v.size, v.size/counts[v.prefix], counts[v.prefix])
-					}
-				}
+				printOutput(count, totalSize, sizes, counts)
 			}
 		}
 	}
@@ -124,4 +100,55 @@ func padRight(s string, length int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", length-len(s))
+}
+
+func keyType(key string) string {
+	firstPiece := strings.Split(key, "/")[0]
+	if _, err := uuid.Parse(firstPiece); err == nil {
+		return "invocation_logs"
+	}
+	if strings.HasPrefix(firstPiece, "warning-") {
+		return "warning-*"
+	}
+	if firstPiece == "hit_tracker" && strings.HasSuffix(key, "/results") {
+		return "hit_tracker/*/results"
+	} else if firstPiece == "hit_tracker" {
+		return "hit_tracker_counts"
+	}
+	return firstPiece
+}
+
+func printOutput(count int, totalSize int64, sizes, counts map[string]int64) {
+
+	type prefixSize struct {
+		prefix string
+		size   int64
+	}
+
+	fmt.Println("===")
+	fmt.Printf("Keys scanned: %d\n", count)
+	fmt.Printf("Average size: %.2f bytes\n", float64(totalSize)/float64(count))
+	var s []prefixSize
+	for k, v := range sizes {
+		s = append(s, prefixSize{k, v})
+	}
+	slices.SortFunc(s, func(a, b prefixSize) int {
+		if a.size > b.size {
+			return -1
+		} else if a.size == b.size {
+			return 0
+		} else {
+			return 1
+		}
+	})
+	if *outputFormat == "csv" {
+		fmt.Println("key_type,total_size_bytes,average_size_bytes,key_count")
+	}
+	for _, v := range s {
+		if *outputFormat == "human_readable" {
+			fmt.Printf("%s  %s\tavg=%s\tn=%d\n", padRight(v.prefix, 24), padRight(units.BytesSize(float64(v.size)), 10), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
+		} else {
+			fmt.Printf("%s,%d,%d,%d\n", v.prefix, v.size, v.size/counts[v.prefix], counts[v.prefix])
+		}
+	}
 }

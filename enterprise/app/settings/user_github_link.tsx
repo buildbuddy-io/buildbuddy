@@ -179,7 +179,10 @@ export default class UserGitHubLink extends React.Component<Props, State> {
               <DialogBody>
                 <p>
                   After unlinking, you can also revoke app access via{" "}
-                  <TextLink href="https://github.com/settings/applications">GitHub OAuth app settings</TextLink>.
+                  <TextLink href="https://github.com/settings/apps/authorizations">
+                    GitHub Applications settings
+                  </TextLink>
+                  .
                 </p>
               </DialogBody>
               <DialogFooter>

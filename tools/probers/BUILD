@@ -10,6 +10,7 @@ container_image(
         "--logtostderr",
     ],
     files = [
+        "//tools/probers/bazelcache",
         "//tools/probers/bazelrbe",
         "//tools/probers/remote_runner",
         "@cloudprober",
@@ -35,6 +36,7 @@ container_push(
 pkg_tar(
     name = "files_tar",
     srcs = [
+        "//tools/probers/bazelcache",
         "//tools/probers/bazelrbe",
         "//tools/probers/remote_runner",
         "@cloudprober",

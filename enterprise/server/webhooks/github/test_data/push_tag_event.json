@@ -1,0 +1,46 @@
+{
+  "ref": "refs/tags/v1.0.0",
+  "before": "0000000000000000000000000000000000000000",
+  "after": "258044d28288d5f6f1c5928b0e22580296fec666",
+  "repository": {
+    "id": 338160417,
+    "node_id": "MDEwOlJlcG9zaXRvcnkzMzgxNjA0MTc=",
+    "name": "hello_bb_ci",
+    "full_name": "test/hello_bb_ci",
+    "private": true,
+    "owner": {
+      "name": "test",
+      "email": "test@buildbuddy.io",
+      "login": "test",
+      "id": 2414826,
+      "node_id": "MDQ6VXNlcjI0MTQ4MjY=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2414826?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/test",
+      "html_url": "https://github.com/test",
+      "type": "User",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/test/hello_bb_ci",
+    "description": null,
+    "fork": false,
+    "url": "https://github.com/test/hello_bb_ci",
+    "clone_url": "https://github.com/test/hello_bb_ci.git",
+    "default_branch": "main",
+    "master_branch": "main"
+  },
+  "pusher": { "name": "test", "email": "test@buildbuddy.io" },
+  "sender": {
+    "login": "test",
+    "id": 2414826,
+    "type": "User",
+    "site_admin": false
+  },
+  "created": true,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/test/hello_bb_ci/compare/v1.0.0",
+  "commits": [],
+  "head_commit": null
+}

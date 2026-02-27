@@ -186,7 +186,7 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 
 	zw := util.NewCompressWriter(pw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
-	cwc.CommitFn = func(int64) error {
+	cwc.SetCommitFn(func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
 			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
@@ -200,10 +200,10 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 			return writerCloseErr
 		}
 		return <-errch
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		cancel()
 		return nil
-	}
+	})
 	return cwc, nil
 }

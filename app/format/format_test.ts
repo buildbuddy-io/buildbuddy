@@ -124,6 +124,16 @@ describe("bytes", () => {
   });
 });
 
+describe("bytesIEC", () => {
+  it("should abbreviate large numbers", () => {
+    expect(format.bytesIEC(0)).toEqual("0B");
+    expect(format.bytesIEC(1)).toEqual("1B");
+    expect(format.bytesIEC(1023)).toEqual("1023B");
+    expect(format.bytesIEC(1024)).toEqual("1KB");
+    expect(format.bytesIEC(1024 + 512)).toEqual("1.5KB");
+  });
+});
+
 describe("count", () => {
   it("should abbreviate large numbers", () => {
     expect(format.count(0)).toEqual("0");

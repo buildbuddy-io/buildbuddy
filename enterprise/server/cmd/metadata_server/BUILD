@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -12,11 +12,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/raft/metadata",
         "//enterprise/server/remoteauth",
         "//proto:metadata_service_go_proto",
         "//server/config",
-        "//server/gossip",
         "//server/http/interceptors",
         "//server/real_environment",
         "//server/ssl",

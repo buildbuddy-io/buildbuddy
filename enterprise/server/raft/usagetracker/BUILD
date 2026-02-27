@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "usagetracker",
     srcs = ["usagetracker.go"],
@@ -28,7 +30,6 @@ go_library(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sync//semaphore",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

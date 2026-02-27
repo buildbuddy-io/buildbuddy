@@ -25,6 +25,8 @@ import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import {
   decodeMetricUrlParam,
   encodeActionMnemonicUrlParam,
+  encodeEffectivePoolUrlParam,
+  encodeExitCodeUrlParam,
   encodeMetricUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
@@ -35,6 +37,7 @@ import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
+const EMPTY_LABEL = "(empty)";
 
 function convertMetricUrlParam(param: string): MetricOption | undefined {
   const metric = decodeMetricUrlParam(param);
@@ -298,15 +301,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
 
     this.pendingDrilldownRequest?.cancel();
-    const promise = rpcService.service.getStatDrilldown(drilldownRequest);
-    this.pendingDrilldownRequest = promise;
-
-    this.setState({ loadingDrilldowns: true, drilldownsFailed: false, drilldownData: undefined });
-
-    promise
+    const promise = rpcService.service
+      .getStatDrilldown(drilldownRequest)
       .then((response) => this.setState({ drilldownData: response }))
       .catch(() => this.setState({ drilldownsFailed: true, drilldownData: undefined }))
       .finally(() => this.setState({ loadingDrilldowns: false }));
+    this.pendingDrilldownRequest = promise;
+
+    this.setState({ loadingDrilldowns: true, drilldownsFailed: false, drilldownData: undefined });
   }
 
   fetchExecutionList(heatmapSelection?: HeatmapSelection) {
@@ -339,16 +341,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     this.pendingEventsRequest?.cancel();
-    const promise = rpcService.service.searchExecution(request);
-    this.pendingEventsRequest = promise;
-
-    this.setState({
-      loadingEvents: true,
-      eventsFailed: false,
-      eventData: undefined,
-    });
-
-    promise
+    const promise = rpcService.service
+      .searchExecution(request)
       .then((response) => {
         console.log(response);
         this.setState({
@@ -360,6 +354,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         this.setState({ eventsFailed: true, eventData: undefined });
       })
       .finally(() => this.setState({ loadingEvents: false }));
+    this.pendingEventsRequest = promise;
+
+    this.setState({
+      loadingEvents: true,
+      eventsFailed: false,
+      eventData: undefined,
+    });
   }
 
   fetchInvocationList(groupId: string, heatmapSelection?: HeatmapSelection) {
@@ -391,7 +392,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     this.pendingEventsRequest?.cancel();
-    const promise = rpcService.service.searchInvocation(request);
+    const promise = rpcService.service
+      .searchInvocation(request)
+      .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
+      .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
+      .finally(() => this.setState({ loadingEvents: false }));
     this.pendingEventsRequest = promise;
 
     this.setState({
@@ -399,10 +404,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       eventsFailed: false,
       eventData: undefined,
     });
-    promise
-      .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
-      .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
-      .finally(() => this.setState({ loadingEvents: false }));
   }
 
   fetchEventList() {
@@ -445,7 +446,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
     this.pendingHeatmapRequest?.cancel();
-    const promise = rpcService.service.getStatHeatmap(heatmapRequest);
+    const promise = rpcService.service
+      .getStatHeatmap(heatmapRequest)
+      .then((response) =>
+        this.setState({
+          heatmapData: response,
+        })
+      )
+      .finally(() => this.setState({ loadingHeatmap: false }));
     this.pendingHeatmapRequest = promise;
 
     this.setState({
@@ -454,14 +462,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       drilldownData: undefined,
       eventData: undefined,
     });
-
-    promise
-      .then((response) =>
-        this.setState({
-          heatmapData: response,
-        })
-      )
-      .finally(() => this.setState({ loadingHeatmap: false }));
   }
 
   componentDidMount() {
@@ -570,43 +570,51 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
-    if (!e || !e.activeLabel) {
+    if (!e || !e.activePayload || e.activePayload.length === 0) {
       return;
     }
+    const originalLabel = (e.activePayload[0].payload as stats.DrilldownEntry).label || "";
+
     switch (d) {
       case stats.DrilldownType.USER_DRILLDOWN_TYPE:
-        this.navigateForBarClick("user", e.activeLabel);
+        this.navigateForBarClick("user", originalLabel);
         return;
       case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
-        this.navigateForBarClick("host", e.activeLabel);
+        this.navigateForBarClick("host", originalLabel);
         return;
       case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
-        this.navigateForBarClick("repo", e.activeLabel);
+        this.navigateForBarClick("repo", originalLabel);
         return;
       case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
-        this.navigateForBarClick("commit", e.activeLabel);
+        this.navigateForBarClick("commit", originalLabel);
         return;
       case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
-        this.navigateForBarClick("branch", e.activeLabel);
+        this.navigateForBarClick("branch", originalLabel);
         return;
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         if (capabilities.config.patternFilterEnabled) {
-          this.navigateForBarClick("pattern", e.activeLabel);
+          this.navigateForBarClick("pattern", originalLabel);
         }
         return;
       case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
         if (capabilities.config.tagsUiEnabled) {
-          this.navigateForBarClick("tag", e.activeLabel);
+          this.navigateForBarClick("tag", originalLabel);
         }
         return;
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeWorkerUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeWorkerUrlParam(originalLabel));
         return;
       case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeTargetLabelUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeTargetLabelUrlParam(originalLabel));
         return;
       case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
-        this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(originalLabel));
+        return;
+      case stats.DrilldownType.EFFECTIVE_POOL_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodeEffectivePoolUrlParam(originalLabel));
+        return;
+      case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodeExitCodeUrlParam(originalLabel));
         return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
@@ -648,20 +656,33 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "target (execution)";
       case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
         return "mnemonic (execution)";
+      case stats.DrilldownType.EFFECTIVE_POOL_DRILLDOWN_TYPE:
+        return "pool (execution)";
+      case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
+        return "exit code (execution)";
       default:
         return "???";
     }
   }
 
-  renderCustomTooltip(drilldownType: string, p: TooltipProps<any, any>) {
+  formatDrilldownLabel(drilldownType: stats.DrilldownType, label: string): string {
+    if (!label || label === "") {
+      return EMPTY_LABEL;
+    }
+    return label;
+  }
+
+  renderCustomTooltip(drilldownType: string, drilldownTypeEnum: stats.DrilldownType, p: TooltipProps<any, any>) {
     if (!this.state.drilldownData) {
       return null;
     }
     if (p.active && p.payload && p.payload.length > 0) {
+      const originalLabel = (p.payload[0].payload as stats.DrilldownEntry).label || "";
+      const formattedLabel = this.formatDrilldownLabel(drilldownTypeEnum, originalLabel);
       return (
         <div className="trend-chart-hover">
           <div>
-            {drilldownType}: {p.label}
+            {drilldownType}: {formattedLabel}
           </div>
           <div>
             Base:{" "}
@@ -884,14 +905,19 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
-                                    dataKey={(entry: stats.DrilldownEntry) => entry.label}
+                                    height={30}
+                                    dataKey="label"
+                                    tickFormatter={(label: string) => {
+                                      return this.formatDrilldownLabel(chart.drilldownType, label);
+                                    }}
                                   />
                                   <Tooltip
                                     allowEscapeViewBox={{ x: true, y: true }}
                                     wrapperStyle={{ zIndex: 1 }}
                                     content={this.renderCustomTooltip.bind(
                                       this,
-                                      this.formatDrilldownType(chart.drilldownType)
+                                      this.formatDrilldownType(chart.drilldownType),
+                                      chart.drilldownType
                                     )}
                                   />
                                   <Bar

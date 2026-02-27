@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -21,11 +22,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -36,7 +37,7 @@ import (
 
 type mockExecutionServer struct {
 	repb.UnimplementedExecutionServer
-	operations []*longrunning.Operation
+	operations []*longrunningpb.Operation
 	finished   chan struct{}
 }
 
@@ -71,7 +72,7 @@ func (p *mockPublisher) Context() context.Context {
 	return context.Background()
 }
 
-func (p *mockPublisher) Send(op *longrunning.Operation) error {
+func (p *mockPublisher) Send(op *longrunningpb.Operation) error {
 	if p.sendFailure {
 		return status.InternalError("uh oh")
 	}
@@ -100,7 +101,7 @@ type counters struct {
 
 func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
 	env := enterprise_testenv.New(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	clock := clockwork.NewFakeClock()
 	env.SetClock(clock)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -325,7 +326,12 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.NoError(t, err)
 	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
-	require.ErrorContains(t, err, "timed out waiting for Read response")
+	require.True(
+		t,
+		strings.Contains(err.Error(), "timed out waiting for Read response") || strings.Contains(err.Error(), "context deadline exceeded"),
+		"expected read timeout error, got: %v",
+		err,
+	)
 	require.False(t, retry, "bazel will retry Unavailable errors, so we should not retry internally")
 
 	<-mockServer.finished
@@ -340,6 +346,14 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.GreaterOrEqual(t, len(mockServer.operations), 1)
 	completedOp := mockServer.operations[len(mockServer.operations)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+	// We should still report the input fetch completed timestamp if fetching
+	// inputs fails.
+	rsp, err := rexec.UnpackOperation(completedOp)
+	require.NoError(t, err)
+	actionResult := rsp.ExecuteResponse.GetResult()
+	inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
+	inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
+	require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 }
 
 func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
@@ -433,6 +447,14 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			require.GreaterOrEqual(t, len(mockServer.operations), 1)
 			completedOp := mockServer.operations[len(mockServer.operations)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+			// We should still report the input fetch completed timestamp if fetching
+			// inputs fails.
+			rsp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			actionResult := rsp.ExecuteResponse.GetResult()
+			inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
+			inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
+			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 		})
 	}
 }

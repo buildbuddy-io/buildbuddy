@@ -19,13 +19,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -60,7 +60,7 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "executor.podman.runtime", runtimePath)
 
 	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	env.SetCommandRunner(&commandutil.CommandRunner{})
 	return env
 }
@@ -290,7 +290,7 @@ func TestSlowRun(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{
@@ -336,7 +336,7 @@ func TestRun_Timeout(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage, false)
 	require.NoError(t, err)
 
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -390,7 +390,7 @@ func TestExec_Timeout(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage, false)
 	require.NoError(t, err)
 
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -580,6 +580,11 @@ func TestUser(t *testing.T) {
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 
+			c, err = provider.New(ctx, &container.Init{Props: props})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
 			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
 			}, workDir, oci.Credentials{})

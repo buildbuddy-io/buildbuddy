@@ -15,7 +15,7 @@ go_library(
         "//server/util/proto",
         "//server/util/retry",
         "//server/util/status",
-        "@org_golang_google_genproto//googleapis/longrunning",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
@@ -31,5 +31,6 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

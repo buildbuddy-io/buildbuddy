@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -108,6 +109,19 @@ func consoleCursorMoveBeginningLine() {
 
 func consoleDeleteLines(n int) {
 	fmt.Print(escapeSeq + strconv.Itoa(n) + "M")
+}
+
+func resetTerminalStyles() {
+	// Streamed remote logs can include ANSI style sequences. Ensure styles are
+	// reset before returning so subsequent local CLI output and the shell prompt
+	// do not inherit stale formatting.
+	if terminal.IsTTY(os.Stderr) {
+		fmt.Fprint(os.Stderr, escapeSeq+"0m")
+		return
+	}
+	if terminal.IsTTY(os.Stdout) {
+		fmt.Fprint(os.Stdout, escapeSeq+"0m")
+	}
 }
 
 type RunOpts struct {
@@ -203,7 +217,7 @@ func determineRemote() (*gitRemote, error) {
 		Options: remoteNames,
 	}
 	if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select git remote: %w", err)
 	}
 
 	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
@@ -282,7 +296,7 @@ func runCommand(name string, args ...string) (string, error) {
 func isBinaryFile(path string) (bool, error) {
 	fileDetails, err := runCommand("file", "--mime", path)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("inspect file mime: %w", err)
 	}
 	isBinary := strings.Contains(fileDetails, "charset=binary")
 	return isBinary, nil
@@ -291,7 +305,7 @@ func isBinaryFile(path string) (bool, error) {
 func diffUntrackedFile(path string) (string, error) {
 	isBinary, err := isBinaryFile(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("check whether %q is binary: %w", path, err)
 	}
 
 	args := []string{"diff", "--no-index", "/dev/null", path}
@@ -303,7 +317,7 @@ func diffUntrackedFile(path string) (string, error) {
 		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
 		// check for this case.
 		if !strings.Contains(patch, "diff --git") {
-			return "", err
+			return "", fmt.Errorf("diff untracked file %q: %w", path, err)
 		}
 	}
 
@@ -372,7 +386,7 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 
 	currentBranch, err := getCurrentRef()
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("get current ref: %w", err)
 	}
 
 	currentBranchExistsRemotely := branchExistsRemotely(remoteData, currentBranch)
@@ -406,7 +420,7 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 
 		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
 		if err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("get head commit for local branch %q: %w", defaultBranch, err)
 		}
 		commit = defaultBranchCommitHash
 	}
@@ -596,6 +610,8 @@ func splitLogBuffer(buf []byte) []string {
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 	moveBack := 0
 
@@ -629,7 +645,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			MinLines:     100,
 		})
 		if err != nil {
-			return err
+			return status.WrapError(err, "get event log chunk")
 		}
 
 		chunks = append(chunks, l)
@@ -661,6 +677,8 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 
 // printLogs prints the logs with real-time streaming updates disabled
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 
 	for {
@@ -670,7 +688,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			MinLines:     100,
 		})
 		if err != nil {
-			return err
+			return status.WrapError(err, "get event log chunk")
 		}
 
 		if l.GetLive() {
@@ -689,15 +707,15 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 
 func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
-		return err
+		return fmt.Errorf("create output dir for %q: %w", outFile, err)
 	}
 	out, err := os.Create(outFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("create output file %q: %w", outFile, err)
 	}
 	defer out.Close()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
-		return err
+		return status.WrapError(err, "download blob")
 	}
 	return nil
 }
@@ -705,7 +723,7 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
 	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
 	if err != nil {
-		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
+		return nil, status.WrapErrorf(err, "get invocation %q", invocationID)
 	}
 
 	if len(childInRsp.GetInvocation()) < 1 {
@@ -731,12 +749,12 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse bytestream uri %q: %w", uri, err)
 	}
 	r := strings.TrimPrefix(u.RequestURI(), "/")
 	rn, err := digest.ParseDownloadResourceName(r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse bytestream resource name %q: %w", r, err)
 	}
 	return rn, nil
 }
@@ -750,7 +768,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	download := func(f *bespb.File) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
-			return "", nil
+			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
 		}
 		outFile := filepath.Join(outputBaseDir, BuildBuddyArtifactDir)
 		for _, p := range f.GetPathPrefix() {
@@ -758,38 +776,38 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		outFile = filepath.Join(outFile, f.GetName())
 		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
-			return "", err
+			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
 		outFile, err := download(f)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download main output %q: %w", f.GetName(), err)
 		}
 		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
 	}
 	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
 	for _, f := range supportingOutputs {
 		if _, err := download(f); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output %q: %w", f.GetName(), err)
 		}
 	}
 	for _, d := range supportingDirs {
 		rn, err := bytestreamURIToResourceName(d.GetUri())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve supporting output dir uri %q: %w", d.GetName(), err)
 		}
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output dir metadata %q: %w", d.GetName(), err)
 		}
 		outDir := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, d.GetName())
 		if err := os.MkdirAll(outDir, 0755); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("create supporting output dir %q: %w", outDir, err)
 		}
 		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{RootDir: outDir}); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output dir %q: %w", d.GetName(), err)
 		}
 	}
 
@@ -798,7 +816,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	for _, a := range mainLocalArtifacts {
 		rp, err := filepath.Rel(outputBaseDir, a)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compute relative artifact path for %q: %w", a, err)
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
@@ -953,6 +971,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		if latestErr == nil ||
 			!rexec.Retryable(latestErr) ||
+			status.IsPermissionDeniedError(latestErr) ||
 			status.IsDeadlineExceededError(latestErr) ||
 			ctx.Err() != nil {
 			retry = false
@@ -962,7 +981,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			break
 		}
 
-		log.Warnf("Remote run failed due to transient error. Retrying: %s", latestErr)
+		log.Warnf("Remote run failed due to a transient error. Retrying: %s", latestErr)
 		retryCount++
 	}
 	if *invocationIDFile != "" && len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].GetInvocationId() != "" {
@@ -1001,19 +1020,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
 			if err != nil {
-				return 1, fmt.Errorf("could not communicate with sidecar: %s", err)
+				return 1, fmt.Errorf("dial sidecar: %w", err)
 			}
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
 			if err != nil {
-				return 1, err
+				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
 			}
 			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
 			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
-				return 1, err
+				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
 				if len(outputs) > 1 {
@@ -1021,7 +1040,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				}
 				binPath := outputs[0]
 				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
 				}
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
@@ -1035,7 +1054,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
 				} else if err != nil {
-					return 1, err
+					return 1, fmt.Errorf("run local output %q: %w", binPath, err)
 				}
 				return 0, nil
 			}
@@ -1053,7 +1072,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, status.WrapError(err, "start remote run")
 	}
 	iid := rsp.GetInvocationId()
 
@@ -1091,7 +1110,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		var err error
 		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 		if err != nil {
-			return fmt.Errorf("could not retrieve invocation: %w", err)
+			return status.WrapErrorf(err, "get invocation %q", iid)
 		}
 		if len(inRsp.GetInvocation()) == 0 {
 			return fmt.Errorf("invocation not found")
@@ -1099,14 +1118,26 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		return nil
 	})
 	eg.Go(func() error {
-		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-			InvocationId: iid,
-		}})
+		execution, err := retry.Do(ctx, &retry.Options{
+			InitialBackoff: 500 * time.Millisecond,
+			MaxBackoff:     5 * time.Second,
+			Multiplier:     2,
+		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
+			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+				InvocationId: iid,
+			}})
+			if err != nil {
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("could not retrieve ci_runner execution: %w", err)
+			}
+			if len(execution.GetExecution()) == 0 {
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("ci_runner execution not found")
+			}
+			return execution, nil
+		})
 		if err != nil {
-			return fmt.Errorf("could not retrieve ci_runner execution: %w", err)
-		}
-		if len(execution.GetExecution()) == 0 {
-			return fmt.Errorf("ci_runner execution not found")
+			return err
 		}
 		executionID := execution.GetExecution()[0].GetExecutionId()
 		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
@@ -1129,7 +1160,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 
 	err = eg.Wait()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("wait for run result: %w", err)
 	}
 
 	return inRsp, execRsp, nil
@@ -1143,7 +1174,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
-		return 1, err
+		return 1, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer func() {
 		os.RemoveAll(tempDir)
@@ -1223,7 +1254,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		apiKey, err = login.GetAPIKey()
 		if err != nil {
 			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
-			return 1, err
+			return 1, fmt.Errorf("get api key: %w", err)
 		}
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
@@ -1248,11 +1279,11 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 
 	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
 
 	// Ensure all bazel remote runs use the remote cache.
@@ -1331,7 +1362,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 					unparsedArgs = unparsedArgs[1:]
 				}
 			} else {
-				return nil, err
+				return nil, fmt.Errorf("parse remote flags: %w", err)
 			}
 		}
 	}

@@ -15,9 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/cli/record"
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
@@ -89,6 +91,11 @@ func register() {
 			Handler: printlog.HandlePrint,
 		},
 		{
+			Name:    "record",
+			Help:    "Records command output and streams it to BuildBuddy.",
+			Handler: record.HandleRecord,
+		},
+		{
 			Name:    "remote",
 			Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
 			Handler: remotebazel.HandleRemoteBazel,
@@ -107,6 +114,11 @@ func register() {
 			Name:    "index",
 			Help:    "Sends updates to the remote codesearch index.",
 			Handler: index.HandleIndex,
+		},
+		{
+			Name:    "ui",
+			Help:    "Opens an interactive terminal UI for viewing builds.",
+			Handler: ui.HandleUI,
 		},
 		{
 			Name:    "update",

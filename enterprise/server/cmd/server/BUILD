@@ -3,6 +3,7 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//rules:utils.bzl", "runfiles_directory")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -27,6 +28,7 @@ go_library(
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/backends/memcache",
+        "//enterprise/server/backends/metacache",
         "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/backends/prom",
@@ -50,6 +52,7 @@ go_library(
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/iprules",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/ociregistry",
         "//enterprise/server/quota",
         "//enterprise/server/registry",
@@ -79,6 +82,7 @@ go_library(
         "//server/janitor",
         "//server/libmain",
         "//server/real_environment",
+        "//server/remote_cache/capabilities_server",
         "//server/telemetry",
         "//server/util/clickhouse",
         "//server/util/healthcheck",
@@ -111,7 +115,7 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
     tags = ["manual"],
@@ -145,7 +149,7 @@ pkg_tar(
         "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
     },
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
 )

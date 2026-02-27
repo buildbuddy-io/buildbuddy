@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,7 +39,6 @@ var (
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
 )
 
-type CacheMode int
 type counterType int
 
 const (
@@ -366,6 +366,22 @@ func (h *hitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) 
 	h.executedActionMetadata = md
 }
 
+func extractOriginInvocationID(md *repb.ExecutedActionMetadata) string {
+	if md == nil {
+		return ""
+	}
+	origin := &repb.OriginMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(md, origin)
+	if err != nil {
+		log.Debugf("Unable to unmarshal origin metadata: %v", err)
+		return ""
+	}
+	if !ok {
+		return ""
+	}
+	return origin.GetInvocationId()
+}
+
 func (h *hitTracker) TrackMiss(d *repb.Digest) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{
@@ -452,6 +468,11 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
 		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
+	if h.actionCache && stats.Status == Hit {
+		if originInvocationID := extractOriginInvocationID(h.executedActionMetadata); originInvocationID != "" {
+			result.OriginInvocationId = originInvocationID
+		}
+	}
 	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
 	b, err := proto.MarshalOld(result)
@@ -493,6 +514,7 @@ func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counte
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
+			metrics.GroupID:        groupID,
 			metrics.UsageTracked:   tracked,
 		}).Observe(bytesTransferredCache)
 		metrics.ServerUploadSizeBytes.With(prometheus.Labels{
@@ -519,6 +541,7 @@ func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counte
 	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.GroupID:        groupID,
 		metrics.UsageTracked:   tracked,
 	}).Observe(bytesTransferredCache)
 	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{

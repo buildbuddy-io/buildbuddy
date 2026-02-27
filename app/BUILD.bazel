@@ -43,6 +43,7 @@ ts_library(
 genrule(
     name = "style",
     srcs = [
+        "//app/root:colors.css",
         "//app/root:root.css",
         "//app/alert:alert.css",
         "//app/picker:picker.css",
@@ -93,7 +94,6 @@ genrule(
     cmd_bash = "touch $@",
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],

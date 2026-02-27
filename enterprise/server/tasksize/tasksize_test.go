@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -201,7 +201,8 @@ func TestApplyLimits(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
 		nil,
-		&repb.ExecutionTask{},
+		&repb.Command{},
+		&platform.Properties{},
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10,
 			EstimatedMilliCpu:      10,
@@ -216,19 +217,16 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
 		nil,
-		&repb.ExecutionTask{
-			Command: &repb.Command{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{Name: "recycle-runner", Value: "false"},
-					},
-				},
-			},
-		}, &scpb.TaskSize{
+		&repb.Command{},
+		&platform.Properties{
+			RecycleRunner: false,
+		},
+		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10,
 			EstimatedMilliCpu:      10,
 			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
-		})
+		},
+	)
 	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
@@ -238,23 +236,20 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
 		nil,
-		&repb.ExecutionTask{
-			Command: &repb.Command{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{Name: "recycle-runner", Value: "true"},
-					},
-				},
-				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-					{Name: "TEST_SIZE", Value: "large"},
-				},
+		&repb.Command{
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "TEST_SIZE", Value: "large"},
 			},
+		},
+		&platform.Properties{
+			RecycleRunner: true,
 		},
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10,
 			EstimatedMilliCpu:      10,
 			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
-		})
+		},
+	)
 	assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
 	assert.Equal(t, int64(1000), sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
@@ -281,18 +276,14 @@ func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
 		fp,
-		&repb.ExecutionTask{
-			Command: &repb.Command{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{Name: "recycle-runner", Value: "true"},
-					},
-				},
-			},
+		&repb.Command{},
+		&platform.Properties{
+			RecycleRunner: true,
 		},
 		&scpb.TaskSize{
 			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
-		})
+		},
+	)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk*10, sz.EstimatedFreeDiskBytes)
 }
 
@@ -302,18 +293,17 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
-	ts := sizer.Get(ctx, task)
+	props := &platform.Properties{}
+	ts := sizer.Get(ctx, cmd, props)
 
 	require.Nil(t, ts, "should not return a task size initially")
 
@@ -341,11 +331,11 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		// Set the completed timestamp so that the exec duration is 2 seconds.
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	err = sizer.Update(ctx, cmd, props, md)
 
 	require.NoError(t, err)
 
-	ts = sizer.Get(ctx, task)
+	ts = sizer.Get(ctx, cmd, props)
 
 	assert.Equal(
 		t, int64(917*1e6), ts.GetEstimatedMemoryBytes(),
@@ -361,17 +351,16 @@ func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
+	props := &platform.Properties{}
 
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
@@ -383,10 +372,10 @@ func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 		ExecutionStartTimestamp:     timestamppb.New(execStart),
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
-	ts := sizer.Get(ctx, task)
+	ts := sizer.Get(ctx, cmd, props)
 	assert.Equal(
 		t, int64(1e9), ts.GetEstimatedMemoryBytes(),
 		"mem estimate should equal recorded peak mem usage")
@@ -401,17 +390,16 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
+	props := &platform.Properties{}
 
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
@@ -424,26 +412,25 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
 	}
 
-	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
-	ts := sizer.Get(ctx, task)
+	ts := sizer.Get(ctx, cmd, props)
 	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
 	assert.Equal(t, tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
 
 	// Test actions have different minimums.
-	task = &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"test.sh"},
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "TEST_SIZE", Value: "enormous"},
-			},
+	cmd = &repb.Command{
+		Arguments: []string{"test.sh"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "TEST_SIZE", Value: "enormous"},
 		},
 	}
-	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	props = &platform.Properties{}
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
-	ts = sizer.Get(ctx, task)
+	ts = sizer.Get(ctx, cmd, props)
 	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
 	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
 }
@@ -453,7 +440,7 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 
 	tmp := testfs.MakeTempDir(t)
@@ -470,7 +457,8 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
   }
 }
 `)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
@@ -512,16 +500,15 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"big_linker_action", "<blah>"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"big_linker_action", "<blah>"},
 	}
-	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
+	props := &platform.Properties{}
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
 	// Get task size and make sure it reports the p90 CPU usage
-	ts := sizer.Get(ctx, task)
+	ts := sizer.Get(ctx, cmd, props)
 	assert.Equal(t, int64(4000), ts.GetEstimatedMilliCpu())
 }
 

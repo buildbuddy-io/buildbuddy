@@ -2,6 +2,7 @@ package explain
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -85,9 +86,13 @@ var (
 func HandleExplain(args []string) (int, error) {
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
-		if err != flag.ErrHelp {
+		if !errors.Is(err, flag.ErrHelp) {
 			log.Printf("Failed to parse flags: %s", err)
 		}
+		log.Print(explainCmdUsage)
+		return 1, nil
+	}
+	if len(explainCmd.Args()) > 0 {
 		log.Print(explainCmdUsage)
 		return 1, nil
 	}

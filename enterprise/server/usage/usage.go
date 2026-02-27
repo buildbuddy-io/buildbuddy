@@ -8,28 +8,32 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
 var (
-	region = flag.String("app.region", "", "The region in which the app is running.")
+	writeToOLAP = flag.Bool("app.write_usage_to_olap_db", false, "If true, write usage data to OLAP DB in addition to the primary DB write.")
 )
 
 const (
@@ -62,7 +66,7 @@ const (
 	// flushing fails due to transient errors.
 	redisKeyTTL = 5 * periodDuration
 
-	// Redis storage layout for buffered usage counts (V2):
+	// Redis storage layout for buffered usage counts:
 	//
 	// "usage/collections/{period}" points to a set of "collection" objects
 	// where each is an encoded `Collection` struct. The Collection struct is
@@ -80,6 +84,18 @@ const (
 	redisUsageKeyPrefix       = "usage/"
 	redisCollectionsKeyPrefix = redisUsageKeyPrefix + "collections/"
 	redisCountsKeyPrefix      = redisUsageKeyPrefix + "counts/"
+
+	// Redis storage layout for OLAP-format usage data, which allow arbitrary
+	// SKUs and labels:
+	//
+	// "usage/v2/collections/{period}" points to a set of encoded
+	// `OLAPCollection` structs. Each OLAPCollection contains a group ID
+	// and labels map.
+	//
+	// "usage/v2/counts/{period}/{encode(olapCollection)}" holds a map of
+	// per-SKU usage counts for each `OLAPCollection` within the period.
+	redisOLAPCollectionsKeyPrefix = redisUsageKeyPrefix + "v2/collections/"
+	redisOLAPCountsKeyPrefix      = redisUsageKeyPrefix + "v2/counts/"
 
 	// Time format used to store Redis keys.
 	// Example: 2020-01-01T00:00:00Z
@@ -117,6 +133,8 @@ type tracker struct {
 	rdb    redis.UniversalClient
 	clock  clockwork.Clock
 	region string
+	// See docs for [olaptables.RawUsage.BufferID]
+	bufferID string
 
 	flushLock interfaces.DistributedLock
 	stopFlush chan struct{}
@@ -135,16 +153,17 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 		return err
 	}
 	env.SetUsageTracker(ut)
-	ut.StartDBFlush()
+	ut.startDBFlush()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		ut.StopDBFlush()
+		ut.stopDBFlush()
 		return nil
 	})
 	return nil
 }
 
 func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
-	if *region == "" {
+	appRegion := region.ConfiguredAppRegion()
+	if appRegion == "" {
 		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
 	}
 	if env.GetDefaultRedisClient() == nil {
@@ -153,13 +172,17 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 	if env.GetMetricsCollector() == nil {
 		return nil, status.FailedPreconditionError("Metrics Collector must be configured for usage tracker.")
 	}
+	if *writeToOLAP && env.GetOLAPDBHandle() == nil {
+		return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage tracker when 'app.write_usage_to_olap_db' is true.")
+	}
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    *region,
+		region:    appRegion,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
+		bufferID:  fmt.Sprintf("%s:redis", appRegion),
 	}, nil
 }
 
@@ -233,13 +256,50 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
+	// Also write to v2 OLAP buffer if OLAP writes are enabled.
+	if *writeToOLAP {
+		if err := ut.incrementOLAPBuffer(ctx, groupID, t, labels, uc); err != nil {
+			return status.WrapError(err, "increment OLAP buffer")
+		}
+	}
+
 	ut.emitMetrics(groupID, labels.Origin, uc)
 	return nil
 }
 
-// StartDBFlush starts a goroutine that periodically flushes usage data from
+// incrementOLAPBuffer writes usage data to the v2 Redis buffer in OLAP format
+// (SKU + labels).
+func (ut *tracker) incrementOLAPBuffer(ctx context.Context, groupID string, t period, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
+	items := toOLAPLabeledSKUCounts(labels, uc)
+	if len(items) == 0 {
+		return nil
+	}
+
+	collectionsKey := olapCollectionsRedisKey(t)
+	for _, item := range items {
+		olapCollection := &usageutil.OLAPCollection{
+			GroupID: groupID,
+			Labels:  item.Labels,
+		}
+		encodedOLAPCollection := usageutil.EncodeOLAPCollection(olapCollection)
+		countsKey := olapCountsRedisKey(t, encodedOLAPCollection)
+
+		// In redis, `countsKey` stores a hash (map) with per-SKU counts.
+		// Increment the count for the current SKU.
+		if err := ut.env.GetMetricsCollector().IncrementCountWithExpiry(ctx, countsKey, item.SKU.String(), item.Count, redisKeyTTL); err != nil {
+			return status.WrapError(err, "increment OLAP count in redis")
+		}
+		// Add the OLAP collection to the set of collections with usage
+		if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsKey, redisKeyTTL, encodedOLAPCollection); err != nil {
+			return status.WrapError(err, "add OLAP collection to set in redis")
+		}
+	}
+	return nil
+}
+
+// startDBFlush starts a goroutine that periodically flushes usage data from
 // Redis to the DB.
-func (ut *tracker) StartDBFlush() {
+func (ut *tracker) startDBFlush() {
 	go func() {
 		ctx := context.Background()
 		ticker := time.NewTicker(flushInterval)
@@ -257,8 +317,8 @@ func (ut *tracker) StartDBFlush() {
 	}()
 }
 
-// StopDBFlush cancels the goroutine started by StartDBFlush.
-func (ut *tracker) StopDBFlush() {
+// stopDBFlush cancels the goroutine started by StartDBFlush.
+func (ut *tracker) stopDBFlush() {
 	ut.stopFlush <- struct{}{}
 }
 
@@ -301,6 +361,33 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	ctx, cancel = context.WithDeadline(ctx, deadline.Add(-5*time.Second))
 	defer cancel()
 
+	// Perform MySQL and ClickHouse flushes concurrently, so that if the MySQL
+	// flush takes too long we can still try to flush to ClickHouse.
+	var eg errgroup.Group
+
+	// Flush MySQL buffer (v1 keys)
+	eg.Go(func() error {
+		if err := ut.flushPrimaryDBBuffer(ctx, redisCleanupCtx); err != nil {
+			return fmt.Errorf("flush buffered usage data to primary DB: %w", err)
+		}
+		return nil
+	})
+
+	// Flush ClickHouse buffer (v2 keys) if enabled
+	if *writeToOLAP {
+		eg.Go(func() error {
+			if err := ut.flushOLAPBuffer(ctx, redisCleanupCtx); err != nil {
+				return fmt.Errorf("flush buffered usage data to ClickHouse: %w", err)
+			}
+			return nil
+		})
+	}
+
+	return eg.Wait()
+}
+
+// flushPrimaryDBBuffer reads from the v1 Redis buffer and writes to MySQL.
+func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx context.Context) error {
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
@@ -328,7 +415,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 			if !ok {
 				// Collection contains a new column; let a newer app flush
 				// instead.
-				log.Infof("Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
+				log.CtxInfof(ctx, "Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
 				return nil
 			}
 		}
@@ -345,7 +432,15 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			if len(h) == 0 {
-				alert.UnexpectedEvent("usage_unexpected_empty_hash_in_redis", "Usage counts in Redis are unexpectedly empty for key %q", countsKey)
+				// Normally every collection key should have a corresponding
+				// counts key containing a non-empty hash, but sometimes we may
+				// be missing counts if there are transient redis issues such as
+				// restarts or resharding events (e.g. when adding redis shards
+				// or temporarily losing connection to a shard). Increment a
+				// metric so we can track how often this happens and alert if it
+				// happens too often.
+				log.CtxInfof(ctx, "Usage counts in Redis are empty for key %q", countsKey)
+				metrics.UsageTrackerMissingCollectionCountsCount.Inc()
 				continue
 			}
 			counts, err := stringMapToCounts(h)
@@ -353,9 +448,12 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
-			if err := ut.flushCounts(ctx, collection.GroupID, p, collection.UsageLabels(), counts); err != nil {
+			groupID := collection.GroupID
+			labels := collection.UsageLabels()
+			if err := ut.flushCountsToPrimaryDB(ctx, groupID, p, labels, counts); err != nil {
 				return err
 			}
+
 			// Remove the collection data from Redis now that it has been
 			// flushed to the DB.
 			pipe := ut.rdb.TxPipeline()
@@ -369,7 +467,86 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	return nil
 }
 
-func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+// flushOLAPBuffer reads from the v2 Redis buffer and writes to ClickHouse.
+// The v2 buffer stores data in OLAP format (SKU + labels map).
+func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.Context) error {
+	var olapRows []*olaptables.RawUsage
+	cleanupPipe := ut.rdb.Pipeline()
+
+	// Loop through usage periods starting from the oldest period
+	// that may exist in Redis (based on key expiration time) and looping up until
+	// we hit a period which is not yet "settled".
+	oldestPeriod := ut.oldestWritablePeriod()
+	for p := oldestPeriod; ut.isSettled(p); p = p.Next() {
+		// Read usage counts from redis
+		collectionsKey := olapCollectionsRedisKey(p)
+		encodedCollections, err := ut.rdb.SMembers(ctx, collectionsKey).Result()
+		if err != nil {
+			return err
+		}
+		if len(encodedCollections) == 0 {
+			continue
+		}
+
+		if p.Equal(oldestPeriod) {
+			alert.UnexpectedEvent("usage_olap_flush_not_keeping_up", "Flushing OLAP usage data that is close to redis TTL - some usage data may be lost")
+		}
+
+		for _, encodedCollection := range encodedCollections {
+			collection, err := usageutil.DecodeOLAPCollection(encodedCollection)
+			if err != nil {
+				return status.WrapError(err, "decode OLAP collection")
+			}
+
+			// Read the counts from Redis (hash of SKU => count)
+			countsKey := olapCountsRedisKey(p, encodedCollection)
+			counts, err := ut.rdb.HGetAll(ctx, countsKey).Result()
+			if err != nil {
+				if err == redis.Nil {
+					alert.UnexpectedEvent("usage_unexpected_empty_olap_count_in_redis", "OLAP usage count in Redis is unexpectedly empty for key %q", countsKey)
+					continue
+				}
+				return err
+			}
+
+			for key, countStr := range counts {
+				count, err := strconv.ParseInt(countStr, 10, 64)
+				if err != nil {
+					return status.WrapError(err, "parse OLAP count in Redis")
+				}
+				olapRows = append(olapRows, &olaptables.RawUsage{
+					GroupID:     collection.GroupID,
+					SKU:         sku.SKU(key),
+					Labels:      collection.Labels,
+					PeriodStart: p.Start(),
+					BufferID:    ut.bufferID,
+					Count:       count,
+				})
+			}
+
+			cleanupPipe.SRem(redisCleanupCtx, collectionsKey, encodedCollection)
+			cleanupPipe.Del(redisCleanupCtx, countsKey)
+		}
+	}
+
+	// Flush accumulated OLAP rows.
+	if len(olapRows) > 0 {
+		if err := ut.env.GetOLAPDBHandle().FlushUsages(ctx, olapRows); err != nil {
+			return status.WrapError(err, "flush OLAP usage records")
+		}
+	}
+
+	// Now that we've flushed, clean up the redis buffers. Note that if this
+	// cleanup fails, we may wind up flushing the same data again. The Usage
+	// view is responsible for deduping rows in order to handle this case.
+	if _, err := cleanupPipe.Exec(redisCleanupCtx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		tu := &tables.Usage{
@@ -526,6 +703,14 @@ func countsRedisKey(c period, encodedCollection string) string {
 	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, c, encodedCollection)
 }
 
+func olapCollectionsRedisKey(c period) string {
+	return fmt.Sprintf("%s%s", redisOLAPCollectionsKeyPrefix, c)
+}
+
+func olapCountsRedisKey(c period, encodedOLAPCollection string) string {
+	return fmt.Sprintf("%s%s/%s", redisOLAPCountsKeyPrefix, c, encodedOLAPCollection)
+}
+
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	counts := map[string]int64{}
 	if tu.ActionCacheHits > 0 {
@@ -592,4 +777,145 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		CPUNanos:                             hInt64["cpu_nanos"],
 		MemoryGBUsec:                         hInt64["memory_gb_usec"],
 	}, nil
+}
+
+// toLabelMap converts primary DB labels to new OLAP labels.
+func toLabelMap(labels *tables.UsageLabels) map[sku.LabelName]sku.LabelValue {
+	mapSize := 0
+	if labels.Origin != "" {
+		mapSize++
+	}
+	if labels.Client != "" {
+		mapSize++
+	}
+	if labels.Server != "" {
+		mapSize++
+	}
+	m := make(map[sku.LabelName]sku.LabelValue, mapSize)
+	if labels.Origin != "" {
+		m[sku.Origin] = sku.LabelValue(labels.Origin)
+	}
+	if labels.Client != "" {
+		m[sku.Client] = sku.LabelValue(labels.Client)
+	}
+	if labels.Server != "" {
+		m[sku.Server] = sku.LabelValue(labels.Server)
+	}
+	return m
+}
+
+// labeledSKUCount contains a subset of RawUsage columns. It is used when
+// converting the MySQL-format rows to OLAP-format when buffering usage to
+// Redis.
+//
+// TODO(bduffany): remove once we're using OLAP-format rows directly.
+type labeledSKUCount struct {
+	Labels map[sku.LabelName]sku.LabelValue
+	SKU    sku.SKU
+	Count  int64
+}
+
+// toOLAPLabeledSKUCounts converts a MySQL-shaped UsageLabels+UsageCounts to
+// multiple RawUsage rows containing only labels, SKU, and count.
+func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCounts) []labeledSKUCount {
+	baseLabels := toLabelMap(labels)
+	var items []labeledSKUCount
+
+	if counts.ActionCacheHits > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteCacheACHits,
+			Labels: baseLabels,
+			Count:  counts.ActionCacheHits,
+		})
+	}
+	if counts.CASCacheHits > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteCacheCASHits,
+			Labels: baseLabels,
+			Count:  counts.CASCacheHits,
+		})
+	}
+	if counts.Invocations > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.BuildEventsBESCount,
+			Labels: baseLabels,
+			Count:  counts.Invocations,
+		})
+	}
+	if counts.LinuxExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
+			Count:  counts.LinuxExecutionDurationUsec,
+		})
+	}
+	if counts.MacExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedFalse),
+			Count:  counts.MacExecutionDurationUsec,
+		})
+	}
+	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedTrue),
+			Count:  counts.SelfHostedLinuxExecutionDurationUsec,
+		})
+	}
+	if counts.SelfHostedMacExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedTrue),
+			Count:  counts.SelfHostedMacExecutionDurationUsec,
+		})
+	}
+	if counts.TotalDownloadSizeBytes > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteCacheCASDownloadedBytes,
+			Labels: baseLabels,
+			Count:  counts.TotalDownloadSizeBytes,
+		})
+	}
+	if counts.TotalUploadSizeBytes > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteCacheCASUploadedBytes,
+			Labels: baseLabels,
+			Count:  counts.TotalUploadSizeBytes,
+		})
+	}
+	if counts.TotalCachedActionExecUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteCacheACCachedExecDurationNanos,
+			Labels: baseLabels,
+			Count:  counts.TotalCachedActionExecUsec,
+		})
+	}
+	if counts.CPUNanos > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerCPUNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
+			Count:  counts.CPUNanos,
+		})
+	}
+	if counts.MemoryGBUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
+			Count:  counts.MemoryGBUsec,
+		})
+	}
+	return items
+}
+
+// appendExecutionLabels returns a new map which is a clone of the given map
+// with the given OS and self-hosted labels applied.
+func appendExecutionLabels(m map[sku.LabelName]sku.LabelValue, os, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
+	out := make(map[sku.LabelName]sku.LabelValue, len(m)+2)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[sku.OS] = os
+	out[sku.SelfHosted] = selfHosted
+	return out
 }

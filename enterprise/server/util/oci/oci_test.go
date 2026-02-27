@@ -18,15 +18,17 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,6 +41,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -349,7 +352,7 @@ func TestResolve(t *testing.T) {
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
-				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
@@ -357,7 +360,7 @@ func TestResolve(t *testing.T) {
 						Platform: &tc.imagePlatform,
 					},
 				})
-				registry.PushIndex(t, index, tc.imageName+"_index")
+				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 					pulledImage, err := newResolver(t, te).Resolve(
@@ -365,6 +368,7 @@ func TestResolve(t *testing.T) {
 						registry.ImageAddress(nameToResolve),
 						tc.args.platform,
 						tc.args.credentials,
+						false, /*=useOCIFetcher*/
 					)
 					if tc.checkError != nil {
 						require.True(t, tc.checkError(err))
@@ -441,14 +445,14 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				counter := newRequestCounter()
+				counter := testhttp.NewRequestCounter()
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 						counter.Inc(r)
 						return true
 					},
 				})
-				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image")
+				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
@@ -456,7 +460,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 						Platform: &tc.imagePlatform,
 					},
 				})
-				registry.PushIndex(t, index, tc.imageName+"_index")
+				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 					pulledImage, err := newResolver(t, te).Resolve(
@@ -464,16 +468,17 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 						registry.ImageAddress(nameToResolve),
 						tc.args.platform,
 						tc.args.credentials,
+						false, /*=useOCIFetcher*/
 					)
 					require.NoError(t, err)
 
-					counter.reset()
+					counter.Reset()
 
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
 
 					expected := map[string]int{}
-					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 					configDigest, err := pulledImage.ConfigName()
 					require.NoError(t, err)
@@ -486,12 +491,12 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					// Layer.DiffID() call will make a request to fetch the config file.
 					_, err = pulledImage.ConfigFile()
 					require.NoError(t, err)
-					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 					for _, layer := range layers {
 						_, err := layer.DiffID()
 						require.NoError(t, err)
-						require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+						require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 					}
 				}
 			})
@@ -537,7 +542,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 			return true
 		},
 	})
-	imageName, image := originalRegistry.PushRandomImage(t)
+	imageName, image := originalRegistry.PushRandomImage(t, nil)
 	imageDigest, err := image.Digest()
 	require.NoError(t, err)
 
@@ -556,7 +561,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Configure the resolver to use the mirror as a mirror for the original registry.
-	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+	flags.Set(t, "executor.container_registry_mirrors", []interfaces.MirrorConfig{
 		{
 			OriginalURL: "http://" + originalRegistry.Address(),
 			MirrorURL:   "http://" + mirrorRegistry.Address(),
@@ -572,6 +577,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -586,7 +592,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 }
 
 func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
-	imageName, _ := registry.PushRandomImage(t)
+	imageName, _ := registry.PushRandomImage(t, nil)
 	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
@@ -594,7 +600,9 @@ func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testre
 			Arch: runtime.GOARCH,
 			Os:   runtime.GOOS,
 		},
-		oci.Credentials{})
+		oci.Credentials{},
+		false, /*=useOCIFetcher*/
+	)
 	return err
 }
 
@@ -693,14 +701,14 @@ func TestResolve_WithCache(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-			counter := newRequestCounter()
+			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					counter.Inc(r)
 					return true
 				},
 			})
-			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 				Add: pushedImage,
@@ -708,7 +716,7 @@ func TestResolve_WithCache(t *testing.T) {
 					Platform: &tc.imagePlatform,
 				},
 			})
-			registry.PushIndex(t, index, tc.imageName+"_index")
+			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
 			// Test with normal image manifest
 			{
@@ -833,7 +841,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	counter := newRequestCounter()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -841,7 +849,7 @@ func TestResolve_Concurrency(t *testing.T) {
 		},
 	})
 	imageName := "test_resolve_concurrency"
-	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image")
+	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image", nil)
 	pushedLayers, err := pushedImage.Layers()
 	require.NoError(t, err)
 	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
@@ -870,7 +878,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	for digest, _ := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
-	counter.reset()
+	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
@@ -881,6 +889,7 @@ func TestResolve_Concurrency(t *testing.T) {
 			Os:   runtime.GOOS,
 		},
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -921,7 +930,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	}
 	layerWG.Wait()
 	close(layerChan)
-	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 
 	for result := range layerChan {
 		require.NoError(t, result.digestErr)
@@ -952,14 +961,27 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
 
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	grpcServer, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
+
+	// Set up OCI fetcher server and client
+	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	require.NoError(t, err)
+	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
+
 	go runServer()
+
+	// Create OCI fetcher client and set it on the env
+	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	te.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
+
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
-	counter.reset()
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *testhttp.RequestCounter) {
+	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
@@ -967,6 +989,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 		imageAddress,
 		tc.args.platform,
 		tc.args.credentials,
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -977,38 +1000,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 	files := layerFiles(t, layers[0])
 	require.Empty(t, cmp.Diff(tc.imageFiles, files))
 
-	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
-}
-
-type requestCounter struct {
-	mu     sync.Mutex
-	counts map[string]int
-}
-
-func newRequestCounter() *requestCounter {
-	return &requestCounter{counts: make(map[string]int)}
-}
-
-func (c *requestCounter) Inc(r *http.Request) {
-	c.mu.Lock()
-	c.counts[r.Method+" "+r.URL.Path]++
-	c.mu.Unlock()
-}
-
-func (c *requestCounter) snapshot() map[string]int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	snap := make(map[string]int, len(c.counts))
-	for k, v := range c.counts {
-		snap[k] = v
-	}
-	return snap
-}
-
-func (c *requestCounter) reset() {
-	c.mu.Lock()
-	c.counts = map[string]int{}
-	c.mu.Unlock()
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
 }
 
 func TestResolveImageDigest_TagExists(t *testing.T) {
@@ -1017,7 +1009,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 	registry := testregistry.Run(t, testregistry.Opts{})
 
 	imageName := "image_tag_exists"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
@@ -1056,7 +1048,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1065,14 +1057,14 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	})
 
 	imageName := "cache_hit"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName + "@" + pushedDigest.String())
 
 	resolver := newResolver(t, te)
 
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1084,14 +1076,14 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 }
 
 func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1100,7 +1092,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	})
 
 	imageName := "cache_hit"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
@@ -1108,7 +1100,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	resolver := newResolver(t, te)
 
 	{
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
@@ -1124,11 +1116,11 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			http.MethodGet + " /v2/":                                    1,
 			http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 		}
-		require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
+		require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 	}
 
 	{
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
@@ -1141,14 +1133,14 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-		require.Empty(t, counter.snapshot())
+		require.Empty(t, counter.Snapshot())
 	}
 
 	{
 		ref, err := name.ParseReference(nameToResolve)
 		require.NoError(t, err)
 		registryAndRepoNoTag := ref.Context().String()
-		counter.reset()
+		counter.Reset()
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			registryAndRepoNoTag,
@@ -1161,7 +1153,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-		require.Empty(t, counter.snapshot())
+		require.Empty(t, counter.Snapshot())
 	}
 }
 
@@ -1169,7 +1161,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-	counter := newRequestCounter()
+	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			counter.Inc(r)
@@ -1178,7 +1170,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	})
 
 	imageName := "cache_expiration"
-	_, img := registry.PushNamedImage(t, imageName)
+	_, img := registry.PushNamedImage(t, imageName, nil)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
@@ -1187,7 +1179,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te.SetClock(fakeClock)
 	resolver := newResolver(t, te)
 
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1203,10 +1195,10 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
-	require.Empty(t, cmp.Diff(expectedFirst, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expectedFirst, counter.Snapshot()))
 
 	// Immediate resolve should be a cache hit; no HTTP requests.
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1217,11 +1209,11 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 
 	// Advance time to just before TTL expiry; still a cache hit.
 	fakeClock.Advance(15*time.Minute - time.Second)
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1232,11 +1224,11 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
-	require.Empty(t, counter.snapshot())
+	require.Empty(t, counter.Snapshot())
 
-	// Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
+	// Advance past TTL; expect cache refresh (HEAD manifest).
 	fakeClock.Advance(2 * time.Second)
-	counter.reset()
+	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
@@ -1252,5 +1244,458 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
-	require.Empty(t, cmp.Diff(expectedRefresh, counter.snapshot()))
+	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
+}
+
+// TestResolveWithOCIFetcher_NoClient verifies that Resolve fails with
+// FailedPreconditionError when useOCIFetcher=true but no OCIFetcherClient
+// is configured in the environment.
+func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
+	// Use a test env without OCIFetcherClient configured
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+	registry.PushNamedImage(t, "test_image", nil)
+
+	_, err := newResolver(t, te).Resolve(
+		context.Background(),
+		registry.ImageAddress("test_image"),
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got: %v", err)
+	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+}
+
+// TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,
+// validating basic image resolution scenarios:
+//   - Resolving an existing image without credentials succeeds and returns correct layer contents
+//   - Resolving an invalid image name returns InvalidArgumentError
+//   - Resolving an image without proper authorization returns PermissionDeniedError
+//   - Resolving a platform-specific image matches the correct variant even when not explicitly specified
+//
+// Both direct image references and index references are tested for each scenario.
+func TestResolveWithOCIFetcher(t *testing.T) {
+	// Helper to check for auth errors - OCIFetcher returns Unauthenticated for 401 errors,
+	// while the direct puller path returns PermissionDenied. Accept either.
+	isAuthError := func(err error) bool {
+		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
+	}
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
+
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+		},
+		{
+			name: "resolving an invalid image name fails with invalid argument error",
+
+			imageName: "resolve_invalid",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an invalid image name fails with invalid argument error"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: ":invalid",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+			checkError: status.IsInvalidArgumentError,
+		},
+		{
+			name: "resolving an existing image without authorization fails",
+
+			imageName: "resolve_unauthed",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without authorization fails"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_unauthed",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+			checkError: isAuthError,
+			opts: testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					if r.Method == "GET" {
+						matches, err := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path)
+						require.NoError(t, err)
+						if matches {
+							w.WriteHeader(401)
+							return false
+						}
+					}
+					return true
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := setupTestEnvWithCache(t)
+			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+			registry := testregistry.Run(t, tc.opts)
+			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
+
+			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+				Add: pushedImage,
+				Descriptor: v1.Descriptor{
+					Platform: &tc.imagePlatform,
+				},
+			})
+			registry.PushIndex(t, index, tc.imageName+"_index", nil)
+
+			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+				pulledImage, err := newResolver(t, te).Resolve(
+					context.Background(),
+					registry.ImageAddress(nameToResolve),
+					tc.args.platform,
+					tc.args.credentials,
+					true, /*=useOCIFetcher*/
+				)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err))
+					continue
+				}
+				require.NoError(t, err)
+				layers, err := pulledImage.Layers()
+				require.NoError(t, err)
+				require.Equal(t, 1, len(layers))
+				require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
+			}
+		})
+	}
+}
+
+// TestResolveWithOCIFetcher_Layers_DiffIDs exercises Resolver.Resolve with
+// useOCIFetcher=true and verifies that calling Image.Layers() or Layer.DiffID()
+// does not result in additional HTTP requests to the registry beyond fetching
+// the config file.
+//
+// This is a regression test for an incident where the go-containerregistry
+// library would fetch the entire uncompressed layer to compute the DiffID
+// if it wasn't available in the config file.
+//
+// Expected behavior:
+//   - Image.Layers() makes no HTTP requests
+//   - Layer.DiffID() makes no HTTP requests after ConfigFile() is fetched
+func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
+
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
+	} {
+		name := tc.name
+		t.Run(name, func(t *testing.T) {
+			te := setupTestEnvWithCache(t)
+			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+			counter := testhttp.NewRequestCounter()
+			registry := testregistry.Run(t, testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					counter.Inc(r)
+					return true
+				},
+			})
+			_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
+
+			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+				Add: pushedImage,
+				Descriptor: v1.Descriptor{
+					Platform: &tc.imagePlatform,
+				},
+			})
+			registry.PushIndex(t, index, tc.imageName+"_index", nil)
+
+			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+				pulledImage, err := newResolver(t, te).Resolve(
+					context.Background(),
+					registry.ImageAddress(nameToResolve),
+					tc.args.platform,
+					tc.args.credentials,
+					true, /*=useOCIFetcher*/
+				)
+				require.NoError(t, err)
+
+				counter.Reset()
+
+				layers, err := pulledImage.Layers()
+				require.NoError(t, err)
+
+				expected := map[string]int{}
+				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+				configDigest, err := pulledImage.ConfigName()
+				require.NoError(t, err)
+				// With OCIFetcher, fetching the config blob uses FetchBlob which:
+				// - Reuses the puller from Resolve() (no additional GET /v2/)
+				// - Makes a HEAD request for the config blob to get size for caching
+				// - Makes a GET request for the config blob data
+				expected = map[string]int{
+					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
+				}
+
+				// To make the DiffID() request counts always be zero,
+				// fetch the config file here. Otherwise the first
+				// Layer.DiffID() call will make a request to fetch the config file.
+				_, err = pulledImage.ConfigFile()
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+				for _, layer := range layers {
+					_, err := layer.DiffID()
+					require.NoError(t, err)
+					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+				}
+			}
+		})
+	}
+}
+
+// TestResolveWithOCIFetcher_Concurrency exercises Resolver.Resolve with
+// useOCIFetcher=true and verifies correct behavior when multiple goroutines
+// concurrently access layer contents.
+//
+// Expected behavior:
+//   - Each layer is fetched exactly once from the registry (no duplicate requests)
+//   - All goroutines receive correct layer data and DiffIDs
+//   - No race conditions occur during concurrent access
+func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	counter := testhttp.NewRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName := "test_resolve_concurrency"
+	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image", nil)
+	pushedLayers, err := pushedImage.Layers()
+	require.NoError(t, err)
+	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
+	pushedDigestToDiffID := make(map[v1.Hash]v1.Hash, len(pushedLayers))
+	for _, pushedLayer := range pushedLayers {
+		digest, err := pushedLayer.Digest()
+		require.NoError(t, err)
+		files := layerFiles(t, pushedLayer)
+		pushedDigestToFiles[digest] = files
+		diffID, err := pushedLayer.DiffID()
+		require.NoError(t, err)
+		pushedDigestToDiffID[digest] = diffID
+	}
+
+	configDigest, err := pushedImage.ConfigName()
+	require.NoError(t, err)
+
+	imageAddress := registry.ImageAddress(imageName + "_image")
+	// With OCIFetcher, there are:
+	// - 1 GET /v2/: From OCIFetcher server (puller is cached after first request)
+	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
+	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
+	// - 1 GET manifest
+	// - 1 HEAD + 1 GET for config blob
+	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	expected := map[string]int{
+		http.MethodGet + " /v2/": 1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
+		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+	}
+	for digest, _ := range pushedDigestToFiles {
+		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
+	}
+	counter.Reset()
+	c := &claims.Claims{UserID: "US123"}
+	testContext := contextWithUnverifiedJWT(c)
+	pulledImage, err := newResolver(t, te).Resolve(
+		testContext,
+		imageAddress,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, len(pushedLayers))
+
+	var layerWG sync.WaitGroup
+	layerChan := make(chan layerResult, len(layers))
+	for _, layer := range layers {
+		layerWG.Add(1)
+		go func(layer v1.Layer) {
+			defer layerWG.Done()
+			digest, digestErr := layer.Digest()
+			diffID, diffIDErr := layer.DiffID()
+			rc, err := layer.Compressed()
+			if err != nil {
+				layerChan <- layerResult{
+					digest:        digest,
+					digestErr:     digestErr,
+					diffID:        diffID,
+					diffIDErr:     diffIDErr,
+					compressedErr: err,
+				}
+				return
+			}
+			defer rc.Close()
+			compressed, err := io.ReadAll(rc)
+			layerChan <- layerResult{
+				digest:        digest,
+				digestErr:     digestErr,
+				diffID:        diffID,
+				diffIDErr:     diffIDErr,
+				compressed:    compressed,
+				compressedErr: err,
+			}
+		}(layer)
+	}
+	layerWG.Wait()
+	close(layerChan)
+	require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+
+	for result := range layerChan {
+		require.NoError(t, result.digestErr)
+		require.NoError(t, result.diffIDErr)
+		require.NoError(t, result.compressedErr)
+		pushedDiffID := pushedDigestToDiffID[result.digest]
+		require.Equal(t, pushedDiffID, result.diffID)
+	}
+}
+
+func TestRegistryETLDPlusOne(t *testing.T) {
+	tests := []struct {
+		imageRef string
+		want     string
+	}{
+		// Implicit docker.io
+		{"ubuntu", "docker.io"},
+		{"ubuntu:22.04", "docker.io"},
+		{"library/ubuntu:22.04", "docker.io"},
+		// Explicit docker.io
+		{"docker.io/library/ubuntu:22.04", "docker.io"},
+		{"docker.io/myuser/myimage@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "docker.io"},
+		// GCR
+		{"gcr.io/my-project/my-image:latest", "gcr.io"},
+		{"gcr.io/my-project/my-image@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "gcr.io"},
+		// ECR (amazonaws.com is a public suffix; eTLD+1 includes the region)
+		{"123456789.dkr.ecr.us-east-1.amazonaws.com/my-repo:latest", "ecr.us-east-1.amazonaws.com"},
+		// GitHub Container Registry
+		{"ghcr.io/owner/image:v1.0", "ghcr.io"},
+		// Custom registry with port
+		{"myregistry.example.com:5000/foo/bar:latest", "example.com"},
+		// Quay
+		{"quay.io/org/image:tag", "quay.io"},
+		// IP address with port
+		{"192.168.1.100:5000/myimage:latest", "[IP_ADDRESS]"},
+		// Empty string
+		{"", "[UNKNOWN]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.imageRef, func(t *testing.T) {
+			got := oci.RegistryETLDPlusOne(tt.imageRef)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

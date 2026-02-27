@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -94,6 +95,7 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 			jsonpbPipeWriter.CloseWithError(err)
 			return
 		}
+		metrics.WebhookInvocationPayloadSizeBytes.Observe(float64(len(jsonBytes)))
 		_, err = jsonpbPipeWriter.Write(jsonBytes)
 		jsonpbPipeWriter.CloseWithError(err)
 	}()

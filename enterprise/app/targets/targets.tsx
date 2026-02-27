@@ -268,7 +268,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   navigateToTargetDrilldown = (target: string) => {
     const currentParams = Object.fromEntries(this.props.search.entries());
-    const dimensionParam = encodeTargetLabelUrlParam(target);
+    const dimensionParam = encodeURIComponent(encodeTargetLabelUrlParam(target));
     const dimensions = currentParams.d ? currentParams.d + "|" + dimensionParam : dimensionParam;
 
     // Set the metric to CPU nanos or execution time based on current selection

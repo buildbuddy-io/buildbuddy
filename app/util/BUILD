@@ -211,3 +211,8 @@ ts_jasmine_node_test(
     srcs = ["shlex_test.ts"],
     deps = ["//app/util:shlex"],
 )
+
+ts_library(
+    name = "file_types",
+    srcs = ["file_types.ts"],
+)

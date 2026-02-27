@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "copy_on_write",
     srcs = ["copy_on_write.go"],
@@ -27,8 +29,6 @@ go_library(
         "@org_golang_x_time//rate",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "copy_on_write_test",

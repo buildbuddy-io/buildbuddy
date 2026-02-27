@@ -23,6 +23,7 @@ go_test(
         "@com_github_pkg_errors//:errors",
         "@com_github_stretchr_testify//assert",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
 )

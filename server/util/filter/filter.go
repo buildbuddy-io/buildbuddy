@@ -81,6 +81,10 @@ func executionDimensionToDbField(m stat_filter.ExecutionDimensionType) (string, 
 		return "target_label", nil
 	case stat_filter.ExecutionDimensionType_ACTION_MNEMONIC_EXECUTION_DIMENSION:
 		return "action_mnemonic", nil
+	case stat_filter.ExecutionDimensionType_EFFECTIVE_POOL_EXECUTION_DIMENSION:
+		return "effective_pool", nil
+	case stat_filter.ExecutionDimensionType_EXIT_CODE_EXECUTION_DIMENSION:
+		return "exit_code", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}

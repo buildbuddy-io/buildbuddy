@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
@@ -299,7 +301,7 @@ func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
 	buf, closer, err := db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return nil, status.NotFoundErrorf("[%s] Key not found: %s", sm.name(), err)
+			return nil, status.NotFoundErrorf("[%s] Key not found: %w", sm.name(), err)
 		}
 		return nil, err
 	}
@@ -699,7 +701,8 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := pebble.GetCopy(wb, req.GetKey())
+	key := sm.replicaLocalKey(req.GetKey())
+	buf, err := pebble.GetCopy(wb, key)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -713,7 +716,7 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	}
 	val += req.GetDelta()
 
-	if err := wb.Set(req.GetKey(), uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+	if err := wb.Set(key, uint64ToBytes(val), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 	return &rfpb.IncrementResponse{
@@ -883,9 +886,11 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 }
 
 func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
-	if len(req.GetRangeIds()) == 0 {
-		return nil, status.InvalidArgumentError("fetchRanges requires range_ids")
+	// At least one filter must be provided
+	if len(req.GetRangeIds()) == 0 && req.GetNhid() == "" {
+		return nil, status.InvalidArgumentError("either range_ids or nhid must be specified")
 	}
+
 	scanReq := &rfpb.ScanRequest{
 		Start:    constants.MetaRangePrefix,
 		End:      constants.SystemPrefix,
@@ -896,18 +901,27 @@ func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (
 	if err != nil {
 		return nil, err
 	}
-	rangeIDSet := make(map[uint64]struct{}, len(req.GetRangeIds()))
-	for _, rangeID := range req.GetRangeIds() {
-		rangeIDSet[rangeID] = struct{}{}
-	}
+
+	rangeIDSet := set.From(req.GetRangeIds()...)
+
+	nhid := req.GetNhid()
 	rsp := &rfpb.FetchRangesResponse{}
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			return nil, status.InternalErrorf("scan returned unparsable kv: %s", err)
+			return nil, status.InternalErrorf("scan returned unparsable kv: %w", err)
 		}
-		if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
+		if rangeIDSet.Contains(rd.GetRangeId()) {
 			rsp.Ranges = append(rsp.Ranges, rd)
+			continue
+		}
+		if nhid != "" {
+			if slices.ContainsFunc(rd.GetReplicas(), func(e *rfpb.ReplicaDescriptor) bool {
+				return e.GetNhid() == nhid
+			}) {
+				rsp.Ranges = append(rsp.Ranges, rd)
+				continue
+			}
 		}
 	}
 	return rsp, nil
@@ -1061,6 +1075,7 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 	return &rfpb.FindResponse{
 		Present:        present,
 		LastAccessUsec: fileMetadata.GetLastAccessUsec(),
+		GcsMetadata:    fileMetadata.GetStorageMetadata().GetGcsMetadata(),
 	}, nil
 }
 
@@ -1079,6 +1094,15 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
+	prevATime := fileMetadata.GetLastAccessUsec()
+	newATime := req.GetAccessTimeUsec()
+
+	if prevATime > newATime {
+		// Atime should always move forward. If the new one is behind, don't attempt
+		// to add it.
+		return &rfpb.UpdateAtimeResponse{}, nil
+	}
+
 	fileMetadata.LastAccessUsec = req.GetAccessTimeUsec()
 	buf, err = proto.Marshal(fileMetadata)
 	if err != nil {
@@ -1281,7 +1305,7 @@ func validateHeaderAgainstRange(rd *rfpb.RangeDescriptor, header *rfpb.Header) e
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
 	if rd.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+		return status.OutOfRangeErrorf("%s: range_id %d generation: %d on replica requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
 	}
 	return nil
 }
@@ -1350,7 +1374,7 @@ func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	appliedIndex := uint64ToBytes(entryIndex)
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
-		return status.InternalErrorf("[%s] failed to commit batch: %s", sm.name(), err)
+		return status.InternalErrorf("[%s] failed to commit batch: %w", sm.name(), err)
 	}
 	// If the batch commit was successful, update the replica's in-
 	// memory state.
@@ -1367,7 +1391,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	reqSession.RspData = rspBuf
 	sessionBuf, err := proto.Marshal(reqSession)
 	if err != nil {
-		return status.InternalErrorf("[%s] failed to marshal session: %s", sm.name(), err)
+		return status.InternalErrorf("[%s] failed to marshal session: %w", sm.name(), err)
 	}
 	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
@@ -1381,7 +1405,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %w", sm.name(), err)
 		entry.Result = errorEntry(err)
 		return entry, nil
 	}
@@ -1464,7 +1488,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %w", sm.name(), err)
 		entry.Result = errorEntry(err)
 		return entry, nil
 	}
@@ -1537,14 +1561,14 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	startTime := time.Now()
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, status.InternalErrorf("[%s] failed to get pebble DB from the leaser: %s", sm.name(), err)
+		return nil, status.InternalErrorf("[%s] failed to get pebble DB from the leaser: %w", sm.name(), err)
 	}
 	defer db.Close()
 
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, status.InternalErrorf("[%s] failed to singleUpdate entry (index=%d): %s", sm.name(), entry.Index, err)
+			return nil, status.InternalErrorf("[%s] failed to singleUpdate entry (index=%d): %w", sm.name(), entry.Index, err)
 		}
 		entries[i] = e
 	}
@@ -1814,6 +1838,9 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if inLocalRangeSection {
 			if isLocalKey(kv.Key) {
+				// When we save the snapshot, we removed the replica local prefix.
+				// Therefore, we can use the Equal directly here and also we need
+				// add the replicaPrefix before we write it to the db.
 				if bytes.Equal(kv.Key, constants.LocalRangeKey) {
 					rangeDescriptor := &rfpb.RangeDescriptor{}
 					if err := proto.Unmarshal(kv.Value, rangeDescriptor); err != nil {

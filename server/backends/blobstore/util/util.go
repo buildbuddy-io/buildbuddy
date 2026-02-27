@@ -156,7 +156,7 @@ func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 	metrics.BlobstoreDeleteCount.With(prometheus.Labels{
 		metrics.StatusLabel:        gstatus.Code(err).String(),
 		metrics.BlobstoreTypeLabel: typeLabel,
-	})
+	}).Inc()
 	// Don't track duration if there's an error, but do track
 	// count (above) so we can measure failure rates.
 	if err != nil {

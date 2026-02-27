@@ -6,7 +6,8 @@ genrule(
     cmd_bash = select({
         "//:fastbuild": "touch $@",
         "//conditions:default": """
-            version=$$(grep ^STABLE_VERSION_TAG bazel-out/stable-status.txt | cut -d' ' -f2); \
+            version=$$(grep ^STABLE_VERSION_TAG bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2); \
+            if [ -z "$$version" ]; then version=dev; fi; \
             printf '%s' $$version > $@;
         """,
     }),
@@ -19,7 +20,8 @@ genrule(
     cmd_bash = select({
         "//:fastbuild": "touch $@",
         "//conditions:default": """
-            commit=$$(grep ^STABLE_COMMIT_SHA bazel-out/stable-status.txt | cut -d' ' -f2); \
+            commit=$$(grep ^STABLE_COMMIT_SHA bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2); \
+            if [ -z "$$commit" ]; then commit=dev; fi; \
             printf '%s' $$commit > $@;
         """,
     }),

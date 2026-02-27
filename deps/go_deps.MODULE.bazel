@@ -1,10 +1,11 @@
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.config(check_direct_dependencies = "error")
-go_deps.from_file(go_mod = "//:go.mod")
+go_deps.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
 
 # Non-Go repos referenced by Go repos
 inject_repo(
     go_deps,
+    "com_github_buildbuddy_io_buildbuddy",
     "googleapis",
     "zlib",
 )
@@ -24,33 +25,33 @@ go_deps.gazelle_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@buildbuddy//buildpatches:cloudflare_circl.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:cloudflare_circl.patch",
     ],
     path = "github.com/cloudflare/circl",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@buildbuddy//buildpatches:vtprotobuf.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:vtprotobuf.patch",
     ],
     path = "github.com/planetscale/vtprotobuf",
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:buildifier.patch"],
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:buildifier.patch"],
     path = "github.com/bazelbuild/buildtools",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
     ],
     path = "github.com/firecracker-microvm/firecracker-go-sdk",
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_mattn_go_sqlite3.patch"],
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_mattn_go_sqlite3.patch"],
     path = "github.com/mattn/go-sqlite3",
 )
 go_deps.module_override(
@@ -63,22 +64,30 @@ go_deps.module_override(
         # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
-        "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        # Add more buffer sizes to grpc mem buffer pool to reduce allocations.
+        # This speeds up large reads/writes.
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_more_buffer_sizes.patch",
     ],
     path = "google.golang.org/grpc",
 )
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:io_kythe.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:io_kythe.patch",
     ],
     path = "kythe.io",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:go-grpc-channelz.patch"],
+    path = "github.com/rantav/go-grpc-channelz",
 )
 
 # Go repos with custom directives
 go_deps.gazelle_override(
     directives = [
-        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@@//proto:vtprotobuf_compiler",
+        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@com_github_buildbuddy_io_buildbuddy//proto:vtprotobuf_compiler",
     ],
     path = "github.com/prometheus/client_model",
 )
@@ -101,8 +110,8 @@ go_deps.gazelle_override(
 )
 go_deps.gazelle_override(
     # Force a Gazelle run to ensure build targets in Bazelisk follow
-    # Gazelle naming conventions.
-    build_file_generation = "on",
+    # Gazelle naming conventions and drop unrelated loads.
+    build_file_generation = "clean",
     path = "github.com/bazelbuild/bazelisk",
 )
 go_deps.gazelle_override(
@@ -162,15 +171,20 @@ use_repo(
     "com_github_bits_and_blooms_bloom_v3",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
+    "com_github_buildbuddy_io_fastcdc2020",
     "com_github_buildbuddy_io_tensorflow_proto",
     "com_github_buildkite_terminal_to_html_v3",
     "com_github_cavaliergopher_cpio",
     "com_github_cespare_xxhash_v2",
+    "com_github_charmbracelet_bubbles",
+    "com_github_charmbracelet_bubbletea",
+    "com_github_charmbracelet_lipgloss",
     "com_github_clickhouse_clickhouse_go_v2",
     "com_github_cockroachdb_pebble",
     "com_github_coreos_go_oidc_v3",
     "com_github_creack_pty",
     "com_github_crewjam_saml",
+    "com_github_dgryski_go_rendezvous",
     "com_github_distribution_reference",
     "com_github_docker_docker",
     "com_github_docker_go_units",
@@ -204,7 +218,6 @@ use_repo(
     "com_github_jackc_pgx_v5",
     "com_github_jhump_protoreflect",
     "com_github_jonboulle_clockwork",
-    "com_github_jotfs_fastcdc_go",
     "com_github_jsimonetti_rtnetlink",
     "com_github_klauspost_compress",
     "com_github_klauspost_cpuid_v2",
@@ -265,6 +278,9 @@ use_repo(
     "io_gorm_driver_postgres",
     "io_gorm_driver_sqlite",
     "io_gorm_gorm",
+    "io_k8s_api",
+    "io_k8s_apimachinery",
+    "io_k8s_client_go",
     "io_kythe",
     "io_opentelemetry_go_contrib_detectors_gcp",
     "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
@@ -279,7 +295,6 @@ use_repo(
     "io_opentelemetry_go_otel_sdk_metric",
     "io_opentelemetry_go_otel_trace",
     "org_golang_google_api",
-    "org_golang_google_genproto",
     "org_golang_google_genproto_googleapis_api",
     "org_golang_google_genproto_googleapis_bytestream",
     "org_golang_google_genproto_googleapis_rpc",
@@ -292,6 +307,7 @@ use_repo(
     "org_golang_x_oauth2",
     "org_golang_x_sync",
     "org_golang_x_sys",
+    "org_golang_x_telemetry",
     "org_golang_x_text",
     "org_golang_x_time",
     "org_golang_x_tools",

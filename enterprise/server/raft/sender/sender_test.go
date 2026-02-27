@@ -17,6 +17,7 @@ func requireProtoEqual(t *testing.T, expected, actual proto.Message) {
 
 func TestLookupRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
@@ -50,6 +51,7 @@ func TestLookupRangeDescriptor(t *testing.T) {
 
 func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
@@ -101,6 +103,7 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 
 func TestFetchPartitionDescriptors(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 

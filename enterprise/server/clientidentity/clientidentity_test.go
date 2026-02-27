@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func newService(t *testing.T, clock clockwork.Clock) *clientidentity.Service {
+func newService(t testing.TB, clock clockwork.Clock) *clientidentity.Service {
 	key, err := random.RandomString(16)
 	require.NoError(t, err)
 	flags.Set(t, "app.client_identity.key", string(key))
@@ -134,4 +134,39 @@ func TestRequired(t *testing.T) {
 	ctx = metadata.NewIncomingContext(context.Background(), nil)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
+}
+
+func TestClearIdentity(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "origin",
+		Client: "client",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	_, err = sis.IdentityFromContext(ctx)
+	require.NoError(t, err)
+
+	ctx = clientidentity.ClearIdentity(ctx)
+	_, err = sis.IdentityFromContext(ctx)
+	require.Error(t, err)
+}
+
+func BenchmarkAddIdentityToContext(b *testing.B) {
+	sis := newService(b, clockwork.NewRealClock())
+
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := sis.AddIdentityToContext(ctx)
+			require.NoError(b, err)
+		}
+	})
 }

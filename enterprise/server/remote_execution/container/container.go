@@ -12,20 +12,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -38,10 +40,6 @@ const (
 	// Default TTL for tokens granting access to locally cached images, before
 	// re-authentication with the remote registry is required.
 	defaultImageCacheTokenTTL = 15 * time.Minute
-
-	// Time window over which to measure CPU usage when exporting the milliCPU
-	// used metric.
-	cpuUsageUpdateInterval = 1 * time.Second
 
 	// Exit code used when returning an error instead of an actual exit code.
 	// TODO: fix circular dependency with commandutil and reference that const
@@ -314,7 +312,7 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	if *recordUsageTimelines {
+	if *recordUsageTimelines && s.timeline != nil {
 		s.updateTimeline(s.clock().Now())
 	}
 }
@@ -430,6 +428,13 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
+	//
+	// Implementations should populate UsageStats for the execution. If stats
+	// are reported, they must reflect only the particular command executed.
+	//
+	// Implementations should NOT record usage stats for long-lived persistent
+	// worker executions, and should instead implement [StatsTracker] so that
+	// stats can be tracked while each work request is being fulfilled.
 	Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
 
 	// Signal sends the given signal to all containerized processes.
@@ -462,6 +467,17 @@ type CommandContainer interface {
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
+// StatsRecorder is an optional interface implemented by a [CommandContainer]
+// that allows tracking usage stats outside of normal execution.
+//
+// Specifically, this can be used to report stats for persistent worker
+// requests, in which tasks are executed by writing work requests to stdin then
+// reading work requests from stdout, rather than calling Exec or Run (which
+// would normally be responsible for reporting stats).
+type StatsRecorder interface {
+	RecordStats(ctx context.Context) (stop func() (*repb.UsageStats, error))
+}
+
 // VM is an interface implemented by containers backed by VMs (i.e. just
 // Firecracker). This just exists to avoid depending on the Firecracker package
 // on non-linux/amd64 platforms.
@@ -477,9 +493,28 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
+// RecordImageFetchMetrics records the image fetch duration histogram.
+// Counts are available via the histogram's _count suffix.
+func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
+	statusLabel := metrics.OCIFetcherStatusOK
+	if err != nil {
+		statusLabel = metrics.OCIFetcherStatusError
+	}
+	labels := prometheus.Labels{
+		metrics.IsolationTypeLabel:           isolation,
+		metrics.ImageFetchRegistryLabel:      registry,
+		metrics.StatusLabel:                  statusLabel,
+		metrics.ImageFetchOnDiskLabel:        strconv.FormatBool(onDisk),
+		metrics.ImageFetchHasCredsLabel:      strconv.FormatBool(hasCreds),
+		metrics.ImageFetchTriggerLabel:       trigger,
+		metrics.ImageFetchUseOCIFetcherLabel: strconv.FormatBool(useOCIFetcher),
+	}
+	metrics.ImageFetchDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
+}
+
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string, useOCIFetcher bool) error {
 	if *debugUseLocalImagesOnly || imageRef == "" {
 		return nil
 	}
@@ -493,7 +528,19 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		defer cancel()
 	}
 
-	if err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef); err != nil {
+	start := time.Now()
+	cached, err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef)
+	RecordImageFetchMetrics(
+		ctr.IsolationType(),
+		oci.RegistryETLDPlusOne(imageRef),
+		metrics.ImageFetchTriggerExecution,
+		cached,
+		!creds.IsEmpty(),
+		useOCIFetcher,
+		err,
+		time.Since(start),
+	)
+	if err != nil {
 		// make sure we always return Unavailable if the context deadline
 		// was exceeded
 		if err == context.DeadlineExceeded || ctx.Err() != nil {
@@ -504,7 +551,9 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	return nil
 }
 
-func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
+// pullImageIfNecessary returns (cached, err) where cached indicates whether
+// the image was already present on the executor.
+func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) (bool, error) {
 	cacheAuth := env.GetImageCacheAuthenticator()
 	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
@@ -512,7 +561,7 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		slowPullWarnOnce.Do(func() {
 			log.CtxWarningf(ctx, "Authentication is not properly configured; this will result in slower image pulls.")
 		})
-		return ctr.PullImage(ctx, creds)
+		return false, ctr.PullImage(ctx, creds)
 	}
 
 	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
@@ -522,31 +571,31 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
 		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
-		return status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
+		return false, status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	isCached, err := ctr.IsImageCached(ctx)
+	onDisk, err := ctr.IsImageCached(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef)
 	if err != nil {
-		return status.WrapError(err, "create image cache token")
+		return false, status.WrapError(err, "create image cache token")
 	}
 	// If the image is cached and these credentials have been used recently
 	// by this group to pull the image, no need to re-auth.
-	if isCached && cacheAuth.IsAuthorized(cacheToken) {
-		return nil
+	if onDisk && cacheAuth.IsAuthorized(cacheToken) {
+		return true, nil
 	}
 	if err := ctr.PullImage(ctx, creds); err != nil {
-		return err
+		return onDisk, err
 	}
 	// Pull was successful, which means auth was successful. Refresh the token so
 	// we don't have to keep re-authenticating on every action until the token
 	// expires.
 	cacheAuth.Refresh(cacheToken)
-	return nil
+	return onDisk, nil
 }
 
 // NewImageCacheToken returns the token representing the authenticated group ID,
@@ -787,6 +836,14 @@ func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	t.removed = true
 
 	return t.Delegate.Remove(ctx)
+}
+
+func (t *TracedCommandContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
+	if st, ok := t.Delegate.(StatsRecorder); ok {
+		return st.RecordStats(ctx)
+	} else {
+		return func() (*repb.UsageStats, error) { return nil, nil }
+	}
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {

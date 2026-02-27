@@ -103,7 +103,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
 	if err = tc.WriteTxnRecord(ctx, txnRecord); err != nil {
-		return status.InternalErrorf("failed to write txn record (txid=%q): %s", txnID, err)
+		return status.WrapErrorf(err, "failed to write txn record (txid=%q)", txnID)
 	}
 
 	for _, stmt := range txnProto.GetStatements() {
@@ -113,12 +113,12 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 				// if there is error during preparation for this range, then txn not found is expected during rollback.
 				continue
 			}
-			return status.InternalErrorf("failed to finalize statement in txn(%q) for range_id:%d, operation: %s, %s", txnID, stmt.GetRange().GetRangeId(), operation, err)
+			return status.WrapErrorf(err, "failed to finalize statement in txn(%q) for range_id:%d, operation: %s", txnID, stmt.GetRange().GetRangeId(), operation)
 		}
 	}
 
 	if err := tc.deleteTxnRecord(ctx, txnID); err != nil {
-		return status.InternalErrorf("failed to delete txn record (txid=%q): %s", txnID, err)
+		return status.WrapErrorf(err, "failed to delete txn record (txid=%q)", txnID)
 	}
 	if prepareError != nil {
 		return prepareError
@@ -137,7 +137,7 @@ func (tc *Coordinator) PrepareStatement(ctx context.Context, txnID []byte, state
 
 	err := tc.run(ctx, statement, batch)
 	if err != nil {
-		return status.WrapErrorf(err, "unable to prepare statement")
+		return status.WrapError(err, "unable to prepare statement")
 	}
 	return nil
 }
@@ -209,7 +209,7 @@ func (tc *Coordinator) run(ctx context.Context, stmt *rfpb.TxnRequest_Statement,
 		}
 		lastError = err
 	}
-	return status.UnavailableErrorf("tx.run retries exceeded for txid: %q err: %s", batch.GetTransactionId(), lastError)
+	return status.UnavailableErrorf("tx.run retries exceeded for txid: %q err: %w", batch.GetTransactionId(), lastError)
 
 }
 

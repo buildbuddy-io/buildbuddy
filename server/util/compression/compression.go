@@ -7,8 +7,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,8 +26,6 @@ var (
 	// either for streaming decompression using ReadFrom or batch decompression
 	// using DecodeAll. The returned decoders *must not* be closed.
 	zstdDecoderPool = NewZstdDecoderPool()
-
-	bufPool = bytebufferpool.VariableSize(4e6) // 4MB
 
 	// These are used a bunch and the labels are constant so just do it once.
 	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
@@ -90,7 +90,7 @@ func (c *ZstdCompressingWriter) writeCompressed(p []byte) error {
 	n, err := c.writer.Write(c.compressBuffer)
 	c.CompressedBytesWritten += n
 	if err == nil && n < len(c.compressBuffer) {
-		c.err = io.ErrShortWrite
+		err = io.ErrShortWrite
 	}
 	c.err = err
 	return c.err
@@ -177,20 +177,42 @@ func (c *ZstdCompressingWriter) Close() error {
 // > 0 and determines how much data is buffered before being compressed and
 // written out. Larger buffer sizes generally result in better compression
 // ratios, but will be capped to an implementation-defined maximum.
-func NewZstdCompressingWriter(writer io.Writer, bufSize int64) (*ZstdCompressingWriter, error) {
+func NewZstdCompressingWriter(writer io.Writer, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (*ZstdCompressingWriter, error) {
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")
 	}
-	a, b := bufPool.Get(bufSize), bufPool.Get(bufSize)
+	a, b := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
 	return &ZstdCompressingWriter{
 		writer:         writer,
 		buffer:         a,
 		compressBuffer: b,
 		returnBuffers: func() {
-			bufPool.Put(a)
-			bufPool.Put(b)
+			bufferPool.Put(a)
+			bufferPool.Put(b)
 		},
 	}, nil
+}
+
+// NewZstdCompressingWriteCommiter is like NewZstdCompressingWriter, but
+// handles committing and metric exports as well.
+func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64, cacheName string) (interfaces.CommittedWriteCloser, error) {
+	compressor, err := NewZstdCompressingWriter(wc, bufferPool, bufSize)
+	if err != nil {
+		return nil, err
+	}
+	compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
+	compressWC.SetCommitFn(func(inputBytes int64) error {
+		// Close the compressor to flush the buffer and return it to the pool.
+		if err := compressor.Close(); err != nil {
+			return err
+		}
+		metrics.CompressionRatio.
+			With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: cacheName}).
+			Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
+		return wc.Commit()
+	})
+	compressWC.SetCloseFn(wc.Close)
+	return compressWC, nil
 }
 
 // DecompressZstd decompresses a full chunk of zstd data into dst. If dst is
@@ -269,15 +291,17 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-type compressingReader struct {
-	inputReader io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
-	leftover    []byte
-	readErr     error
+type ZstdCompressingReader struct {
+	inputReader   io.ReadCloser
+	readBuf       []byte
+	compressBuf   []byte
+	leftover      []byte
+	readErr       error
+	closed        bool
+	returnBuffers func()
 }
 
-func (r *compressingReader) Read(p []byte) (int, error) {
+func (r *ZstdCompressingReader) Read(p []byte) (int, error) {
 	var n int
 	if len(r.leftover) == 0 && r.readErr == nil {
 		n, r.readErr = r.inputReader.Read(r.readBuf)
@@ -296,37 +320,41 @@ func (r *compressingReader) Read(p []byte) (int, error) {
 	return n, r.readErr
 }
 
-func (r *compressingReader) Close() error {
+func (r *ZstdCompressingReader) Close() error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	r.returnBuffers()
 	return r.inputReader.Close()
 }
 
-// NewZstdCompressingReader returns a reader that reads chunks from the given
-// reader into the read buffer, and makes the zstd-compressed chunks available
-// on the output reader. Each chunk read into the read buffer is immediately
-// compressed, independently of other chunks, and piped to the output reader.
+// NewZstdCompressingReader returns a reader that reads from the input, and
+// returns an io.ReadCloser that provides zstd-compressed data as output.
 // The default compression level is used.
 //
-// The read buffer must have a non-zero length, and should have a relatively
-// large length in order to get a good compression ratio, since chunks are
-// compressed independently. If the length of the byte stream provided by the
-// given reader is known, and is relatively small, then it is recommended to
-// provide a read buffer that can exactly fit the full contents of the stream.
+// bufSize must be greater than 0, and should be relatively large in order to
+// get a good compression ratio. If the length of the byte stream provided by
+// the given reader is known, and is relatively small, then it is recommended to
+// set bufSize to the length of the stream. Consider using digest.SafeBufferSize.
 //
-// The compression buffer is optional and is used as a staging buffer for
-// compressed contents before sending to the output reader. It is recommended to
-// set this to a buffer that has a capacity equal to the read buffer. If any
-// compressed chunk's size is greater than the uncompressed chunk, then a new
-// compression buffer is allocated internally. This scenario should be rare if
-// the data is even modestly compressible and the compression buffer capacity is
-// at least a few hundred bytes.
-func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
-	if len(readBuf) == 0 {
+// bufferPool should have a max buffer size of at least bufSize.
+//
+// When the returned reader is closed, input will also be closed. It is safe to
+// call Close multiple times.
+func NewZstdCompressingReader(input io.ReadCloser, bufferPool *bytebufferpool.VariableSizePool, bufSize int64) (*ZstdCompressingReader, error) {
+	if bufSize <= 0 {
 		return nil, io.ErrShortBuffer
 	}
-	return &compressingReader{
-		inputReader: reader,
+	readBuf, compressBuf := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
+	return &ZstdCompressingReader{
+		inputReader: input,
 		readBuf:     readBuf,
 		compressBuf: compressBuf,
+		returnBuffers: func() {
+			bufferPool.Put(readBuf)
+			bufferPool.Put(compressBuf)
+		},
 	}, nil
 }
 

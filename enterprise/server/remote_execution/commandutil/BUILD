@@ -37,35 +37,32 @@ go_test(
     ],
     data = select({
         "@io_bazel_rules_go//go/platform:windows": [],
-        "//conditions:default": ["//enterprise/server/remote_execution/commandutil/test_binary"],
+        "//conditions:default": ["//enterprise/server/remote_execution/commandutil/test_binary:test_binary_no_cov"],
     }),
     tags = ["cpu:4"],
     x_defs = select({
         "@io_bazel_rules_go//go/platform:windows": {},
         "//conditions:default": {
-            "testBinaryRunfilePath": "$(rlocationpath //enterprise/server/remote_execution/commandutil/test_binary)",
+            "testBinaryRunfilePath": "$(rlocationpath //enterprise/server/remote_execution/commandutil/test_binary:test_binary_no_cov)",
         },
     }),
     deps = [
         ":commandutil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/testutil/testfs",
-            "//server/util/status",
-            "@com_github_stretchr_testify//assert",
-            "@com_github_stretchr_testify//require",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/testutil/testfs",
-            "//server/util/status",
-            "@com_github_stretchr_testify//assert",
-            "@com_github_stretchr_testify//require",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/testutil/testfs",
-            "@com_github_stretchr_testify//assert",
         ],
         "//conditions:default": [],
     }),

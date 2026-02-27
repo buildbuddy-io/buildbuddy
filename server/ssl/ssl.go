@@ -3,6 +3,9 @@ package ssl
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -13,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -22,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -76,7 +81,7 @@ type SSLService struct {
 	grpcTLSConfig   *tls.Config
 	autocertManager *autocert.Manager
 	AuthorityCert   *x509.Certificate
-	AuthorityKey    *rsa.PrivateKey
+	AuthorityKey    crypto.Signer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -257,7 +262,7 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 
 type CACert struct {
 	Cert *x509.Certificate
-	Key  any
+	Key  crypto.Signer
 }
 
 // GenerateCert generates a cert and returns the cert + private key pair.
@@ -387,7 +392,7 @@ func LoadCertificate(certFile, cert string) (*x509.Certificate, error) {
 	return loadedCert, nil
 }
 
-func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
+func LoadCertificateKey(keyFile, key string) (crypto.Signer, error) {
 	if keyFile == "" && key == "" {
 		return nil, status.FailedPreconditionError("certificate key must be specified either as a file or directly")
 	}
@@ -406,17 +411,58 @@ func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
 		keyData = data
 	}
 
-	kpb, _ := pem.Decode(keyData)
-	if kpb == nil {
+	block, rest := pem.Decode(keyData)
+	if block == nil {
 		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
 	}
-	loadedKey, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
-	if err != nil {
-		return nil, status.UnknownErrorf("could not parse certificate key: %s", err)
+
+	keyLocation := "certificate key"
+	if keyFile != "" {
+		keyLocation = "certificate key from " + keyFile
 	}
-	rsaKey, ok := loadedKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, status.FailedPreconditionErrorf("only RSA keys are supported, got %T", loadedKey)
+
+	for ; block != nil; block, rest = pem.Decode(rest) {
+		// Some key files include leading PEM blocks like "EC PARAMETERS". Skip
+		// non-key blocks and keep scanning until we find a private key block.
+		if !strings.HasSuffix(block.Type, "PRIVATE KEY") {
+			continue
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" {
+			return nil, status.FailedPreconditionError("encrypted private keys are not supported")
+		}
+
+		// Attempt to parse the given private key DER block. OpenSSL 0.9.8 generates
+		// PKCS #1 private keys by default, while OpenSSL 1.0.0 generates PKCS #8 keys.
+		// OpenSSL ecparam generates SEC1 EC private keys for ECDSA. We try all three.
+		der := block.Bytes
+		pkcs1Key, pkcs1Err := x509.ParsePKCS1PrivateKey(der)
+		if pkcs1Err == nil {
+			return pkcs1Key, nil
+		}
+		log.Debugf("Failed to parse %s as PKCS1 private key: %s", keyLocation, pkcs1Err)
+
+		pkcs8Key, pkcs8Err := x509.ParsePKCS8PrivateKey(der)
+		if pkcs8Err == nil {
+			switch key := pkcs8Key.(type) {
+			case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+				signer, ok := key.(crypto.Signer)
+				if !ok {
+					return nil, status.FailedPreconditionError("unsupported private key type")
+				}
+				return signer, nil
+			default:
+				return nil, status.FailedPreconditionError("unsupported private key type")
+			}
+		}
+		log.Debugf("Failed to parse %s as PKCS8 private key: %s", keyLocation, pkcs8Err)
+
+		ecKey, ecErr := x509.ParseECPrivateKey(der)
+		if ecErr == nil {
+			return ecKey, nil
+		}
+		log.Debugf("Failed to parse %s as SEC1 EC private key: %s", keyLocation, ecErr)
+
+		return nil, status.FailedPreconditionError("could not parse certificate key")
 	}
-	return rsaKey, nil
+	return nil, status.InvalidArgumentErrorf("certificate key did not contain a PEM private key block")
 }

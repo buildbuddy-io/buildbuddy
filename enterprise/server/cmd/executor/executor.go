@@ -22,8 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -51,20 +51,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
-
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
-	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
-
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -89,11 +88,6 @@ var (
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
-
-func init() {
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
-}
 
 func isOldEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
@@ -167,6 +161,7 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
+	realEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(client))
 }
 
 func getExecutorHostID() string {
@@ -198,7 +193,7 @@ func getExecutorHostName() string {
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	mmapLRUEnabled := *platform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
+	mmapLRUEnabled := *executorplatform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}
@@ -206,6 +201,15 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
 	metrics.RemoteExecutionAssignableRAMBytes.Set(math.Floor(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio))
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		log.Fatalf("Error getting allocated custom resources: %v", err)
+	}
+	for _, r := range customResources {
+		metrics.RemoteExecutionAssignableCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: r.GetName(),
+		}).Set(float64(r.GetValue()))
+	}
 
 	if err := auth.Register(context.Background(), realEnv); err != nil {
 		if err := auth.RegisterNullAuth(realEnv); err != nil {
@@ -363,7 +367,10 @@ func main() {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
 	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	if err != nil {
+		log.Fatalf("Error creating task scheduler: %v", err)
+	}
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}

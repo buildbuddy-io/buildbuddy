@@ -106,6 +106,29 @@ func TestBazelHelp(t *testing.T) {
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
 
+func TestHelpWithoutHomeEnv(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	cmd := testcli.Command(t, ws, "--help")
+
+	// Keep USERPROFILE empty and set HOME to a temp dir so we don't inherit
+	// user-specific rc files from the test harness environment.
+	homeDir := t.TempDir()
+	configDir := t.TempDir()
+	cacheDir := t.TempDir()
+	env := make([]string, 0, len(os.Environ())+4)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "USERPROFILE=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") || strings.HasPrefix(kv, "XDG_CACHE_HOME=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = append(env, "HOME="+homeDir, "USERPROFILE=", "XDG_CONFIG_HOME="+configDir, "XDG_CACHE_HOME="+cacheDir)
+
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", string(stdout), string(stderr))
+	require.Contains(t, string(stdout), "Usage: bb <command> <options> ...")
+}
+
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)
@@ -361,13 +384,16 @@ func TestQueryFile(t *testing.T) {
 	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
-func TestFix(t *testing.T) {
+func TestFixDiff(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
-
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"MODULE.bazel": `module(  name = "cli_test"    )`,
+	})
 	cmd := testcli.Command(t, ws, "fix", "--diff")
-	b, err := testcli.CombinedOutput(cmd)
-
-	require.NoError(t, err, "output:\n%s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	// TODO: a non-empty diff probably *should* return an error (exit code 1)
+	require.NoError(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+	require.NotEmpty(t, string(stdout))
 }
 
 func TestCLIDoesNotRestartBazelServer(t *testing.T) {
@@ -383,6 +409,24 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
+}
+
+func TestBazelModDumpRepoMappingEmptyString(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// Add a nop plugin to make sure we properly handle args when there is
+		// at least one plugin in the pre-bazel plugin pipeline.
+		"testplugin/pre_bazel.sh": `#!/usr/bin/env bash`,
+		"buildbuddy.yaml": `
+plugins:
+- path: testplugin
+`,
+	})
+	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
+	b, err := testcli.Output(cmd)
+	require.NoErrorf(t, err, "output: %s", string(b))
+	// stdout should look like a JSON object
+	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(b)))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {

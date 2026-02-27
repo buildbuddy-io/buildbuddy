@@ -13,6 +13,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
@@ -37,7 +38,6 @@ const (
 var (
 	goimportsRlocationpath                     string
 	goRlocationpath                            string
-	gazelleRlocationpath                       string
 	clangFormatRlocationpath                   string
 	bbCLIRlocationpath                         string
 	prettierRlocationpath                      string
@@ -61,6 +61,8 @@ var (
 		// Runs exclusively because this might change deps.bzl which GoDeps
 		// might also change.
 		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
+		// Ensures that MODULE.bazel.lock is up to date.
+		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
 
 	// File extensions handled by prettier.
@@ -100,9 +102,17 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 	if !fix {
 		cmd.Args = append(cmd.Args, "--diff")
 	}
-	cmd.Stdout = stdout
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run bb fix: %w", err)
+	}
+	// In diff mode, fail if the diff is non-empty.
+	if !fix && stdoutCounter.Count() > 0 {
+		return fmt.Errorf("bb fix found lint errors")
+	}
+	return nil
 }
 
 func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -118,10 +128,9 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
-	// Set GAZELLE_PATH and GO_PATH to runfile tool paths so that we don't
-	// have to run nested bazel invocations to build the tools. Also forward
-	// runfiles.Env() through env so that those tools can find their runfiles
-	// (technically not needed for go binaries but good practice).
+	// Set GO_PATH to runfile tool paths so that we don't have to run nested
+	// bazel invocations to build the tools. Also forward runfiles.Env() through
+	// env so that the tool can find its runfiles.
 	runfilesEnv, err := runfiles.Env()
 	if err != nil {
 		return fmt.Errorf("get runfiles env: %w", err)
@@ -130,13 +139,8 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
-	gazelleRlocation, err := runfiles.Rlocation(gazelleRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find gazelle in runfiles: %w", err)
-	}
 	cmd.Env = append(os.Environ(), runfilesEnv...)
 	cmd.Env = append(cmd.Env, "GO_PATH="+goRlocation)
-	cmd.Env = append(cmd.Env, "GAZELLE_PATH="+gazelleRlocation)
 
 	// Run the tool
 	if err := cmd.Run(); err != nil {
@@ -160,7 +164,8 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 		cmd.Args = append(cmd.Args, "-d")
 	}
 	cmd.Args = append(cmd.Args, files...)
-	cmd.Stdout = stdout
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
 	// goimports requires 'go' to be in PATH.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
@@ -169,7 +174,13 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	path := os.Getenv("PATH")
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+path)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	if stdoutCounter.Count() > 0 {
+		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
 }
 
 func runClangFormat(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -228,6 +239,25 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	// https://github.com/aspect-build/rules_js/tree/dbb5af0d2a9a2bb50e4cf4a96dbc582b27567155#running-nodejs-programs
 	cmd.Env = append(cmd.Env, "BAZEL_BINDIR=.")
 	return cmd.Run()
+}
+
+func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get bb command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "mod", "deps")
+	if fix {
+		cmd.Args = append(cmd.Args, "--lockfile_mode=update")
+	} else {
+		cmd.Args = append(cmd.Args, "--lockfile_mode=error")
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run bb mod deps: %w", err)
+	}
+	return nil
 }
 
 func main() {

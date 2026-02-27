@@ -5,6 +5,9 @@ go_library(
     srcs = ["static.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "staticGoRlocation": "$(rlocationpath static.go)",
+    },
     deps = [
         "//proto:config_go_proto",
         "//server/backends/github",
@@ -14,6 +17,7 @@ go_library(
         "//server/features",
         "//server/http/csp",
         "//server/invocation_stat_service/config",
+        "//server/remote_cache/action_cache_server",
         "//server/remote_cache/hit_tracker",
         "//server/remote_execution/config",
         "//server/scheduling/scheduler_server/config",
@@ -22,7 +26,7 @@ go_library(
         "//server/util/status",
         "//server/util/subdomain",
         "//server/version",
-        "@io_bazel_rules_go//go/tools/bazel",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

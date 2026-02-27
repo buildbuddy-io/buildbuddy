@@ -1,0 +1,21 @@
+# If you change LISTEN_ADDR in app1 to app4, please also change
+# cache.migration.src.distributed.nodes in
+# enterprise/config/buildbuddy-metacache.local.yaml
+
+app1: ROOT_DIRECTORY=/tmp/dcache1 LISTEN_ADDR="localhost:1337" bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy-migration.local.yaml --port=8080 --grpc_port=1985 --internal_grpc_port=1987 --telemetry_port=9099 --monitoring_port=9090 --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build 
+
+app2: ROOT_DIRECTORY=/tmp/dcache2 LISTEN_ADDR="localhost:1338" bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy-migration.local.yaml --port=8081 --grpc_port=2986 --internal_grpc_port=3986 --telemetry_port=9100 --monitoring_port=9191 --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build 
+
+app3: ROOT_DIRECTORY=/tmp/dcache3 LISTEN_ADDR="localhost:1339" bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy-migration.local.yaml --port=8082 --grpc_port=2987 --internal_grpc_port=3987 --telemetry_port=9101 --monitoring_port=9192 --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build 
+
+app4: ROOT_DIRECTORY=/tmp/dcache4 LISTEN_ADDR="localhost:1340" bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy-migration.local.yaml --port=8083 --grpc_port=2988 --internal_grpc_port=3988 --telemetry_port=9102 --monitoring_port=9193 --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build 
+
+mdserver1: bazel run enterprise/server/cmd/metadata_server -- --config_file=enterprise/config/metadata_server.local.yaml  --port=8084 --grpc_port=1970 --monitoring_port=9194 --internal_grpc_port=7701 --cache.raft.root_directory=/tmp/rnode1 --gossip.listen_addr=127.0.0.1:9201 --gossip.node_name=mdserver1 --cache.raft.host_name=127.0.0.1 --cache.raft.http_port=9301 --cache.raft.grpc_port=9401 --app.log_enable_grpc_request=false --gossip.log_level=warn 
+
+mdserver2: bazel run enterprise/server/cmd/metadata_server -- --config_file=enterprise/config/metadata_server.local.yaml --port=8085 --grpc_port=1971 --monitoring_port=9195 --internal_grpc_port=7702 --cache.raft.root_directory=/tmp/rnode2 --gossip.listen_addr=127.0.0.1:9202 --gossip.node_name=mdserver2 --cache.raft.host_name=127.0.0.1 --cache.raft.http_port=9302 --cache.raft.grpc_port=9402 --app.log_enable_grpc_request=false --gossip.log_level=warn 
+
+mdserver3: bazel run enterprise/server/cmd/metadata_server -- --config_file=enterprise/config/metadata_server.local.yaml --port=8086 --grpc_port=1972 --monitoring_port=9196 --internal_grpc_port=7703 --cache.raft.root_directory=/tmp/rnode3 --gossip.listen_addr=127.0.0.1:9203 --gossip.node_name=mdserver3 --cache.raft.host_name=127.0.0.1 --cache.raft.http_port=9303 --cache.raft.grpc_port=9403 --app.log_enable_grpc_request=false --gossip.log_level=warn 
+
+mdserver4: bazel run enterprise/server/cmd/metadata_server -- --config_file=enterprise/config/metadata_server.local.yaml --port=8087 --grpc_port=1973 --monitoring_port=9197 --internal_grpc_port=7704 --cache.raft.root_directory=/tmp/rnode4 --gossip.listen_addr=127.0.0.1:9204 --gossip.node_name=mdserver4 --cache.raft.host_name=127.0.0.1 --cache.raft.http_port=9304 --cache.raft.grpc_port=9404 --app.log_enable_grpc_request=false --gossip.log_level=warn 
+
+mdserver5: bazel run enterprise/server/cmd/metadata_server -- --config_file=enterprise/config/metadata_server.local.yaml --port=8088 --grpc_port=1974 --monitoring_port=9198 --internal_grpc_port=7705 --cache.raft.root_directory=/tmp/rnode5 --gossip.listen_addr=127.0.0.1:9205 --gossip.node_name=mdserver5 --cache.raft.host_name=127.0.0.1 --cache.raft.http_port=9305 --cache.raft.grpc_port=9405 --app.log_enable_grpc_request=false --gossip.log_level=warn 

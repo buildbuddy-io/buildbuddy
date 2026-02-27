@@ -85,6 +85,8 @@ service BuildBuddyService {
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+  rpc SetGroupStatus(grp.SetGroupStatusRequest)
+      returns (grp.SetGroupStatusResponse);
 
   // User Lists API
   rpc GetUserLists(user_list.GetUserListsRequest)
@@ -205,6 +207,8 @@ service BuildBuddyService {
   rpc LinkGitHubRepo(github.LinkRepoRequest) returns (github.LinkRepoResponse);
   rpc UnlinkGitHubRepo(github.UnlinkRepoRequest)
       returns (github.UnlinkRepoResponse);
+  rpc UpdateGitHubRepoSettings(github.UpdateRepoSettingsRequest)
+      returns (github.UpdateRepoSettingsResponse);
 
   // Installation-repos API (authenticates w/ GitHub using
   // installation access token)
@@ -219,6 +223,10 @@ service BuildBuddyService {
       returns (eventlog.GetEventLogChunkResponse);
   rpc GetEventLog(eventlog.GetEventLogChunkRequest)
       returns (stream eventlog.GetEventLogChunkResponse);
+  rpc WriteEventLog(stream eventlog.WriteEventLogRequest)
+      returns (eventlog.WriteEventLogResponse);
+  rpc UpdateRunStatus(eventlog.UpdateRunStatusRequest)
+      returns (eventlog.UpdateRunStatusResponse);
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);

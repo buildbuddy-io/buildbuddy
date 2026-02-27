@@ -198,7 +198,7 @@ func execute(cmdArgs []string) error {
 		}
 		// Log execution state
 		progress := &repb.ExecutionProgress{}
-		ok, _ := rexec.AuxiliaryMetadata(msg.ExecuteOperationMetadata.GetPartialExecutionMetadata(), progress)
+		ok, _ := rexec.FindFirstAuxiliaryMetadata(msg.ExecuteOperationMetadata.GetPartialExecutionMetadata(), progress)
 		if ok && progress.GetExecutionState() != 0 {
 			log.Debugf(
 				"Remote: %s @ %s",

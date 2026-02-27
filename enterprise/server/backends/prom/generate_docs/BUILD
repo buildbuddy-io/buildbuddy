@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "generate_docs_lib",
     srcs = ["generate_docs.go"],
@@ -31,5 +33,3 @@ genrule(
         "//website:__pkg__",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

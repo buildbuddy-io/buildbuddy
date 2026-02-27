@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -27,11 +27,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
@@ -66,17 +66,17 @@ func New(env environment.Env) (*runnerService, error) {
 
 // checkPreconditions verifies the RunRequest is not missing any required params.
 func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
-	if req.GetGitRepo().GetRepoUrl() == "" {
-		return status.InvalidArgumentError("A repo url is required.")
-	}
 	if req.GetBazelCommand() == "" && len(req.GetSteps()) == 0 {
 		return status.InvalidArgumentError("A command to run is required.")
 	}
 	if req.GetBazelCommand() != "" && len(req.GetSteps()) > 0 {
 		return status.InvalidArgumentError("Only one of `BazelCommand` or `Steps` should be specified.")
 	}
-	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
-		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+	// Branch/commit are only required when a repo URL is specified
+	if req.GetGitRepo().GetRepoUrl() != "" {
+		if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
+			return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+		}
 	}
 	return nil
 }
@@ -128,7 +128,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	repoURL := req.GetGitRepo().GetRepoUrl()
-	if !req.GetGitRepo().GetUseSystemGitCredentials() {
+	if repoURL != "" && !req.GetGitRepo().GetUseSystemGitCredentials() {
 		// Use https for git operations.
 		u, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
@@ -172,21 +172,33 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
-		"--target_repo_url=" + repoURL,
-		"--pushed_repo_url=" + repoURL,
-		"--pushed_branch=" + req.GetRepoState().GetBranch(),
 		"--invocation_id=" + invocationID,
-		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
 		"--timeout=" + timeout.String(),
 		"--remote_instance_name=" + in,
+	}
+	if repoURL != "" {
+		args = append(args,
+			"--target_repo_url="+repoURL,
+			"--pushed_repo_url="+repoURL,
+			"--pushed_branch="+req.GetRepoState().GetBranch(),
+			"--commit_sha="+req.GetRepoState().GetCommitSha(),
+			"--target_branch="+req.GetRepoState().GetBranch(),
+		)
+	} else {
+		args = append(args, "--skip_auto_checkout")
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
 	}
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
+	}
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
+		if bazelCommandOverride != "" {
+			args = append(args, "--bazel_command="+bazelCommandOverride)
+		}
 	}
 	args = append(args, req.GetRunnerFlags()...)
 
@@ -340,7 +352,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	}
 	// If the token is still not set, try fetching the token from a Workflow
 	// configured for the same repo.
-	if accessToken == "" {
+	if accessToken == "" && req.GetGitRepo().GetRepoUrl() != "" {
 		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, status.WrapError(err, "normalize git repo url")
@@ -508,7 +520,7 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	}
 
 	errCh := make(chan error)
-	opCh := make(chan *longrunning.Operation)
+	opCh := make(chan *longrunningpb.Operation)
 
 	waitStream, err := executionClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 		Name: executionID,

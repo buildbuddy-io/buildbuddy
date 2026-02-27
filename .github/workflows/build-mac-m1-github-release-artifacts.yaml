@@ -25,7 +25,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13-xlarge
+    runs-on: macos-15-xlarge
     defaults:
       run:
         shell: "/usr/bin/arch -arch arm64e /bin/bash --noprofile --norc -eo pipefail {0}"

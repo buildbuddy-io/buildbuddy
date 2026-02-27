@@ -107,9 +107,8 @@ And the following lines to your `WORKSPACE` file:
 ```python title="WORKSPACE"
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    integrity = "sha256-VtJjefgP2Vq5S6DiGYczsupNkosybmSBGWwcLUAYz8c=",
-    strip_prefix = "buildbuddy-toolchain-66146a3015faa348391fcceea2120caa390abe03",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/66146a3015faa348391fcceea2120caa390abe03.tar.gz"],
+    integrity = "sha256-5zVDos35dx9w9zmrcenyTg8tKwSg1/nUAZPLK8mo5KI=",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/releases/download/v0.0.3/buildbuddy-toolchain-v0.0.3.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")

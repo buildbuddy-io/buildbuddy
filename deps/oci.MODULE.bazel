@@ -19,9 +19,12 @@ oci.pull(
 )
 oci.pull(
     name = "net_tools",
-    digest = "sha256:fdd8b0a391871eaf47664b2f6620b64d2bc4bdf8c86b57c1e0d013935cac1215",
+    digest = "sha256:04210e04de235983e50ed5150ff99431cf1151e2da6bff201cd856dedb5dfc85",
     image = "gcr.io/flame-public/net-tools",
-    platforms = ["linux/amd64"],
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
 )
 use_repo(
     oci,
@@ -33,4 +36,5 @@ use_repo(
     "busybox_linux_amd64",
     "net_tools",
     "net_tools_linux_amd64",
+    "net_tools_linux_arm64",
 )

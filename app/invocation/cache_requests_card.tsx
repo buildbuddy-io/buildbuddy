@@ -96,6 +96,10 @@ const filters: PresetFilter[] = [
     values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
   },
   {
+    label: "AC Writes",
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
+  },
+  {
     label: "CAS Hits",
     values: { cache: resource.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
@@ -110,6 +114,8 @@ const filters: PresetFilter[] = [
 ];
 
 const defaultFilterIndex = 0; // All
+const CASHitsFilterIndex = 4;
+const CASWritesFilterIndex = 5;
 
 /**
  * CacheRequestsCardComponent shows all BuildBuddy cache requests for an invocation in a tabular form.
@@ -296,6 +302,15 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     return Number(
       this.props.search.get("groupBy") || this.props.groupBy || cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET
     ) as cache.GetCacheScoreCardRequest.GroupBy;
+  }
+  private isOriginColumnVisible() {
+    const filterIndex = this.getFilterIndex();
+    // Hide origin column unless the backend records origin metadata and we're not in CAS-only views.
+    return (
+      capabilities.config.actionResultOriginEnabled &&
+      filterIndex !== CASHitsFilterIndex &&
+      filterIndex !== CASWritesFilterIndex
+    );
   }
   private getSearch() {
     return this.props.search.get("search") || this.props.query || "";
@@ -507,6 +522,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {renderCacheType(result.cacheType)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
+        {this.isOriginColumnVisible() && <div className="origin-column">{this.renderOriginInvocation(result)}</div>}
         {result.digest && (
           <div>
             <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
@@ -532,6 +548,23 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     ));
   }
 
+  private renderOriginInvocation(result: cache.ScoreCard.Result) {
+    if (!capabilities.config.actionResultOriginEnabled) {
+      return <span />;
+    }
+    const isACHit =
+      result.cacheType === resource.CacheType.AC &&
+      result.requestType === cache.RequestType.READ &&
+      result.status?.code === 0;
+
+    if (!isACHit || !result.originInvocationId) {
+      return <span />;
+    }
+
+    const redacted = redactInvocationId(result.originInvocationId);
+    return <TextLink href={`/invocation/${result.originInvocationId}`}>{redacted}</TextLink>;
+  }
+
   private getCacheMetadata(scorecardResult: cache.ScoreCard.Result) {
     const digest = scorecardResult.digest;
     if (!digest?.hash) {
@@ -543,6 +576,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // or if there is an invalid result
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
+    // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146): This metadata request should be routed to the cache client for the cache proxy if applicable.
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
 
     service
@@ -552,6 +586,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             digest: digest,
             cacheType: scorecardResult.cacheType,
             instanceName: remoteInstanceName,
+            compressor: scorecardResult.compressor,
+            digestFunction: this.props.model.getDigestFunction(),
           }),
         })
       )
@@ -621,6 +657,19 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <span>
               {result.pathPrefix ? result.pathPrefix + "/" : ""}
               {result.name}
+            </span>
+          </>
+        ) : null}
+        {/* Show full origin invocation for AC hits */}
+        {capabilities.config.actionResultOriginEnabled &&
+        result.cacheType === resource.CacheType.AC &&
+        result.requestType === cache.RequestType.READ &&
+        result.status?.code === 0 &&
+        result.originInvocationId ? (
+          <>
+            <b>Origin invocation</b>
+            <span>
+              <TextLink href={`/invocation/${result.originInvocationId}`}>{result.originInvocationId}</TextLink>
             </span>
           </>
         ) : null}
@@ -904,6 +953,24 @@ fi
             )}
             <div className="cache-type-column">Cache</div>
             <div className="status-column">Status</div>
+            {this.isOriginColumnVisible() && (
+              <div className="origin-column">
+                <span>Origin</span>
+                <Tooltip
+                  renderContent={() => (
+                    <div className="cache-requests-card-hovercard">
+                      <div>
+                        <p>
+                          <b>Origin</b>
+                        </p>
+                        <p>The invocation that originally wrote the Action Cache entry.</p>
+                      </div>
+                    </div>
+                  )}>
+                  <HelpCircle className="icon" />
+                </Tooltip>
+              </div>
+            )}
             <div className="digest-column">Digest (hash/size)</div>
             {this.isCompressedSizeColumnVisible() && <div className="compressed-size-column">Compression</div>}
             <div className="duration-column">Duration {this.durationTooltip()}</div>
@@ -1124,4 +1191,9 @@ function groupResults(
  */
 function looksLikeDigest(actionId: string | null) {
   return actionId?.length === 64;
+}
+
+function redactInvocationId(invocationId: string) {
+  if (invocationId.length <= 8) return invocationId;
+  return `${invocationId.slice(0, 4)}…${invocationId.slice(-4)}`;
 }

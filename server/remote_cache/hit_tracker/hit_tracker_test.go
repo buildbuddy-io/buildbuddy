@@ -12,7 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -129,8 +131,10 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 		require.NoError(t, err)
 		env.SetMetricsCollector(mc)
-		ut := &fakeUsageTracker{}
+		ut := testusage.NewTracker()
 		env.SetUsageTracker(ut)
+		ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+		env.SetAuthenticator(ta)
 		env.SetClientIdentityService(&fakeIdentityService{})
 		incomingContextMetadata := make(map[string][]string)
 		if test.clientIdentity != "" {
@@ -143,6 +147,10 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		}
 		incomingContextMetadata[usageutil.SkipUsageTrackingHeaderName] = append(incomingContextMetadata[usageutil.SkipUsageTrackingEnabledValue], test.skipUsageHeaderValues...)
 		ctx := metadata.NewIncomingContext(context.Background(), incomingContextMetadata)
+		ctx = testauth.WithAuthenticatedUserInfo(ctx, &testauth.TestUser{
+			UserID:  "US1",
+			GroupID: "GR1",
+		})
 		iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 		trackedString := "false"
 		if test.usageTrackingExpected {
@@ -152,6 +160,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		{
 			// Bazel CAS cache hit
 			metrics.CacheEvents.Reset()
+			ut.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -172,25 +181,30 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 				prometheus.Labels{
 					metrics.CacheTypeLabel:      "cas",
 					metrics.CacheEventTypeLabel: "hit",
-					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.GroupID:             "GR1",
 					metrics.UsageTracked:        trackedString,
 				},
 			)))
 
 			if test.usageTrackingExpected {
-				require.Len(t, ut.Increments, 1)
-				assert.Equal(t, []*tables.UsageCounts{{
-					CASCacheHits:           1,
-					TotalDownloadSizeBytes: 1000,
-				}}, ut.Increments)
+				assert.ElementsMatch(t, []testusage.Total{
+					{
+						GroupID: "GR1",
+						Labels:  tables.UsageLabels{},
+						Counts: tables.UsageCounts{
+							CASCacheHits:           1,
+							TotalDownloadSizeBytes: 1000,
+						},
+					},
+				}, ut.Totals())
 			} else {
-				require.Len(t, ut.Increments, 0)
+				assert.Empty(t, ut.Totals())
 			}
-			ut.Increments = nil
 		}
 		{
 			// Executor CAS cache hit
 			metrics.CacheEvents.Reset()
+			ut.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -212,24 +226,30 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 				prometheus.Labels{
 					metrics.CacheTypeLabel:      "cas",
 					metrics.CacheEventTypeLabel: "hit",
-					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.GroupID:             "GR1",
 					metrics.UsageTracked:        trackedString,
 				},
 			)))
 
 			if test.usageTrackingExpected {
-				assert.Equal(t, []*tables.UsageCounts{{
-					CASCacheHits:           1,
-					TotalDownloadSizeBytes: 2000,
-				}}, ut.Increments)
+				assert.ElementsMatch(t, []testusage.Total{
+					{
+						GroupID: "GR1",
+						Labels:  tables.UsageLabels{},
+						Counts: tables.UsageCounts{
+							CASCacheHits:           1,
+							TotalDownloadSizeBytes: 2000,
+						},
+					},
+				}, ut.Totals())
 			} else {
-				require.Len(t, ut.Increments, 0)
+				assert.Empty(t, ut.Totals())
 			}
-			ut.Increments = nil
 		}
 		{
 			// Bazel CAS empty cache hit
 			metrics.CacheEvents.Reset()
+			ut.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -249,21 +269,29 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 				prometheus.Labels{
 					metrics.CacheTypeLabel:      "cas",
 					metrics.CacheEventTypeLabel: "hit",
-					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.GroupID:             "GR1",
 					metrics.UsageTracked:        trackedString,
 				},
 			)))
 
 			if test.usageTrackingExpected {
-				assert.Equal(t, []*tables.UsageCounts{{CASCacheHits: 1}}, ut.Increments)
+				assert.ElementsMatch(t, []testusage.Total{
+					{
+						GroupID: "GR1",
+						Labels:  tables.UsageLabels{},
+						Counts: tables.UsageCounts{
+							CASCacheHits: 1,
+						},
+					},
+				}, ut.Totals())
 			} else {
-				require.Len(t, ut.Increments, 0)
+				assert.Empty(t, ut.Totals())
 			}
-			ut.Increments = nil
 		}
 		{
 			// Bazel AC hit
 			metrics.CacheEvents.Reset()
+			ut.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -283,20 +311,25 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 				prometheus.Labels{
 					metrics.CacheTypeLabel:      "action_cache",
 					metrics.CacheEventTypeLabel: "hit",
-					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.GroupID:             "GR1",
 					metrics.UsageTracked:        trackedString,
 				},
 			)))
 
 			if test.usageTrackingExpected {
-				assert.Equal(t, []*tables.UsageCounts{{
-					ActionCacheHits:        1,
-					TotalDownloadSizeBytes: 111,
-				}}, ut.Increments)
+				assert.ElementsMatch(t, []testusage.Total{
+					{
+						GroupID: "GR1",
+						Labels:  tables.UsageLabels{},
+						Counts: tables.UsageCounts{
+							ActionCacheHits:        1,
+							TotalDownloadSizeBytes: 111,
+						},
+					},
+				}, ut.Totals())
 			} else {
-				require.Len(t, ut.Increments, 0)
+				assert.Empty(t, ut.Totals())
 			}
-			ut.Increments = nil
 		}
 	}
 }
@@ -338,14 +371,4 @@ func (f *fakeIdentityService) IdentityHeader(si *interfaces.ClientIdentity, expi
 // ValidateIncomingIdentity implements interfaces.ClientIdentityService.
 func (f *fakeIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
 	return ctx, nil
-}
-
-type fakeUsageTracker struct {
-	interfaces.UsageTracker
-	Increments []*tables.UsageCounts
-}
-
-func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
-	ut.Increments = append(ut.Increments, counts)
-	return nil
 }

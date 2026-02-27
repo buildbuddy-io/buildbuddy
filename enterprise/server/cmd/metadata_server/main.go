@@ -8,10 +8,10 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -59,18 +59,16 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	authenticator, err := remoteauth.NewRemoteAuthenticator()
-	if err != nil {
+	if err := remoteauth.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
-	env.SetAuthenticator(authenticator)
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
 
-	if err := gossip.Register(env); err != nil {
+	if err := clientidentity.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
 

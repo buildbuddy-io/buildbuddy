@@ -20,11 +20,20 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -36,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -49,6 +59,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -60,6 +71,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -73,7 +85,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	crand "crypto/rand"
+
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -244,7 +259,6 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	} else {
 		envOpts.RedisClient = testredis.Start(t).Client()
 	}
-
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	auth := enterprise_testauth.Configure(t, testEnv)
 	// Init with some random groups/users.
@@ -328,6 +342,9 @@ type BuildBuddyServerOptions struct {
 
 	// EnvModifier modifies the environment before starting the BuildBuddy server.
 	EnvModifier func(env *testenv.TestEnv)
+
+	// GRPCServerConfig configures the gRPC server, allowing extra interceptors.
+	GRPCServerConfig grpc_server.GRPCServerConfig
 }
 
 // buildBuddyServerEnv is a specialized environment that allows us to return a random SchedulerClient for every
@@ -346,6 +363,7 @@ type BuildBuddyServer struct {
 	env  *buildBuddyServerEnv
 	port int
 
+	grpcServerConfig        grpc_server.GRPCServerConfig
 	grpcServer              *grpc.Server
 	schedulerServer         *scheduler_server.SchedulerServer
 	executionServer         repb.ExecutionServer
@@ -366,13 +384,32 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	env.SetTaskRouter(router)
 	err = tasksize.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up TaskSizer")
-	executionServer, err := execution_server.NewExecutionServer(env)
-	require.NoError(t, err, "could not set up ExecutionServer")
-	env.SetRemoteExecutionService(executionServer)
 
 	olapDBHandle := testolapdb.NewHandle()
 	env.SetOLAPDBHandle(olapDBHandle)
 	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
+	err = redis_execution_collector.Register(env.TestEnv)
+	require.NoError(t, err, "could not set up ExecutionCollector")
+	executionServer, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err, "could not set up ExecutionServer")
+	env.SetRemoteExecutionService(executionServer)
+
+	// Configure customer-managed encryption keys (enabled if set per-group)
+	kmsDir := testfs.MakeTempDir(t)
+	masterKey := make([]byte, 32)
+	groupKey := make([]byte, 32)
+	_, err = crand.Read(masterKey)
+	require.NoError(t, err)
+	_, err = crand.Read(groupKey)
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, kmsDir, map[string]string{
+		"masterKey": string(masterKey),
+		"groupKey":  string(groupKey),
+	})
+	flags.Set(t, "keystore.master_key_uri", "local-insecure-kms://masterKey")
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	require.NoError(t, kms.Register(env.TestEnv))
+	require.NoError(t, crypter_service.Register(env.TestEnv))
 
 	if opts.EnvModifier != nil {
 		opts.EnvModifier(env.TestEnv)
@@ -380,6 +417,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
+	env.SetSchedulerService(scheduler)
+
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, false)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
@@ -391,13 +430,11 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*zstd=*/ true,
 	)
 
-	err = redis_execution_collector.Register(env.TestEnv)
-	require.NoError(t, err, "could not set up ExecutionCollector")
-
 	server := &BuildBuddyServer{
 		t:                       t,
 		env:                     env,
 		port:                    port,
+		grpcServerConfig:        opts.GRPCServerConfig,
 		schedulerServer:         scheduler,
 		executionServer:         executionServer,
 		buildBuddyServiceServer: buildBuddyServiceServer,
@@ -421,11 +458,19 @@ func (s *BuildBuddyServer) start() {
 	if err != nil {
 		assert.FailNow(s.t, fmt.Sprintf("could not listen on port %d", s.port), err.Error())
 	}
-	grpcServer, grpcServerRunFunc := testenv.GRPCServer(s.env.TestEnv, lis)
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(s.env, s.grpcServerConfig)...)
 	s.grpcServer = grpcServer
+	s.env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
+	grpcServerRunFunc := func() {
+		if err = grpcServer.Serve(lis); err != nil {
+			log.Fatalf("Error starting gRPC server: %v", err)
+		}
+	}
 
 	// Configure services needed by remote execution.
 
+	require.NotNil(s.t, s.env.GetAuthenticator())
+	authpb.RegisterAuthServiceServer(grpcServer, auth_service.New(s.env.GetAuthenticator()))
 	s.env.SetSchedulerService(s.schedulerServer)
 	scpb.RegisterSchedulerServer(grpcServer, s.schedulerServer)
 	repb.RegisterExecutionServer(grpcServer, s.executionServer)
@@ -665,6 +710,9 @@ type ExecutorOptions struct {
 	APIKey string
 	// Optional Pool name for the executor
 	Pool string
+	// Optional connection for the executor to use for CAS/AC/ByteStream.
+	// Defaults to the app proxy connection if unset.
+	CacheConn grpc.ClientConnInterface
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -690,6 +738,11 @@ func (e *Executor) ShutdownTaskScheduler() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
 	defer cancel()
 	e.taskScheduler.Shutdown(ctx)
+}
+
+// QueueLength returns the current number of tasks in the executor's queue.
+func (e *Executor) QueueLength() int {
+	return e.taskScheduler.QueueLength()
 }
 
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
@@ -809,10 +862,15 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	clientConn := r.appProxyConn
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
-	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
+
+	cacheConn := grpc.ClientConnInterface(clientConn)
+	if options.CacheConn != nil {
+		cacheConn = options.CacheConn
+	}
+	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(cacheConn))
 
 	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
@@ -849,7 +907,10 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
 	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, "fake-hostname")
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, taskLeaser, &options.priorityTaskSchedulerOptions)
+	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, taskLeaser, &options.priorityTaskSchedulerOptions)
+	if err != nil {
+		assert.FailNow(r.t, "could not create priority task scheduler", err)
+	}
 	taskScheduler.Start()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -918,6 +979,72 @@ func (r *Env) waitForExecutorRegistration() {
 	}
 
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+}
+
+type CacheProxy struct {
+	t    testing.TB
+	env  *testenv.TestEnv
+	Port int
+	conn *grpc_client.ClientConnPool
+}
+
+func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
+	return bspb.NewByteStreamClient(cp.conn)
+}
+
+func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
+	return repb.NewContentAddressableStorageClient(cp.conn)
+}
+
+func (r *Env) AddCacheProxy() *CacheProxy {
+	appConn := r.appProxyConn
+	port := testport.FindFree(r.t)
+	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+
+	grpcServerConfig := grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
+			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
+		},
+		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
+			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
+		},
+	}
+
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
+	require.NoError(r.t, err)
+	proxyEnv.SetAuthenticator(authenticator)
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	require.NoError(r.t, atime_updater.Register(proxyEnv))
+
+	// Register the internal (BS & CAS) gRPC servers.
+	localBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(r.t, err)
+	proxyEnv.SetLocalByteStreamServer(localBSS)
+	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(proxyEnv)
+	require.NoError(r.t, err)
+	proxyEnv.SetLocalCASServer(localCAS)
+
+	// Set up the proxy services and gRPC server.
+	s, err := grpc_server.New(proxyEnv, port, false, grpcServerConfig)
+	require.NoError(r.t, err)
+	require.NoError(r.t, capabilities_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, action_cache_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, byte_stream_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, content_addressable_storage_server_proxy.Register(proxyEnv))
+	repb.RegisterActionCacheServer(s.GetServer(), proxyEnv.GetActionCacheServer())
+	bspb.RegisterByteStreamServer(s.GetServer(), proxyEnv.GetByteStreamServer())
+	repb.RegisterContentAddressableStorageServer(s.GetServer(), proxyEnv.GetCASServer())
+	repb.RegisterCapabilitiesServer(s.GetServer(), proxyEnv.GetCapabilitiesServer())
+	require.NoError(r.t, s.Start())
+
+	// Finally, create the client connection.
+	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
+	require.NoError(r.t, err)
+	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
@@ -1350,23 +1477,23 @@ func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces
 }
 
 type FakeTaskSizer struct {
-	GetImpl func(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+	GetImpl func(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize
 }
 
 var _ interfaces.TaskSizer = (*FakeTaskSizer)(nil)
 
-func (f *FakeTaskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (f *FakeTaskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if f.GetImpl == nil {
 		return nil
 	}
-	return f.GetImpl(ctx, task)
+	return f.GetImpl(ctx, cmd, props)
 }
 
-func (f *FakeTaskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
+func (f *FakeTaskSizer) Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error {
 	return nil
 }
 
-func (f *FakeTaskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (f *FakeTaskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	return nil
 }
 

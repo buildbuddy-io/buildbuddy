@@ -240,8 +240,8 @@ func main() {
 	}
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
 
-	log.Printf("MDLoad testing target %q", *target)
-	log.Printf("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
+	log.Infof("MDLoad testing target %q", *target)
+	log.Infof("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
 
 	if *monitoringAddr != "" {
 		monitoring.StartMonitoringHandler(env, *monitoringAddr)
@@ -251,7 +251,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to connect to target '%s': %s", *target, err)
 	}
-	log.Printf("Connected to target: %q", *target)
+	log.Infof("Connected to target: %q", *target)
 
 	mdClient := mdspb.NewMetadataServiceClient(conn)
 	if *apiKey != "" {
@@ -270,7 +270,7 @@ func main() {
 
 	// Periodically print read and write QPS.
 	eg.Go(func() error {
-		log.Printf("Starting printer!")
+		log.Infof("Starting printer!")
 		ticker := time.NewTicker(time.Second)
 		for {
 			select {
@@ -278,7 +278,7 @@ func main() {
 				log.Errorf("exiting")
 				return nil
 			case <-ticker.C:
-				log.Printf("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
+				log.Infof("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
 	})

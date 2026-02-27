@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -68,6 +69,13 @@ type StaticRegistry struct {
 
 	targetAddresses sync.Map // map of NHID(string) => addresses
 
+	// Pod watcher for resolving raft addresses to IPs via k8s Watch API.
+	// When set, raft addresses that are pod FQDNs are watched for IP changes
+	// and Resolve() returns the resolved IP instead of the hostname.
+	podWatcherManager *kuberesolver.PodWatcherManager
+	resolvedRaftAddrs sync.Map // map of raftAddress(string) => resolved IP:port(string)
+	raftWatchCancels  sync.Map // map of raftAddress(string) => cancel func()
+
 	log log.Logger
 }
 
@@ -83,6 +91,52 @@ func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator,
 		n.partitioner = &fixedPartitioner{capacity: streamConnections}
 	}
 	return n
+}
+
+// SetPodWatcherManager configures the registry to resolve raft addresses
+// (pod FQDNs) to IPs using the k8s Watch API via the given PodWatcherManager.
+// When set, Resolve() returns the resolved pod IP instead of the hostname,
+// and uses the IP as the connection key so that an IP change triggers a new
+// connection.
+func (n *StaticRegistry) SetPodWatcherManager(m *kuberesolver.PodWatcherManager) {
+	n.podWatcherManager = m
+}
+
+// resolveRaftAddress returns the resolved IP:port for the given raft address
+// if a pod watcher is tracking it, otherwise returns the address as-is.
+func (n *StaticRegistry) resolveRaftAddress(raftAddr string) string {
+	if resolved, ok := n.resolvedRaftAddrs.Load(raftAddr); ok {
+		return resolved.(string)
+	}
+	return raftAddr
+}
+
+// watchRaftAddress starts watching the given raft address for IP changes
+// via the k8s Watch API. If the address is not a pod FQDN or the pod watcher
+// is not configured, this is a no-op.
+func (n *StaticRegistry) watchRaftAddress(raftAddr string) {
+	if n.podWatcherManager == nil {
+		return
+	}
+	if _, ok := n.raftWatchCancels.Load(raftAddr); ok {
+		return
+	}
+	cancel, err := n.podWatcherManager.WatchPodIP(raftAddr, func(ipPort string, watchErr error) {
+		if watchErr != nil {
+			if _, had := n.resolvedRaftAddrs.LoadAndDelete(raftAddr); had {
+				n.log.Warningf("Raft address %s lost resolution: %s", raftAddr, watchErr)
+			}
+			return
+		}
+		if prev, loaded := n.resolvedRaftAddrs.Swap(raftAddr, ipPort); !loaded || prev.(string) != ipPort {
+			n.log.Infof("Raft address %s resolved to %s", raftAddr, ipPort)
+		}
+	})
+	if err != nil {
+		// Not a pod FQDN or not in k8s — fall back to hostname resolution.
+		return
+	}
+	n.raftWatchCancels.Store(raftAddr, cancel)
 }
 
 // Add adds the specified node and its target info to the registry.
@@ -156,7 +210,8 @@ func (n *StaticRegistry) Resolve(rangeID uint64, replicaID uint64) (string, stri
 	if err != nil {
 		return "", "", err
 	}
-	return ci.GetRaftAddress(), n.getConnectionKey(ci.GetRaftAddress(), rangeID), nil
+	addr := n.resolveRaftAddress(ci.GetRaftAddress())
+	return addr, n.getConnectionKey(addr, rangeID), nil
 }
 
 // ResolveRaft returns the raft address and the connection key of the specified node.
@@ -224,6 +279,7 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 		grpc: grpcAddress,
 	}
 	n.targetAddresses.Store(target, a)
+	n.watchRaftAddress(raftAddress)
 }
 
 // ListNodes lists all the {NHID, raftAddress, grpcAddress} available in the
@@ -244,6 +300,12 @@ func (n *StaticRegistry) ListNodes() []*rfpb.ConnectionInfo {
 }
 
 func (n *StaticRegistry) Close() error {
+	n.raftWatchCancels.Range(func(key, value interface{}) bool {
+		if cancel, ok := value.(func()); ok && cancel != nil {
+			cancel()
+		}
+		return true
+	})
 	return nil
 }
 
@@ -299,6 +361,12 @@ func NewDynamicNodeRegistry(gossipManager interfaces.GossipService, streamConnec
 	// gossip callbacks.
 	gossipManager.AddListener(dnr)
 	return dnr
+}
+
+// SetPodWatcherManager configures the underlying static registry to resolve
+// raft addresses via the k8s Watch API.
+func (d *DynamicNodeRegistry) SetPodWatcherManager(m *kuberesolver.PodWatcherManager) {
+	d.sReg.SetPodWatcherManager(m)
 }
 
 func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
@@ -462,7 +530,8 @@ func (d *DynamicNodeRegistry) Resolve(rangeID uint64, replicaID uint64) (string,
 	if err != nil {
 		return "", "", err
 	}
-	return ci.GetRaftAddress(), d.sReg.getConnectionKey(ci.GetRaftAddress(), rangeID), nil
+	addr := d.sReg.resolveRaftAddress(ci.GetRaftAddress())
+	return addr, d.sReg.getConnectionKey(addr, rangeID), nil
 }
 
 // Lookup returns the connectionInfo of the specified node

@@ -156,15 +156,23 @@ export function decodeMetricUrlParam(param: string): stat_filter.Metric | undefi
 }
 
 export function encodeWorkerUrlParam(workerId: string): string {
-  return `e1|${workerId.length}|${encodeURIComponent(workerId)}`;
+  return `e1|${workerId.length}|${workerId}`;
 }
 
 export function encodeTargetLabelUrlParam(targetLabel: string): string {
-  return `e2|${targetLabel.length}|${encodeURIComponent(targetLabel)}`;
+  return `e2|${targetLabel.length}|${targetLabel}`;
 }
 
 export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
-  return `e3|${actionMnemonic.length}|${encodeURIComponent(actionMnemonic)}`;
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
+}
+
+export function encodeEffectivePoolUrlParam(effectivePool: string): string {
+  return `e4|${effectivePool.length}|${effectivePool}`;
+}
+
+export function encodeExitCodeUrlParam(exitCode: string): string {
+  return `e5|${exitCode.length}|${exitCode}`;
 }
 
 export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {

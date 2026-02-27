@@ -43,7 +43,7 @@ go_test(
         # We don't want different different db tests to be assigned to the samed
         # recycled runner, because we can't fit all db docker images with the
         # default disk limit.
-        "test.runner-recycling-key": "clickhouse",
+        "test.runner-recycling-key": "clickhouse25.3",
     },
     tags = ["docker"],
     deps = [

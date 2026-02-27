@@ -2,6 +2,7 @@ package usage_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -15,7 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -25,6 +29,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
+
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
 const (
@@ -32,6 +38,8 @@ const (
 )
 
 var (
+	clickhouseEnabled = flag.Bool("test_clickhouse_enabled", false, "Whether to enable Clickhouse for usage tracking tests")
+
 	// Define some usage periods
 
 	period1Start = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -43,6 +51,28 @@ var (
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 
+	if *clickhouseEnabled {
+		clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
+		flags.Set(t, "olap_database.data_source", clickhouseDSN)
+		flags.Set(t, "app.write_usage_to_olap_db", true)
+		err := clickhouse.Register(te)
+		require.NoError(t, err)
+
+		// Create the Usage view which is how we will actually query
+		// usage.
+		// TODO: move this to clickhouse schema package
+		dbh := te.GetOLAPDBHandle()
+		err = dbh.GORM(context.Background(), "create_usage_view").Exec(`
+			CREATE VIEW "Usage" AS
+			SELECT
+				group_id, period_start, sku, labels, SUM(count) AS count
+			FROM RawUsage FINAL
+			GROUP BY
+				group_id, period_start, sku, labels
+		`).Error
+		require.NoError(t, err)
+	}
+
 	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
 	te.SetDefaultRedisClient(rdb)
@@ -50,7 +80,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	rmc := redis_metrics_collector.New(rdb, rbuf)
 	te.SetMetricsCollector(rmc)
 
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
 	))
@@ -89,6 +119,22 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	})
 	require.NoError(t, err)
 	return usages
+}
+
+func queryAllOLAPUsages(t *testing.T, te *testenv.TestEnv) []*olaptables.Usage {
+	rows := []*olaptables.Usage{}
+	ctx := context.Background()
+	dbh := te.GetOLAPDBHandle()
+	rq := dbh.NewQuery(ctx, "get_olap_usages").Raw(`
+		SELECT * From "Usage"
+		ORDER BY group_id, period_start, sku, labels ASC;
+	`)
+	err := db.ScanEach(rq, func(ctx context.Context, u *olaptables.Usage) error {
+		rows = append(rows, u)
+		return nil
+	})
+	require.NoError(t, err)
+	return rows
 }
 
 // requireNoFurtherDBAccess makes the test fail immediately if it tries to
@@ -138,8 +184,29 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	collectionsKey := "usage/collections/" + timeStr(period1Start)
 	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection1
 	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection2
+	expectedKeys := []string{countsKey1, countsKey2, collectionsKey}
+	if *clickhouseEnabled {
+		chCollectionsKey := "usage/v2/collections/" + timeStr(period1Start)
+		chEncodedCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal"
+		chEncodedCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal"
+		chCountsKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection1
+		chCountsKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection2
+		expectedKeys = append(expectedKeys, chCollectionsKey, chCountsKey1, chCountsKey2)
+
+		chCounts1, err := rdb.HGetAll(ctx, chCountsKey1).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits": "1",
+		}, chCounts1, "counts should match what we observed")
+
+		chCounts2, err := rdb.HGetAll(ctx, chCountsKey2).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits": "10",
+		}, chCounts2, "counts should match what we observed")
+	}
 	require.ElementsMatch(
-		t, []string{countsKey1, countsKey2, collectionsKey}, keys,
+		t, expectedKeys, keys,
 		"redis keys should match expected format")
 
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
@@ -190,6 +257,32 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			UsageLabels: *labels,
 		},
 	}, usages, "data flushed to DB should match expected values")
+
+	if *clickhouseEnabled {
+		olapUsages := queryAllOLAPUsages(t, te)
+		require.Equal(t, []*olaptables.Usage{
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheCASHits,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 1,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheCASHits,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 10,
+			},
+		}, olapUsages)
+	}
 }
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {

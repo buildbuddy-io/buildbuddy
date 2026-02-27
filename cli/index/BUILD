@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "index",
     srcs = ["index.go"],
@@ -37,5 +39,3 @@ go_test(
         "@org_golang_google_grpc//:grpc",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

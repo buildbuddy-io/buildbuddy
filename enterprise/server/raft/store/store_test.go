@@ -188,6 +188,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 
 func TestUpdateRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -213,6 +214,7 @@ func TestUpdateRangeDescriptor(t *testing.T) {
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "gossip.retransmit_mult", 10)
 	clock := clockwork.NewFakeClock()
 
@@ -317,6 +319,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -384,6 +387,109 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}
 }
 
+func TestStartMissingShard(t *testing.T) {
+	// Test that the zombie janitor starts a missing shard when a replica
+	// exists in the range descriptor but the shard is not running on the node.
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+	clock := clockwork.NewFakeClock()
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	allStores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, allStores...)
+
+	testutil.WaitForRangeLease(t, ctx, allStores, 1)
+	testutil.WaitForRangeLease(t, ctx, allStores, 2)
+
+	// Create range descriptor for range 3 with replicas on all 3 stores, and write
+	// to the meta range.
+	rd3 := &rfpb.RangeDescriptor{
+		Start:   []byte("a"),
+		End:     []byte("z"),
+		RangeId: 3,
+		Replicas: []*rfpb.ReplicaDescriptor{
+			{RangeId: 3, ReplicaId: 1, Nhid: proto.String(s1.NHID())},
+			{RangeId: 3, ReplicaId: 2, Nhid: proto.String(s2.NHID())},
+			{RangeId: 3, ReplicaId: 3, Nhid: proto.String(s3.NHID())},
+		},
+		Generation: 1,
+	}
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, allStores, 1)
+	rdBuf, err := proto.Marshal(rd3)
+	require.NoError(t, err)
+
+	writeRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(rd3.GetEnd()),
+			Value: rdBuf,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+
+	writeRsp, err := s.Sender().SyncPropose(ctx, constants.MetaRangePrefix, writeRDBatch)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	testutil.WaitForRangeLease(t, ctx, allStores, 1)
+
+	// Start range 3 shard on s1 and s2 only (not s3)
+	initialMembers := map[uint64]string{
+		1: s1.NHID(),
+		2: s2.NHID(),
+		3: s3.NHID(),
+	}
+
+	_, err = s1.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:       3,
+		ReplicaId:     1,
+		InitialMember: initialMembers,
+	})
+	require.NoError(t, err)
+
+	_, err = s2.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:       3,
+		ReplicaId:     2,
+		InitialMember: initialMembers,
+	})
+	require.NoError(t, err)
+
+	// Verify s3 has ranges 1 and 2, but not range 3 yet
+	initialReplicas := s3.ListOpenReplicasForTest()
+	require.Len(t, initialReplicas, 2)
+
+	log.Info("====test setup complete, waiting for missing shard to start====")
+
+	// Advance clock to trigger zombie janitor scan
+	now := time.Now()
+	for {
+		clock.Advance(31 * time.Second)
+		list := s3.ListOpenReplicasForTest()
+		if len(list) == 3 {
+			// Verify range 3 is now running
+			rangeIDs := make([]uint64, len(list))
+			for i, r := range list {
+				rangeIDs[i] = r.GetRangeId()
+			}
+
+			require.Contains(t, rangeIDs, uint64(3))
+			log.Info("====missing shard started====")
+			break
+		}
+		if time.Since(now) > 30*time.Second {
+			require.FailNowf(t, "timeout waiting for missing shard to start on s3", "s3 has %d replicas, expected 3", len(list))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
@@ -442,6 +548,7 @@ func TestAddReplica(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -495,6 +602,7 @@ func TestAddReplica_MetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -550,6 +658,7 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -617,6 +726,7 @@ func TestAddReplica_NonVoterNotStarted(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -688,6 +798,7 @@ func TestAddReplica_NonVoterStarted(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -767,6 +878,7 @@ func TestAddReplica_Voter(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -858,6 +970,7 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -958,6 +1071,7 @@ func TestRemoveData_ShardStartedNoRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -993,6 +1107,7 @@ func TestRemoveReplicaRemoveData_StagingReplicaStarted(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -1085,6 +1200,7 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	// Set up 3 stores with range 1 on all three stores and range 2 on s1 and s2.
 	sf := testutil.NewStoreFactory(t)
@@ -1257,6 +1373,7 @@ func TestAddRangeBack(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -1785,6 +1902,7 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 func TestCleanupExpiredSessions(t *testing.T) {
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	clock := clockwork.NewFakeClock()
@@ -2430,7 +2548,7 @@ func TestSetupNewPartitions(t *testing.T) {
 
 		replicas := s1.ListOpenReplicasForTest()
 		if len(replicas) < 7 {
-			log.Infof("====num of replicas: %d", len(replicas))
+			log.Infof("====num of replicas on %s: %d", s1.NHID(), len(replicas))
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}

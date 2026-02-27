@@ -9,11 +9,10 @@ filegroup(
     srcs = [":rds-combined-ca-bundle.pem"],
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = [":embedded_certs"],
+    embedsrcs = [":embedded_certs"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/aws_rds_certs",
     deps = [
         "//server/util/fileresolver",

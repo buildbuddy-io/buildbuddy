@@ -6,7 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/real_environment",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:cache_service_go_proto",
         "//proto:hit_tracker_go_proto",
+        "//proto:oci_fetcher_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",

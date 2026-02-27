@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "flaghistory",
     srcs = ["flaghistory.go"],
@@ -13,8 +15,6 @@ go_library(
         "//server/util/uuid",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "flaghistory_test",

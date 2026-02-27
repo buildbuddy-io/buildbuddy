@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/compression",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/metrics",
         "//server/util/bytebufferpool",
+        "//server/util/ioutil",
         "//server/util/log",
         "@com_github_klauspost_compress//zstd",
         "@com_github_prometheus_client_golang//prometheus",
@@ -20,6 +22,8 @@ go_test(
     deps = [
         ":compression",
         "//server/testutil/testdigest",
+        "//server/util/bytebufferpool",
+        "//server/util/ioutil",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],

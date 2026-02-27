@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -99,6 +101,50 @@ func setupTestEnv(t *testing.T) *testenv.TestEnv {
 // TestManifestWrittenOnlyToAC sets the byte stream server and client to nil,
 // writes a manifest to the AC, and fetches it. If that path were to touch the CAS
 // at all, there would be an error trying to write to a nil client or server.
+func TestManifestWithRecordActionResultOrigin(t *testing.T) {
+	// When cache.record_action_result_origin is enabled, the action cache server
+	// appends OriginMetadata to AuxiliaryMetadata. This test verifies that
+	// FetchManifestFromAC correctly handles manifests that have additional
+	// auxiliary metadata entries beyond the OCIManifestContent.
+	flags.Set(t, "cache.record_action_result_origin", true)
+
+	te := setupTestEnv(t)
+
+	imageName := "test_manifest_with_record_origin"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	raw, err := image.RawManifest()
+	require.NoError(t, err)
+
+	// Add request metadata with an invocation ID to trigger OriginMetadata recording
+	ctx, err := bazel_request.WithRequestMetadata(context.Background(), &repb.RequestMetadata{
+		ToolInvocationId: "f5b5e1f7-7e91-4e3f-88f6-aaaaaaaaaaaa",
+	})
+	require.NoError(t, err)
+
+	mediaType, err := image.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	hash, err := image.Digest()
+	require.NoError(t, err)
+
+	acClient := te.GetActionCacheClient()
+	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+
+	err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType, ref)
+	require.NoError(t, err)
+
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+	require.NoError(t, err)
+	require.NotNil(t, mc)
+
+	require.Equal(t, contentType, mc.ContentType)
+	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
 func TestManifestWrittenOnlyToAC(t *testing.T) {
 	te := setupTestEnv(t)
 

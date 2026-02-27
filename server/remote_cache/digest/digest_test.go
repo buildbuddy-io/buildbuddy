@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -562,6 +563,50 @@ func TestRandomGenerator(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, size, d.SizeBytes)
 		assert.InDelta(t, int(float64(size)*expectedCompression), len(cb), float64(size)*0.20, "should get approximately 0.3 compression ratio")
+	}
+}
+
+func TestSafeBufferSize(t *testing.T) {
+	gen := digest.RandomGenerator(0)
+
+	testCases := []struct {
+		cacheType          rspb.CacheType
+		isTreeCache        bool
+		size               int64
+		expectedBufferSize int
+	}{
+		// AC cache types
+		{rspb.CacheType_AC, false, 0, 4096},
+		{rspb.CacheType_AC, false, 1_000, 4096},
+		{rspb.CacheType_AC, false, 10_000, 4096},
+		{rspb.CacheType_AC, false, 100_000, 4096},
+		{rspb.CacheType_AC, true, 0, 32},
+		{rspb.CacheType_AC, true, 1_000, 1_000},
+		{rspb.CacheType_AC, true, 10_000, 10_000},
+		{rspb.CacheType_AC, true, 100_000, 50_000},
+		// CAS cache types
+		{rspb.CacheType_CAS, false, 0, 32},
+		{rspb.CacheType_CAS, false, 1_000, 1_000},
+		{rspb.CacheType_CAS, false, 10_000, 10_000},
+		{rspb.CacheType_CAS, false, 100_000, 50_000},
+		{rspb.CacheType_CAS, true, 0, 32},
+		{rspb.CacheType_CAS, true, 1_000, 1_000},
+		{rspb.CacheType_CAS, true, 10_000, 10_000},
+		{rspb.CacheType_CAS, true, 100_000, 50_000},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%s_tree_cache_%t_size_%d", tc.cacheType, tc.isTreeCache, tc.size), func(t *testing.T) {
+			d, _, err := gen.RandomDigestBuf(tc.size)
+			require.NoError(t, err)
+			instanceName := ""
+			if tc.isTreeCache {
+				instanceName = digest.GetTreeCacheInstanceName(d)
+			}
+			rn := digest.NewResourceName(d, instanceName, tc.cacheType, repb.DigestFunction_SHA256).ToProto()
+			size := digest.SafeBufferSize(rn, 50_000)
+			require.Equal(t, tc.expectedBufferSize, size)
+		})
 	}
 }
 

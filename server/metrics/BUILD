@@ -11,19 +11,3 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus/promauto",
     ],
 )
-
-genrule(
-    name = "generate_mdx",
-    srcs = [":metrics.go"],
-    outs = ["docs.mdx"],
-    cmd_bash = """
-    BAZEL_BINDIR=$(BINDIR) python3 $(location :generate_docs.py) \
-        --prettier_path=$(location //tools/prettier) \
-        --input_path=$(SRCS) \
-        --output_path=$@
-    """,
-    tools = [
-        ":generate_docs.py",
-        "//tools/prettier",
-    ],
-)
