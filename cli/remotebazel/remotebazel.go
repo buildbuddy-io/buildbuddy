@@ -337,14 +337,24 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	defaultBranch, err := determineDefaultBranch(remote.name)
-	if err != nil {
-		return nil, status.WrapError(err, "get default branch")
+	defaultBranch := ""
+	if *runFromBranch == "" && *runFromCommit == "" {
+		defaultBranch, err = determineDefaultBranch(remote.name)
+		if err != nil {
+			return nil, status.WrapError(err, "get default branch")
+		}
 	}
 
 	branch, commit, err := getBaseBranchAndCommit(remote.name, defaultBranch)
 	if err != nil {
 		return nil, status.WrapError(err, "get base branch and commit")
+	}
+
+	if defaultBranch == "" {
+		defaultBranch, err = determineDefaultBranch(remote.name)
+		if err != nil {
+			log.Warnf("Failed to fetch default branch: %s", err)
+		}
 	}
 
 	repoConfig := &RepoConfig{
