@@ -408,31 +408,22 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
-		akg := &apiKeyGroup{}
-		qb := d.newAPIKeyGroupQuery(sd)
-		keyClauses := query_builder.OrClauses{}
-		if !*encryptOldKeys {
-			keyClauses.AddOr("ak.value = ?", apiKey)
-		}
-		if d.apiKeyEncryptionKey != nil {
-			encryptedAPIKey, err := d.encryptAPIKey(apiKey)
-			if err != nil {
-				return nil, err
+		akg, err := d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_key", sd, func(qb *query_builder.Query) error {
+			keyClauses := query_builder.OrClauses{}
+			if !*encryptOldKeys {
+				keyClauses.AddOr("ak.value = ?", apiKey)
 			}
-			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
-		}
-		keyQuery, keyArgs := keyClauses.Build()
-		qb.AddWhereClause(keyQuery, keyArgs...)
-		q, args := qb.Build()
-
-		err := d.h.NewQueryWithOpts(
-			ctx,
-			"authdb_get_api_key_group_by_key",
-			db.Opts().WithStaleReads(),
-		).Raw(
-			q, args...,
-		).Take(akg)
-
+			if d.apiKeyEncryptionKey != nil {
+				encryptedAPIKey, err := d.encryptAPIKey(apiKey)
+				if err != nil {
+					return err
+				}
+				keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
+			}
+			keyQuery, keyArgs := keyClauses.Build()
+			qb.AddWhereClause(keyQuery, keyArgs...)
+			return nil
+		})
 		if err != nil {
 			if db.IsRecordNotFound(err) {
 				if d.apiKeyGroupCache != nil {
@@ -440,9 +431,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 				}
 				return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 			}
-			return nil, err
-		}
-		if err := d.fillChildGroupIDs(ctx, akg); err != nil {
 			return nil, err
 		}
 		if d.apiKeyGroupCache != nil {
@@ -466,31 +454,42 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 			return d, nil
 		}
 	}
-	akg := &apiKeyGroup{}
-	qb := d.newAPIKeyGroupQuery(sd)
-	qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
-	q, args := qb.Build()
-
-	err := d.h.NewQueryWithOpts(
-		ctx,
-		"authdb_get_api_key_group_by_id",
-		db.Opts().WithStaleReads(),
-	).Raw(
-		q,
-		args...,
-	).Take(akg)
-
+	akg, err := d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_id", sd, func(qb *query_builder.Query) error {
+		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
+		return nil
+	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
 		}
 		return nil, err
 	}
-	if err := d.fillChildGroupIDs(ctx, akg); err != nil {
-		return nil, err
-	}
 	if d.apiKeyGroupCache != nil {
 		d.apiKeyGroupCache.Add(cacheKey, akg)
+	}
+	return akg, nil
+}
+
+func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
+	qb := d.newAPIKeyGroupQuery(subDomain)
+	if err := addConds(qb); err != nil {
+		return nil, err
+	}
+	q, args := qb.Build()
+	akg := &apiKeyGroup{}
+	err := d.h.NewQueryWithOpts(
+		ctx,
+		queryName,
+		db.Opts().WithStaleReads(),
+	).Raw(
+		q,
+		args...,
+	).Take(akg)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.fillChildGroupIDs(ctx, akg); err != nil {
+		return nil, err
 	}
 	return akg, nil
 }
