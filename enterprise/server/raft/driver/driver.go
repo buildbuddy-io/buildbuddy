@@ -504,7 +504,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		minReplicas = rq.minMetaRangeReplicas
 	}
 
-	desiredQuorum := computeQuorum(rq.minReplicasPerRange)
+	desiredQuorum := computeQuorum(minReplicas)
 	quorum := computeQuorum(curReplicas)
 
 	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
