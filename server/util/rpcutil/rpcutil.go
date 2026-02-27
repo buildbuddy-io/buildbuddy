@@ -78,13 +78,15 @@ func NewReceiver[T proto.Message](ctx context.Context, stream RecvStream[T]) Rec
 	return Receiver[T]{ctx, streamMsgs}
 }
 
-type SendStream[T proto.Message] interface {
-	Send(T) error
+type SendStream[S proto.Message, R proto.Message] interface {
+	Send(S) error
+	CloseAndRecv() (R, error)
 }
 
-type Sender[T proto.Message] struct {
+type Sender[S proto.Message, R proto.Message] struct {
 	ctx      context.Context
-	sendChan chan T
+	stream   SendStream[S, R]
+	sendChan chan S
 	errChan  chan error
 }
 
@@ -95,7 +97,7 @@ type Sender[T proto.Message] struct {
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
 // acknowledge individual messages. A timeout wil only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
-func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause error) error {
+func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
 	s.sendChan <- msg
 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
@@ -108,19 +110,38 @@ func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause err
 	}
 }
 
+// CloseAndRecvWithTimeoutCause calls CloseAndRecv on the underlying stream,
+// waiting a maximum of timeout. If timeout is reached, the given cause is
+// returned as the error.
+func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
+	ch := make(chan StreamMsg[R], 1)
+	go func() {
+		rsp, err := s.stream.CloseAndRecv()
+		ch <- StreamMsg[R]{rsp, err}
+	}()
+	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
+	defer cancel()
+	select {
+	case msg := <-ch:
+		return msg.Data, msg.Error
+	case <-ctx.Done():
+		return *new(R), context.Cause(ctx)
+	}
+}
+
 // NewSender returns a stream handle that can be used to implement more
 // advanced stream handling, such as per-send timeouts.
 //
 // Example usage:
 //
-// sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+// sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
 //
 //	for {
 //		err := sender.SendWithTimeoutCause(5 * time.Second, status.DeadlineExceededError("blah blah blah"))
 //		// handle err
 //	}
-func NewSender[T proto.Message](ctx context.Context, stream SendStream[T]) Sender[T] {
-	sendChan := make(chan T, 1)
+func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
+	sendChan := make(chan S, 1)
 	errChan := make(chan error)
 	go func() {
 		for {
@@ -133,7 +154,7 @@ func NewSender[T proto.Message](ctx context.Context, stream SendStream[T]) Sende
 			}
 		}
 	}()
-	return Sender[T]{ctx, sendChan, errChan}
+	return Sender[S, R]{ctx, stream, sendChan, errChan}
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.
