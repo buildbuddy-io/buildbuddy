@@ -241,11 +241,41 @@ func RedactCmdLine(tokens []string) {
 }
 
 func RedactText(txt string) string {
+	return RedactTextWithValues(txt, nil)
+}
+
+func RedactTextWithValues(txt string, redactionValues []string) string {
 	txt = stripURLSecrets(txt)
 	txt = redactRemoteHeaders(txt)
 	txt = redactBuildBuddyAPIKeys(txt)
 	txt = redactEnvVars(txt)
+	for _, value := range sortByLengthDesc(redactionValues) {
+		if value == "" {
+			continue
+		}
+		txt = strings.ReplaceAll(txt, value, redactedPlaceholder)
+	}
 	return txt
+}
+
+func sortByLengthDesc(values []string) []string {
+	sorted := slices.Clone(values)
+	slices.SortFunc(sorted, func(a, b string) int {
+		if len(a) > len(b) {
+			return -1
+		}
+		if len(a) < len(b) {
+			return 1
+		}
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
+	})
+	return slices.Compact(sorted)
 }
 
 // redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.

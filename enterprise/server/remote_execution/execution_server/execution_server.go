@@ -3,6 +3,7 @@ package execution_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -69,6 +70,8 @@ import (
 const (
 	updateExecutionTimeout             = 15 * time.Second
 	deletePendingExecutionExtraTimeout = 10 * time.Second
+
+	secretEnvVarNamesForRedaction = "BUILDBUDDY_SECRET_ENV_VAR_NAMES"
 
 	// When an action finishes, schedule the corresponding pubsub channel to
 	// be discarded after this time. There may be multiple waiters for a single
@@ -861,6 +864,20 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			return nil, err
 		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+		secretEnvVarNames := make([]string, 0, len(envVars))
+		for _, envVar := range envVars {
+			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
+		}
+		if len(secretEnvVarNames) > 0 {
+			serializedNames, err := json.Marshal(secretEnvVarNames)
+			if err != nil {
+				return nil, status.WrapError(err, "marshal secret env var names")
+			}
+			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  secretEnvVarNamesForRedaction,
+				Value: string(serializedNames),
+			})
+		}
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()

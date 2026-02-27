@@ -142,7 +142,8 @@ const (
 	ansiGray  = "\033[90m"
 	ansiReset = "\033[0m"
 
-	clientIdentityEnvVar = "BB_GRPC_CLIENT_IDENTITY"
+	clientIdentityEnvVar          = "BB_GRPC_CLIENT_IDENTITY"
+	secretEnvVarNamesForRedaction = "BUILDBUDDY_SECRET_ENV_VAR_NAMES"
 
 	// We save the startup options used for the last executed bazel command so we can apply
 	// them on future bazel commands without restarting the Bazel server.
@@ -313,7 +314,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool, redactionValues []string) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		var err error
@@ -338,7 +339,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -685,7 +686,8 @@ func run() error {
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
-	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	redactionValues := parseSecretRedactionValues(os.Getenv(secretEnvVarNamesForRedaction))
+	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/, redactionValues)
 	if err != nil {
 		return err
 	}
@@ -950,12 +952,13 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
-	writer        io.Writer
-	writeListener func(s string)
+	writer          io.Writer
+	writeListener   func(s string)
+	redactionValues []string
 }
 
-func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
+func newInvocationLog(redactionValues []string) *invocationLog {
+	invLog := &invocationLog{writeListener: func(s string) {}, redactionValues: redactionValues}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -963,7 +966,7 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	redacted := redact.RedactText(output)
+	redacted := redact.RedactTextWithValues(output, invLog.redactionValues)
 
 	invLog.writeListener(redacted)
 	_, err := invLog.writer.Write([]byte(redacted))
@@ -2781,4 +2784,25 @@ func diskUsage() (*diskUsageStats, error) {
 		usageFraction: float64(usedBytes) / float64(df.TotalBytes),
 		usedBytes:     int64(usedBytes),
 	}, nil
+}
+
+func parseSecretRedactionValues(serializedSecretNames string) []string {
+	if serializedSecretNames == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
+		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", secretEnvVarNamesForRedaction, err)
+		return nil
+	}
+	values := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if val, ok := os.LookupEnv(name); ok && val != "" {
+			values = append(values, val)
+		}
+	}
+	return values
 }
