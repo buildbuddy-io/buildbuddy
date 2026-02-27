@@ -114,14 +114,10 @@ func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause 
 // waiting a maximum of timeout. If timeout is reached, the given cause is
 // returned as the error.
 func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
-	done := make(chan struct{})
 	ch := make(chan StreamMsg[R], 1)
 	go func() {
 		rsp, err := s.stream.CloseAndRecv()
-		select {
-		case ch <- StreamMsg[R]{rsp, err}:
-		case <-done:
-		}
+		ch <- StreamMsg[R]{rsp, err}
 	}()
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
@@ -129,7 +125,6 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 	case msg := <-ch:
 		return msg.Data, msg.Error
 	case <-ctx.Done():
-		close(done)
 		return *new(R), context.Cause(ctx)
 	}
 }
