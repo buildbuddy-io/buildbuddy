@@ -239,13 +239,16 @@ if [ "$BZLMOD_ENABLED" -eq 1 ]; then
     # Ensure Kythe's dynamically loaded rule sets are visible from the main module.
     # Under Bazel 9 strict bzlmod visibility, transitive deps are not visible by default.
     if [ -f MODULE.bazel ]; then
-        if ! grep -q 'bazel_dep(name = "rules_java"' MODULE.bazel; then
+        # For repos using include("//deps:bazel_dep.MODULE.bazel"), check there too.
+        HAS_RULES_JAVA=0
+        if grep -q 'bazel_dep(name = "rules_java"' MODULE.bazel 2>/dev/null; then
+            HAS_RULES_JAVA=1
+        elif grep -q 'bazel_dep(name = "rules_java"' deps/bazel_dep.MODULE.bazel 2>/dev/null; then
+            HAS_RULES_JAVA=1
+        fi
+        if [ "$HAS_RULES_JAVA" -eq 0 ]; then
             echo "Adding rules_java dependency to MODULE.bazel"
             echo -e '\nbazel_dep(name = "rules_java", version = "8.14.0")' >> MODULE.bazel
-        fi
-        if ! grep -q 'bazel_dep(name = "rules_proto"' MODULE.bazel; then
-            echo "Adding rules_proto dependency to MODULE.bazel"
-            echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> MODULE.bazel
         fi
     fi
 
