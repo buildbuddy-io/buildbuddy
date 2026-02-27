@@ -433,35 +433,51 @@ func GetExecutionLogs(ctx context.Context, bsClient bspb.ByteStreamClient, insta
 // (for example, some heavyweight info such as executor profiles aren't sent
 // back to clients, but are available in the cached execute response).
 func GetCachedExecuteResponse(ctx context.Context, acClient repb.ActionCacheClient, executionID string) (*repb.ExecuteResponse, error) {
-	executionID = strings.TrimPrefix(executionID, "/")
-	uploadResourceName, err := digest.ParseUploadResourceName(executionID)
+	normalizedExecutionID := strings.TrimPrefix(executionID, "/")
+	uploadResourceName, err := digest.ParseUploadResourceName(normalizedExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("parse execution ID as upload resource name: %w", err)
 	}
 
-	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), uploadResourceName.GetDigestFunction())
-	if err != nil {
-		return nil, fmt.Errorf("compute execute response digest: %w", err)
-	}
-	acResourceName := digest.NewACResourceName(executeResponseDigest, uploadResourceName.GetInstanceName(), uploadResourceName.GetDigestFunction())
-	actionResult, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
-		ActionDigest:        acResourceName.GetDigest(),
-		InstanceName:        acResourceName.GetInstanceName(),
-		DigestFunction:      acResourceName.GetDigestFunction(),
-		IncludeTimelineData: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("get action result: %w", err)
-	}
-	if len(actionResult.GetStdoutRaw()) == 0 {
-		return nil, fmt.Errorf("cached action result did not include inline ExecuteResponse")
+	lookupIDs := []string{executionID}
+	if normalizedExecutionID != executionID {
+		lookupIDs = append(lookupIDs, normalizedExecutionID)
+	} else {
+		lookupIDs = append(lookupIDs, "/"+executionID)
 	}
 
-	executeResponse := &repb.ExecuteResponse{}
-	if err := proto.Unmarshal(actionResult.GetStdoutRaw(), executeResponse); err != nil {
-		return nil, fmt.Errorf("unmarshal execute response: %w", err)
+	var lastErr error
+	for i, lookupID := range lookupIDs {
+		executeResponseDigest, err := digest.Compute(strings.NewReader(lookupID), uploadResourceName.GetDigestFunction())
+		if err != nil {
+			return nil, fmt.Errorf("compute execute response digest: %w", err)
+		}
+		acResourceName := digest.NewACResourceName(executeResponseDigest, uploadResourceName.GetInstanceName(), uploadResourceName.GetDigestFunction())
+		actionResult, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+			ActionDigest:        acResourceName.GetDigest(),
+			InstanceName:        acResourceName.GetInstanceName(),
+			DigestFunction:      acResourceName.GetDigestFunction(),
+			IncludeTimelineData: true,
+		})
+		if err != nil {
+			if i < len(lookupIDs)-1 && status.IsNotFoundError(err) {
+				lastErr = err
+				continue
+			}
+			return nil, fmt.Errorf("get action result: %w", err)
+		}
+		if len(actionResult.GetStdoutRaw()) == 0 {
+			return nil, fmt.Errorf("cached action result did not include inline ExecuteResponse")
+		}
+
+		executeResponse := &repb.ExecuteResponse{}
+		if err := proto.Unmarshal(actionResult.GetStdoutRaw(), executeResponse); err != nil {
+			return nil, fmt.Errorf("unmarshal execute response: %w", err)
+		}
+		return executeResponse, nil
 	}
-	return executeResponse, nil
+
+	return nil, fmt.Errorf("get action result: %w", lastErr)
 }
 
 func getStdoutAndStderr(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, result *repb.ActionResult) ([]byte, []byte, error) {

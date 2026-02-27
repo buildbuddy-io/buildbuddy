@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -257,9 +259,42 @@ func TestGetCachedExecuteResponse(t *testing.T) {
 
 		rn, err := digest.ParseUploadResourceName(executionID)
 		require.NoError(t, err)
-		d, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
+		d, err := digest.Compute(strings.NewReader("/"+executionID), rn.GetDigestFunction())
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(d, req.GetActionDigest(), protocmp.Transform()))
+	})
+
+	t.Run("falls back to alternate slash normalization for compatibility", func(t *testing.T) {
+		executionID := "uploads/0f8fad5b-d9cb-469f-a165-70867728950e/blobs/f33f7f8f85f0c4f68f68422e6159c252f2b0f73cc75ad1df69c46733465ff7f7/142"
+		expected := &repb.ExecuteResponse{Result: &repb.ActionResult{ExitCode: 7}}
+		stdoutRaw, err := proto.Marshal(expected)
+		require.NoError(t, err)
+
+		rn, err := digest.ParseUploadResourceName(executionID)
+		require.NoError(t, err)
+		withSlash, err := digest.Compute(strings.NewReader("/"+executionID), rn.GetDigestFunction())
+		require.NoError(t, err)
+		withoutSlash, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
+		require.NoError(t, err)
+
+		var calls int
+		acClient := &fakeActionCacheClient{
+			getActionResultFunc: func(_ context.Context, in *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+				calls++
+				if cmp.Equal(in.GetActionDigest(), withSlash, protocmp.Transform()) {
+					return nil, status.Error(codes.NotFound, "not found")
+				}
+				if cmp.Equal(in.GetActionDigest(), withoutSlash, protocmp.Transform()) {
+					return &repb.ActionResult{StdoutRaw: stdoutRaw}, nil
+				}
+				return nil, status.Error(codes.NotFound, "unexpected digest")
+			},
+		}
+
+		rsp, err := rexec.GetCachedExecuteResponse(context.Background(), acClient, "/"+executionID)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expected, rsp, protocmp.Transform()))
+		require.Equal(t, 2, calls)
 	})
 
 	t.Run("returns error when execution id is invalid", func(t *testing.T) {
