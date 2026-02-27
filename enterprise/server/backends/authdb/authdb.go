@@ -409,7 +409,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
 		akg := &apiKeyGroup{}
-		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(sd)
 		keyClauses := query_builder.OrClauses{}
 		if !*encryptOldKeys {
 			keyClauses.AddOr("ak.value = ?", apiKey)
@@ -467,7 +467,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		}
 	}
 	akg := &apiKeyGroup{}
-	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+	qb := d.newAPIKeyGroupQuery(sd)
 	qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 	q, args := qb.Build()
 
@@ -495,7 +495,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	return akg, nil
 }
 
-func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) *query_builder.Query {
+func (d *AuthDB) newAPIKeyGroupQuery(subDomain string) *query_builder.Query {
 	qb := query_builder.NewQuery(`
 		SELECT
 			ak.capabilities,
@@ -517,7 +517,7 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 		qb.AddWhereClause("url_identifier = ?", subDomain)
 	}
 
-	if *userOwnedKeysEnabled && allowUserOwnedKeys {
+	if *userOwnedKeysEnabled {
 		// Note: the org can disable user-owned keys at any time, and the
 		// predicate here ensures that existing keys are effectively deactivated
 		// (but not deleted).
