@@ -216,6 +216,10 @@ func (ut *tracker) emitMetrics(groupID string, origin string, uc *tables.UsageCo
 		execLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.OS: platform.DarwinOperatingSystemName}
 		metrics.RemoteExecutionDurationUsecExported.With(execLabels).Observe(float64(uc.MacExecutionDurationUsec))
 	}
+	if uc.WindowsExecutionDurationUsec > 0 {
+		execLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.OS: platform.WindowsOperatingSystemName}
+		metrics.RemoteExecutionDurationUsecExported.With(execLabels).Observe(float64(uc.WindowsExecutionDurationUsec))
+	}
 }
 
 func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
@@ -731,11 +735,17 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.MacExecutionDurationUsec > 0 {
 		counts["mac_execution_duration_usec"] = tu.MacExecutionDurationUsec
 	}
+	if tu.WindowsExecutionDurationUsec > 0 {
+		counts["windows_execution_duration_usec"] = tu.WindowsExecutionDurationUsec
+	}
 	if tu.SelfHostedLinuxExecutionDurationUsec > 0 {
 		counts["self_hosted_linux_execution_duration_usec"] = tu.SelfHostedLinuxExecutionDurationUsec
 	}
 	if tu.SelfHostedMacExecutionDurationUsec > 0 {
 		counts["self_hosted_mac_execution_duration_usec"] = tu.SelfHostedMacExecutionDurationUsec
+	}
+	if tu.SelfHostedWindowsExecutionDurationUsec > 0 {
+		counts["self_hosted_windows_execution_duration_usec"] = tu.SelfHostedWindowsExecutionDurationUsec
 	}
 	if tu.TotalUploadSizeBytes > 0 {
 		counts["total_upload_size_bytes"] = tu.TotalUploadSizeBytes
@@ -764,18 +774,20 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		hInt64[k] = count
 	}
 	return &tables.UsageCounts{
-		Invocations:                          hInt64["invocations"],
-		CASCacheHits:                         hInt64["cas_cache_hits"],
-		ActionCacheHits:                      hInt64["action_cache_hits"],
-		TotalDownloadSizeBytes:               hInt64["total_download_size_bytes"],
-		LinuxExecutionDurationUsec:           hInt64["linux_execution_duration_usec"],
-		MacExecutionDurationUsec:             hInt64["mac_execution_duration_usec"],
-		SelfHostedLinuxExecutionDurationUsec: hInt64["self_hosted_linux_execution_duration_usec"],
-		SelfHostedMacExecutionDurationUsec:   hInt64["self_hosted_mac_execution_duration_usec"],
-		TotalUploadSizeBytes:                 hInt64["total_upload_size_bytes"],
-		TotalCachedActionExecUsec:            hInt64["total_cached_action_exec_usec"],
-		CPUNanos:                             hInt64["cpu_nanos"],
-		MemoryGBUsec:                         hInt64["memory_gb_usec"],
+		Invocations:                            hInt64["invocations"],
+		CASCacheHits:                           hInt64["cas_cache_hits"],
+		ActionCacheHits:                        hInt64["action_cache_hits"],
+		TotalDownloadSizeBytes:                 hInt64["total_download_size_bytes"],
+		LinuxExecutionDurationUsec:             hInt64["linux_execution_duration_usec"],
+		MacExecutionDurationUsec:               hInt64["mac_execution_duration_usec"],
+		WindowsExecutionDurationUsec:           hInt64["windows_execution_duration_usec"],
+		SelfHostedLinuxExecutionDurationUsec:   hInt64["self_hosted_linux_execution_duration_usec"],
+		SelfHostedMacExecutionDurationUsec:     hInt64["self_hosted_mac_execution_duration_usec"],
+		SelfHostedWindowsExecutionDurationUsec: hInt64["self_hosted_windows_execution_duration_usec"],
+		TotalUploadSizeBytes:                   hInt64["total_upload_size_bytes"],
+		TotalCachedActionExecUsec:              hInt64["total_cached_action_exec_usec"],
+		CPUNanos:                               hInt64["cpu_nanos"],
+		MemoryGBUsec:                           hInt64["memory_gb_usec"],
 	}, nil
 }
 
@@ -856,6 +868,13 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 			Count:  counts.MacExecutionDurationUsec,
 		})
 	}
+	if counts.WindowsExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSWindows, sku.SelfHostedFalse),
+			Count:  counts.WindowsExecutionDurationUsec,
+		})
+	}
 	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
@@ -868,6 +887,13 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedTrue),
 			Count:  counts.SelfHostedMacExecutionDurationUsec,
+		})
+	}
+	if counts.SelfHostedWindowsExecutionDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
+			Labels: appendExecutionLabels(baseLabels, sku.OSWindows, sku.SelfHostedTrue),
+			Count:  counts.SelfHostedWindowsExecutionDurationUsec,
 		})
 	}
 	if counts.TotalDownloadSizeBytes > 0 {

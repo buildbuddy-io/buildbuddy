@@ -744,14 +744,16 @@ type UsageCounts struct {
 	// NOTE: New fields added here should be annotated with
 	// `gorm:"not null;default:0"`
 
-	LinuxExecutionDurationUsec           int64 `gorm:"not null;default:0"`
-	MacExecutionDurationUsec             int64 `gorm:"not null;default:0"`
-	SelfHostedLinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
-	SelfHostedMacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
-	TotalUploadSizeBytes                 int64 `gorm:"not null;default:0"`
-	TotalCachedActionExecUsec            int64 `gorm:"not null;default:0"`
-	CPUNanos                             int64 `gorm:"not null;default:0"`
-	MemoryGBUsec                         int64 `gorm:"not null;default:0"`
+	LinuxExecutionDurationUsec             int64 `gorm:"not null;default:0"`
+	MacExecutionDurationUsec               int64 `gorm:"not null;default:0"`
+	WindowsExecutionDurationUsec           int64 `gorm:"not null;default:0"`
+	SelfHostedLinuxExecutionDurationUsec   int64 `gorm:"not null;default:0"`
+	SelfHostedMacExecutionDurationUsec     int64 `gorm:"not null;default:0"`
+	SelfHostedWindowsExecutionDurationUsec int64 `gorm:"not null;default:0"`
+	TotalUploadSizeBytes                   int64 `gorm:"not null;default:0"`
+	TotalCachedActionExecUsec              int64 `gorm:"not null;default:0"`
+	CPUNanos                               int64 `gorm:"not null;default:0"`
+	MemoryGBUsec                           int64 `gorm:"not null;default:0"`
 }
 
 type UsageLabels struct {

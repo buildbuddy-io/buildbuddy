@@ -541,6 +541,17 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			name:                   "WindowsSharedExecutors",
+			platformOverrides:      map[string]string{"OSFamily": "windows"},
+			expectedExecutionUsage: tables.UsageCounts{WindowsExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "WindowsSelfHostedExecutors",
+			platformOverrides:      map[string]string{"OSFamily": "windows", "use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedWindowsExecutionDurationUsec: durationUsec},
+		},
+		{
 			name:                   "CachedResult",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			cachedResult:           true,
@@ -840,7 +851,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, "group1", foundExecutorUsage.GroupID)
 	assert.Equal(t, test.expectedExecutionUsage.LinuxExecutionDurationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+	assert.Equal(t, test.expectedExecutionUsage.WindowsExecutionDurationUsec, foundExecutorUsage.Counts.WindowsExecutionDurationUsec)
 	assert.Equal(t, test.expectedExecutionUsage.SelfHostedLinuxExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedLinuxExecutionDurationUsec)
+	assert.Equal(t, test.expectedExecutionUsage.SelfHostedWindowsExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedWindowsExecutionDurationUsec)
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
