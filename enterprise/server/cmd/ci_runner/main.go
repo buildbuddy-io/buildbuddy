@@ -965,6 +965,9 @@ func newInvocationLog(redactionValues []string) *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
+	// Use value-aware redaction so user-defined secret values injected into the
+	// runner environment are masked in invocation logs (including overlapping
+	// values handled safely by longest-first replacement in redact package).
 	redacted := redact.RedactTextWithValues(output, invLog.redactionValues)
 
 	invLog.writeListener(redacted)
