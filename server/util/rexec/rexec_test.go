@@ -1,16 +1,33 @@
 package rexec_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 )
+
+type fakeActionCacheClient struct {
+	getActionResultFunc func(ctx context.Context, in *repb.GetActionResultRequest) (*repb.ActionResult, error)
+}
+
+func (f *fakeActionCacheClient) GetActionResult(ctx context.Context, in *repb.GetActionResultRequest, _ ...grpc.CallOption) (*repb.ActionResult, error) {
+	return f.getActionResultFunc(ctx, in)
+}
+
+func (f *fakeActionCacheClient) UpdateActionResult(context.Context, *repb.UpdateActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	panic("unexpected call")
+}
 
 func TestNormalizeCommand(t *testing.T) {
 	for _, test := range []struct {
@@ -186,5 +203,107 @@ func TestFindFirstAuxiliaryMetadata(t *testing.T) {
 
 		require.Error(t, err)
 		require.False(t, ok)
+	})
+}
+
+func TestGetCachedExecuteResponse(t *testing.T) {
+	t.Run("parses execution id and fetches ExecuteResponse from action cache", func(t *testing.T) {
+		executionID := "instance-name/uploads/0f8fad5b-d9cb-469f-a165-70867728950e/blobs/f33f7f8f85f0c4f68f68422e6159c252f2b0f73cc75ad1df69c46733465ff7f7/142"
+		expected := &repb.ExecuteResponse{
+			Status: &statuspb.Status{Code: 0},
+			Result: &repb.ActionResult{ExitCode: 123},
+		}
+		stdoutRaw, err := proto.Marshal(expected)
+		require.NoError(t, err)
+
+		var req *repb.GetActionResultRequest
+		acClient := &fakeActionCacheClient{
+			getActionResultFunc: func(_ context.Context, in *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+				req = in
+				return &repb.ActionResult{StdoutRaw: stdoutRaw}, nil
+			},
+		}
+
+		rsp, err := rexec.GetCachedExecuteResponse(context.Background(), acClient, executionID)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expected, rsp, protocmp.Transform()))
+
+		rn, err := digest.ParseUploadResourceName(executionID)
+		require.NoError(t, err)
+		d, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
+		require.NoError(t, err)
+		require.Equal(t, rn.GetInstanceName(), req.GetInstanceName())
+		require.Equal(t, rn.GetDigestFunction(), req.GetDigestFunction())
+		require.Empty(t, cmp.Diff(d, req.GetActionDigest(), protocmp.Transform()))
+	})
+
+	t.Run("accepts leading slash in execution id", func(t *testing.T) {
+		executionID := "uploads/0f8fad5b-d9cb-469f-a165-70867728950e/blobs/f33f7f8f85f0c4f68f68422e6159c252f2b0f73cc75ad1df69c46733465ff7f7/142"
+		expected := &repb.ExecuteResponse{Result: &repb.ActionResult{ExitCode: 1}}
+		stdoutRaw, err := proto.Marshal(expected)
+		require.NoError(t, err)
+
+		var req *repb.GetActionResultRequest
+		acClient := &fakeActionCacheClient{
+			getActionResultFunc: func(_ context.Context, in *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+				req = in
+				return &repb.ActionResult{StdoutRaw: stdoutRaw}, nil
+			},
+		}
+
+		rsp, err := rexec.GetCachedExecuteResponse(context.Background(), acClient, "/"+executionID)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expected, rsp, protocmp.Transform()))
+
+		rn, err := digest.ParseUploadResourceName(executionID)
+		require.NoError(t, err)
+		d, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(d, req.GetActionDigest(), protocmp.Transform()))
+	})
+
+	t.Run("returns error when execution id is invalid", func(t *testing.T) {
+		_, err := rexec.GetCachedExecuteResponse(context.Background(), &fakeActionCacheClient{}, "not-an-execution-id")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parse execution ID")
+	})
+
+	t.Run("returns error when ExecuteResponse is missing from action result", func(t *testing.T) {
+		acClient := &fakeActionCacheClient{
+			getActionResultFunc: func(_ context.Context, in *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+				return &repb.ActionResult{}, nil
+			},
+		}
+		executionID := "uploads/0f8fad5b-d9cb-469f-a165-70867728950e/blobs/f33f7f8f85f0c4f68f68422e6159c252f2b0f73cc75ad1df69c46733465ff7f7/142"
+		_, err := rexec.GetCachedExecuteResponse(context.Background(), acClient, executionID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "did not include inline ExecuteResponse")
+	})
+}
+
+func TestGetExecutionLogs(t *testing.T) {
+	t.Run("returns inline stdout and stderr", func(t *testing.T) {
+		rsp := &repb.ExecuteResponse{
+			Result: &repb.ActionResult{
+				StdoutRaw: []byte("hello stdout"),
+				StderrRaw: []byte("hello stderr"),
+			},
+		}
+		details, err := rexec.GetExecutionLogs(context.Background(), nil, "", repb.DigestFunction_SHA256, rsp)
+		require.NoError(t, err)
+		require.Equal(t, "hello stdout", string(details.Stdout))
+		require.Equal(t, "hello stderr", string(details.Stderr))
+		require.Nil(t, details.ServerLogs)
+	})
+
+	t.Run("returns error when digest fetch is needed and bytestream client is missing", func(t *testing.T) {
+		rsp := &repb.ExecuteResponse{
+			Result: &repb.ActionResult{
+				StdoutDigest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1},
+			},
+		}
+		_, err := rexec.GetExecutionLogs(context.Background(), nil, "", repb.DigestFunction_SHA256, rsp)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ByteStreamClient not configured")
 	})
 }

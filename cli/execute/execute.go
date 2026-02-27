@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/executions"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -45,6 +46,7 @@ var (
 	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Incompatible with --input_root_digest.")
 	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally. Incompatible with --input_root.")
 	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
+	output          = flags.String("output", "stdio", "Output format: `stdio` to print command stdout/stderr, `id` to print only execution ID, `json` to print execution response and logs as JSON, or `markdown` (or `md`) to print a markdown summary.")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
@@ -91,6 +93,13 @@ func HandleExecute(args []string) (int, error) {
 		log.Print("error: must provide arg separator '--' followed by command")
 		log.Print(usage)
 		return 1, nil
+	}
+	*output = strings.ToLower(*output)
+	if *output == "md" {
+		*output = "markdown"
+	}
+	if *output != "stdio" && *output != "id" && *output != "json" && *output != "markdown" {
+		return -1, fmt.Errorf("invalid --output %q (allowed values: stdio, id, json, markdown, md)", *output)
 	}
 	if err := execute(cmdArgs); err != nil {
 		return -1, err
@@ -187,14 +196,16 @@ func execute(cmdArgs []string) error {
 	}
 	log.Debugf("Waiting for execution to complete")
 	var rsp *rexec.Response
+	var executionErr error
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
 			return err
 		}
 		if msg.Err != nil {
-			// We failed to execute.
-			return msg.Err
+			// Keep track of execution errors so we can still render available
+			// response logs for structured output modes.
+			executionErr = msg.Err
 		}
 		// Log execution state
 		progress := &repb.ExecutionProgress{}
@@ -213,18 +224,51 @@ func execute(cmdArgs []string) error {
 			break
 		}
 	}
-	log.Debugf("Execution completed in %s", time.Since(stageStart))
-	stageStart = time.Now()
-	log.Debugf("Downloading result")
-	res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
-	if err != nil {
-		return status.WrapError(err, "execution failed")
+	// Defensive guard: we should only exit the loop on a Done message, which
+	// always sets rsp. Keep this check to avoid nil dereference if that
+	// invariant is ever broken by future changes.
+	if rsp == nil {
+		return fmt.Errorf("execute stream ended before completion")
 	}
-	log.Debugf("Downloaded results in %s", time.Since(stageStart))
-	log.Debugf("End-to-end execution time: %s", time.Since(start))
+	log.Debugf("Execution completed in %s", time.Since(stageStart))
+	if executionErr != nil && *output == "stdio" {
+		return executionErr
+	}
+	var logs *rexec.ExecutionLogs
+	if *output == "json" || *output == "markdown" {
+		logs, err = rexec.GetExecutionLogs(ctx, env.GetByteStreamClient(), *instanceName, df, rsp.ExecuteResponse)
+		if err != nil {
+			log.Warnf("Could not fetch all execution logs: %s", err)
+		}
+	}
+	switch *output {
+	case "id":
+		if _, err := fmt.Fprintln(os.Stdout, rsp.GetName()); err != nil {
+			return err
+		}
+	case "json":
+		if err := executions.WriteJSONOutput(os.Stdout, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
+			return fmt.Errorf("write json output: %w", err)
+		}
+	case "markdown":
+		if _, err := fmt.Fprint(os.Stdout, executions.RenderMarkdownWithDetails(rsp.GetName(), rsp.ExecuteResponse, logs)); err != nil {
+			return err
+		}
+	case "stdio":
+		stageStart = time.Now()
+		log.Debugf("Downloading result")
+		res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
+		if err != nil {
+			return status.WrapError(err, "execution failed")
+		}
+		log.Debugf("Downloaded results in %s", time.Since(stageStart))
 
-	os.Stdout.Write(res.Stdout)
-	os.Stderr.Write(res.Stderr)
+		os.Stdout.Write(res.Stdout)
+		os.Stderr.Write(res.Stderr)
+	default:
+		return fmt.Errorf("invalid --output %q", *output)
+	}
+	log.Debugf("End-to-end execution time: %s", time.Since(start))
 
 	if *responseJSONFile != "" {
 		b, err := protojson.Marshal(rsp.ExecuteResponse)
@@ -234,6 +278,9 @@ func execute(cmdArgs []string) error {
 		if err := os.WriteFile(*responseJSONFile, b, 0644); err != nil {
 			return fmt.Errorf("write response JSON file: %w", err)
 		}
+	}
+	if executionErr != nil {
+		return executionErr
 	}
 
 	return nil

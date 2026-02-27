@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/execute",
     deps = [
         "//cli/arg",
+        "//cli/executions",
         "//cli/log",
         "//cli/login",
         "//proto:remote_execution_go_proto",

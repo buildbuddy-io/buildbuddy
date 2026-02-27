@@ -14,6 +14,7 @@ go_library(
         "//cli/cli_command",
         "//cli/download",
         "//cli/execute",
+        "//cli/executions",
         "//cli/explain",
         "//cli/fix",
         "//cli/index",

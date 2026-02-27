@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -22,6 +23,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -251,27 +253,14 @@ func Wait(stream *RetryingStream) (*Response, error) {
 // Result runs the command and returns the result. If the command has already
 // been started, it waits for the existing execution to complete.
 func GetResult(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, res *repb.ActionResult) (*interfaces.CommandResult, error) {
-	var stdout, stderr bytes.Buffer
-	eg, egctx := errgroup.WithContext(ctx)
-	if res.GetStdoutDigest() != nil {
-		eg.Go(func() error {
-			rn := digest.NewCASResourceName(res.GetStdoutDigest(), instanceName, digestFunction)
-			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stdout)
-		})
-	}
-	if res.GetStderrDigest() != nil {
-		eg.Go(func() error {
-			rn := digest.NewCASResourceName(res.GetStderrDigest(), instanceName, digestFunction)
-			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stderr)
-		})
-	}
-	if err := eg.Wait(); err != nil {
+	stdout, stderr, err := getStdoutAndStderr(ctx, env.GetByteStreamClient(), instanceName, digestFunction, res)
+	if err != nil {
 		return nil, err
 	}
 	return &interfaces.CommandResult{
 		ExitCode: int(res.GetExitCode()),
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
+		Stdout:   stdout,
+		Stderr:   stderr,
 	}, nil
 }
 
@@ -376,6 +365,146 @@ func UnpackOperation(op *longrunningpb.Operation) (*Response, error) {
 	}
 	msg.Err = gstatus.FromProto(msg.ExecuteResponse.GetStatus()).Err()
 	return msg, nil
+}
+
+// ExecutionLogs contains fetched stdout/stderr and server logs for an
+// ExecuteResponse.
+type ExecutionLogs struct {
+	// Stdout contains command stdout bytes, either inline or fetched by digest.
+	Stdout []byte
+	// Stderr contains command stderr bytes, either inline or fetched by digest.
+	Stderr []byte
+	// ServerLogs contains fetched server log contents keyed by log name.
+	ServerLogs map[string][]byte
+}
+
+// GetExecutionLogs fetches stdout/stderr and server log contents referenced by
+// the given ExecuteResponse.
+func GetExecutionLogs(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, executeResponse *repb.ExecuteResponse) (*ExecutionLogs, error) {
+	details := &ExecutionLogs{}
+	result := executeResponse.GetResult()
+	if result != nil {
+		stdout, stderr, err := getStdoutAndStderr(ctx, bsClient, instanceName, digestFunction, result)
+		if err != nil {
+			return nil, fmt.Errorf("get stdout and stderr: %w", err)
+		}
+		details.Stdout = stdout
+		details.Stderr = stderr
+	}
+
+	serverLogs := executeResponse.GetServerLogs()
+	if len(serverLogs) == 0 {
+		return details, nil
+	}
+
+	out := make(map[string][]byte, len(serverLogs))
+	var mu sync.Mutex
+	eg, egctx := errgroup.WithContext(ctx)
+	for name, logFile := range serverLogs {
+		name := name
+		d := logFile.GetDigest()
+		if d == nil {
+			continue
+		}
+		eg.Go(func() error {
+			data, err := getBlob(egctx, bsClient, instanceName, digestFunction, d)
+			if err != nil {
+				return fmt.Errorf("get server log %q: %w", name, err)
+			}
+			mu.Lock()
+			out[name] = data
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	if len(out) > 0 {
+		details.ServerLogs = out
+	}
+	return details, nil
+}
+
+// GetCachedExecuteResponse fetches an ExecuteResponse from action cache, using
+// the execution ID as the lookup key. This is BuildBuddy-specific; it contains
+// the full response that the executor reported back to the scheduler. The
+// response returned to the execution client contains a subset of these fields
+// (for example, some heavyweight info such as executor profiles aren't sent
+// back to clients, but are available in the cached execute response).
+func GetCachedExecuteResponse(ctx context.Context, acClient repb.ActionCacheClient, executionID string) (*repb.ExecuteResponse, error) {
+	executionID = strings.TrimPrefix(executionID, "/")
+	uploadResourceName, err := digest.ParseUploadResourceName(executionID)
+	if err != nil {
+		return nil, fmt.Errorf("parse execution ID as upload resource name: %w", err)
+	}
+
+	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), uploadResourceName.GetDigestFunction())
+	if err != nil {
+		return nil, fmt.Errorf("compute execute response digest: %w", err)
+	}
+	acResourceName := digest.NewACResourceName(executeResponseDigest, uploadResourceName.GetInstanceName(), uploadResourceName.GetDigestFunction())
+	actionResult, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+		ActionDigest:        acResourceName.GetDigest(),
+		InstanceName:        acResourceName.GetInstanceName(),
+		DigestFunction:      acResourceName.GetDigestFunction(),
+		IncludeTimelineData: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get action result: %w", err)
+	}
+	if len(actionResult.GetStdoutRaw()) == 0 {
+		return nil, fmt.Errorf("cached action result did not include inline ExecuteResponse")
+	}
+
+	executeResponse := &repb.ExecuteResponse{}
+	if err := proto.Unmarshal(actionResult.GetStdoutRaw(), executeResponse); err != nil {
+		return nil, fmt.Errorf("unmarshal execute response: %w", err)
+	}
+	return executeResponse, nil
+}
+
+func getStdoutAndStderr(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, result *repb.ActionResult) ([]byte, []byte, error) {
+	stdout := append([]byte(nil), result.GetStdoutRaw()...)
+	stderr := append([]byte(nil), result.GetStderrRaw()...)
+
+	eg, egctx := errgroup.WithContext(ctx)
+	if len(stdout) == 0 && result.GetStdoutDigest() != nil {
+		eg.Go(func() error {
+			data, err := getBlob(egctx, bsClient, instanceName, digestFunction, result.GetStdoutDigest())
+			if err != nil {
+				return fmt.Errorf("get stdout: %w", err)
+			}
+			stdout = data
+			return nil
+		})
+	}
+	if len(stderr) == 0 && result.GetStderrDigest() != nil {
+		eg.Go(func() error {
+			data, err := getBlob(egctx, bsClient, instanceName, digestFunction, result.GetStderrDigest())
+			if err != nil {
+				return fmt.Errorf("get stderr: %w", err)
+			}
+			stderr = data
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
+	}
+	return stdout, stderr, nil
+}
+
+func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, d *repb.Digest) ([]byte, error) {
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
+	}
+	var buf bytes.Buffer
+	rn := digest.NewCASResourceName(d, instanceName, digestFunction)
+	if err := cachetools.GetBlob(ctx, bsClient, rn, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // FindFirstAuxiliaryMetadata searches for the first auxiliary metadata entry
