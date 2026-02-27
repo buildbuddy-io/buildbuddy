@@ -1028,3 +1028,11 @@ func TestRedactAPIKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamingRedactor_AddSecretValues_RedactsText(t *testing.T) {
+	r := redact.NewStreamingRedactor()
+	r.AddSecretValues("super_secret_password_that_should_be_redacted")
+
+	got := r.RedactText("before super_secret_password_that_should_be_redacted after")
+	require.Equal(t, "before <REDACTED> after", got)
+}

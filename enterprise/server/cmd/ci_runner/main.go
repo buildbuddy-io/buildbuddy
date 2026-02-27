@@ -301,6 +301,7 @@ type buildEventReporter struct {
 	bep        *build_event_publisher.Publisher
 	uploader   *bes_artifacts.Uploader
 	log        *invocationLog
+	redactor   *redact.StreamingRedactor
 
 	invocationID          string
 	startTime             time.Time
@@ -338,7 +339,11 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	redactor := redact.NewStreamingRedactor()
+	invLog := newInvocationLog()
+	invLog.redact = redactor.RedactText
+
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: invLog, redactor: redactor, invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -952,10 +957,14 @@ type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
 	writeListener func(s string)
+	redact        func(string) string
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
+	invLog := &invocationLog{
+		writeListener: func(s string) {},
+		redact:        redact.RedactText,
+	}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -963,7 +972,7 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	redacted := redact.RedactText(output)
+	redacted := invLog.redact(output)
 
 	invLog.writeListener(redacted)
 	_, err := invLog.writer.Write([]byte(redacted))
@@ -1074,6 +1083,24 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	action, err := getActionToRun()
 	if err != nil {
 		return status.WrapError(err, "failed to get action to run")
+	}
+	if ar.reporter.redactor != nil {
+		secretValues := make([]string, 0)
+		for _, e := range os.Environ() {
+			parts := strings.SplitN(e, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			if parts[1] == "" {
+				continue
+			}
+			// Be conservative: redact values for env vars that look secret-ish.
+			name := strings.ToLower(parts[0])
+			if strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "password") || strings.Contains(name, "apikey") || strings.Contains(name, "api_key") {
+				secretValues = append(secretValues, parts[1])
+			}
+		}
+		ar.reporter.redactor.AddSecretValues(secretValues...)
 	}
 
 	if !publishedWorkspaceStatus {

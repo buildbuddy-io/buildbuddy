@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -529,6 +530,7 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 						return status.WrapError(err, "redact command")
 					}
 					option.OptionValue = redactedCmd
+					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + redactedCmd
 				}
 
 				if option.OptionName == "serialized_action" {
@@ -636,12 +638,42 @@ func parseAllowedEnv(optionsDescription string) []string {
 // received by the event handler.
 type StreamingRedactor struct {
 	allowedEnvVars []string
+	secrets        []string
 }
 
 func NewStreamingRedactor() *StreamingRedactor {
 	return &StreamingRedactor{
 		allowedEnvVars: defaultAllowedEnvVars,
 	}
+}
+
+// AddSecretValues registers additional literal secret values to redact from
+// arbitrary text and build metadata.
+func (r *StreamingRedactor) AddSecretValues(values ...string) {
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		r.secrets = append(r.secrets, v)
+	}
+	// Keep longest first so specific secrets are redacted before any shorter
+	// values that may overlap.
+	sort.SliceStable(r.secrets, func(i, j int) bool {
+		return len(r.secrets[i]) > len(r.secrets[j])
+	})
+}
+
+func (r *StreamingRedactor) redactWithUserSecrets(txt string) string {
+	redacted := RedactText(txt)
+	for _, s := range r.secrets {
+		redacted = strings.ReplaceAll(redacted, s, redactedPlaceholder)
+	}
+	return redacted
+}
+
+// RedactText redacts known secrets from arbitrary text.
+func (r *StreamingRedactor) RedactText(txt string) string {
+	return r.redactWithUserSecrets(txt)
 }
 
 // RedactMetadata walks the provided BuildEvent and redacts sensitive metadata
@@ -654,7 +686,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
-			p.Aborted.Description = RedactText(p.Aborted.Description)
+			p.Aborted.Description = r.redactWithUserSecrets(p.Aborted.Description)
 		}
 	case *bespb.BuildEvent_Started:
 		{
@@ -703,7 +735,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
 			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
 			if p.Action.FailureDetail != nil {
-				p.Action.FailureDetail.Message = RedactText(p.Action.FailureDetail.Message)
+				p.Action.FailureDetail.Message = r.redactWithUserSecrets(p.Action.FailureDetail.Message)
 			}
 		}
 	case *bespb.BuildEvent_NamedSetOfFiles:
@@ -726,7 +758,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	case *bespb.BuildEvent_Finished:
 		{
 			if p.Finished.FailureDetail != nil {
-				p.Finished.FailureDetail.Message = RedactText(p.Finished.FailureDetail.Message)
+				p.Finished.FailureDetail.Message = r.redactWithUserSecrets(p.Finished.FailureDetail.Message)
 			}
 		}
 	case *bespb.BuildEvent_BuildToolLogs:
@@ -753,7 +785,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 				if err != nil {
 					return status.WrapError(err, "redact command")
 				}
-				m.BazelCommand = redactedCmd
+				m.BazelCommand = r.redactWithUserSecrets(redactedCmd)
 			}
 		}
 	case *bespb.BuildEvent_ChildInvocationsConfigured:
@@ -763,7 +795,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 				if err != nil {
 					return status.WrapError(err, "redact command")
 				}
-				m.BazelCommand = redactedCmd
+				m.BazelCommand = r.redactWithUserSecrets(redactedCmd)
 			}
 		}
 	}

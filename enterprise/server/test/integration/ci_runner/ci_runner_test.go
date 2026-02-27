@@ -2015,6 +2015,41 @@ actions:
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
 }
 
+func TestRedactsUserSecrets(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	repoPath, headCommitSHA := makeGitRepo(t, map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Echo user secret"
+    steps:
+      - run: |
+          echo "before_marker ${MY_SECRET_VALUE} after_marker"
+`,
+	})
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Echo user secret",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	secretValue := "super_secret_password_that_should_be_redacted"
+	result := invokeRunner(t, runnerFlags, []string{"MY_SECRET_VALUE=" + secretValue}, wsPath)
+	checkRunnerResult(t, result)
+
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	assert.NotContains(t, runnerInvocation.ConsoleBuffer, secretValue)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "before_marker")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "after_marker")
+}
+
 func TestInvokeCLICommandViaBazelisk(t *testing.T) {
 	tmp := testfs.MakeTempDir(t)
 
