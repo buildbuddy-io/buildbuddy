@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -107,9 +108,8 @@ const (
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
-	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
-	repoUserEnvVarName         = "REPO_USER"
-	repoTokenEnvVarName        = "REPO_TOKEN"
+	repoUserEnvVarName  = "REPO_USER"
+	repoTokenEnvVarName = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
@@ -142,8 +142,7 @@ const (
 	ansiGray  = "\033[90m"
 	ansiReset = "\033[0m"
 
-	clientIdentityEnvVar          = "BB_GRPC_CLIENT_IDENTITY"
-	secretEnvVarNamesForRedaction = "BUILDBUDDY_SECRET_ENV_VAR_NAMES"
+	clientIdentityEnvVar = ci_runner_env.BBGrpcClientIdentityEnvVarName
 
 	// We save the startup options used for the last executed bazel command so we can apply
 	// them on future bazel commands without restarting the Bazel server.
@@ -665,7 +664,7 @@ func run() error {
 
 	ws := &workspace{
 		startTime:          time.Now(),
-		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
+		buildbuddyAPIKey:   os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName),
 		forcedInvocationID: *invocationID,
 		runID:              runID,
 	}
@@ -686,7 +685,7 @@ func run() error {
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
-	redactionValues := parseSecretRedactionValues(os.Getenv(secretEnvVarNamesForRedaction))
+	redactionValues := parseSecretRedactionValues(os.Getenv(ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction))
 	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/, redactionValues)
 	if err != nil {
 		return err
@@ -2288,11 +2287,11 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	if isPushedRefInFork() {
 		lines = append(lines, "common --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
-	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
+	if apiKey := os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "common --remote_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
-	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
+	if origin := os.Getenv(ci_runner_env.BBGrpcClientOriginEnvVarName); origin != "" {
 		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))
 		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", usageutil.OriginHeaderName, origin))
 	}
@@ -2792,7 +2791,7 @@ func parseSecretRedactionValues(serializedSecretNames string) []string {
 	}
 	var names []string
 	if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
-		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", secretEnvVarNamesForRedaction, err)
+		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
 		return nil
 	}
 	values := make([]string, 0, len(names))

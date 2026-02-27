@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -257,7 +258,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	// forwarding an env var to the runner.
 	if platformProps.WorkflowID != "" {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-			Name:  "BB_GRPC_CLIENT_ORIGIN",
+			Name:  ci_runner_env.BBGrpcClientOriginEnvVarName,
 			Value: usageutil.ClientOrigin(),
 		})
 
@@ -270,7 +271,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 				return err
 			}
 			command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-				Name:  "BB_GRPC_CLIENT_IDENTITY",
+				Name:  ci_runner_env.BBGrpcClientIdentityEnvVarName,
 				Value: h,
 			})
 		}

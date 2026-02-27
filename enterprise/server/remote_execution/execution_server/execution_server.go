@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -70,8 +71,6 @@ import (
 const (
 	updateExecutionTimeout             = 15 * time.Second
 	deletePendingExecutionExtraTimeout = 10 * time.Second
-
-	secretEnvVarNamesForRedaction = "BUILDBUDDY_SECRET_ENV_VAR_NAMES"
 
 	// When an action finishes, schedule the corresponding pubsub channel to
 	// be discarded after this time. There may be multiple waiters for a single
@@ -874,7 +873,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 				return nil, status.WrapError(err, "marshal secret env var names")
 			}
 			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-				Name:  secretEnvVarNamesForRedaction,
+				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
 				Value: string(serializedNames),
 			})
 		}
