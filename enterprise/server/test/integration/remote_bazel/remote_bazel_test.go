@@ -528,8 +528,9 @@ sh_binary(
 		GroupId: env.GroupID1,
 	}
 
-	// Save a secret
+	// Save secrets
 	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_TARGET", ":hello_world")
+	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_MESSAGE", "super_secret_message_for_redaction_test")
 
 	// Run remote bazel
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
@@ -537,7 +538,7 @@ sh_binary(
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
+		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
@@ -564,6 +565,8 @@ sh_binary(
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.NotContains(t, string(logResp.GetBuffer()), "super_secret_message_for_redaction_test")
+	require.Contains(t, string(logResp.GetBuffer()), "secret=<REDACTED>")
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
