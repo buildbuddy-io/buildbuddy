@@ -280,28 +280,6 @@ func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, cmd, instanceName)
 }
 
-func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
-	env := newTestEnv(t)
-	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
-	flags.Set(t, "executor.affinity_routing_enabled", false)
-	cmd := &repb.Command{
-		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
-		OutputPaths: []string{"/bazel-out/foo.a"},
-	}
-	instanceName := "test-instance"
-
-	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
-
-	nodes := sequentiallyNumberedNodes(100)
-
-	// No nodes should be preferred as affinity routing is disabled.
-	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
-	requireSameExecutionNodes(t, nodes, ranked)
-	requireNonSequential(t, ranked)
-	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, cmd, instanceName)
-}
-
 func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)

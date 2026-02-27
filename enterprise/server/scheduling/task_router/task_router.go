@@ -23,7 +23,6 @@ import (
 )
 
 var (
-	affinityRoutingEnabled      = flag.Bool("executor.affinity_routing_enabled", true, "Enables affinity routing, which attempts to route actions to the executor that most recently ran that action.")
 	defaultBranchRoutingEnabled = flag.Bool("remote_execution.workflow_default_branch_routing_enabled", false, "Enables default branch routing for workflows. When routing a workflow action, if there are no executors that ran that action for the same git branch, try to route it to an executor that ran the action for the same default branch.")
 )
 
@@ -475,7 +474,7 @@ type affinityRouter struct {
 }
 
 func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
-	return *affinityRoutingEnabled && getFirstOutput(params.cmd) != ""
+	return getFirstOutput(params.cmd) != ""
 }
 
 func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
