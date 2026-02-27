@@ -750,6 +750,57 @@ TEST_ENV_VAR=foo
 	require.NoError(t, err)
 }
 
+func TestCreateExecUser(t *testing.T) {
+	setupNetworking(t)
+
+	image := imageConfigTestImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	const (
+		testUser = "buildbuddy"
+		expectedId = "uid=1000(buildbuddy) gid=1000(buildbuddy) groups=1000(buildbuddy)"
+	)
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerUser:     testUser,
+	}})
+	require.NoError(t, err)
+
+	// Pull
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+
+	// Create
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec
+	cmd := &repb.Command{Arguments: []string{"id"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, expectedID, strings.TrimSpace(string(res.Stdout)))
+}
+
 func TestCreateExecPauseUnpause(t *testing.T) {
 	setupNetworking(t)
 
