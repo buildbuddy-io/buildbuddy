@@ -84,9 +84,11 @@ type SendStream[Req, Res proto.Message] interface {
 }
 
 type Sender[Req, Res proto.Message] struct {
-	ctx      context.Context
-	sendChan chan Req
-	errChan  chan error
+	ctx                context.Context
+	sendChan           chan Req
+	sendErrChan        chan error
+	closeAndRecvChan   chan struct{}
+	closeAndRecvResult chan StreamMsg[Res]
 }
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
@@ -102,20 +104,24 @@ func (s *Sender[Req, Res]) SendWithTimeoutCause(msg Req, timeout time.Duration, 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
 	select {
-	case err := <-s.errChan:
+	case err := <-s.sendErrChan:
 		return err
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
 }
 
+// CloseAndRecvWithTimeoutCause closes the send direction of the underlying
+// stream and waits up to timeout for the final response.
 func (s *Sender[Req, Res]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (Res, error) {
+	s.closeAndRecvChan <- struct{}{}
+
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
 	var zero Res
 	select {
-	case err := <-s.errChan:
-		return zero, err
+	case msg := <-s.closeAndRecvResult:
+		return msg.Data, msg.Error
 	case <-ctx.Done():
 		return zero, context.Cause(ctx)
 	}
@@ -134,24 +140,30 @@ func (s *Sender[Req, Res]) CloseAndRecvWithTimeoutCause(timeout time.Duration, c
 //	}
 func NewSender[Req, Res proto.Message](ctx context.Context, stream SendStream[Req, Res]) Sender[Req, Res] {
 	sendChan := make(chan Req, 1)
-	closeAndRecvChan := make(chan Res, 1)
-	errChan := make(chan error)
+	sendErrChan := make(chan error)
+	closeAndRecvChan := make(chan struct{}, 1)
+	closeAndRecvResult := make(chan StreamMsg[Res], 1)
 	go func() {
 		for {
 			select {
 			case req := <-sendChan:
 				err := stream.Send(req)
-				errChan <- err
+				sendErrChan <- err
 			case <-closeAndRecvChan:
 				rsp, err := stream.CloseAndRecv()
-				errChan <- err
-				closeAndRecvChan <- rsp
+				closeAndRecvResult <- StreamMsg[Res]{Data: rsp, Error: err}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	return Sender[Req, Res]{ctx, sendChan, errChan}
+	return Sender[Req, Res]{
+		ctx:                ctx,
+		sendChan:           sendChan,
+		sendErrChan:        sendErrChan,
+		closeAndRecvChan:   closeAndRecvChan,
+		closeAndRecvResult: closeAndRecvResult,
+	}
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.
