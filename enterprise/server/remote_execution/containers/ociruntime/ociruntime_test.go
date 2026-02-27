@@ -716,7 +716,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	// Exec
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-ec", `
-			touch /bin/foo.txt
+			touch ~/foo.txt
 			pwd
 			env | sort
 		`},
@@ -732,7 +732,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, `/buildbuddy-execroot
 GREETING=Hello
-HOME=/root
+HOME=/home/buildbuddy
 HOSTNAME=localhost
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
@@ -770,8 +770,8 @@ func TestCreateExecUser(t *testing.T) {
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
 	const (
-		testUser = "buildbuddy"
-		expectedId = "uid=1000(buildbuddy) gid=1000(buildbuddy) groups=1000(buildbuddy)"
+		testUser   = "buildbuddy"
+		expectedID = "uid=1000 gid=1000"
 	)
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
 		ContainerImage: image,
@@ -792,7 +792,9 @@ func TestCreateExecUser(t *testing.T) {
 	})
 
 	// Exec
-	cmd := &repb.Command{Arguments: []string{"id"}}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\""},
+	}
 	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 

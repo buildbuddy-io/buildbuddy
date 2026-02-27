@@ -715,7 +715,13 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	if c.lockedImage == nil {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
-	cmd, err := withImageConfig(cmd, c.lockedImage.Image)
+	user, err := getUser(ctx, c.lockedImage.Image, c.rootfsPath(), c.user, c.forceRoot)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("get container user: %s", err))
+	}
+	args = append(args, fmt.Sprintf("--user=%d:%d", user.UID, user.GID))
+
+	cmd, err = withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
