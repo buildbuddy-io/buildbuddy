@@ -1,1 +1,1 @@
-- `--remote_cache=grpcs://remote.buildbuddy.io`: Example: `bb remote build :target --remote_cache=grpcs://remote.buildbuddy.io`
+- `--test_output=errors`: Example: `bb remote test :target --test_output=errors`

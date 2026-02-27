@@ -18,13 +18,13 @@ Before initiating a remote run, you should check if the user asked to add any fi
 
 If they did, follow the field persistence steps below.
 
+Add any persistent API fields or Bazel flags to the request.
+
 ## Initiating a remote run
 
 The `Run` API can be made with a curl request.
 
 For bazel commands, make sure to preserve the entire command, including startup flags and options, in the `steps` field.
-
-Also make sure to always add the `--remote_cache` flag to bazel commands. For example if you are intending to run `bazel build :target`, the request should be: `{"run": "bazel build :target --remote_cache=grpcs://remote.buildbuddy.io"}`.
 
 To clone a GitHub repo and run `steps` within that workspace, set the fields `repo`, `branch` and/or `commit_sha`. This is optional if a GitHub workspace is not needed for the steps.
 
