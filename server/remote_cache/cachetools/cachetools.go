@@ -348,7 +348,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 
 	}
-	rsp, err := stream.CloseAndRecv()
+	rsp, err := sender.CloseAndRecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for CloseAndRecv"))
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
@@ -1281,7 +1281,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 type UploadWriter struct {
 	ctx          context.Context
 	stream       bspb.ByteStream_WriteClient
-	sender       rpcutil.Sender[*bspb.WriteRequest]
+	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
 
 	bytesUploaded int64
@@ -1447,7 +1447,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
-	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
 			ctx:          ctx,

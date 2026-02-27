@@ -23,7 +23,8 @@ type message[T any] struct {
 }
 
 type stream[T any] struct {
-	ch chan message[T]
+	ch          chan message[T]
+	closeRecvCh chan message[T]
 }
 
 func (s *stream[T]) Recv() (T, error) {
@@ -38,6 +39,15 @@ func (s *stream[T]) Recv() (T, error) {
 func (s *stream[T]) Send(msg T) error {
 	s.ch <- message[T]{Val: msg}
 	return nil
+}
+
+func (s *stream[T]) CloseAndRecv() (T, error) {
+	if s.closeRecvCh != nil {
+		msg := <-s.closeRecvCh
+		return msg.Val, msg.Err
+	}
+	var zero T
+	return zero, nil
 }
 
 func TestReceiver(t *testing.T) {
@@ -71,4 +81,30 @@ func TestSender(t *testing.T) {
 	// Should return cause when timed out
 	err := sender.SendWithTimeoutCause(val, 0, cause)
 	require.Equal(t, cause, err)
+}
+
+func TestCloseAndRecv(t *testing.T) {
+	ctx := context.Background()
+	cause := fmt.Errorf("test-cause")
+	val := tspb.Now()
+
+	// Should return response successfully
+	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
+	s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
+	sender := rpcutil.NewSender(ctx, s)
+	closeRecvCh <- message[*tspb.Timestamp]{Val: val}
+	msg, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
+	require.NoError(t, err)
+	require.Equal(t, val, msg)
+
+	// Should return cause when timed out
+	closeRecvChTimeout := make(chan message[*tspb.Timestamp])
+	s = &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvChTimeout}
+	sender = rpcutil.NewSender(ctx, s)
+	msg, err = sender.CloseAndRecvWithTimeoutCause(0, cause)
+	require.Nil(t, msg)
+	require.Equal(t, cause, err)
+
+	// Unblock CloseAndRecv goroutine to avoid leaking it in the timeout case.
+	close(closeRecvChTimeout)
 }
