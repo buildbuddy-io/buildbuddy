@@ -1,7 +1,7 @@
 ---
 slug: remote-bazel-with-agents
 title: "Remote Bazel: The missing piece for AI coding agents"
-authors: maggie, george
+authors: maggie
 date: 2026-03-02 12:00:00
 tags: [performance, infrastructure, AI]
 ---
@@ -22,21 +22,25 @@ For tactical instructions on how to configure your agent to use Remote Bazel, se
 
 For more details on the technical setup of our remote runners, see our [blog post on our Firecracker cloning architecture](https://www.buildbuddy.io/blog/fast-runners-at-scale).
 
-## Why bazel is a bad fit for coding agents
+## Bottlenecks using Bazel with agents
 
-Typically, coding agents run builds either on developers' local machines or in lightweight cloud VMs offered by AI providers. This is often a bad fit for Bazel, which is notoriously resource intensive.
+Bazel is a great fit for coding agents because it provides deterministic, reproducible outputs, reduces redundant computation through remote caching, and enables parallelization with remote execution.
 
-When a coding agent runs `bazel test //...` on a developer's laptop or a lightweight cloud dev box, several things can go wrong:
+However agents may hit bottlenecks because Bazel is notoriously resource intensive.
+
+Typically, coding agents run builds either on developers' local machines or in lightweight cloud VMs offered by AI providers. Several issues can impact performance:
 
 1. **Network latency**: Network latency is often the biggest bottleneck in many Bazel Remote Build Execution and Remote Caching setups. Network round trips can quickly add up and hamper build times.
 1. **Resource contention**: When running on local machines, developers may run multiple agents in parallel, or they themselves may be developing in tandem with agents. The cloud runners provided by most AI providers are typically resource constrained and have limited network bandwidth. Resource contention can quickly become a bottleneck, slowing down builds.
+1. **Workspace locking**: Bazel's workspace lock prevents multiple builds from running in parallel with the same output base. If multiple agents want to run builds in parallel, they must be configured to use different output bases. This can be hard to manage, reduces cacheability, and incurs high disk usage, as many build outputs will be duplicated.
 1. **Analysis cache thrash**: When multiple agents are running builds in parallel, the analysis cache can be thrown out if build options change. AI cloud runners are often ephemeral and scoped to each task, and are reset to a clean state between tasks. This means they have to restart the analysis phase from scratch each time, which can take several minutes.
 1. **Architecture limitations**: Agents typically run builds on the same architecture as the machine they are running on. This can make it challenging to run tests on different architectures. For example, developers on Macs may want to run Linux-only tests.
 
 Remote Bazel eliminates each of these:
 
 1. **Fast network**: The runners are in the same datacenter as the remote cache servers and executors (sub-millisecond RTT), minimizing network latency.
-1. **Powerful runners**: Runners can be easily configured to have significant CPU, memory and up to 100GB of disk. Parallel builds can each run on their own runner, avoiding resource contention.
+1. **Powerful runners**: Runners can be easily configured to have significant CPU, memory and up to 100GB of disk.
+1. **Clonable runners**: Runners can be cloned, easily scaling to meet workload demands. Parallel builds can each run in their own runner, avoiding output-base conflicts and resource contention.
 1. **Warm Bazel instances**: Runners are snapshotted and cloned after each build, ensuring a warm analysis cache for future builds. Builds with different options can be configured to use different runners, avoiding analysis cache thrash.
 1. **Cross-platform development**: Runners can be easily configured to run on different architectures, operating systems, and with different container images. One use case could be simulating the environment used in CI, to debug a test that fails in CI but passes locally.
 
@@ -51,9 +55,9 @@ See our [Remote Bazel docs](https://www.buildbuddy.io/docs/remote-bazel/) for mo
 When using our CLI, `bb remote` supports some additional features out-of-the-box. It automatically:
 
 1. Checks out your GitHub repo on the remote runner. It will even mirror your local git state, including uncommitted changes, so the remote runner sees the exact same working tree as your local machine.
-2. Streams logs back to your terminal in real time.
-3. Build outputs can be automatically fetched locally, so the agent sees the same output it would from a local build.
-4. The VM is snapshotted after completion so future runs start warm.
+1. Streams logs back to your terminal in real time.
+1. Build outputs can be automatically fetched locally, so the agent sees the same output it would from a local build.
+1. The VM is snapshotted after completion so future runs start warm.
 
 `bb remote` is a drop-in replacement for `bazel`:
 
@@ -135,10 +139,6 @@ Here's what a sample AI coding agent workflow might look like with Remote Bazel:
 12. **Agent runs the tests with the race detector enabled**: `bb remote --runner_exec_properties=runner-key=race test //src/auth:login_test --@io_bazel_rules_go//go/config:race`. Because the command is configured with a different execution property, a different runner will be used. This prevents the build from discarding the analysis cache from the first run, which it would typically do with the race flag. If the agent ran another build without `runner-key` set, it would start from the warm runner from step #9 with a warm analysis cache
 
 In this example, the agent never needs to even install Bazel. It just edits local files and triggers remote runs, using limited resources on the local machine. All the heavy lifting happens on snapshotted remote runners.
-
-### Tips
-
-When looking for a warm snapshot, we try to find a runner on the same git branch to optimize performance. If no runner for that branch exists, we fall back to a runner on the repository's default branch (i.e. `main` or `master`). We recommend regularly running Remote Bazel on the default branch to ensure that a fresh snapshot is regularly generated and available as a starting point for builds on other branches.
 
 ## Conclusion
 
