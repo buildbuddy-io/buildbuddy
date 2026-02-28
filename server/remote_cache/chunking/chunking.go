@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -54,6 +55,9 @@ func ValidateConfig() error {
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
+	if cdc.EnabledViaHeader(ctx) {
+		return true
+	}
 	return efp != nil &&
 		efp.Boolean(ctx, "cache.chunking_enabled", false)
 }

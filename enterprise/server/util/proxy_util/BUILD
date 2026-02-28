@@ -11,6 +11,7 @@ go_library(
         "//server/metrics",
         "//server/util/authutil",
         "//server/util/bazel_request",
+        "//server/util/cdc",
         "//server/util/usageutil",
         "@org_golang_google_grpc//metadata",
     ],

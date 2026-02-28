@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 )
@@ -25,7 +26,9 @@ var (
 		usageutil.ClientHeaderName,
 		usageutil.OriginHeaderName,
 		authutil.ClientIdentityHeaderName,
-		bazel_request.RequestMetadataKey}
+		bazel_request.RequestMetadataKey,
+		cdc.EnabledHeaderName,
+	}
 )
 
 func SkipRemote(ctx context.Context) bool {
