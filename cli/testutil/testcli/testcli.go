@@ -186,11 +186,11 @@ func PTY(t *testing.T) *Terminal {
 }
 
 // Run runs the given command, writing the output to the terminal.
-func (t *Terminal) Run(cmd *exec.Cmd) {
+func (t *Terminal) Run(cmd *exec.Cmd) (int, error) {
 	cmd.Stdout = t.File
 	cmd.Stderr = t.File
 	err := cmd.Run()
-	require.NoError(t.t, err, t.Render())
+	return cmd.ProcessState.ExitCode(), err
 }
 
 // Raw returns the raw terminal content.

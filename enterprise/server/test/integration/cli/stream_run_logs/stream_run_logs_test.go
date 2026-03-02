@@ -39,7 +39,9 @@ echo "goodbye world"
 	_, webClient, setupOpts := setup(t)
 
 	cmd := append([]string{"run", ":echo"}, getFlags(setupOpts)...)
-	out := runWithCLI(t, ws, cmd)
+	out, exitCode, err := runWithCLI(t, ws, cmd)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
 
 	// Verify that the script ran as expected.
 	require.Contains(t, out, "hello world")
@@ -47,7 +49,7 @@ echo "goodbye world"
 
 	// Verify that the run logs look as expected.
 	logRsp := &elpb.GetEventLogChunkResponse{}
-	err := webClient.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+	err = webClient.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
 		RequestContext: webClient.RequestContext,
 		InvocationId:   setupOpts.InvocationID,
 		Type:           elpb.LogType_RUN_LOG,
@@ -71,19 +73,25 @@ echo "goodbye world"
 }
 
 func TestFailingCommand(t *testing.T) {
-	ws := testfs.MakeTempDir(t)
+	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": `sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": `#!/bin/bash
 echo "bad script!"
 exit 5
 `,
 	})
 
-	app, webClient, setupOpts := setup(t)
-	mockBuild(t, app, webClient.RequestContext.GetGroupId(), setupOpts.InvocationID)
+	_, webClient, setupOpts := setup(t)
+
+	cmd := append([]string{"run", ":echo"}, getFlags(setupOpts)...)
+	out, exitCode, err := runWithCLI(t, ws, cmd)
+	require.Error(t, err)
+	require.Equal(t, 5, exitCode)
+	require.Contains(t, out, "bad script!")
 
 	script := ws + "/echo.sh"
-	exitCode, err := stream_run_logs.Execute(script, *setupOpts)
+	exitCode, err = stream_run_logs.Execute(script, *setupOpts)
 	require.NoError(t, err)
 	require.Equal(t, 5, exitCode)
 
@@ -269,12 +277,12 @@ func getFlags(opts *stream_run_logs.Opts) []string {
 	}
 }
 
-func runWithCLI(t *testing.T, ws string, cmdArgs []string) string {
+func runWithCLI(t *testing.T, ws string, cmdArgs []string) (string, int, error) {
 	cmd := testcli.BazelCommand(t, ws, cmdArgs...)
 	term := testcli.PTY(t)
-	term.Run(cmd)
+	exitCode, err := term.Run(cmd)
 	fmt.Print(term.Render())
-	return term.Render()
+	return term.Render(), exitCode, err
 }
 
 // Rather than running a full build, mock the build by creating an invocation to make the test faster.
