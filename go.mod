@@ -26,7 +26,8 @@ tool golang.org/x/telemetry/counter
 
 replace (
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-19
-	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
+	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.2
+	github.com/lni/goutils v1.4.0 => github.com/buildbuddy-io/goutils v1.4.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 	kythe.io => github.com/buildbuddy-io/kythe v0.0.72
