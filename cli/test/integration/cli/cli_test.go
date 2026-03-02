@@ -346,7 +346,9 @@ func TestTerminalOutput(t *testing.T) {
 	})
 
 	term := testcli.PTY(t)
-	term.Run(testcli.BazelCommand(t, ws, "test", "...", "--test_output=streamed"))
+	exitCode, err := term.Run(testcli.BazelCommand(t, ws, "test", "...", "--test_output=streamed"))
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
 
 	// Make sure Bazel's progress output doesn't get interspersed with the test
 	// output.
