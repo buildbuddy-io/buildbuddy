@@ -159,6 +159,9 @@ common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
 
+# Silence noise about -lm -lm which has no functional downside
+common:macos --linkopt=-Wl,-no_warn_duplicate_libraries
+common:macos --host_linkopt=-Wl,-no_warn_duplicate_libraries
 
 ########################
 # BES + CACHE + REMOTE #
