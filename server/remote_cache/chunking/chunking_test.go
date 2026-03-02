@@ -14,12 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -460,6 +462,62 @@ type findMissingTrackingCache struct {
 func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	c.findMissingCalls++
 	return c.Cache.FindMissing(ctx, resources)
+}
+
+func TestEnabledViaHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		md   metadata.MD
+		want bool
+	}{
+		{
+			name: "no metadata",
+			md:   nil,
+			want: false,
+		},
+		{
+			name: "header not set",
+			md:   metadata.MD{},
+			want: false,
+		},
+		{
+			name: "header set to true",
+			md:   metadata.Pairs(cdc.EnabledHeaderName, "true"),
+			want: true,
+		},
+		{
+			name: "header set to false",
+			md:   metadata.Pairs(cdc.EnabledHeaderName, "false"),
+			want: false,
+		},
+		{
+			name: "header set to empty",
+			md:   metadata.Pairs(cdc.EnabledHeaderName, ""),
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tc.md != nil {
+				ctx = metadata.NewIncomingContext(ctx, tc.md)
+			}
+			assert.Equal(t, tc.want, cdc.EnabledViaHeader(ctx))
+		})
+	}
+}
+
+func TestEnabled_HeaderOverridesExperimentFlag(t *testing.T) {
+	ctx := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.Pairs(cdc.EnabledHeaderName, "true"),
+	)
+	assert.True(t, chunking.Enabled(ctx, nil))
+}
+
+func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
+	ctx := context.Background()
+	assert.False(t, chunking.Enabled(ctx, nil))
 }
 
 func BenchmarkStore(b *testing.B) {

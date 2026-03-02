@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -697,8 +698,13 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	return s.localCache != nil && s.remoteCAS != nil &&
-		chunking.Enabled(ctx, s.efp) &&
+	if s.localCache == nil || s.remoteCAS == nil {
+		return false
+	}
+	if cdc.EnabledViaHeader(ctx) {
+		return true
+	}
+	return chunking.Enabled(ctx, s.efp) &&
 		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
 }
 
