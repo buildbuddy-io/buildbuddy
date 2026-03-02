@@ -6,7 +6,7 @@ import CTA from "../components/cta/cta";
 import Hero from "../components/hero/hero";
 import common from "../css/common.module.css";
 import { copyToClipboard } from "../util/clipboard";
-import message from "../util/message";
+import { sendFormsMessage } from "../util/message";
 import contact from "./contact.module.css";
 import styles from "./plugins.module.css";
 
@@ -192,7 +192,7 @@ function handlePluginClicked(plugin, count, setCount) {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Plugin Submitted!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nPlugin name: ${form.pluginName.current.value}\nPlugin des: ${form.pluginDesc.current.value}\nPlugin link: ${form.pluginLink.current.value}`
   );
 

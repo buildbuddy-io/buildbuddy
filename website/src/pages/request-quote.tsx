@@ -1,7 +1,7 @@
 import Layout from "@theme/Layout";
 import React from "react";
 import common from "../css/common.module.css";
-import message from "../util/message";
+import { sendFormsMessage } from "../util/message";
 import styles from "./contact.module.css";
 
 let form = {
@@ -49,7 +49,7 @@ function RequestQuote() {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Quote Request!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nNumber of Engineers: ${form.engineerCount.current.value}`
   );
 
