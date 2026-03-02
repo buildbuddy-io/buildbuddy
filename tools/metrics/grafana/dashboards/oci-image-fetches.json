@@ -283,12 +283,11 @@
       "options": {
         "legend": {
           "calcs": [
-            "median",
-            "max"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
-          "sortBy": "Median",
+          "sortBy": "Last *",
           "sortDesc": true
         },
         "tooltip": {
@@ -477,12 +476,11 @@
       "options": {
         "legend": {
           "calcs": [
-            "median",
-            "max"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
-          "sortBy": "Median",
+          "sortBy": "Last *",
           "sortDesc": true
         },
         "tooltip": {
@@ -805,7 +803,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "p90 image fetch latency for successful fetches, grouped by whether the OCI fetcher experiment handled the request. Excludes images already cached on-disk.",
+      "description": "p50, p90, and p99 image fetch latency for successful fetches, grouped by whether the OCI fetcher experiment handled the request. Excludes images already cached on-disk.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -867,12 +865,11 @@
       "options": {
         "legend": {
           "calcs": [
-            "median",
-            "max"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
-          "sortBy": "Median",
+          "sortBy": "Last *",
           "sortDesc": true
         },
         "tooltip": {
@@ -887,13 +884,35 @@
             "uid": "vm"
           },
           "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (use_oci_fetcher, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
+          "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} p50 latency",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
           "expr": "histogram_quantile(0.90, sum by (use_oci_fetcher, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
           "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} p90 latency",
           "range": true,
-          "refId": "A"
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (use_oci_fetcher, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
+          "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} p99 latency",
+          "range": true,
+          "refId": "C"
         }
       ],
-      "title": "OCI Image Fetch Latency p90 by OCI Fetcher Experiment (excl. on-disk)",
+      "title": "OCI Image Fetch Latency by OCI Fetcher Experiment (excl. on-disk)",
       "type": "timeseries"
     }
   ],
