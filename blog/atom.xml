@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-03-02T12:00:00.000Z</updated>
+    <updated>2026-03-03T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Keith Smiley]]></title>
+        <id>https://www.buildbuddy.io/blog/welcoming-keith-smiley</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-keith-smiley"/>
+        <updated>2026-03-03T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[We're excited to share that Keith Smiley is joining BuildBuddy's engineering team. Keith brings an incredible depth of experience in build systems and developer tooling that will directly benefit our users and the broader Bazel ecosystem.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="company" term="company"/>
+        <category label="team" term="team"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Remote Bazel: The missing piece for AI coding agents]]></title>
         <id>https://www.buildbuddy.io/blog/remote-bazel-with-agents</id>
@@ -254,18 +267,5 @@
         <category label="security" term="security"/>
         <category label="encryption" term="encryption"/>
         <category label="enterprise" term="enterprise"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Buck2 Unboxing]]></title>
-        <id>https://www.buildbuddy.io/blog/buck2-review</id>
-        <link href="https://www.buildbuddy.io/blog/buck2-review"/>
-        <updated>2023-05-30T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[A review of Meta's new build tool Buck2.]]></summary>
-        <author>
-            <name>Son Luong Ngoc</name>
-            <uri>https://github.com/sluongng/</uri>
-        </author>
-        <category label="buck2" term="buck2"/>
-        <category label="engineering" term="engineering"/>
     </entry>
 </feed>
