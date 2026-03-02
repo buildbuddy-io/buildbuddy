@@ -125,6 +125,28 @@ func (sm *StoreMap) getStoreUsage(m serf.Member) *rfpb.StoreUsage {
 	return usage
 }
 
+// getMemberZone queries serf for the zone of all members and returns a map from
+// NHID to zone.
+func (sm *StoreMap) getMemberZone() map[string]string {
+	members := sm.gossipManager.Members()
+	result := make(map[string]string, len(members))
+	for _, m := range members {
+		usage := sm.getStoreUsage(m)
+		if usage == nil {
+			sm.log.Infof("skip member %q because of nil usage", m.Name)
+			continue
+		}
+		nhid := usage.GetNode().GetNhid()
+		if nhid != "" {
+			result[nhid] = m.Tags[constants.ZoneTag]
+		} else {
+			sm.log.Infof("skip member %q because of empty nhid", m.Name)
+		}
+	}
+
+	return result
+}
+
 // getMemberStatus queries serf for the current status of all members and returns
 // a map from NHID to whether the member is alive
 func (sm *StoreMap) getMemberStatus() map[string]bool {
@@ -273,7 +295,8 @@ func (s *Stat) update(x int64) {
 }
 
 type StoresWithStats struct {
-	Usages []*rfpb.StoreUsage
+	Usages     []*rfpb.StoreUsage
+	NhidToZone map[string]string
 
 	ReplicaCount   Stat
 	LeaseCount     Stat
@@ -282,8 +305,10 @@ type StoresWithStats struct {
 	TotalBytesUsed Stat
 }
 
-func CreateStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
-	res := &StoresWithStats{}
+func CreateStoresWithStats(usages []*rfpb.StoreUsage, nhidToZone map[string]string) *StoresWithStats {
+	res := &StoresWithStats{
+		NhidToZone: nhidToZone,
+	}
 	for _, usage := range usages {
 		res.Usages = append(res.Usages, usage.CloneVT())
 		res.ReplicaCount.update(usage.GetReplicaCount())
@@ -311,7 +336,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return CreateStoresWithStats(alive)
+	return CreateStoresWithStats(alive, sm.getMemberZone())
 }
 
 // Returns stores with stats that are not dead (include both alive and suspect).
@@ -335,7 +360,7 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return CreateStoresWithStats(alive)
+	return CreateStoresWithStats(alive, sm.getMemberZone())
 }
 
 func (sm *StoreMap) AllStoresAvailableAndReady() bool {
