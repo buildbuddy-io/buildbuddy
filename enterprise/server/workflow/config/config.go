@@ -247,9 +247,23 @@ fi
 # These arguments make the extractors run on java generated code
 KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
-# Bazel 9 defaults config_setting visibility to private, which breaks selects
+# extractors.bazelrc sets keep_going; fail fast so the workflow doesn't churn
+# for a long time after obvious errors.
+KYTHE_ARGS="$KYTHE_ARGS --nokeep_going"
+
+# If the kythe archive is extracted under the workspace root, exclude that local
+# package path so //... won't analyze it as a workspace package (we want the
+# injected @kythe_release repository instead).
+if [[ "$KYTHE_DIR" == "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/* ]]; then
+    kythe_local_pkg="${KYTHE_DIR#"$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/}"
+    KYTHE_ARGS="$KYTHE_ARGS --deleted_packages=$kythe_local_pkg"
+fi
+
+# Bazel 9 defaults config_setting visibility to private, which breaks selects.
+# Also explicitly autoload java rules used by the Kythe BUILD.
 if [ $BZL_MAJOR_VERSION -ge 9 ]; then
     KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
 fi
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"

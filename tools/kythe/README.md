@@ -28,6 +28,7 @@ bazel run //tools/kythe:local_kythe -- --bazel_version 9.0.0 .
 - `--out_path <path>`: output file (default `<repo_root>/kythe_serving.sst`)
 - `--skip_cxx`: skip C++ indexer + memcached setup
 - `--bazel_version <v>`: sets `USE_BAZEL_VERSION=<v>` for nested Bazel commands
+- `--distdir <path>`: sets `--distdir=<path>` for nested Bazel commands
 - `--dry_run`: print planned commands and exit
 - `-h, --help`: usage
 
@@ -38,3 +39,4 @@ bazel run //tools/kythe:local_kythe -- --bazel_version 9.0.0 .
 - It downloads a Kythe prebuilt archive into `<repo_root>/kythe-v*`.
 - You can also set `USE_BAZEL_VERSION` env var instead of `--bazel_version`.
 - On Bazel 9+, the script adds Java rule autoload flags required by current Kythe BUILD.
+- You can also set `BAZEL_DISTDIR` env var instead of `--distdir`.

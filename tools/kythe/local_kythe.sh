@@ -15,6 +15,7 @@ Options:
   --out_path <path>     Output sstable path (default: <repo_root>/kythe_serving.sst)
   --skip_cxx            Skip C++ indexing and memcached setup
   --bazel_version <v>   Set USE_BAZEL_VERSION for nested bazel commands
+  --distdir <path>      Bazel distdir to avoid flaky external fetches
   --dry_run             Print planned commands/settings without executing
   -h, --help            Show this help
 
@@ -23,6 +24,7 @@ Env vars:
   OUT_PATH              Same as --out_path
   SKIP_CXX=1            Same as --skip_cxx
   USE_BAZEL_VERSION     Same as --bazel_version
+  BAZEL_DISTDIR         Same as --distdir
 
 Notes:
   - This intentionally runs nested Bazel, same as the workflow action.
@@ -36,6 +38,7 @@ OUT_PATH="${OUT_PATH:-}"
 SKIP_CXX="${SKIP_CXX:-0}"
 KYTHE_DOWNLOAD_URL="${KYTHE_DOWNLOAD_URL:-$DEFAULT_KYTHE_DOWNLOAD_URL}"
 BAZEL_VERSION="${USE_BAZEL_VERSION:-}"
+DISTDIR="${BAZEL_DISTDIR:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,6 +57,10 @@ while [[ $# -gt 0 ]]; do
     --skip_cxx)
       SKIP_CXX=1
       shift
+      ;;
+    --distdir)
+      DISTDIR="$2"
+      shift 2
       ;;
     --repo_root)
       REPO_ROOT="$2"
@@ -127,12 +134,14 @@ bazel_cmd_prefix() {
   fi
 }
 
+
 echo "repo_root=$REPO_ROOT"
 echo "out_path=$OUT_PATH"
 echo "skip_cxx=$SKIP_CXX"
 echo "dry_run=$DRY_RUN"
 echo "kythe_download_url=$KYTHE_DOWNLOAD_URL"
 echo "bazel_version=${BAZEL_VERSION:-<default>}"
+echo "distdir=${DISTDIR:-<none>}"
 
 if [[ ! -f "$REPO_ROOT/WORKSPACE" && ! -f "$REPO_ROOT/WORKSPACE.bazel" && ! -f "$REPO_ROOT/MODULE.bazel" ]]; then
   echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel found at $REPO_ROOT; skipping."
@@ -223,13 +232,17 @@ fi
 
 if [[ "$BZL_MAJOR_VERSION" -ge 9 ]]; then
   KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
-  # Kythe BUILD uses java_* rules that need explicit autoloading in Bazel 9.
-  KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+java_binary,+java_import,+java_library"
+  # Keep shared cc autoload workarounds and add java_* rules Kythe needs.
+  KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
 fi
 
 echo "Bazel release: $bzl_release (major=$BZL_MAJOR_VERSION, bzlmod=$BZLMOD_ENABLED)"
 echo "Running Kythe-enabled build..."
-run_pipe "$(bazel_cmd_prefix)bazel --bazelrc='$KYTHE_DIR/extractors.bazelrc' build $KYTHE_ARGS //..."
+DISTDIR_FLAG=""
+if [[ -n "$DISTDIR" ]]; then
+  DISTDIR_FLAG="--distdir='$DISTDIR'"
+fi
+run_pipe "$(bazel_cmd_prefix)bazel --bazelrc='$KYTHE_DIR/extractors.bazelrc' build $DISTDIR_FLAG $KYTHE_ARGS //..."
 
 echo "Indexing kzips..."
 if [[ "$DRY_RUN" == "1" ]]; then
