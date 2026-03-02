@@ -82,7 +82,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
-	github.com/elastic/gosigar v0.14.2
+	github.com/elastic/gosigar v0.14.4-0.20250606160555-44388520074d
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-20241028184712-f74f43bb036d
 	github.com/gabriel-vasile/mimetype v1.4.4
 	github.com/go-enry/go-enry/v2 v2.8.7
