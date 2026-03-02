@@ -7,6 +7,7 @@ go_library(
     srcs = ["executorplatform.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform",
     deps = [
+        "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",

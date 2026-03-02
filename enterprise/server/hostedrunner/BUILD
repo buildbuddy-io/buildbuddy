@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/snaputil",
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
         "//proto:invocation_status_go_proto",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -368,7 +369,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 
 	// Use env override headers for credentials.
 	envOverrides := []string{
-		"BUILDBUDDY_API_KEY=" + apiKey.Value,
+		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		"REPO_USER=" + req.GetGitRepo().GetUsername(),
 		"REPO_TOKEN=" + accessToken,
 	}

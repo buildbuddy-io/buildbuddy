@@ -3,6 +3,7 @@ package execution_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -861,6 +863,20 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			return nil, err
 		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+		secretEnvVarNames := make([]string, 0, len(envVars))
+		for _, envVar := range envVars {
+			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
+		}
+		if len(secretEnvVarNames) > 0 {
+			serializedNames, err := json.Marshal(secretEnvVarNames)
+			if err != nil {
+				return nil, status.WrapError(err, "marshal secret env var names")
+			}
+			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+				Value: string(serializedNames),
+			})
+		}
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()

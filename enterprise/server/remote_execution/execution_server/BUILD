@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/execution",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",

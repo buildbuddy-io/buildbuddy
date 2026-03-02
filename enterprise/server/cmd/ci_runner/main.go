@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -107,9 +108,8 @@ const (
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
-	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
-	repoUserEnvVarName         = "REPO_USER"
-	repoTokenEnvVarName        = "REPO_TOKEN"
+	repoUserEnvVarName  = "REPO_USER"
+	repoTokenEnvVarName = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
@@ -142,7 +142,7 @@ const (
 	ansiGray  = "\033[90m"
 	ansiReset = "\033[0m"
 
-	clientIdentityEnvVar = "BB_GRPC_CLIENT_IDENTITY"
+	clientIdentityEnvVar = ci_runner_env.BBGrpcClientIdentityEnvVarName
 
 	// We save the startup options used for the last executed bazel command so we can apply
 	// them on future bazel commands without restarting the Bazel server.
@@ -313,7 +313,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool, redactionValues []string) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		var err error
@@ -338,7 +338,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -664,7 +664,7 @@ func run() error {
 
 	ws := &workspace{
 		startTime:          time.Now(),
-		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
+		buildbuddyAPIKey:   os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName),
 		forcedInvocationID: *invocationID,
 		runID:              runID,
 	}
@@ -685,7 +685,8 @@ func run() error {
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
-	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	redactionValues := parseSecretRedactionValues(os.Getenv(ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction))
+	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/, redactionValues)
 	if err != nil {
 		return err
 	}
@@ -950,12 +951,13 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
-	writer        io.Writer
-	writeListener func(s string)
+	writer          io.Writer
+	writeListener   func(s string)
+	redactionValues []string
 }
 
-func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}}
+func newInvocationLog(redactionValues []string) *invocationLog {
+	invLog := &invocationLog{writeListener: func(s string) {}, redactionValues: redactionValues}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -963,7 +965,10 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	redacted := redact.RedactText(output)
+	// Use value-aware redaction so user-defined secret values injected into the
+	// runner environment are masked in invocation logs (including overlapping
+	// values handled safely by longest-first replacement in redact package).
+	redacted := redact.RedactTextWithValues(output, invLog.redactionValues)
 
 	invLog.writeListener(redacted)
 	_, err := invLog.writer.Write([]byte(redacted))
@@ -2285,11 +2290,11 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	if isPushedRefInFork() {
 		lines = append(lines, "common --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
-	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
+	if apiKey := os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "common --remote_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
-	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
+	if origin := os.Getenv(ci_runner_env.BBGrpcClientOriginEnvVarName); origin != "" {
 		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))
 		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", usageutil.OriginHeaderName, origin))
 	}
@@ -2781,4 +2786,25 @@ func diskUsage() (*diskUsageStats, error) {
 		usageFraction: float64(usedBytes) / float64(df.TotalBytes),
 		usedBytes:     int64(usedBytes),
 	}, nil
+}
+
+func parseSecretRedactionValues(serializedSecretNames string) []string {
+	if serializedSecretNames == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
+		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+		return nil
+	}
+	values := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if val, ok := os.LookupEnv(name); ok && val != "" {
+			values = append(values, val)
+		}
+	}
+	return values
 }
