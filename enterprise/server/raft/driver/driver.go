@@ -992,8 +992,6 @@ func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
 		return cmp.Compare(c1, c2)
 	}
 	return compareByScore(op1.to, op2.to)
-	// Prefer moving from the worse source (lower score = worse).
-	// return -compareByScoreAndID(op1.from, op2.from)
 }
 
 func canConvergeByRebalanceReplica(existingStores map[string]*candidate, targets []*candidate, allStores *storemap.StoresWithStats) bool {
