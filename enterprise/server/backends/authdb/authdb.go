@@ -261,8 +261,13 @@ func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return grpb.Group_GroupStatus(g.Status)
 }
 
-// apiKeyGroupFullData contains full API key data and data for the owning group.
-type apiKeyGroupFullData struct {
+// apiKeyGroupRow contains a single row from a DB lookup for an API key.
+// The data contains columns from both the APIKey and Group tables.
+// toAPIKeyGroup converts the data to the more compact apiKeyGroup
+// representation containing only data relevant to auth decisions.
+// toAPIKey converts the data to the tables.APIKey type used in the API
+// layer.
+type apiKeyGroupRow struct {
 	tables.APIKey
 
 	UseGroupOwnedExecutors bool
@@ -272,7 +277,7 @@ type apiKeyGroupFullData struct {
 	GroupStatus            int32 `gorm:"column:group_status"`
 }
 
-func (r *apiKeyGroupFullData) toAPIKeyGroup() *apiKeyGroup {
+func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 	return &apiKeyGroup{
 		APIKeyID:               r.APIKeyID,
 		UserID:                 r.UserID,
@@ -286,7 +291,7 @@ func (r *apiKeyGroupFullData) toAPIKeyGroup() *apiKeyGroup {
 	}
 }
 
-func (r *apiKeyGroupFullData) toAPIKey() *tables.APIKey {
+func (r *apiKeyGroupRow) toAPIKey() *tables.APIKey {
 	key := r.APIKey
 	return &key
 }
@@ -528,7 +533,7 @@ func (d *AuthDB) lookupAPIKeyGroupByID(ctx context.Context, subDomain string, ap
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single API key (i.e. by API key value or ID).
-func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroupFullData, error) {
+func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroupRow, error) {
 	rows, err := d.fetchAPIKeys(ctx, queryName, subDomain, dbOpts, addConds)
 	if err != nil {
 		return nil, err
@@ -547,14 +552,14 @@ func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, d
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single group or to a single API key.
-func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) ([]*apiKeyGroupFullData, error) {
+func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) ([]*apiKeyGroupRow, error) {
 	qb := d.newAPIKeyLookupQuery(subDomain)
 	if err := addConds(qb); err != nil {
 		return nil, err
 	}
 	q, args := qb.Build()
 	rq := d.h.NewQueryWithOpts(ctx, queryName, dbOpts).Raw(q, args...)
-	return db.ScanAll(rq, &apiKeyGroupFullData{})
+	return db.ScanAll(rq, &apiKeyGroupRow{})
 }
 
 func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
