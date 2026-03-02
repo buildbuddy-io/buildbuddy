@@ -143,6 +143,10 @@ common:macos --cxxopt=-std=c++17
 common:windows --host_cxxopt=/std:c++17
 common:windows --cxxopt=/std:c++17
 
+# Suppress compiler warnings from external Redis C sources.
+common:linux --per_file_copt=external/redis\\+/.*@-w
+common:macos --per_file_copt=external/redis\\+/.*@-w
+
 # Populate workspace info like commit sha and repo name to your invocation.
 common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
