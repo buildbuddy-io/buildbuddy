@@ -174,3 +174,15 @@ func TestWhereInClause(t *testing.T) {
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
 	assert.Equal(t, []interface{}{1, 2, 3, 4}, qArgs)
 }
+
+func TestWhereInStringSlice(t *testing.T) {
+	q := query_builder.NewQuery(`DELETE FROM "APIKeys"`)
+	q.AddWhereInStringSlice("user_id", []string{"u1", "u2", "u3"})
+	q.AddWhereClause("group_id = ?", "g1")
+
+	qStr, qArgs := q.Build()
+
+	expectedQueryStr := `DELETE FROM "APIKeys" WHERE (user_id IN (?,?,?)) AND (group_id = ?)`
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
+	assert.Equal(t, []interface{}{"u1", "u2", "u3", "g1"}, qArgs)
+}
