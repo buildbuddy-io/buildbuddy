@@ -106,6 +106,16 @@ func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) s
 		}
 	}
 
+	// If a proxy is sampling a request, we'd otherwise sample independently and
+	// potentially drop the remote spans, losing the server-side trace information.
+	if !s.ignoreForcedTracingHeader && psc.IsValid() && psc.IsSampled() {
+		return sdktrace.SamplingResult{
+			Decision:   sdktrace.RecordAndSample,
+			Attributes: parameters.Attributes,
+			Tracestate: psc.TraceState(),
+		}
+	}
+
 	bound := s.traceIDUpperBound
 	if boundOverride, ok := s.traceIDUpperBoundOverrides[parameters.Name]; ok {
 		bound = boundOverride
