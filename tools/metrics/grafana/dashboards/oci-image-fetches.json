@@ -81,7 +81,7 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
+        "w": 8,
         "x": 0,
         "y": 0
       },
@@ -109,13 +109,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (isolation_type) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk=\"true\"}[$__rate_interval])) / sum by (isolation_type) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\"}[$__rate_interval]))",
-          "legendFormat": "{{isolation_type}} on-disk ratio",
+          "expr": "sum by (isolation) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk=\"true\"}[$__rate_interval])) / sum by (isolation) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\"}[$__rate_interval]))",
+          "legendFormat": "{{isolation}} on-disk ratio",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "OCI Image On-Disk Ratio",
+      "title": "OCI Image On-Disk Ratio by Isolation",
       "type": "timeseries"
     },
     {
@@ -123,7 +123,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "Ratio of successful image fetches to total fetches, per isolation type. Excludes images already cached on-disk.",
+      "description": "Ratio of failed image fetches to total fetches, per isolation type. Excludes images already cached on-disk. Gaps indicate there were no fetches in the selected interval.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -136,9 +136,9 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
+            "barWidthFactor": 0.9,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -179,16 +179,16 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 10
+        "w": 8,
+        "x": 8,
+        "y": 0
       },
       "id": 1,
       "options": {
         "legend": {
           "calcs": [
             "median",
-            "min"
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -207,13 +207,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (isolation_type) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval])) / sum by (isolation_type) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval]))",
-          "legendFormat": "{{isolation_type}} successful fetch percentage",
+          "expr": "(sum by (isolation) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", status!=\"ok\", on_disk!=\"true\"}[$__rate_interval])) / sum by (isolation) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval]))) and on(isolation) (sum by (isolation) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval])) > 0)",
+          "legendFormat": "{{isolation}} error ratio",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Success Ratio by Isolation Type (excl. on-disk)",
+      "title": "OCI Image Fetch Error Ratio by Isolation (excl. on-disk)",
       "type": "timeseries"
     },
     {
@@ -275,9 +275,9 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 20
+        "w": 8,
+        "x": 16,
+        "y": 0
       },
       "id": 2,
       "options": {
@@ -303,13 +303,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.90, sum by (isolation_type, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
-          "legendFormat": "{{isolation_type}} p90 latency",
+          "expr": "histogram_quantile(0.90, sum by (isolation, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
+          "legendFormat": "{{isolation}} p90 latency",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Latency p90 by Isolation Type (excl. on-disk)",
+      "title": "OCI Image Fetch Latency p90 by Isolation (excl. on-disk)",
       "type": "timeseries"
     },
     {
@@ -317,7 +317,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "Ratio of successful image fetches to total fetches, per upstream registry (eTLD+1).",
+      "description": "Ratio of failed image fetches to total fetches, per upstream registry (eTLD+1). Excludes images already cached on-disk. Gaps indicate there were no fetches in the selected interval.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -330,9 +330,9 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
+            "barWidthFactor": 0.9,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -373,16 +373,16 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 30
+        "w": 8,
+        "x": 8,
+        "y": 10
       },
       "id": 3,
       "options": {
         "legend": {
           "calcs": [
             "median",
-            "min"
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -401,13 +401,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", status=\"ok\"}[$__rate_interval])) / sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\"}[$__rate_interval]))",
-          "legendFormat": "{{registry}} successful fetch percentage",
+          "expr": "(sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", status!=\"ok\", on_disk!=\"true\"}[$__rate_interval])) / sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval]))) and on(registry) (sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval])) > 0)",
+          "legendFormat": "{{registry}} error ratio",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Success Ratio by Registry",
+      "title": "OCI Image Fetch Error Ratio by Registry (excl. on-disk)",
       "type": "timeseries"
     },
     {
@@ -469,9 +469,9 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 40
+        "w": 8,
+        "x": 16,
+        "y": 10
       },
       "id": 4,
       "options": {
@@ -497,13 +497,403 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.90, sum by (registry, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\"}[$__rate_interval]))) / 1e6",
+          "expr": "histogram_quantile(0.90, sum by (registry, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
           "legendFormat": "{{registry}} p90 latency",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "OCI Image Fetch Latency (p90) by Registry",
+      "title": "OCI Image Fetch Latency p90 by Registry (excl. on-disk)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Ratio of image fetch attempts where the image was already cached on the executor, per upstream registry (eTLD+1).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [
+            "median",
+            "min"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Median",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk=\"true\"}[$__rate_interval])) / sum by (registry) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\"}[$__rate_interval]))",
+          "legendFormat": "{{registry}} on-disk ratio",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "OCI Image On-Disk Ratio by Registry",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Ratio of image fetch attempts where the image was already cached on the executor, grouped by whether the OCI fetcher experiment handled the request.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [
+            "median",
+            "min"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Median",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (use_oci_fetcher) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk=\"true\"}[$__rate_interval])) / sum by (use_oci_fetcher) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\"}[$__rate_interval]))",
+          "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} on-disk ratio",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "OCI Image On-Disk Ratio by OCI Fetcher Experiment",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Ratio of failed image fetches to total fetches, grouped by whether the OCI fetcher experiment handled the request. Excludes images already cached on-disk. Gaps indicate there were no fetches in the selected interval.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.9,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [
+            "median",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Median",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "(sum by (use_oci_fetcher) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", status!=\"ok\", on_disk!=\"true\"}[$__rate_interval])) / sum by (use_oci_fetcher) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval]))) and on(use_oci_fetcher) (sum by (use_oci_fetcher) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_count{region=\"$region\", on_disk!=\"true\"}[$__rate_interval])) > 0)",
+          "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} error ratio",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "OCI Image Fetch Error Ratio by OCI Fetcher Experiment (excl. on-disk)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "p90 image fetch latency for successful fetches, grouped by whether the OCI fetcher experiment handled the request. Excludes images already cached on-disk.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 5,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [
+            "median",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Median",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.90, sum by (use_oci_fetcher, le) (rate(buildbuddy_remote_execution_image_fetch_duration_usec_bucket{region=\"$region\", status=\"ok\", on_disk!=\"true\"}[$__rate_interval]))) / 1e6",
+          "legendFormat": "use_oci_fetcher={{use_oci_fetcher}} p90 latency",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "OCI Image Fetch Latency p90 by OCI Fetcher Experiment (excl. on-disk)",
       "type": "timeseries"
     }
   ],
