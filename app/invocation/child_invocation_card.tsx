@@ -15,6 +15,16 @@ export type ChildInvocationCardProps = {
 export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
   private getStatus(): CommandStatus {
     const inv = this.props.invocation;
+    switch (inv.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+        return "succeeded";
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return "failed";
+      case invocation_status.OverallStatus.IN_PROGRESS:
+        return "in-progress";
+      default:
+    }
     switch (inv.invocationStatus) {
       case invocation_status.InvocationStatus.COMPLETE_INVOCATION_STATUS:
       case invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
