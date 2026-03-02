@@ -1,3 +1,22 @@
+// Package driver implements a priority queue that drives Raft range management
+// decisions. It periodically examines ranges and partitions, determines what
+// action (if any) is needed, and executes the appropriate change.
+//
+// For ranges, the driver handles:
+//   - Up-replication: adding replicas when a range has fewer than the configured minimum.
+//   - Down-replication: removing replicas when a range exceeds the minimum.
+//   - Dead replica replacement and removal.
+//   - Range splitting when a range exceeds the target size.
+//   - Replica rebalancing to distribute ranges evenly across stores.
+//   - Lease rebalancing to distribute lease ownership evenly across stores.
+//   - Finishing replica removal by cleaning up data on removed nodes.
+//
+// For partitions, the driver handles initialization of new partitions by
+// creating the required Raft shards across available nodes.
+//
+// Actions are prioritized so that critical operations (e.g. replacing dead
+// replicas) run before less urgent ones (e.g. rebalancing). Failed actions are
+// retried with exponential backoff up to a maximum retry count.
 package driver
 
 import (
@@ -5,6 +24,7 @@ import (
 	"container/heap"
 	"context"
 	"flag"
+	"maps"
 	"math"
 	"math/rand"
 	"slices"
@@ -598,7 +618,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	}
 
 	// Do not try to rebalance replica or leases when there is a store that's
-	// unavailabe because it can make the system more unstable.
+	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
 		storesWithStats := rq.storeMap.GetStoresWithStats()
@@ -972,22 +992,25 @@ func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
 		return cmp.Compare(c1, c2)
 	}
 	return compareByScore(op1.to, op2.to)
+	// Prefer moving from the worse source (lower score = worse).
+	// return -compareByScoreAndID(op1.from, op2.from)
 }
 
-func canConvergeByRebalanceReplica(choice *rebalanceChoice, allStores *storemap.StoresWithStats) bool {
-	if len(choice.candidates) == 0 {
-		return false
-	}
+func canConvergeByRebalanceReplica(existingStores map[string]*candidate, targets []*candidate, allStores *storemap.StoresWithStats) bool {
 	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
 	// The existing store is too far above the mean.
-	if choice.existing.usage.ReplicaCount > overfullThreshold {
-		return true
+	aboveMean := false
+	for _, source := range existingStores {
+		if source.usage.ReplicaCount > overfullThreshold {
+			return true
+		}
+		aboveMean = aboveMean || float64(source.usage.ReplicaCount) > allStores.ReplicaCount.Mean
 	}
 
-	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
-	if float64(choice.existing.usage.ReplicaCount) > allStores.ReplicaCount.Mean {
+	// One existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
+	if aboveMean {
 		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
-		for _, c := range choice.candidates {
+		for _, c := range targets {
 			if c.usage.ReplicaCount < underfullThreshold {
 				return true
 			}
@@ -1155,9 +1178,8 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 }
 
 func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
-	allStores := make(map[string]*candidate)
-
-	existingStores := make(map[string]*candidate)
+	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
+	otherReplicaStores := make(map[string]*candidate, len(rd.GetReplicas()))
 	needRebalance := false
 	for _, su := range storesWithStats.Usages {
 		nhid := su.GetNode().GetNhid()
@@ -1166,101 +1188,63 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			usage:    su,
 			fullDisk: isDiskFull(su),
 		}
-		allStores[nhid] = store
+		candidateStores[nhid] = store
 	}
 
-	nhids := make([]string, 0, len(rd.GetReplicas()))
 	localNHID := ""
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetReplicaId() == localReplicaID {
 			localNHID = repl.GetNhid()
 		}
-		store, ok := allStores[repl.GetNhid()]
+		store, ok := candidateStores[repl.GetNhid()]
 		if !ok {
 			// The store might not be available rn.
 			continue
 		}
+		delete(candidateStores, repl.GetNhid())
 		if store.fullDisk {
 			// We want to move the replica away from the store with full disk.
 			needRebalance = true
 		}
-		existingStores[repl.GetNhid()] = store
-		nhids = append(nhids, repl.GetNhid())
+		otherReplicaStores[repl.GetNhid()] = store
 	}
+	// This is to prevent us from removing the replica on this node. We
+	// can only support this after we have the ability to transfer the
+	// leadership away.
+	delete(otherReplicaStores, localNHID)
 
-	// Add replicas that are in the middle of removal to existingStores to
-	// prevent them from becoming target candidates.
+	// Remove replicas that are in the middle of removal from candidates.
 	for _, repl := range rd.GetRemoved() {
-		store, ok := allStores[repl.GetNhid()]
-		if !ok {
-			// The store might not be available rn.
-			continue
-		}
-		existingStores[repl.GetNhid()] = store
+		delete(candidateStores, repl.GetNhid())
 	}
 
-	// Find valid targeting stores for rebalancing.
-	var choices []*rebalanceChoice
-	for _, existingNHID := range nhids {
-		if existingNHID == localNHID {
-			// This is to prevent us from removing the replica on this node. We
-			// can only support this after we have the ability to transfer the
-			// leadership away.
-			continue
-		}
-		existing := existingStores[existingNHID]
-		var targetCandidates []*candidate
-		for nhid, store := range allStores {
-			if _, ok := existingStores[nhid]; ok {
-				// The store already contains the range.
-				continue
-			}
-			if store.fullDisk {
-				continue
-			}
+	var targetCandidates []*candidate
+	for _, store := range candidateStores {
+		if !store.fullDisk {
 			targetCandidates = append(targetCandidates, store)
 		}
-		if len(targetCandidates) == 0 {
-			continue
-		}
-
-		choices = append(choices, &rebalanceChoice{
-			existing:   existing,
-			candidates: targetCandidates,
-		})
 	}
-
-	if !needRebalance {
-		for _, choice := range choices {
-			if canConvergeByRebalanceReplica(choice, storesWithStats) {
-				needRebalance = true
-				break
-			}
-		}
-	}
-
-	if !needRebalance {
+	if len(targetCandidates) == 0 {
 		return nil
 	}
+	if !needRebalance && !canConvergeByRebalanceReplica(otherReplicaStores, targetCandidates, storesWithStats) {
+		return nil
+	}
+	bestTarget := slices.MaxFunc(targetCandidates, compareByScoreAndID)
+	bestTarget.fullDisk = isDiskFullForRebalance(bestTarget.usage)
+	bestTarget.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, bestTarget.usage)
+	bestTarget.replicaCount = bestTarget.usage.ReplicaCount
 
-	// Populating scores.
-	potentialOps := make([]*rebalanceOp, 0, len(choices))
-	for _, rebalanceChoice := range choices {
-		existing := rebalanceChoice.existing
+	potentialOps := make([]*rebalanceOp, 0, len(otherReplicaStores))
+	for _, nhid := range slices.Sorted(maps.Keys(otherReplicaStores)) {
+		existing := otherReplicaStores[nhid]
 		existing.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, existing.usage)
 		existing.replicaCount = existing.usage.ReplicaCount
 
-		cl := rebalanceChoice.candidates
-		for _, c := range cl {
-			c.fullDisk = isDiskFullForRebalance(c.usage)
-			c.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, c.usage)
-			c.replicaCount = c.usage.ReplicaCount
-		}
-		best := slices.MaxFunc(cl, compareByScoreAndID)
-		if compareByScore(best, existing) >= 0 {
+		if compareByScore(bestTarget, existing) >= 0 {
 			potentialOps = append(potentialOps, &rebalanceOp{
 				from: existing,
-				to:   best,
+				to:   bestTarget,
 			})
 		}
 	}
