@@ -4,6 +4,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("//rules:utils.bzl", "runfiles_directory")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
@@ -118,21 +119,70 @@ go_binary(
     embed = [":server_lib"],
 )
 
-# TODO(sluongng): Verify the layering of the image.
+PACKAGE_ROOT = "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s" % runfiles_directory()
+
 pkg_tar(
-    name = "tar",
-    extension = "tar.gz",
+    name = "buildbuddy_tar",
+    package_dir = PACKAGE_ROOT + "/enterprise/server/cmd/server/buildbuddy_",
     srcs = [
         ":buildbuddy",
     ],
-    include_runfiles = True,
-    remap_paths = {
-        "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
-    },
+)
+
+pkg_tar(
+    name = "licenses_tar",
+    package_dir = PACKAGE_ROOT + "/enterprise",
+    srcs = [
+        "//enterprise:licenses",
+    ],
+)
+
+pkg_tar(
+    name = "app_tar",
+    package_dir = PACKAGE_ROOT + "/enterprise/app",
+    srcs = [
+        "//enterprise/app:app_bundle",
+        "//enterprise/app:sha",
+        "//enterprise/app:style",
+    ],
+)
+
+pkg_tar(
+    name = "config_tar",
+    package_dir = PACKAGE_ROOT + "/enterprise/config",
+    srcs = [
+        "//enterprise/config:config_files",
+    ],
+)
+
+pkg_tar(
+    name = "static_tar",
+    package_dir = PACKAGE_ROOT + "/static",
+    srcs = [
+        "//static",
+    ],
+)
+
+pkg_tar(
+    name = "symlinks",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
+        "config.yaml": "/" + PACKAGE_ROOT + "/enterprise/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",
+        "app/enterprise/server/cmd/server/buildbuddy": "/" + PACKAGE_ROOT + "/enterprise/server/cmd/server/buildbuddy_/buildbuddy",
     },
+)
+
+flatten(
+    name = "layer",
+    # compress = "gzip",
+    tars = [
+        ":buildbuddy_tar",
+        ":licenses_tar",
+        ":app_tar",
+        ":config_tar",
+        ":static_tar",
+        ":symlinks",
+    ],
 )
 
 image_manifest(
@@ -141,7 +191,9 @@ image_manifest(
     entrypoint = [
         "/app/enterprise/server/cmd/server/buildbuddy",
     ],
-    layers = [":tar"],
+    layers = [
+        ":layer",
+    ],
 )
 
 image_load(
