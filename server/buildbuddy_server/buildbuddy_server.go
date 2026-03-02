@@ -102,6 +102,14 @@ var (
 	WriteEventLogTimeout = 1 * time.Hour
 )
 
+func (s *BuildBuddyServer) apiKeyValueReadbackEnabled() bool {
+	if s.env.GetAuthDB() == nil {
+		// Keep default behavior if auth DB is not configured.
+		return true
+	}
+	return s.env.GetAuthDB().GetAPIKeyValueReadbackEnabled()
+}
+
 type BuildBuddyServer struct {
 	env        environment.Env
 	sslService interfaces.SSLService
@@ -840,10 +848,14 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
+	value := ""
+	if s.apiKeyValueReadbackEnabled() {
+		value = key.Value
+	}
 	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
-			Value:               key.Value,
+			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
@@ -1040,10 +1052,14 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
+	value := ""
+	if s.apiKeyValueReadbackEnabled() {
+		value = key.Value
+	}
 	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
-			Value:               key.Value,
+			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,

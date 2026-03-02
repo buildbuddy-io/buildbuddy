@@ -20,6 +20,18 @@
   padding: 8px 0;
 }
 
+.api-keys .api-key-created-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-keys .api-key-created-value-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .api-keys .api-keys-list > :not(:last-child) {
   margin-bottom: 8px;
 }

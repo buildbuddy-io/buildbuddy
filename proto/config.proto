@@ -196,6 +196,12 @@ message FrontendConfig {
 
   // Whether dark mode UI is enabled.
   bool dark_mode_enabled = 65;
+
+  // Whether API key values can be retrieved after they are created.
+  // If false, API key metadata should still be accessible, but values should
+  // be omitted from read APIs.
+  // If this field is absent, clients should treat it as true.
+  optional bool api_key_value_readback_enabled = 66;
 }
 
 message Region {

@@ -104,6 +104,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
     }
 
     const activeTabId = this.getActiveTabId();
+    const apiKeyValueReadbackEnabled = capabilities.config.apiKeyValueReadbackEnabled !== false;
 
     return (
       <div className="settings">
@@ -305,6 +306,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <div className="settings-option-description">
                         API keys grant access to your BuildBuddy organization.
                       </div>
+                      {!apiKeyValueReadbackEnabled && (
+                        <div className="settings-option-description">
+                          API key secret values cannot be viewed from this page. If you've lost access to an API key
+                          value, you can delete and recreate the key with the same capabilities.
+                        </div>
+                      )}
                       {this.isCLILogin() && (
                         <>
                           <div className="settings-option-description" debug-id="cli-login-settings-banner">
@@ -340,6 +347,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                           Personal API keys associate builds with both your individual user account and your
                           organization.
                         </div>
+                        {!apiKeyValueReadbackEnabled && (
+                          <div className="settings-option-description">
+                            API key secret values cannot be viewed from this page. If you've lost access to an API key
+                            value, you can delete and recreate the key with the same capabilities.
+                          </div>
+                        )}
                         {this.isCLILogin() && (
                           <div className="settings-option-description">
                             <Banner type="info">

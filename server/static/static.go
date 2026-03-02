@@ -169,6 +169,10 @@ type FrontendTemplateData struct {
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
 	nonce, _ := ctx.Value(csp.Nonce{}).(string)
+	apiKeyValueReadbackEnabled := true
+	if authDB := env.GetAuthDB(); authDB != nil {
+		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
+	}
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		AppBundleHash:                          appBundleHash,
@@ -218,6 +222,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CodeSearchEnabled:                      *codeSearchEnabled,
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
+		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,

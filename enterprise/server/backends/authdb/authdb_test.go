@@ -281,6 +281,90 @@ func TestUserKeyExpiration(t *testing.T) {
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 }
 
+func TestAPIKeyValueReadbackDisabled(t *testing.T) {
+	flags.Set(t, "app.api_key_value_readback_enabled", false)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	groupID := admin.Groups[0].Group.GroupID
+
+	orgKeyRsp, err := env.GetBuildBuddyServer().CreateApiKey(adminCtx, &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Label:          "org-key",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, orgKeyRsp.GetApiKey().GetValue())
+	// Key remains usable for authentication even when API key value readback is disabled.
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, orgKeyRsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+
+	orgKeyGetRsp, err := env.GetBuildBuddyServer().GetApiKey(adminCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId: orgKeyRsp.GetApiKey().GetId(),
+	})
+	require.NoError(t, err)
+	// Read APIs should still return metadata, but the key value should be omitted.
+	require.Empty(t, orgKeyGetRsp.GetApiKey().GetValue())
+	orgKey, err := env.GetAuthDB().GetAPIKey(adminCtx, orgKeyRsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	// authdb should also omit values when readback is disabled, even for legacy
+	// unencrypted keys.
+	require.Empty(t, orgKey.Value)
+	orgKeys, err := env.GetAuthDB().GetAPIKeys(adminCtx, groupID)
+	require.NoError(t, err)
+	for _, k := range orgKeys {
+		require.Empty(t, k.Value)
+	}
+
+	// Enable user-owned keys.
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+
+	userKeyRsp, err := env.GetBuildBuddyServer().CreateUserApiKey(adminCtx, &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Label:          "user-key",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, userKeyRsp.GetApiKey().GetValue())
+	// User-owned key remains usable for authentication even when API key value readback is disabled.
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, userKeyRsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+
+	userKeyGetRsp, err := env.GetBuildBuddyServer().GetUserApiKey(adminCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId: userKeyRsp.GetApiKey().GetId(),
+	})
+	require.NoError(t, err)
+	// Same behavior for user-owned keys: metadata is returned, value is omitted.
+	require.Empty(t, userKeyGetRsp.GetApiKey().GetValue())
+	userKey, err := env.GetAuthDB().GetAPIKey(adminCtx, userKeyRsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	// Same expectation for direct authdb access to user-owned keys.
+	require.Empty(t, userKey.Value)
+	userKeys, err := env.GetAuthDB().GetUserAPIKeys(adminCtx, admin.UserID, groupID)
+	require.NoError(t, err)
+	for _, k := range userKeys {
+		require.Empty(t, k.Value)
+	}
+}
+
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {

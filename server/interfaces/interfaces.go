@@ -509,6 +509,10 @@ type AuthDB interface {
 	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
 	GetUserOwnedKeysEnabled() bool
 
+	// GetAPIKeyValueReadbackEnabled returns whether API key values can be
+	// retrieved after creation by API key read methods.
+	GetAPIKeyValueReadbackEnabled() bool
+
 	// GetUserAPIKeys returns all user-owned API keys within a group.
 	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
 
