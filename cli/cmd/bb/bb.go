@@ -291,7 +291,7 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 //
 // originalArgs contains the command as originally typed. We pass it as
 // EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
-func handleBazelCommand(start time.Time, args []string, originalArgs []string) (int, error) {
+func handleBazelCommand(start time.Time, args []string, originalArgs []string) (exitCode int, err error) {
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, args...)); exitCode >= 0 || err != nil {
 		return exitCode, err
@@ -304,7 +304,6 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	}
 
 	var scriptPath string
-	var exitCode int
 	var streamRunLogsOpts *stream_run_logs.Opts
 	defer func() {
 		// Remove tempdir. Need to do this before invoking the run script

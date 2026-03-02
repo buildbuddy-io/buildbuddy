@@ -45,6 +45,19 @@ func TestBazelVersion(t *testing.T) {
 	require.NotContains(t, output, log.WarningPrefix)
 }
 
+func TestBazelRun(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD":   `sh_binary(name = "fail", srcs = ["fail.sh"])`,
+		"fail.sh": `exit 1`,
+	})
+	testfs.MakeExecutable(t, ws, "fail.sh")
+	cmd := testcli.BazelCommand(t, ws, "run", ":fail")
+	b, err := testcli.CombinedOutput(cmd)
+	require.Error(t, err, "output: %s", string(b))
+	require.Equal(t, cmd.ProcessState.ExitCode(), 1)
+}
+
 func TestParseGlobalFlags(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)
