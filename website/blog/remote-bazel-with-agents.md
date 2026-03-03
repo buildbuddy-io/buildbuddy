@@ -3,6 +3,7 @@ slug: remote-bazel-with-agents
 title: "Remote Bazel: The missing piece for AI coding agents"
 authors: maggie
 date: 2026-03-02 12:00:00
+image: /img/missing_piece.png
 tags: [performance, infrastructure, AI]
 ---
 
