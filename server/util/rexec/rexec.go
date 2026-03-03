@@ -24,6 +24,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -221,13 +222,30 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	return actionResourceName, nil
 }
 
+// StartOption applies an option to the ExecuteRequest built by Start.
+type StartOption func(*repb.ExecuteRequest)
+
+// WithSkipCacheLookup configures whether the Execute request should bypass the
+// Action Cache lookup before execution.
+func WithSkipCacheLookup(skipCacheLookup bool) StartOption {
+	return func(req *repb.ExecuteRequest) {
+		req.SkipCacheLookup = skipCacheLookup
+	}
+}
+
 // Start begins an Execute stream for the given remote action.
-func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.ResourceName) (*RetryingStream, error) {
+//
+// By default it bypasses Action Cache lookups before execution. Callers may
+// override request fields using StartOption values.
+func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.ResourceName, opts ...StartOption) (*RetryingStream, error) {
 	req := &repb.ExecuteRequest{
 		InstanceName:    actionResourceName.GetInstanceName(),
 		ActionDigest:    actionResourceName.GetDigest(),
 		DigestFunction:  actionResourceName.GetDigestFunction(),
 		SkipCacheLookup: true,
+	}
+	for _, opt := range opts {
+		opt(req)
 	}
 	stream, err := env.GetRemoteExecutionClient().Execute(ctx, req)
 	if err != nil {
@@ -433,24 +451,36 @@ func GetExecutionLogs(ctx context.Context, bsClient bspb.ByteStreamClient, insta
 // (for example, some heavyweight info such as executor profiles aren't sent
 // back to clients, but are available in the cached execute response).
 func GetCachedExecuteResponse(ctx context.Context, acClient repb.ActionCacheClient, executionID string) (*repb.ExecuteResponse, error) {
-	executionID = strings.TrimPrefix(executionID, "/")
-	uploadResourceName, err := digest.ParseUploadResourceName(executionID)
+	canonicalExecutionID := strings.TrimPrefix(executionID, "/")
+	uploadResourceName, err := digest.ParseUploadResourceName(canonicalExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("parse execution ID as upload resource name: %w", err)
 	}
 
-	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), uploadResourceName.GetDigestFunction())
-	if err != nil {
-		return nil, fmt.Errorf("compute execute response digest: %w", err)
+	lookupExecutionIDs := []string{executionID}
+	if canonicalExecutionID != executionID {
+		lookupExecutionIDs = append(lookupExecutionIDs, canonicalExecutionID)
 	}
-	acResourceName := digest.NewACResourceName(executeResponseDigest, uploadResourceName.GetInstanceName(), uploadResourceName.GetDigestFunction())
-	actionResult, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
-		ActionDigest:        acResourceName.GetDigest(),
-		InstanceName:        acResourceName.GetInstanceName(),
-		DigestFunction:      acResourceName.GetDigestFunction(),
-		IncludeTimelineData: true,
-	})
-	if err != nil {
+
+	var actionResult *repb.ActionResult
+	for i, lookupExecutionID := range lookupExecutionIDs {
+		executeResponseDigest, err := digest.Compute(strings.NewReader(lookupExecutionID), uploadResourceName.GetDigestFunction())
+		if err != nil {
+			return nil, fmt.Errorf("compute execute response digest: %w", err)
+		}
+		acResourceName := digest.NewACResourceName(executeResponseDigest, uploadResourceName.GetInstanceName(), uploadResourceName.GetDigestFunction())
+		actionResult, err = acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+			ActionDigest:        acResourceName.GetDigest(),
+			InstanceName:        acResourceName.GetInstanceName(),
+			DigestFunction:      acResourceName.GetDigestFunction(),
+			IncludeTimelineData: true,
+		})
+		if err == nil {
+			break
+		}
+		if gstatus.Code(err) == codes.NotFound && i < len(lookupExecutionIDs)-1 {
+			continue
+		}
 		return nil, fmt.Errorf("get action result: %w", err)
 	}
 	if len(actionResult.GetStdoutRaw()) == 0 {

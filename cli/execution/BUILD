@@ -3,13 +3,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
-    name = "executions",
-    srcs = ["executions.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/executions",
+    name = "execution",
+    srcs = ["execution.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/execution",
     deps = [
         "//cli/arg",
         "//cli/log",
         "//cli/login",
+        "//cli/markdown",
         "//cli/terminal",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",

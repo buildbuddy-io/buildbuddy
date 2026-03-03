@@ -9,7 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
-	"github.com/buildbuddy-io/buildbuddy/cli/executions"
+	"github.com/buildbuddy-io/buildbuddy/cli/execution"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
@@ -65,9 +65,9 @@ func register() {
 			Handler: execute.HandleExecute,
 		},
 		{
-			Name:    "executions",
-			Help:    "Remote execution tools (see 'bb executions --help')",
-			Handler: executions.HandleExecutions,
+			Name:    "execution",
+			Help:    "Remote execution tools",
+			Handler: execution.HandleExecution,
 		},
 		{
 			Name:    "fix",

@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/executions"
+	"github.com/buildbuddy-io/buildbuddy/cli/execution"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/markdown"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -47,6 +48,8 @@ var (
 	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally. Incompatible with --input_root.")
 	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
 	output          = flags.String("output", "stdio", "Output format: `stdio` to print command stdout/stderr, `id` to print only execution ID, `json` to print execution response and logs as JSON, or `markdown` (or `md`) to print a markdown summary.")
+	cacheRead       = flags.Bool("cache_read", false, "If true, allow action cache lookup before execution (`skip_cache_lookup=false`).")
+	cacheWrite      = flags.Bool("cache_write", false, "If true, allow successful executions to be written to the action cache (`do_not_cache=false`).")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
@@ -69,6 +72,9 @@ Example of running a simple bash command:
 
 Example of running a bash command with runner recycling:
   $ bb execute --exec_properties=recycle-runner=true -- bash -c 'echo "Runner uptime:" $(uptime)'
+
+Example of allowing action cache reads and writes:
+  $ bb execute --cache_read --cache_write -- bash -c 'echo "Hello again!"'
 `
 )
 
@@ -149,7 +155,7 @@ func execute(cmdArgs []string) error {
 		Platform:             platform,
 		OutputPaths:          *outputPaths,
 	}
-	action := &repb.Action{}
+	action := &repb.Action{DoNotCache: !*cacheWrite}
 	if *timeout > 0 {
 		action.Timeout = durationpb.New(*timeout)
 	}
@@ -190,7 +196,7 @@ func execute(cmdArgs []string) error {
 	}
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")
-	stream, err := rexec.Start(ctx, env, arn)
+	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(!*cacheRead))
 	if err != nil {
 		return err
 	}
@@ -247,11 +253,12 @@ func execute(cmdArgs []string) error {
 			return err
 		}
 	case "json":
-		if err := executions.WriteJSONOutput(os.Stdout, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
+		if err := execution.WriteJSONOutput(os.Stdout, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
 			return fmt.Errorf("write json output: %w", err)
 		}
 	case "markdown":
-		if _, err := fmt.Fprint(os.Stdout, executions.RenderMarkdownWithDetails(rsp.GetName(), rsp.ExecuteResponse, logs)); err != nil {
+		markdownWriter := markdown.Writer(os.Stdout, nil)
+		if err := execution.WriteMarkdownWithDetails(markdownWriter, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
 			return err
 		}
 	case "stdio":
