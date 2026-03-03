@@ -2795,13 +2795,13 @@ func (w *updateTagsWorker) handleTask(task *updateTagsTask) {
 	w.updateTags()
 }
 
-func getZone() string {
+var getZone func() string = sync.OnceValue(func() string {
 	zone := resources.GetZone()
 	if zone == "" {
 		return "local"
 	}
 	return zone
-}
+})
 
 func (w *updateTagsWorker) updateTags() error {
 	storeTags := make(map[string]string, 4)
