@@ -1196,6 +1196,11 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 		if err := rq.Exec().Error; err != nil {
 			return err
 		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_user_lists").Raw(`
+			DELETE FROM "UserUserLists" WHERE user_user_id = ?`, userID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
 		rq = tx.NewQuery(ctx, "userdb_delete_user_all_keys").Raw(`
 			DELETE FROM "APIKeys" WHERE user_id = ?`, userID)
 		if err := rq.Exec().Error; err != nil {
@@ -1384,6 +1389,11 @@ func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "userdb_delete_user_list_members").Raw(`
 			DELETE FROM "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list_groups").Raw(`
+			DELETE FROM "UserListGroups" WHERE user_list_user_list_id = ?`, userListID)
 		if err := rq.Exec().Error; err != nil {
 			return err
 		}
