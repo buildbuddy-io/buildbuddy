@@ -18,6 +18,16 @@
             <category>team</category>
         </item>
         <item>
+            <title><![CDATA[Configuring Remote Bazel with agents]]></title>
+            <link>https://www.buildbuddy.io/blog/configuring-remote-bazel-with-agents</link>
+            <guid>https://www.buildbuddy.io/blog/configuring-remote-bazel-with-agents</guid>
+            <pubDate>Mon, 02 Mar 2026 12:00:00 GMT</pubDate>
+            <description><![CDATA[Configuring AI coding agents to use Remote Bazel can unlock significant performance improvements for builds and tests. With more compute, a warm analysis cache, and fast network access]]></description>
+            <category>performance</category>
+            <category>infrastructure</category>
+            <category>AI</category>
+        </item>
+        <item>
             <title><![CDATA[Remote Bazel: The missing piece for AI coding agents]]></title>
             <link>https://www.buildbuddy.io/blog/remote-bazel-with-agents</link>
             <guid>https://www.buildbuddy.io/blog/remote-bazel-with-agents</guid>
@@ -177,17 +187,6 @@
             <pubDate>Wed, 21 Jun 2023 12:00:00 GMT</pubDate>
             <description><![CDATA[We're happy to announce PostgreSQL support for BuildBuddy.]]></description>
             <category>product</category>
-        </item>
-        <item>
-            <title><![CDATA[Providing Control Over Cache Encryption]]></title>
-            <link>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</link>
-            <guid>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</guid>
-            <pubDate>Mon, 05 Jun 2023 11:00:00 GMT</pubDate>
-            <description><![CDATA[We are announcing a feature that allows customers to control how their data is encrypted in in our cache.]]></description>
-            <category>product</category>
-            <category>security</category>
-            <category>encryption</category>
-            <category>enterprise</category>
         </item>
     </channel>
 </rss>

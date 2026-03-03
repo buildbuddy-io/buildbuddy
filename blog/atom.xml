@@ -21,6 +21,20 @@
         <category label="team" term="team"/>
     </entry>
     <entry>
+        <title type="html"><![CDATA[Configuring Remote Bazel with agents]]></title>
+        <id>https://www.buildbuddy.io/blog/configuring-remote-bazel-with-agents</id>
+        <link href="https://www.buildbuddy.io/blog/configuring-remote-bazel-with-agents"/>
+        <updated>2026-03-02T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Configuring AI coding agents to use Remote Bazel can unlock significant performance improvements for builds and tests. With more compute, a warm analysis cache, and fast network access]]></summary>
+        <author>
+            <name>Maggie Lou</name>
+            <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
+        </author>
+        <category label="performance" term="performance"/>
+        <category label="infrastructure" term="infrastructure"/>
+        <category label="AI" term="AI"/>
+    </entry>
+    <entry>
         <title type="html"><![CDATA[Remote Bazel: The missing piece for AI coding agents]]></title>
         <id>https://www.buildbuddy.io/blog/remote-bazel-with-agents</id>
         <link href="https://www.buildbuddy.io/blog/remote-bazel-with-agents"/>
@@ -252,20 +266,5 @@
             <uri>https://www.github.com/tempoz</uri>
         </author>
         <category label="product" term="product"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Providing Control Over Cache Encryption]]></title>
-        <id>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</id>
-        <link href="https://www.buildbuddy.io/blog/customer-managed-encryption-keys"/>
-        <updated>2023-06-05T11:00:00.000Z</updated>
-        <summary type="html"><![CDATA[We are announcing a feature that allows customers to control how their data is encrypted in in our cache.]]></summary>
-        <author>
-            <name>Vadim Berezniker</name>
-            <uri>https://www.linkedin.com/in/vadimberezniker/</uri>
-        </author>
-        <category label="product" term="product"/>
-        <category label="security" term="security"/>
-        <category label="encryption" term="encryption"/>
-        <category label="enterprise" term="enterprise"/>
     </entry>
 </feed>
