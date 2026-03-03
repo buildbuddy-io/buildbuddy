@@ -569,13 +569,20 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 	return node, 0
 }
 
-// Forget is called whenever the kernel loses knowledge about an inode, which
+// OnForget is called whenever the kernel loses knowledge about an inode, which
 // can happen because the inode is removed or because the kernel removes cached
 // data due to memory pressure. In the latter case, the kernel will send a
 // lookup request if the inode is needed again.
-func (n *Node) Forget() {
+func (n *Node) OnForget() {
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.getRPCContext(), "Forget %q ino %d", n.relativePath(), n.StableAttr().Ino)
+		log.CtxDebugf(n.vfs.getRPCContext(), "OnForget %q ino %d", n.relativePath(), n.StableAttr().Ino)
+	}
+	_, err := n.vfs.vfsClient.Forget(n.vfs.getRPCContext(), &vfspb.ForgetRequest{
+		Id: n.StableAttr().Ino,
+	})
+	// Forget failing is not ideal, but it's not fatal.
+	if err != nil {
+		log.CtxWarningf(n.vfs.getRPCContext(), "OnForget %q ino %d failed: %s", n.relativePath(), n.StableAttr().Ino, err)
 	}
 	n.vfs.mu.Lock()
 	delete(n.vfs.nodesByInodeID, n.StableAttr().Ino)
