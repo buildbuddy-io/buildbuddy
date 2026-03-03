@@ -3,6 +3,7 @@ package byte_stream_server_proxy
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"strconv"
@@ -47,6 +48,11 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
+)
+
+var (
+	benchRTT         = flag.Duration("bench_rtt", 8*time.Millisecond, "Simulated network RTT for benchmark remote RPCs (e.g. FindMissingBlobs, SpliceBlob)")
+	benchUploadDelay = flag.Duration("bench_upload_delay", 16*time.Millisecond, "Simulated time to upload 1MB to the remote cache")
 )
 
 type remoteReadExpectation int
@@ -480,7 +486,6 @@ func TestWrite(t *testing.T) {
 
 				require.Equal(t, int32(1), requestCounter.Load())
 			}
-
 		}
 
 		// Run all tests for both bazel 5.0.0 (which introduced compression) and
@@ -1198,6 +1203,31 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.Equal(t, originalData, downloadedData)
 }
 
+func networkLatencyUnaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	time.Sleep(*benchRTT)
+	return invoker(ctx, method, req, reply, cc, opts...)
+}
+
+type delayedRecvClientStream struct {
+	grpc.ClientStream
+}
+
+// RecvMsg delays the server response. Each chunk is uploaded as a separate
+// ByteStream/Write stream, so this fires once per chunk at CloseAndRecv(),
+// adding a fixed delay per chunk regardless of internals.
+func (s *delayedRecvClientStream) RecvMsg(m interface{}) error {
+	time.Sleep(*benchUploadDelay)
+	return s.ClientStream.RecvMsg(m)
+}
+
+func networkSimStreamInterceptor(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	cs, err := streamer(ctx, desc, cc, method, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &delayedRecvClientStream{ClientStream: cs}, nil
+}
+
 func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Context) {
 	*log.LogLevel = "error"
 	log.Configure()
@@ -1260,7 +1290,10 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis,
+		grpc.WithChainUnaryInterceptor(networkLatencyUnaryInterceptor),
+		grpc.WithChainStreamInterceptor(networkSimStreamInterceptor),
+	)
 	require.NoError(b, err)
 	b.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
