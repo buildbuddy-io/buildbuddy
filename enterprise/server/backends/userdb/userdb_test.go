@@ -2698,7 +2698,7 @@ func TestRemoveUserFromGroup_UserAPIKeyStillWorksThroughIndirectMembership(t *te
 	// Key should still work but be constrained to Writer's max capabilities.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via indirect membership")
-	assert.Equal(t, capabilities.ToInt(role.WriterCapabilities), akg.GetCapabilities())
+	assert.Equal(t, capabilities.ToInt([]cappb.Capability{cappb.Capability_CACHE_WRITE}), akg.GetCapabilities())
 }
 
 func TestRemoveUserFromGroup_NoIndirectAccess_UserAPIKeyNotValid(t *testing.T) {
