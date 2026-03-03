@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -275,6 +276,8 @@ type apiKeyGroupRow struct {
 	EnforceIPRules         bool
 	IsParent               bool
 	GroupStatus            int32 `gorm:"column:group_status"`
+	// Role from either direct or user-list membership for user-owned keys.
+	MembershipRole *uint32 `gorm:"column:membership_role"`
 }
 
 func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
@@ -559,28 +562,100 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	}
 	q, args := qb.Build()
 	rq := d.h.NewQueryWithOpts(ctx, queryName, dbOpts).Raw(q, args...)
-	return db.ScanAll(rq, &apiKeyGroupRow{})
+	rows, err := db.ScanAll(rq, &apiKeyGroupRow{})
+	if err != nil {
+		return nil, err
+	}
+
+	// For user API keys, the above data may contain multiple rows per API key
+	// per each membership row. We need to go through the full data set and
+	// generate one row per API key. The membership role information is used to
+	// enforce maximum capabilities on user API keys such that the API key
+	// capabilities never exceed the capabilities of the owning user.
+	type apiKeyWithRoles struct {
+		row *apiKeyGroupRow
+		// User membership information for user API keys.
+		userMembershipRoles []role.Role
+	}
+
+	// Aggregate the user memberships for each API key.
+	consolidated := make(map[string]*apiKeyWithRoles, len(rows))
+	for _, row := range rows {
+		apiKeyID := row.APIKeyID
+		entry, ok := consolidated[apiKeyID]
+		if !ok {
+			c := *row
+			c.MembershipRole = nil
+			entry = &apiKeyWithRoles{row: &c}
+			consolidated[apiKeyID] = entry
+		}
+		if row.MembershipRole != nil {
+			entry.userMembershipRoles = append(entry.userMembershipRoles, role.Role(*row.MembershipRole))
+		}
+	}
+
+	// Apply capabilities mask for user API keys based on user membership
+	// information. User API key capabilities cannot exceed user
+	// membership capabilities.
+	out := make([]*apiKeyGroupRow, 0, len(consolidated))
+	for apiKeyID, entry := range consolidated {
+		row := entry.row
+		if row.UserID != "" {
+			// User-owned keys without memberships should be treated as non-existent.
+			// (This should already be enforced by SQL predicates.)
+			if len(entry.userMembershipRoles) == 0 {
+				continue
+			}
+			mask := int32(0)
+			for _, membershipRole := range entry.userMembershipRoles {
+				roleCaps, err := role.ToCapabilities(membershipRole)
+				if err != nil {
+					return nil, status.InternalErrorf("invalid membership role %d for API key %q: %s", membershipRole, apiKeyID, err)
+				}
+				mask |= capabilities.ToInt(roleCaps)
+			}
+			// CACHE_WRITE implies CAS_WRITE, so grant CAS_WRITE if CACHE_WRITE is present.
+			// This makes sure that CAS_WRITE is preserved after the masking below even if
+			// CACHE_WRITE is removed.
+			if row.Capabilities&int32(cappb.Capability_CACHE_WRITE) != 0 {
+				row.Capabilities |= int32(cappb.Capability_CAS_WRITE)
+			}
+			row.Capabilities &= mask
+			if row.Capabilities&int32(cappb.Capability_CACHE_WRITE) != 0 {
+				row.Capabilities ^= int32(cappb.Capability_CAS_WRITE)
+			}
+		}
+		out = append(out, row)
+	}
+	slices.SortFunc(out, func(a, b *apiKeyGroupRow) int {
+		return strings.Compare(a.Label, b.Label)
+	})
+	return out, nil
 }
 
 func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
+	// This query may return multiple rows per API key for user API keys
+	// when a user has multiple memberships in a group (e.g. direct membership
+	// and indirect membership through a user list).
 	qb := query_builder.NewQuery(`
 		SELECT
 			ak.*,
+			membership.role AS membership_role,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
 			g.enforce_ip_rules,
 			g.is_parent,
 			g.status AS group_status
-		FROM "Groups" AS g,
-		"APIKeys" AS ak
+		FROM "APIKeys" AS ak
+		JOIN "Groups" AS g ON ak.group_id = g.group_id
+		LEFT JOIN (` + d.userMembershipRolesQuery() + `) AS membership
+			ON membership.user_id = ak.user_id AND membership.group_id = ak.group_id
 	`)
-	qb.AddWhereClause(`ak.group_id = g.group_id`)
 	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 
 	if subDomain != "" {
 		qb.AddWhereClause("url_identifier = ?", subDomain)
 	}
-
 	if *userOwnedKeysEnabled {
 		// Note: the org can disable user-owned keys at any time, and the
 		// predicate here ensures that existing keys are effectively deactivated
@@ -590,6 +665,15 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			OR ak.user_id = ''
 			OR ak.user_id IS NULL
 		)`)
+
+		// User-owned keys should only be considered if the owning user still has a
+		// valid direct or indirect membership in the key's group.
+		qb.AddWhereClause(`(
+			ak.user_id = ''
+			OR ak.user_id IS NULL
+			OR membership.user_id IS NOT NULL
+		)`)
+
 	} else {
 		qb.AddWhereClause(`(
 			ak.user_id = ''
@@ -597,6 +681,31 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 		)`)
 	}
 	return qb
+}
+
+func (d *AuthDB) userMembershipRolesQuery() string {
+	memberStatus := int32(grpb.GroupMembershipStatus_MEMBER)
+	q := fmt.Sprintf(`
+		SELECT
+			ug.user_user_id AS user_id,
+			ug.group_group_id AS group_id,
+			ug.role
+		FROM "UserGroups" AS ug
+		WHERE ug.membership_status = %d
+	`, memberStatus)
+	if authutil.UserListsEnabled() {
+		q += `
+		UNION ALL
+		SELECT
+			uu.user_user_id AS user_id,
+			ulg.group_group_id AS group_id,
+			ulg.role
+		FROM "UserUserLists" AS uu
+		JOIN "UserListGroups" AS ulg
+			ON ulg.user_list_user_list_id = uu.user_list_user_list_id
+		`
+	}
+	return q
 }
 
 func redactInvalidAPIKey(key string) string {

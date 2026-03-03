@@ -438,7 +438,13 @@ type APIKey struct {
 	APIKeyID string `gorm:"primaryKey"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
-	Label   string
+	Label string
+	// UserID is set when an API key is associated with a user
+	// (i.e. it's a user API key)
+	// The API key must be treated as invalid if this field is set but this
+	// user does not exist or is not a member of the group.
+	// All read paths should utilize authdb.fetchAPIKeys to take this into
+	// account.
 	UserID  string
 	GroupID string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
@@ -450,6 +456,12 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
+	//
+	// For user API keys this represents "requested capabilities". This value
+	// must be masked by user membership capabilities to derive the effective
+	// capabilities.
+	// All read paths should utilize authdb.fetchAPIKeys to obtain the
+	// effective capabilities.
 	Capabilities        int32 `gorm:"default:1"`
 	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
