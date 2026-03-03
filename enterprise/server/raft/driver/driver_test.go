@@ -841,6 +841,68 @@ func TestRebalanceReplica(t *testing.T) {
 			},
 		},
 		{
+			// Two target candidates: nhid-4 (200 replicas, below mean)
+			// and nhid-5 (600 replicas, above mean). The best target is
+			// nhid-4 because it has far fewer replicas. This test
+			// verifies that candidate scoring fields (replicaCount,
+			// replicaCountMeanLevel) are populated before picking the
+			// best candidate, not after. Without that, MaxFunc would
+			// fall through to the nhid string tiebreaker and
+			// incorrectly pick nhid-5.
+			desc: "pick-target-with-fewer-replicas",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   200,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-4"},
+			},
+		},
+		{
 			desc: "no-reblance-when-around-mean",
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
