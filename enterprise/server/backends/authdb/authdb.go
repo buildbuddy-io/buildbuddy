@@ -648,9 +648,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			g.status AS group_status
 		FROM "APIKeys" AS ak
 		JOIN "Groups" AS g ON ak.group_id = g.group_id
-		LEFT JOIN (` + d.userMembershipRolesQuery() + `)
-			%s
-		) AS membership
+		LEFT JOIN (` + d.userMembershipRolesQuery() + `) AS membership
 			ON membership.user_id = ak.user_id AND membership.group_id = ak.group_id
 	`)
 	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
