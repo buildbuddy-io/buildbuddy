@@ -568,25 +568,25 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	}
 
 	// For user API keys, the above data may contain multiple rows per API key
-	// per each membership row. We need to through the full data set and generate
-	// one row per API key. The membership role information is used to enforce
-	// maximum capabilities on user API keys such that the API key capabilities
-	// never exceed the capabilities of the owning user.
-	type consolidatedAPIKeyData struct {
+	// per each membership row. We need to go through the full data set and
+	// generate one row per API key. The membership role information is used to
+	// enforce maximum capabilities on user API keys such that the API key
+	// capabilities never exceed the capabilities of the owning user.
+	type apiKeyWithRoles struct {
 		row *apiKeyGroupRow
 		// User membership information for user API keys.
 		userMembershipRoles []role.Role
 	}
 
 	// Aggregate the user memberships for each API key.
-	consolidated := make(map[string]*consolidatedAPIKeyData, len(rows))
+	consolidated := make(map[string]*apiKeyWithRoles, len(rows))
 	for _, row := range rows {
 		apiKeyID := row.APIKeyID
 		entry, ok := consolidated[apiKeyID]
 		if !ok {
 			c := *row
 			c.MembershipRole = nil
-			entry = &consolidatedAPIKeyData{row: &c}
+			entry = &apiKeyWithRoles{row: &c}
 			consolidated[apiKeyID] = entry
 		}
 		if row.MembershipRole != nil {
@@ -601,6 +601,11 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	for apiKeyID, entry := range consolidated {
 		row := entry.row
 		if row.UserID != "" {
+			// User-owned keys without memberships should be treated as non-existent.
+			// (This should already be enforced by SQL predicates.)
+			if len(entry.userMembershipRoles) == 0 {
+				continue
+			}
 			mask := int32(0)
 			for _, membershipRole := range entry.userMembershipRoles {
 				roleCaps, err := role.ToCapabilities(membershipRole)
@@ -608,11 +613,6 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 					return nil, status.InternalErrorf("invalid membership role %d for API key %q: %s", membershipRole, apiKeyID, err)
 				}
 				mask |= capabilities.ToInt(roleCaps)
-			}
-			// User-owned keys without memberships should be treated as non-existent.
-			// (This should already be enforced by SQL predicates.)
-			if len(entry.userMembershipRoles) == 0 {
-				continue
 			}
 			// CACHE_WRITE implies CAS_WRITE, so grant CAS_WRITE if CACHE_WRITE is present.
 			// This makes sure that CAS_WRITE is preserved after the masking below even if
@@ -637,7 +637,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 	// This query may return multiple rows per API key for user API keys
 	// when a user has multiple memberships in a group (e.g. direct membership
 	// and indirect membership through a user list).
-	qb := query_builder.NewQuery(fmt.Sprintf(`
+	qb := query_builder.NewQuery(`
 		SELECT
 			ak.*,
 			membership.role AS membership_role,
@@ -648,11 +648,11 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			g.status AS group_status
 		FROM "APIKeys" AS ak
 		JOIN "Groups" AS g ON ak.group_id = g.group_id
-		LEFT JOIN (
+		LEFT JOIN (` + d.userMembershipRolesQuery() + `)
 			%s
 		) AS membership
 			ON membership.user_id = ak.user_id AND membership.group_id = ak.group_id
-	`, d.userMembershipRolesQuery()))
+	`)
 	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 
 	if subDomain != "" {
