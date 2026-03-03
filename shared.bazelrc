@@ -175,7 +175,7 @@ common:anon-bes --bes_results_url=https://app.buildbuddy.io/invocation/
 common:anon-bes --bes_backend=grpcs://remote.buildbuddy.io
 
 common:authed-bes --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
-common:authed-bes --bes_backend=grpcs://buildbuddy.remote.buildbuddy.io
+common:authed-bes --bes_backend=grpcs://buildbuddy.buildbuddy.io
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
@@ -211,7 +211,7 @@ common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 
 # Build with --config=cache to use prod cache.
 common:cache --config=cache-shared
-common:cache --remote_cache=grpcs://buildbuddy.remote.buildbuddy.io
+common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
 common:bzlmod-target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:darwin_arm64
@@ -230,7 +230,7 @@ common:remote-shared --verbose_failures
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
-common:remote-prod-shared --remote_executor=grpcs://buildbuddy.remote.buildbuddy.io
+common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
 # is not consistent or stable.
