@@ -429,6 +429,7 @@ message NodeDescriptor {
   string nhid = 1;
   string raft_address = 2;
   string grpc_address = 3;
+  string zone = 4;
 }
 
 message ReplicaDescriptor {

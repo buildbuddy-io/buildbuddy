@@ -1494,6 +1494,7 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 		Nhid:        s.nodeHost.ID(),
 		RaftAddress: s.nodeHost.RaftAddress(),
 		GrpcAddress: s.grpcAddr,
+		Zone:        getZone(),
 	}
 }
 
@@ -2794,14 +2795,18 @@ func (w *updateTagsWorker) handleTask(task *updateTagsTask) {
 	w.updateTags()
 }
 
-func (w *updateTagsWorker) updateTags() error {
-	storeTags := make(map[string]string, 0)
-
-	if zone := resources.GetZone(); zone != "" {
-		storeTags[constants.ZoneTag] = zone
-	} else {
-		storeTags[constants.ZoneTag] = "local"
+func getZone() string {
+	zone := resources.GetZone()
+	if zone == "" {
+		return "local"
 	}
+	return zone
+}
+
+func (w *updateTagsWorker) updateTags() error {
+	storeTags := make(map[string]string, 4)
+
+	storeTags[constants.ZoneTag] = getZone()
 
 	if podIndex := os.Getenv("MY_POD_INDEX"); podIndex != "" {
 		storeTags[constants.PodIndexTag] = podIndex
