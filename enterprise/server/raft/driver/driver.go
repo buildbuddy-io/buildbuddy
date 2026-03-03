@@ -1189,27 +1189,25 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 		candidateStores[nhid] = store
 	}
 
-	localNHID := ""
 	for _, repl := range rd.GetReplicas() {
-		if repl.GetReplicaId() == localReplicaID {
-			localNHID = repl.GetNhid()
-		}
 		store, ok := candidateStores[repl.GetNhid()]
 		if !ok {
 			// The store might not be available rn.
 			continue
 		}
 		delete(candidateStores, repl.GetNhid())
+		if repl.GetReplicaId() == localReplicaID {
+			// This is to prevent us from removing the replica on this node. We
+			// can only support this after we have the ability to transfer the
+			// leadership away.
+			continue
+		}
 		if store.fullDisk {
 			// We want to move the replica away from the store with full disk.
 			needRebalance = true
 		}
 		otherReplicaStores[repl.GetNhid()] = store
 	}
-	// This is to prevent us from removing the replica on this node. We
-	// can only support this after we have the ability to transfer the
-	// leadership away.
-	delete(otherReplicaStores, localNHID)
 
 	// Remove replicas that are in the middle of removal from candidates.
 	for _, repl := range rd.GetRemoved() {
@@ -1219,6 +1217,9 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	var targetCandidates []*candidate
 	for _, store := range candidateStores {
 		if !store.fullDisk {
+			store.fullDisk = isDiskFullForRebalance(store.usage)
+			store.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, store.usage)
+			store.replicaCount = store.usage.ReplicaCount
 			targetCandidates = append(targetCandidates, store)
 		}
 	}
@@ -1229,9 +1230,6 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 		return nil
 	}
 	bestTarget := slices.MaxFunc(targetCandidates, compareByScoreAndID)
-	bestTarget.fullDisk = isDiskFullForRebalance(bestTarget.usage)
-	bestTarget.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, bestTarget.usage)
-	bestTarget.replicaCount = bestTarget.usage.ReplicaCount
 
 	potentialOps := make([]*rebalanceOp, 0, len(otherReplicaStores))
 	for _, nhid := range slices.Sorted(maps.Keys(otherReplicaStores)) {
