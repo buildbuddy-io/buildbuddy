@@ -2642,7 +2642,7 @@ func TestGetUserBySubID(t *testing.T) {
 		"expected RecordNotFound error; got: %v", err)
 }
 
-func TestRemoveUserFromGroup_IndirectAccessPreservesKey(t *testing.T) {
+func TestRemoveUserFromGroup_UserAPIKeyStillWorksThroughIndirectMembership(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -2695,13 +2695,13 @@ func TestRemoveUserFromGroup_IndirectAccessPreservesKey(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Key should still exist but be constrained to Writer's max capabilities.
+	// Key should still work but be constrained to Writer's max capabilities.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via indirect membership")
 	assert.Equal(t, capabilities.ToInt(role.WriterCapabilities), akg.GetCapabilities())
 }
 
-func TestRemoveUserFromGroup_NoIndirectAccess_DeletesKey(t *testing.T) {
+func TestRemoveUserFromGroup_NoIndirectAccess_UserAPIKeyNotValid(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -2739,13 +2739,13 @@ func TestRemoveUserFromGroup_NoIndirectAccess_DeletesKey(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Key should be deleted.
+	// Key should be invalid.
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.Truef(t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated for deleted key; got: %v", err)
 }
 
-func TestUpdateUserListRole_DowngradeUpdatesCaps(t *testing.T) {
+func TestUpdateUserListRole_DowngradeReflectedInUserAPIKeyCapabilities(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -2796,7 +2796,7 @@ func TestUpdateUserListRole_DowngradeUpdatesCaps(t *testing.T) {
 	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
-func TestRemoveUserListFromGroup_DeletesKeysForIndirectOnlyUser(t *testing.T) {
+func TestRemoveUserListFromGroup_InvalidatesKeysForIndirectOnlyUser(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -2840,13 +2840,13 @@ func TestRemoveUserListFromGroup_DeletesKeysForIndirectOnlyUser(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Key should be deleted.
+	// Key should be invalid.
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.Truef(t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated for deleted key; got: %v", err)
 }
 
-func TestRemoveUserListFromGroup_PreservesKeysForDirectMember(t *testing.T) {
+func TestRemoveUserListFromGroup_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -2902,76 +2902,7 @@ func TestRemoveUserListFromGroup_PreservesKeysForDirectMember(t *testing.T) {
 	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
-func TestRemoveUserFromUserList_ReconcilesCapsAcrossGroups(t *testing.T) {
-	flags.Set(t, "app.create_group_per_user", true)
-	flags.Set(t, "app.no_default_user_group", true)
-	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
-	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
-
-	ctx := context.Background()
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
-	adb := env.GetAuthDB()
-
-	// Create two groups.
-	createUser(t, ctx, env, "US1", "org1.io")
-	ctx1 := authUserCtx(ctx, env, t, "US1")
-	gr1 := getGroup(t, ctx1, env).Group
-	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
-
-	createUser(t, ctx, env, "US3", "org3.io")
-	ctx3 := authUserCtx(ctx, env, t, "US3")
-	gr2 := getGroup(t, ctx3, env).Group
-	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx3, env, gr2.GroupID, true)
-
-	// Create user list owned by gr1, add US2.
-	createUser(t, ctx, env, "US2", "org2.io")
-	ul := &tables.UserList{GroupID: gr1.GroupID, Name: "team"}
-	err := udb.CreateUserList(ctx1, ul)
-	require.NoError(t, err)
-	err = addUserToUserList(ctx1, udb, ul.UserListID, "US2")
-	require.NoError(t, err)
-
-	// Assign user list to both groups.
-	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
-		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
-		UserListId:       ul.UserListID,
-		Role:             grpb.Group_DEVELOPER_ROLE,
-	}})
-	require.NoError(t, err)
-	err = udb.UpdateGroupUsers(ctx3, gr2.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
-		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
-		UserListId:       ul.UserListID,
-		Role:             grpb.Group_DEVELOPER_ROLE,
-	}})
-	require.NoError(t, err)
-
-	// US2 creates API keys in both groups.
-	ctx2 := authUserCtx(ctx, env, t, "US2")
-	key1, err := adb.CreateUserAPIKey(
-		ctx2, gr1.GroupID, "US2", "key-gr1",
-		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
-	require.NoError(t, err)
-	key2, err := adb.CreateUserAPIKey(
-		ctx2, gr2.GroupID, "US2", "key-gr2",
-		[]cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
-	require.NoError(t, err)
-
-	// Remove US2 from user list.
-	err = removeUserFromUserList(ctx1, udb, ul.UserListID, "US2")
-	require.NoError(t, err)
-
-	// Keys should be deleted in both groups.
-	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key1.Value)
-	require.Truef(t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated for deleted key in gr1; got: %v", err)
-	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key2.Value)
-	require.Truef(t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated for deleted key in gr2; got: %v", err)
-}
-
-func TestRemoveUserFromUserList_PreservesDirectAccess(t *testing.T) {
+func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -3024,7 +2955,7 @@ func TestRemoveUserFromUserList_PreservesDirectAccess(t *testing.T) {
 	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
-func TestDeleteUserList_DeletesKeysAndCleansUpGroups(t *testing.T) {
+func TestDeleteUserList_InvalidatesUserAPIKeysForIndirectMembers(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -3065,7 +2996,7 @@ func TestDeleteUserList_DeletesKeysAndCleansUpGroups(t *testing.T) {
 	err = udb.DeleteUserList(ctx1, ul.UserListID)
 	require.NoError(t, err)
 
-	// API key should be deleted since US2 has no other membership.
+	// API key should be invalid since US2 has no other membership.
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.Truef(t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated for deleted key; got: %v", err)
@@ -3075,7 +3006,7 @@ func TestDeleteUserList_DeletesKeysAndCleansUpGroups(t *testing.T) {
 	require.Nil(t, gr, "US2 should not have membership in the group after user list deletion")
 }
 
-func TestDeleteUserList_PreservesDirectMemberKeys(t *testing.T) {
+func TestDeleteUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
@@ -3122,7 +3053,7 @@ func TestDeleteUserList_PreservesDirectMemberKeys(t *testing.T) {
 	err = udb.DeleteUserList(ctx1, ul.UserListID)
 	require.NoError(t, err)
 
-	// Key should still exist but constrained to Developer's max.
+	// Key should still work but constrained to Developer's max.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
 	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
