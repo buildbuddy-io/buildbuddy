@@ -16,6 +16,7 @@ Options:
   --skip_cxx            Skip C++ indexing and memcached setup
   --bazel_version <v>   Set USE_BAZEL_VERSION for nested bazel commands
   --distdir <path>      Bazel distdir to avoid flaky external fetches
+  --scope <mode>        Build scope: proto|default|full (default: default)
   --dry_run             Print planned commands/settings without executing
   -h, --help            Show this help
 
@@ -25,6 +26,7 @@ Env vars:
   SKIP_CXX=1            Same as --skip_cxx
   USE_BAZEL_VERSION     Same as --bazel_version
   BAZEL_DISTDIR         Same as --distdir
+  KYTHE_SCOPE           Same as --scope
 
 Notes:
   - This intentionally runs nested Bazel, same as the workflow action.
@@ -39,6 +41,7 @@ SKIP_CXX="${SKIP_CXX:-0}"
 KYTHE_DOWNLOAD_URL="${KYTHE_DOWNLOAD_URL:-$DEFAULT_KYTHE_DOWNLOAD_URL}"
 BAZEL_VERSION="${USE_BAZEL_VERSION:-}"
 DISTDIR="${BAZEL_DISTDIR:-}"
+SCOPE="${KYTHE_SCOPE:-default}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --distdir)
       DISTDIR="$2"
+      shift 2
+      ;;
+    --scope)
+      SCOPE="$2"
       shift 2
       ;;
     --repo_root)
@@ -112,6 +119,11 @@ fi
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 OUT_PATH="${OUT_PATH:-$REPO_ROOT/kythe_serving.sst}"
 
+if [[ "$SCOPE" != "proto" && "$SCOPE" != "default" && "$SCOPE" != "full" ]]; then
+  echo "Invalid --scope: $SCOPE (expected: proto|default|full)" >&2
+  exit 2
+fi
+
 run() {
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "[dry-run] $*"
@@ -142,6 +154,7 @@ echo "dry_run=$DRY_RUN"
 echo "kythe_download_url=$KYTHE_DOWNLOAD_URL"
 echo "bazel_version=${BAZEL_VERSION:-<default>}"
 echo "distdir=${DISTDIR:-<none>}"
+echo "scope=$SCOPE"
 
 if [[ ! -f "$REPO_ROOT/WORKSPACE" && ! -f "$REPO_ROOT/WORKSPACE.bazel" && ! -f "$REPO_ROOT/MODULE.bazel" ]]; then
   echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel found at $REPO_ROOT; skipping."
@@ -236,13 +249,32 @@ if [[ "$BZL_MAJOR_VERSION" -ge 9 ]]; then
   KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
 fi
 
+if [[ "$SCOPE" == "proto" ]]; then
+  BAZEL_TARGETS=(
+    //proto/...
+  )
+elif [[ "$SCOPE" == "default" ]]; then
+  BAZEL_TARGETS=(
+    //app/...
+    //server/...
+    //enterprise/server/...
+    //proto/...
+    -//server/util/bazel/...
+    -//tools/probers/...
+    -//server/testutil/...
+  )
+else
+  BAZEL_TARGETS=(//...)
+fi
+
 echo "Bazel release: $bzl_release (major=$BZL_MAJOR_VERSION, bzlmod=$BZLMOD_ENABLED)"
 echo "Running Kythe-enabled build..."
+echo "Kythe build scope: $SCOPE"
 DISTDIR_FLAG=""
 if [[ -n "$DISTDIR" ]]; then
   DISTDIR_FLAG="--distdir='$DISTDIR'"
 fi
-run_pipe "$(bazel_cmd_prefix)bazel --bazelrc='$KYTHE_DIR/extractors.bazelrc' build $DISTDIR_FLAG $KYTHE_ARGS //..."
+run_pipe "$(bazel_cmd_prefix)bazel --bazelrc='$KYTHE_DIR/extractors.bazelrc' build $DISTDIR_FLAG $KYTHE_ARGS -- ${BAZEL_TARGETS[*]}"
 
 echo "Indexing kzips..."
 if [[ "$DRY_RUN" == "1" ]]; then

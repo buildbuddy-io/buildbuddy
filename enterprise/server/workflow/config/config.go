@@ -204,12 +204,31 @@ fi`, dirName, downloadURL)
 	return buf
 }
 
-func buildWithKythe(dirName string) string {
+func kytheBuildTargets(scope string) string {
+	if scope == "full" {
+		return "//..."
+	}
+	if scope == "proto" {
+		return "//proto/..."
+	}
+	return strings.Join([]string{
+		"//app/...",
+		"//server/...",
+		"//enterprise/server/...",
+		"//proto/...",
+		"-//server/util/bazel/...",
+		"-//tools/probers/...",
+		"-//server/testutil/...",
+	}, " ")
+}
+
+func buildWithKythe(dirName, scope string) string {
 	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
 	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
 	// passes any important flags. While passing flags on the command line is discouraged,
 	// we'll need to handle this eventually.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
+	bazelTargets := kytheBuildTargets(scope)
 	return fmt.Sprintf(`
 BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
 
@@ -267,7 +286,8 @@ if [ $BZL_MAJOR_VERSION -ge 9 ]; then
 fi
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
+echo "Kythe build scope: %s"
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s -- %s`, dirName, scope, bazelConfigFlags, bazelTargets)
 
 }
 
@@ -341,7 +361,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName),
+				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName, "proto"),
 			},
 			{
 				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
