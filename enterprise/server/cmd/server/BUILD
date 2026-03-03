@@ -41,6 +41,7 @@ go_library(
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/cmd/server/wiring",
         "//enterprise/server/crypter_service",
         "//enterprise/server/execution_search_service",
         "//enterprise/server/execution_service",

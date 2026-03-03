@@ -196,6 +196,9 @@ message FrontendConfig {
 
   // Whether dark mode UI is enabled.
   bool dark_mode_enabled = 65;
+
+  // Whether self-serve billing / upgrade flow is enabled.
+  bool billing_enabled = 66;
 }
 
 message Region {

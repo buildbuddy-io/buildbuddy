@@ -484,6 +484,14 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
+	if bm := env.GetBillingManager(); bm != nil {
+		if p := bm.CheckoutPath(); p != "" {
+			mux.Handle(p, interceptors.WrapAuthenticatedExternalHandler(env, bm.CheckoutHandler()))
+		}
+		if p := bm.WebhookPath(); p != "" {
+			mux.Handle(p, interceptors.WrapExternalHandler(env, bm.WebhookHandler()))
+		}
+	}
 	if gh := env.GetGitHubAppService(); gh != nil {
 		if gh.IsReadWriteAppEnabled() {
 			mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gh.GetReadWriteGitHubApp().WebhookHandler()))

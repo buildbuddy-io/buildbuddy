@@ -229,6 +229,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
 		DarkModeEnabled:                        *darkModeEnabled,
+		BillingEnabled:                         env.GetBillingManager() != nil && env.GetBillingManager().Enabled(ctx),
 	}
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {

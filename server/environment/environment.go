@@ -92,6 +92,7 @@ type Env interface {
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
 	GetUsageTracker() interfaces.UsageTracker
+	GetBillingManager() interfaces.BillingManager
 	GetXcodeLocator() interfaces.XcodeLocator
 	GetQuotaManager() interfaces.QuotaManager
 	GetMux() interfaces.HttpServeMux
