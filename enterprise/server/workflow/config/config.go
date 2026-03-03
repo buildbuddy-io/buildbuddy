@@ -204,12 +204,31 @@ fi`, dirName, downloadURL)
 	return buf
 }
 
-func buildWithKythe(dirName string) string {
+func kytheBuildTargets(scope string) string {
+	if scope == "full" {
+		return "//..."
+	}
+	if scope == "proto" {
+		return "//proto/..."
+	}
+	return strings.Join([]string{
+		"//app/...",
+		"//server/...",
+		"//enterprise/server/...",
+		"//proto/...",
+		"-//server/util/bazel/...",
+		"-//tools/probers/...",
+		"-//server/testutil/...",
+	}, " ")
+}
+
+func buildWithKythe(dirName, scope string) string {
 	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
 	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
 	// passes any important flags. While passing flags on the command line is discouraged,
 	// we'll need to handle this eventually.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
+	bazelTargets := kytheBuildTargets(scope)
 	return fmt.Sprintf(`
 BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
 
@@ -247,13 +266,28 @@ fi
 # These arguments make the extractors run on java generated code
 KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
 
-# Bazel 9 defaults config_setting visibility to private, which breaks selects
+# extractors.bazelrc sets keep_going; fail fast so the workflow doesn't churn
+# for a long time after obvious errors.
+KYTHE_ARGS="$KYTHE_ARGS --nokeep_going"
+
+# If the kythe archive is extracted under the workspace root, exclude that local
+# package path so //... won't analyze it as a workspace package (we want the
+# injected @kythe_release repository instead).
+if [[ "$KYTHE_DIR" == "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/* ]]; then
+    kythe_local_pkg="${KYTHE_DIR#"$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/}"
+    KYTHE_ARGS="$KYTHE_ARGS --deleted_packages=$kythe_local_pkg"
+fi
+
+# Bazel 9 defaults config_setting visibility to private, which breaks selects.
+# Also explicitly autoload java rules used by the Kythe BUILD.
 if [ $BZL_MAJOR_VERSION -ge 9 ]; then
     KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
 fi
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
+echo "Kythe build scope: %s"
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s -- %s`, dirName, scope, bazelConfigFlags, bazelTargets)
 
 }
 
@@ -327,7 +361,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName),
+				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName, "proto"),
 			},
 			{
 				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
