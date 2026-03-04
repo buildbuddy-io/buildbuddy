@@ -2,8 +2,9 @@
  * Canvas which renders underneath the settings page content and provides a cool
  * animation when switching between light and dark mode.
  *
- * Treat this like a "temporary art installation" to generate some excitement
- * around dark mode. If it becomes a chore to maintain, please delete it :)
+ * This is meant as a "temporary art installation" to generate some excitement
+ * around the new dark mode. If it becomes a chore to maintain, feel free to
+ * delete it!
  */
 
 import React from "react";

@@ -255,6 +255,9 @@ export const RED_TO_GREEN_SCALE = [
   "#388E3C", // green 700
 ];
 
+/**
+ * Parses a color like #fff or rgb(0, 0, 0) and returns the rgb values.
+ */
 export function parseColor(color: string): { r: number; g: number; b: number } | null {
   const normalized = color.trim().toLowerCase();
   if (!normalized) return null;
@@ -291,6 +294,10 @@ export function parseColor(color: string): { r: number; g: number; b: number } |
   };
 }
 
+/**
+ * Parses a color like #FFF or rgb(0, 0, 0) and linearly interpolates between
+ * them (from 0-1)
+ */
 export function interpolateColor(from: string, to: string, progress: number): string {
   const clampedProgress = Math.max(0, Math.min(1, progress));
   const fromRgb = parseColor(from);

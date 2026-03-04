@@ -143,7 +143,6 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//app/preferences",
         "//app/util:animation_loop",
         "//app/util:color",
         "//app/util:math",
