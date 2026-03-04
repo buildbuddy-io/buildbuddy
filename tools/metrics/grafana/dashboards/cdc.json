@@ -113,7 +113,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "chunked",
           "range": true,
           "refId": "A"
@@ -124,7 +124,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "non-chunked",
           "range": true,
           "refId": "B"
@@ -220,7 +220,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "chunked",
           "range": true,
           "refId": "A"
@@ -231,7 +231,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "non-chunked",
           "range": true,
           "refId": "B"
@@ -327,7 +327,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "chunked",
           "range": true,
           "refId": "A"
@@ -338,7 +338,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "non-chunked",
           "range": true,
           "refId": "B"
@@ -434,7 +434,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "chunked",
           "range": true,
           "refId": "A"
@@ -445,7 +445,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "non-chunked",
           "range": true,
           "refId": "B"
@@ -572,7 +572,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", grpc_method=\"SplitBlob\"}[${window}]))",
+          "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${app_region}\", grpc_method=\"SplitBlob\"}[${window}]))",
           "legendFormat": "{{grpc_code}}",
           "range": true,
           "refId": "A"
@@ -699,7 +699,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", grpc_method=\"SpliceBlob\"}[${window}]))",
+          "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${app_region}\", grpc_method=\"SpliceBlob\"}[${window}]))",
           "legendFormat": "{{grpc_code}}",
           "range": true,
           "refId": "A"
@@ -778,7 +778,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SplitBlob\"}[${window}]))",
+          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${app_region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SplitBlob\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -859,7 +859,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SpliceBlob\"}[${window}]))",
+          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${app_region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SpliceBlob\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -959,7 +959,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "bytes dedup ratio",
           "range": true,
           "refId": "A"
@@ -970,7 +970,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_total{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "chunk count dedup ratio",
           "range": true,
           "refId": "B"
@@ -1067,7 +1067,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "bytes saved (deduped)",
           "range": true,
           "refId": "A"
@@ -1078,7 +1078,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "total chunk bytes",
           "range": true,
           "refId": "B"
@@ -1176,7 +1176,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_local{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_local{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_total{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "local hit ratio",
           "range": true,
           "refId": "A"
@@ -1303,7 +1303,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_local{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_local{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "local",
           "range": true,
           "refId": "A"
@@ -1314,155 +1314,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_remote{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_chunks_remote{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "remote",
           "range": true,
           "refId": "B"
         }
       ],
       "title": "Chunk Reads by Source (chunks/s)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "description": "Manifest lookup outcomes by source",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          },
-          "unit": "reqps"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "local_hit"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "remote_hit"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "remote_error"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 48
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "expr": "sum by (manifest_source) (rate(buildbuddy_proxy_byte_stream_chunked_manifest_lookups{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
-          "legendFormat": "{{manifest_source}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Manifest Lookups by Source",
       "type": "timeseries"
     },
     {
@@ -1552,7 +1410,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\", status!=\"OK\"}[${window}]))",
+          "expr": "sum by (status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\", status!=\"OK\"}[${window}]))",
           "legendFormat": "read: {{status}}",
           "range": true,
           "refId": "A"
@@ -1563,7 +1421,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\", status!=\"OK\"}[${window}]))",
+          "expr": "sum by (status) (rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\", status!=\"OK\"}[${window}]))",
           "legendFormat": "write: {{status}}",
           "range": true,
           "refId": "B"
@@ -1659,7 +1517,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "read avg bytes (chunked)",
           "range": true,
           "refId": "A"
@@ -1670,7 +1528,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "read avg bytes (non-chunked)",
           "range": true,
           "refId": "B"
@@ -1681,7 +1539,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked=\"true\"}[${window}]))",
           "legendFormat": "write avg bytes (chunked)",
           "range": true,
           "refId": "C"
@@ -1692,7 +1550,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${proxy_region}\", job=\"cache-proxy\", chunked!=\"true\"}[${window}]))",
           "legendFormat": "write avg bytes (non-chunked)",
           "range": true,
           "refId": "D"
@@ -1771,7 +1629,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_bucket{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -1868,7 +1726,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_sum{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_sum{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_duration_usec_count{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "total",
           "range": true,
           "refId": "A"
@@ -1879,7 +1737,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_sum{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_sum{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_count{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "chunking phase",
           "range": true,
           "refId": "B"
@@ -1890,7 +1748,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_sum{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_sum{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_count{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "legendFormat": "remote phase",
           "range": true,
           "refId": "C"
@@ -1969,7 +1827,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_chunking_duration_usec_bucket{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -2050,7 +1908,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum by (le) (rate(buildbuddy_proxy_byte_stream_chunked_write_remote_duration_usec_bucket{region=\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -2070,21 +1928,39 @@
   "templating": {
     "list": [
       {
-        "current": {
-          "text": "us-west1",
-          "value": "us-west1"
-        },
+        "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "vm"
         },
         "definition": "label_values(up, region)",
         "includeAll": false,
-        "name": "region",
+        "label": "App Region",
+        "name": "app_region",
         "options": [],
         "query": {
           "query": "label_values(up, region)",
-          "refId": "Prometheus-region-Variable-Query"
+          "refId": "Prometheus-app_region-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(up, region)",
+        "includeAll": false,
+        "label": "Proxy Region",
+        "name": "proxy_region",
+        "options": [],
+        "query": {
+          "query": "label_values(up, region)",
+          "refId": "Prometheus-proxy_region-Variable-Query"
         },
         "refresh": 1,
         "regex": "",
