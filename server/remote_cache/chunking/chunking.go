@@ -19,7 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -358,6 +360,15 @@ func (cm *Manifest) checkOrVerifyChunks(ctx context.Context, cache interfaces.Ca
 // a producer that opens readers sequentially (1 ahead of the consumer),
 // and a closer that asynchronously closes readers after hashing.
 func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("blob_digest", cm.BlobDigest.GetHash()),
+			attribute.Int64("blob_size", cm.BlobDigest.GetSizeBytes()),
+			attribute.Int("chunk_count", len(cm.ChunkDigests)),
+		)
+	}
 	hasher, err := digest.HashForDigestType(cm.DigestFunction)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
