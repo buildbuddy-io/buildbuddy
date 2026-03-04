@@ -1003,12 +1003,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
             const availableBytes = fs.availableBytes !== undefined ? Number(fs.availableBytes) : undefined;
             const usableBytes =
               availableBytes !== undefined && usedBytes + availableBytes > 0 ? usedBytes + availableBytes : totalBytes;
-            const hasSeparateTotal = totalBytes > 0 && totalBytes !== usableBytes;
             return (
               <div key={fs.target}>
                 Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(usedBytes)} of{" "}
                 {format.bytesIEC(usableBytes)}
-                {hasSeparateTotal && <> usable ({format.bytesIEC(totalBytes)} total)</>}
               </div>
             );
           })}

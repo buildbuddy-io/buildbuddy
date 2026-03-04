@@ -688,14 +688,13 @@ func getFileSystemUsage() []*repb.UsageStats_FileSystemUsage {
 			log.Errorf("Failed to get filesystem usage for %s: %s", fs.DevName, err)
 			continue
 		}
-		availableBytes := int64(fsu.Avail)
 		out = append(out, &repb.UsageStats_FileSystemUsage{
 			Source:         fs.DevName,
 			Target:         fs.DirName,
 			Fstype:         fs.SysTypeName,
 			UsedBytes:      int64(fsu.Used),
 			TotalBytes:     int64(fsu.Total),
-			AvailableBytes: &availableBytes,
+			AvailableBytes: new(int64(fsu.Avail)),
 		})
 	}
 	return out
