@@ -590,7 +590,7 @@
         "recordedInputs": [
           "REPO_MAPPING:,com_github_buildbuddy_io_buildbuddy ",
           "REPO_MAPPING:aspect_rules_ts+,bazel_tools bazel_tools",
-          "FILE:@@//package.json d0857007cc8c968177ded5e3874a9e813cd0fc943515d979c8dc97644d6d3cc3"
+          "FILE:@@//package.json b47a1bf7a81056874b7bf5d5d5269d2ed0e14123b69fd7768ad9fbb134368e0d"
         ],
         "generatedRepoSpecs": {
           "npm_typescript": {
