@@ -810,11 +810,16 @@ code .comment {
   font-weight: 600;
 }
 
+.setup .setup-api-key-settings-note {
+  margin-bottom: 16px;
+  color: var(--color-text-secondary);
+}
+
 .setup-controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
   /* negate 8px margin-top on children, to prevent the first row from having a top margin */
   margin-top: -8px;
 }
@@ -886,17 +891,9 @@ code .comment {
 
 .setup .downloads {
   display: flex;
+  gap: 8px;
   margin-top: 16px;
   margin-bottom: 16px;
-}
-
-.setup .downloads a {
-  background-color: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
-  padding: 7px 16px;
-  margin-right: 8px;
-  border-radius: 8px;
-  text-decoration: none;
 }
 
 .setup-notice {

@@ -2,9 +2,11 @@ import React from "react";
 import { api_key } from "../../proto/api_key_ts_proto";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
 import authService, { User } from "../auth/auth_service";
+import CertificateDownloadLink from "../auth/certificate_download_link";
 import capabilities from "../capabilities/capabilities";
 import Banner from "../components/banner/banner";
 import LinkButton from "../components/button/link_button";
+import { TextLink } from "../components/link/link";
 import Select, { Option } from "../components/select/select";
 import Spinner from "../components/spinner/spinner";
 import error_service from "../errors/error_service";
@@ -56,10 +58,16 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     rpcService.service
       .getBazelConfig(request)
       .then((response) => {
-        this.fetchAPIKeyValue(response, 0);
+        if (!this.isAPIKeyValueReadbackExplicitlyDisabled()) {
+          this.fetchAPIKeyValue(response, 0);
+        }
         this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
       })
       .catch((e) => error_service.handleError(e));
+  }
+
+  private isAPIKeyValueReadbackExplicitlyDisabled() {
+    return capabilities.config.apiKeyValueReadbackEnabled === false;
   }
 
   getSelectedCredential(): bazel_config.Credentials | null {
@@ -144,10 +152,13 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     if (this.state.auth == "key") {
       const selectedCredential = this.getSelectedCredential();
       if (!selectedCredential?.apiKey) return null;
+      const value = this.isAPIKeyValueReadbackExplicitlyDisabled()
+        ? "YOUR_API_KEY_HERE"
+        : selectedCredential.apiKey.value;
 
       return (
         <div>
-          <div>common --remote_header=x-buildbuddy-api-key={selectedCredential.apiKey.value}</div>
+          <div>common --remote_header=x-buildbuddy-api-key={value}</div>
         </div>
       );
     }
@@ -199,6 +210,9 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   async fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
+    if (this.isAPIKeyValueReadbackExplicitlyDisabled()) {
+      return;
+    }
     this.setState({ apiKeyLoading: true });
     try {
       const creds = bazelConfigResponse.credential;
@@ -223,7 +237,9 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   onChangeCredential(e: React.ChangeEvent<HTMLSelectElement>) {
     const selectedIndex = Number(e.target.value);
-    this.fetchAPIKeyValue(this.state.bazelConfigResponse!, selectedIndex);
+    if (!this.isAPIKeyValueReadbackExplicitlyDisabled()) {
+      this.fetchAPIKeyValue(this.state.bazelConfigResponse!, selectedIndex);
+    }
     this.setState({ selectedCredentialIndex: selectedIndex });
   }
 
@@ -330,7 +346,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
             </span>
           )}
 
-          {(this.state.auth === "cert" || this.state.auth === "key") &&
+          {!this.isAPIKeyValueReadbackExplicitlyDisabled() &&
+            (this.state.auth === "cert" || this.state.auth === "key") &&
             (this.state.bazelConfigResponse?.credential?.length || 0) > 1 && (
               <span>
                 <Select
@@ -435,6 +452,10 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
             </span>
           )}
         </div>
+        <div className="setup-api-key-settings-note">
+          To create a new API key{this.isCertEnabled() ? " or certificate" : ""}, see{" "}
+          <TextLink href="/settings/org/api-keys">Settings</TextLink>.
+        </div>
         {this.state.executionChecked && (
           <div className="setup-notice">
             <b>Note:</b> You've enabled remote execution. In addition to these .bazelrc flags, you'll also need to
@@ -478,39 +499,31 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
             )}
             {this.state.auth == "cert" && (
               <div>
-                <div className="downloads">
-                  {selectedCredential?.certificate?.cert && (
-                    <div>
-                      <a
-                        download="buildbuddy-cert.pem"
-                        href={window.URL.createObjectURL(
-                          new Blob([selectedCredential.certificate.cert], {
-                            type: "text/plain",
-                          })
-                        )}>
-                        Download buildbuddy-cert.pem
-                      </a>
+                {!this.isAPIKeyValueReadbackExplicitlyDisabled() && (
+                  <>
+                    <div className="downloads">
+                      {selectedCredential?.certificate?.cert && (
+                        <CertificateDownloadLink
+                          filename="buildbuddy-cert.pem"
+                          contents={selectedCredential.certificate.cert}>
+                          Download buildbuddy-cert.pem
+                        </CertificateDownloadLink>
+                      )}
+                      {selectedCredential?.certificate?.key && (
+                        <CertificateDownloadLink
+                          filename="buildbuddy-key.pem"
+                          contents={selectedCredential.certificate.key}>
+                          Download buildbuddy-key.pem
+                        </CertificateDownloadLink>
+                      )}
                     </div>
-                  )}
-                  {selectedCredential?.certificate?.key && (
-                    <div>
-                      <a
-                        download="buildbuddy-key.pem"
-                        href={window.URL.createObjectURL(
-                          new Blob([selectedCredential.certificate.key], {
-                            type: "text/plain",
-                          })
-                        )}>
-                        Download buildbuddy-key.pem
-                      </a>
-                    </div>
-                  )}
-                </div>
-                To use certificate based auth, download the two files above and place them in your workspace directory.
-                If you place them outside of your workspace, update the paths in your{" "}
-                <span className="code">.bazelrc</span> file to point to the correct location.
-                <br />
-                <br />
+                    To use certificate based auth, download the two files above and place them in your workspace
+                    directory. If you place them outside of your workspace, update the paths in your{" "}
+                    <span className="code">.bazelrc</span> file to point to the correct location.
+                    <br />
+                    <br />
+                  </>
+                )}
                 Note: Certificate based auth is only compatible with Bazel version 3.1 and above.
               </div>
             )}

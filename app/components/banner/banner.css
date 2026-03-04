@@ -5,6 +5,14 @@
   align-items: start;
 }
 
+.banner .banner-content {
+  flex-grow: 1;
+}
+
+.banner .banner-dismiss-button {
+  align-self: flex-start;
+}
+
 .banner.banner-info {
   background: var(--color-banner-info-bg);
   color: var(--color-banner-info-text);

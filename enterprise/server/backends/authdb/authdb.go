@@ -57,11 +57,12 @@ const (
 )
 
 var (
-	userOwnedKeysEnabled = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
-	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
-	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
-	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
-	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+	userOwnedKeysEnabled      = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
+	apiKeyValueReadbackConfig = flag.Bool("app.api_key_value_readback_enabled", true, "If true, API key values can be retrieved after creation via API key read methods.")
+	apiKeyGroupCacheTTL       = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
+	apiKeyEncryptionKey       = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
+	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
+	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
 type apiKeyGroupCacheEntry struct {
@@ -400,6 +401,24 @@ func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
 	}
 	ak.Value = key
 	return nil
+}
+
+func (d *AuthDB) populateAPIKeyValueForReadback(ak *tables.APIKey) error {
+	if !apiKeyValueReadbackEnabled() {
+		// If readback is disabled and decryption happens to be disabled, then
+		// [ak.Value] will already be set here - clear it.
+		//
+		// TODO: avoid querying `value` from the DB in the non-encrypted case
+		// here. Right now, that change would be a bit burdensome because we
+		// have "SELECT *" in the query (for simplicity reasons).
+		ak.Value = ""
+		return nil
+	}
+	return d.fillDecryptedAPIKey(ak)
+}
+
+func apiKeyValueReadbackEnabled() bool {
+	return *apiKeyValueReadbackConfig
 }
 
 func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error {
@@ -1013,7 +1032,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 		}
 	}
 
-	if err := d.fillDecryptedAPIKey(key); err != nil {
+	if err := d.populateAPIKeyValueForReadback(key); err != nil {
 		return nil, err
 	}
 	return key, nil
@@ -1093,7 +1112,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	keys := make([]*tables.APIKey, 0, len(rows))
 	for _, row := range rows {
 		k := row.toAPIKey()
-		if err := d.fillDecryptedAPIKey(k); err != nil {
+		if err := d.populateAPIKeyValueForReadback(k); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -1241,7 +1260,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	keys := make([]*tables.APIKey, 0, len(rows))
 	for _, row := range rows {
 		k := row.toAPIKey()
-		if err := d.fillDecryptedAPIKey(k); err != nil {
+		if err := d.populateAPIKeyValueForReadback(k); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -1251,4 +1270,10 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 
 func (d *AuthDB) GetUserOwnedKeysEnabled() bool {
 	return *userOwnedKeysEnabled
+}
+
+// GetAPIKeyValueReadbackEnabled returns whether API key values can be fetched
+// via API key read methods after creation.
+func (d *AuthDB) GetAPIKeyValueReadbackEnabled() bool {
+	return apiKeyValueReadbackEnabled()
 }
