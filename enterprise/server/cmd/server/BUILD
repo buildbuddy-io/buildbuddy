@@ -160,7 +160,7 @@ flatten(
 )
 
 image_manifest(
-    name = "manifest",
+    name = "image_manifest",
     base = "//images/distroless/base-nossl:manifest",
     entrypoint = [
         "/app/enterprise/server/cmd/server/buildbuddy",
@@ -181,6 +181,6 @@ image_load(
     # Loading into containerd allows us to load the exact OCI image we've built
     # with the expected digest.
     daemon = "docker",
-    image = ":manifest",
+    image = ":image_manifest",
     tag = "buildbuddy_image:latest",
 )
