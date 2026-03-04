@@ -153,7 +153,7 @@ pkg_tar(
 
 flatten(
     name = "layer",
-    # compress = "gzip",
+    compress = "gzip",
     tars = [
         ":runfiles_tar",
         ":symlinks_tar",
