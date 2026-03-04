@@ -33,8 +33,9 @@ var (
 )
 
 const (
-	usersPath  = "/scim/Users"
-	groupsPath = "/scim/Groups"
+	usersPath    = "/scim/Users"
+	v2UsersPath  = "/scim/v2/Users"
+	v2GroupsPath = "/scim/v2/Groups"
 
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
@@ -202,6 +203,21 @@ func NewSCIMServer(env environment.Env) *SCIMServer {
 
 type handlerFunc func(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error)
 
+func isV2Path(urlPath string) bool {
+	return strings.HasPrefix(urlPath, "/scim/v2/")
+}
+
+func defaultRoleForRequest(r *http.Request) role.Role {
+	// The v2 API supports Group sync which allows customers to sync groups
+	// and then assign them roles in BuildBuddy, eliminating the need to manage
+	// permissions at the individual user level. To that end we assign
+	// synced users the lowest possible role.
+	if isV2Path(r.URL.Path) {
+		return role.Reader
+	}
+	return role.Default
+}
+
 func mapErrorCode(err error) int {
 	if status.IsNotFoundError(err) {
 		return http.StatusNotFound
@@ -254,10 +270,14 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 }
 
 func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
-	if strings.HasPrefix(r.URL.Path, usersPath) {
+	if strings.HasPrefix(r.URL.Path, v2UsersPath) || strings.HasPrefix(r.URL.Path, usersPath) {
+		basePath := usersPath
+		if strings.HasPrefix(r.URL.Path, v2UsersPath) {
+			basePath = v2UsersPath
+		}
 		switch r.Method {
 		case http.MethodGet:
-			if r.URL.Path == usersPath {
+			if r.URL.Path == basePath {
 				return s.getUsers, nil
 			} else {
 				return s.getUser, nil
@@ -273,10 +293,10 @@ func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
 		}
 	}
 
-	if strings.HasPrefix(r.URL.Path, groupsPath) {
+	if strings.HasPrefix(r.URL.Path, v2GroupsPath) {
 		switch r.Method {
 		case http.MethodGet:
-			if r.URL.Path == groupsPath {
+			if r.URL.Path == v2GroupsPath {
 				return s.getGroups, nil
 			} else {
 				return s.getGroup, nil
@@ -446,7 +466,7 @@ func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Gro
 	return ur, nil
 }
 
-func mapRole(ur *UserResource) (role.Role, error) {
+func mapRole(ur *UserResource, defaultRole role.Role) (role.Role, error) {
 	roleName := ur.Role
 	if roleName == "" {
 		if len(ur.Roles) > 1 {
@@ -457,7 +477,7 @@ func mapRole(ur *UserResource) (role.Role, error) {
 		}
 	}
 	if roleName == "" {
-		return role.Default, nil
+		return defaultRole, nil
 	}
 	return role.Parse(roleName)
 }
@@ -477,8 +497,8 @@ func roleUpdateRequest(userID string, userRole role.Role, addUserToGroup bool) (
 	return []*grpb.UpdateGroupUsersRequest_Update{update}, nil
 }
 
-func fillUserFromResource(u *tables.User, ur UserResource, g *tables.Group) error {
-	userRole, err := mapRole(&ur)
+func fillUserFromResource(u *tables.User, ur UserResource, g *tables.Group, defaultRole role.Role) error {
+	userRole, err := mapRole(&ur, defaultRole)
 	if err != nil {
 		return err
 	}
@@ -502,7 +522,8 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		return nil, err
 	}
 
-	userRole, err := mapRole(&ur)
+	defaultRole := defaultRoleForRequest(r)
+	userRole, err := mapRole(&ur, defaultRole)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +561,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		user = &tables.User{UserID: pk}
 	}
 
-	if err := fillUserFromResource(user, ur, g); err != nil {
+	if err := fillUserFromResource(user, ur, g, defaultRole); err != nil {
 		return nil, err
 	}
 
@@ -681,7 +702,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 		if newRole != nil {
 			ur.Role = *newRole
 			ur.Roles = []RoleResource{{Primary: true, Value: *newRole}}
-			userRole, err := mapRole(ur)
+			userRole, err := mapRole(ur, defaultRoleForRequest(r))
 			if err != nil {
 				return nil, err
 			}
@@ -735,7 +756,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
 			return nil, err
 		}
-		userRole, err := mapRole(&ur)
+		userRole, err := mapRole(&ur, defaultRoleForRequest(r))
 		if err != nil {
 			return nil, err
 		}
