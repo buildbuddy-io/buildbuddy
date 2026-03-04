@@ -1,8 +1,9 @@
 # when you update this file, run:
-# bazel run @trixie//:lock
+# bazel run @debian13//:lock
 version: 1
 
 sources:
+  # trixie is the codename for debian 13
   - channel: trixie main
     url: https://snapshot.debian.org/archive/debian/20260206T143559Z
   - channel: trixie-updates main

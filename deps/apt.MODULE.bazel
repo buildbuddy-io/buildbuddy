@@ -13,13 +13,13 @@ single_version_override(
 # Configure apt for Debian packages
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
-# Configure Debian trixie packages for distroless-cc
+# Configure Debian debian13 packages
 apt.install(
-    name = "trixie",
-    lock = "//apt:trixie.lock.json",
-    manifest = "//apt:trixie.yaml",
+    name = "debian13",
+    lock = "//apt:debian13.lock.json",
+    manifest = "//apt:debian13.yaml",
     mergedusr = True,
     package_template = "apt/package.BUILD.tmpl",
     resolve_transitive = False,
 )
-use_repo(apt, "trixie")
+use_repo(apt, "debian13")
