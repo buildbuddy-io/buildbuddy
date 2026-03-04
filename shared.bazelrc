@@ -167,6 +167,50 @@ common:macos --host_macos_minimum_os=12.0
 common:macos --linkopt=-Wl,-no_warn_duplicate_libraries
 common:macos --host_linkopt=-Wl,-no_warn_duplicate_libraries
 
+############################
+# REMOTE EXECUTION TARGETS #
+############################
+# This section defines different execution targets for remote action execution
+# and informs bazel about the execution platforms that are supported for that
+# target. Note that the order matters: if multiple execution platforms are
+# compatible, bazel will prefer the first one.
+
+# localhost RBE platform for the most common development setup - running the app
+# with "bazel run enterprise/server" and running the executor with "bazel run
+# enterprise/cmd/executor". When using these commands, the execution service (in
+# the app) should be reachable on localhost:1985, and the connected executor(s)
+# should have the same execution platform as bazel. Here, we are referencing the
+# default "host-compatible" platform from the BB toolchain. On Linux, this
+# expects that the executor supports running OCI containers (since it sets
+# "container-image" in exec properties). This should be valid for our default
+# executor local development config, which explicitly configures docker support
+# on the local executor.
+common:localhost-development-executors --remote_executor=grpc://localhost:1985
+common:localhost-development-executors --extra_execution_platforms=@toolchains_buildbuddy//:platform
+
+# Dev RBE platform, auth-optional. We assume unauthed, as the common
+# denominator. Only linux/x86_64 is supported in this environment (we do not yet
+# have arm executors in dev, and macOS requires auth).
+common:dev-executors --remote_executor=grpcs://remote.buildbuddy.dev
+common:dev-executors --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+
+# Dev RBE platform, authenticated as a BB internal developer. linux/x86 is
+# supported (shared executor pool), and a few org-owned dev macs are also
+# available (both arm64 and x86_64).
+common:bb-org-dev-executors --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+common:bb-org-dev-executors --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64
+
+# Prod RBE platform, auth-optional. We assume unauthed, as the common
+# denominator. linux/x86_64 and linux/arm64 are both supported in this
+# environment.
+common:prod-executors --remote_executor=grpcs://remote.buildbuddy.io
+common:prod-executors --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
+
+# Prod RBE platform, authenticated as a BB internal developer. All combinations
+# of {linux,macos}/{x86_64,arm64} are supported in this environment.
+common:bb-org-prod-executors --remote_executor=grpcs://buildbuddy.buildbuddy.io
+common:bb-org-prod-executors --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64
+
 ########################
 # BES + CACHE + REMOTE #
 ########################
