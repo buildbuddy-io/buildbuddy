@@ -114,6 +114,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 			Jitter:     0.2,
 			MaxDelay:   1 * time.Second,
 		},
+		MinConnectTimeout: 20 * time.Second,
 	}))
 	if err != nil {
 		return nil, err
