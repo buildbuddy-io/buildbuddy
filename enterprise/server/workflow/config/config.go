@@ -352,8 +352,8 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		ContainerImage: `ubuntu-20.04`,
 		ResourceRequests: ResourceRequests{
-			CPU:    "24",   // 24 BCU
-			Memory: "60GB", // 24 BCU
+			CPU:    "8",
+			Memory: "16GB",
 			Disk:   "100GB",
 		},
 		Steps: []*rnpb.Step{
