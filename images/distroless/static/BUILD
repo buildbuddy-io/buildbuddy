@@ -38,7 +38,7 @@ passwd(
 # Generate CA certificates bundle
 cacerts(
     name = "ca_certificates",
-    package = "@trixie//ca-certificates/amd64:data",
+    package = "@debian13//ca-certificates/amd64:data",
     # the cacerts rule currently doesn't support running on Windows
     target_compatible_with = select({
         "@platforms//os:windows": ["@platforms//:incompatible"],
@@ -58,10 +58,10 @@ cacerts(
             }[arch],
         ],
         tars = [
-            "@trixie//base-files/%s" % arch,
-            "@trixie//netbase/%s" % arch,
-            "@trixie//tzdata/%s" % arch,
-            "@trixie//media-types/%s" % arch,
+            "@debian13//base-files/%s" % arch,
+            "@debian13//netbase/%s" % arch,
+            "@debian13//tzdata/%s" % arch,
+            "@debian13//media-types/%s" % arch,
             ":groups",
             ":passwd",
             ":ca_certificates",
