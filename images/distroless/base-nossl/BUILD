@@ -18,7 +18,7 @@ package(default_visibility = ["//visibility:public"])
             }[arch],
         ],
         tars = [
-            "@trixie//libc6/%s" % arch,
+            "@debian13//libc6/%s" % arch,
         ],
     )
     for arch in [
