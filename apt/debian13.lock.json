@@ -1,137 +1,133 @@
 {
-	"packages": [
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "base-files_13.8-p-deb13u3_amd64",
-			"name": "base-files",
-			"sha256": "b649e44786cff7fcfbfaddeb40b9cf9b0825f04e9e05b770d2b1fb4c5ca3b942",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/b/base-files/base-files_13.8+deb13u3_amd64.deb"
-			],
-			"version": "13.8+deb13u3"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "netbase_6.5_amd64",
-			"name": "netbase",
-			"sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/n/netbase/netbase_6.5_all.deb"
-			],
-			"version": "6.5"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "tzdata_2025b-4-p-deb13u1_amd64",
-			"name": "tzdata",
-			"sha256": "19a87f5184503fb5eeffe97bd7e107e193ac28107789a1e85331ed9381040f17",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/t/tzdata/tzdata_2025b-4+deb13u1_all.deb"
-			],
-			"version": "2025b-4+deb13u1"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "media-types_13.0.0_amd64",
-			"name": "media-types",
-			"sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
-			],
-			"version": "13.0.0"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "ca-certificates_20250419_amd64",
-			"name": "ca-certificates",
-			"sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
-			],
-			"version": "20250419"
-		},
-		{
-			"arch": "amd64",
-			"dependencies": [],
-			"key": "libc6_2.41-12-p-deb13u1_amd64",
-			"name": "libc6",
-			"sha256": "0a51c7ba7c59b3c664b836fe33c5184e6f5a869f57e86613381e954d74282b66",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/glibc/libc6_2.41-12+deb13u1_amd64.deb"
-			],
-			"version": "2.41-12+deb13u1"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "base-files_13.8-p-deb13u3_arm64",
-			"name": "base-files",
-			"sha256": "02832c35c1588ea5cba07bb965946ccee0d71b9dd8cf0dee9ed7f138402abbef",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/b/base-files/base-files_13.8+deb13u3_arm64.deb"
-			],
-			"version": "13.8+deb13u3"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "netbase_6.5_arm64",
-			"name": "netbase",
-			"sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/n/netbase/netbase_6.5_all.deb"
-			],
-			"version": "6.5"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "tzdata_2025b-4-p-deb13u1_arm64",
-			"name": "tzdata",
-			"sha256": "19a87f5184503fb5eeffe97bd7e107e193ac28107789a1e85331ed9381040f17",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/t/tzdata/tzdata_2025b-4+deb13u1_all.deb"
-			],
-			"version": "2025b-4+deb13u1"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "media-types_13.0.0_arm64",
-			"name": "media-types",
-			"sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
-			],
-			"version": "13.0.0"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "ca-certificates_20250419_arm64",
-			"name": "ca-certificates",
-			"sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
-			],
-			"version": "20250419"
-		},
-		{
-			"arch": "arm64",
-			"dependencies": [],
-			"key": "libc6_2.41-12-p-deb13u1_arm64",
-			"name": "libc6",
-			"sha256": "19c43436854a1207a9bf0cea32fa3c0a069fd26f82ab23302d20b0574b635395",
-			"urls": [
-				"https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/glibc/libc6_2.41-12+deb13u1_arm64.deb"
-			],
-			"version": "2.41-12+deb13u1"
-		}
-	],
-	"version": 1
+  "packages": [
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "base-files_13.8-p-deb13u3_amd64",
+      "name": "base-files",
+      "sha256": "b649e44786cff7fcfbfaddeb40b9cf9b0825f04e9e05b770d2b1fb4c5ca3b942",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/b/base-files/base-files_13.8+deb13u3_amd64.deb"
+      ],
+      "version": "13.8+deb13u3"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "netbase_6.5_amd64",
+      "name": "netbase",
+      "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
+      "urls": ["https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/n/netbase/netbase_6.5_all.deb"],
+      "version": "6.5"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "tzdata_2025b-4-p-deb13u1_amd64",
+      "name": "tzdata",
+      "sha256": "19a87f5184503fb5eeffe97bd7e107e193ac28107789a1e85331ed9381040f17",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/t/tzdata/tzdata_2025b-4+deb13u1_all.deb"
+      ],
+      "version": "2025b-4+deb13u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "media-types_13.0.0_amd64",
+      "name": "media-types",
+      "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+      ],
+      "version": "13.0.0"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "ca-certificates_20250419_amd64",
+      "name": "ca-certificates",
+      "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+      ],
+      "version": "20250419"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libc6_2.41-12-p-deb13u1_amd64",
+      "name": "libc6",
+      "sha256": "0a51c7ba7c59b3c664b836fe33c5184e6f5a869f57e86613381e954d74282b66",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/glibc/libc6_2.41-12+deb13u1_amd64.deb"
+      ],
+      "version": "2.41-12+deb13u1"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "base-files_13.8-p-deb13u3_arm64",
+      "name": "base-files",
+      "sha256": "02832c35c1588ea5cba07bb965946ccee0d71b9dd8cf0dee9ed7f138402abbef",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/b/base-files/base-files_13.8+deb13u3_arm64.deb"
+      ],
+      "version": "13.8+deb13u3"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "netbase_6.5_arm64",
+      "name": "netbase",
+      "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
+      "urls": ["https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/n/netbase/netbase_6.5_all.deb"],
+      "version": "6.5"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "tzdata_2025b-4-p-deb13u1_arm64",
+      "name": "tzdata",
+      "sha256": "19a87f5184503fb5eeffe97bd7e107e193ac28107789a1e85331ed9381040f17",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/t/tzdata/tzdata_2025b-4+deb13u1_all.deb"
+      ],
+      "version": "2025b-4+deb13u1"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "media-types_13.0.0_arm64",
+      "name": "media-types",
+      "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+      ],
+      "version": "13.0.0"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "ca-certificates_20250419_arm64",
+      "name": "ca-certificates",
+      "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+      ],
+      "version": "20250419"
+    },
+    {
+      "arch": "arm64",
+      "dependencies": [],
+      "key": "libc6_2.41-12-p-deb13u1_arm64",
+      "name": "libc6",
+      "sha256": "19c43436854a1207a9bf0cea32fa3c0a069fd26f82ab23302d20b0574b635395",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260206T143559Z/pool/main/g/glibc/libc6_2.41-12+deb13u1_arm64.deb"
+      ],
+      "version": "2.41-12+deb13u1"
+    }
+  ],
+  "version": 1
 }
