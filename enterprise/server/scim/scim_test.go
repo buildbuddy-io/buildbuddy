@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -871,7 +870,6 @@ func TestUpdateUser(t *testing.T) {
 }
 
 func TestCreateGroup(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := getEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -964,7 +962,6 @@ func TestCreateGroup(t *testing.T) {
 }
 
 func TestGetGroups(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := getEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -1075,7 +1072,6 @@ func TestGetGroups(t *testing.T) {
 }
 
 func TestPatchGroup(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := getEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -1141,7 +1137,6 @@ func TestPatchGroup(t *testing.T) {
 }
 
 func TestPatchGroupMembers(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := getEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -1275,7 +1270,6 @@ func TestPatchGroupMembers(t *testing.T) {
 }
 
 func TestDeleteGroup(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := getEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
