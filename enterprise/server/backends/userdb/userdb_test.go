@@ -380,7 +380,6 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 }
 
 func TestCreateUser_GroupHasOnlyUserListMembers(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 	flags.Set(t, "app.add_user_to_domain_group", true)
 	flags.Set(t, "app.create_group_per_user", true)
@@ -754,7 +753,6 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -2346,8 +2344,6 @@ func TestChildGroupAuth(t *testing.T) {
 }
 
 func TestUserListOps(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
-
 	ctx := context.Background()
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
@@ -2451,7 +2447,6 @@ func TestUserListOps(t *testing.T) {
 }
 
 func TestUserListMembership(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 
 	ctx := context.Background()
@@ -2537,7 +2532,6 @@ func TestUserListMembership(t *testing.T) {
 }
 
 func TestAddUserToGroup_GroupHasOnlyUserListMembers(t *testing.T) {
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.enable_user_lists", true)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -2646,7 +2640,6 @@ func TestRemoveUserFromGroup_UserAPIKeyStillWorksThroughIndirectMembership(t *te
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2705,7 +2698,6 @@ func TestRemoveUserFromGroup_NoIndirectAccess_UserAPIKeyNotValid(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2749,7 +2741,6 @@ func TestUpdateUserListRole_DowngradeReflectedInUserAPIKeyCapabilities(t *testin
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2800,7 +2791,6 @@ func TestRemoveUserListFromGroup_InvalidatesKeysForIndirectOnlyUser(t *testing.T
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2850,7 +2840,6 @@ func TestRemoveUserListFromGroup_UserAPIKeyStillWorksForDirectMember(t *testing.
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2906,7 +2895,6 @@ func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -2959,7 +2947,6 @@ func TestDeleteUserList_InvalidatesUserAPIKeysForIndirectMembers(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
@@ -3010,7 +2997,6 @@ func TestDeleteUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "auth.enable_user_lists", true)
-	flags.Set(t, "database.create_user_list_tables", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
 	ctx := context.Background()
