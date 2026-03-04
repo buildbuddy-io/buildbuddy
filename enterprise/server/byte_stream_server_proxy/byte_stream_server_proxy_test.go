@@ -994,9 +994,14 @@ func TestWriteChunked(t *testing.T) {
 		metrics.StatusLabel:     "OK",
 		metrics.CompressionType: "ZSTD",
 	}
+	writeLabelsWithGroup := prometheus.Labels{
+		metrics.StatusLabel:     "OK",
+		metrics.CompressionType: "ZSTD",
+		metrics.GroupID:         interfaces.AuthAnonymousUser,
+	}
 	writeBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
-	writeChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabels))
-	writeChunksDedupedBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabels))
+	writeChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
+	writeChunksDedupedBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
 	writeChunkBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
 	writeDedupedBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
 
@@ -1024,8 +1029,8 @@ func TestWriteChunked(t *testing.T) {
 	require.NoError(t, err)
 
 	writeBlobBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
-	writeChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabels))
-	writeChunksDedupedAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabels))
+	writeChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
+	writeChunksDedupedAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
 	writeChunkBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
 	writeDedupedBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
 

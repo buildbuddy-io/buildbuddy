@@ -3601,6 +3601,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
+		GroupID,
 	})
 	ByteStreamChunkedWriteChunksDeduped = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3610,6 +3611,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
+		GroupID,
 	})
 	ByteStreamChunkedWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,

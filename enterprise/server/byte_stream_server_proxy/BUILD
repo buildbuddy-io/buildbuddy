@@ -21,6 +21,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/bytebufferpool",
         "//server/util/cdc",
+        "//server/util/claims",
         "//server/util/compression",
         "//server/util/lib/set",
         "//server/util/log",

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -38,6 +39,14 @@ import (
 var (
 	chunkUploadConcurrency = flag.Int("cache_proxy.chunk_upload_concurrency", 8, "Maximum number of concurrent chunk uploads when uploading missing chunks to remote cache.")
 )
+
+func groupIDForMetrics(ctx context.Context) string {
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return c.GroupID
+}
 
 type ByteStreamServerProxy struct {
 	supportsEncryption func(context.Context) bool
@@ -416,6 +425,7 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 type byteStreamMetrics struct {
 	requestType       string
 	compressor        string
+	groupID           string
 	err               error
 	bytes             int64
 	chunked           bool
@@ -504,6 +514,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			recordWriteMetrics(byteStreamMetrics{
 				requestType:       requestTypeLabel,
 				compressor:        meteredStream.compressor,
+				groupID:           groupIDForMetrics(ctx),
 				err:               nil,
 				bytes:             meteredStream.bytes,
 				chunked:           true,
@@ -680,12 +691,17 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 			metrics.StatusLabel:     status.MetricsLabel(bsm.err),
 			metrics.CompressionType: bsm.compressor,
 		}
+		chunkedLabelsWithGroup := prometheus.Labels{
+			metrics.StatusLabel:     status.MetricsLabel(bsm.err),
+			metrics.CompressionType: bsm.compressor,
+			metrics.GroupID:         bsm.groupID,
+		}
 		metrics.ByteStreamChunkedWriteBlobBytes.With(chunkedLabels).Add(float64(bsm.blobBytes))
 		if bsm.chunksTotal > 0 {
-			metrics.ByteStreamChunkedWriteChunksTotal.With(chunkedLabels).Add(float64(bsm.chunksTotal))
+			metrics.ByteStreamChunkedWriteChunksTotal.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksTotal))
 		}
 		if bsm.chunksDeduped > 0 {
-			metrics.ByteStreamChunkedWriteChunksDeduped.With(chunkedLabels).Add(float64(bsm.chunksDeduped))
+			metrics.ByteStreamChunkedWriteChunksDeduped.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksDeduped))
 		}
 		if bsm.chunkBytesTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesTotal))
