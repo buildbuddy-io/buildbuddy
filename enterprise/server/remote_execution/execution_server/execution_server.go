@@ -844,7 +844,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	if chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+	efp := s.env.GetExperimentFlagProvider()
+	if chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 	}
 
