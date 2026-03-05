@@ -1,7 +1,8 @@
 ---
-title: Compare Actions: compare two actions side-by-side
-date: 2026-03-09:08:00:00
+title: "Compare Actions: compare two actions side-by-side"
+date: 2026-03-09T08:00:00
 author: siggi
+tags: [bazel, debugging, featured]
 ---
 
 The Compare Actions view allows you to diff two actions side-by-side.
