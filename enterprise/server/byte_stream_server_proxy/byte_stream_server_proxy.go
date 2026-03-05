@@ -217,7 +217,7 @@ func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb
 		return false
 	}
 	return s.localCache != nil && s.remoteCAS != nil &&
-		chunking.ShouldReadChunked(ctx, s.efp, rn.GetDigest().GetSizeBytes(), req.GetReadOffset(), req.GetReadLimit())
+		chunking.ShouldReadChunkedOnProxy(ctx, s.efp, rn.GetDigest().GetSizeBytes(), req.GetReadOffset(), req.GetReadLimit())
 }
 
 type chunkedReadMetrics struct {
