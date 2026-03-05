@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -87,8 +88,16 @@ func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *
 		maxDisk := false
 
 		for _, fsUsage := range usageStats.GetPeakFileSystemUsage() {
-			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
-				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+			utilization := fsutil.FileSystemUtilization(fsUsage)
+			if utilization >= maxRecyclableResourceUtilization {
+				maxedOutStr += fmt.Sprintf(
+					" %.2f%% disk used (%d used, %d avail, %d total) for %s",
+					100*utilization,
+					fsUsage.GetUsedBytes(),
+					fsUsage.GetAvailableBytes(),
+					fsUsage.GetTotalBytes(),
+					fsUsage.GetSource(),
+				)
 				maxDisk = true
 			}
 		}

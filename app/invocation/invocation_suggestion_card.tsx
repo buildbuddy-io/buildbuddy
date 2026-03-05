@@ -242,9 +242,14 @@ const matchers: SuggestionMatcher[] = [
 
     for (const fs of executionMetadata.usageStats?.peakFileSystemUsage ?? []) {
       if (fs.target === "/" && Number(fs.totalBytes) !== 0) {
-        rootDiskUsage = Number(fs.usedBytes) / Number(fs.totalBytes);
-        rootDiskBytesUsed = Number(fs.usedBytes);
-        rootDiskBytesTotal = Number(fs.totalBytes);
+        const usedBytes = Number(fs.usedBytes);
+        const totalBytes = Number(fs.totalBytes);
+        const availableBytes = fs.availableBytes !== undefined ? Number(fs.availableBytes) : undefined;
+        const usableCapacity =
+          availableBytes !== undefined && usedBytes + availableBytes > 0 ? usedBytes + availableBytes : totalBytes;
+        rootDiskUsage = usableCapacity > 0 ? usedBytes / usableCapacity : 0;
+        rootDiskBytesUsed = usedBytes;
+        rootDiskBytesTotal = usableCapacity;
       }
     }
     const memoryUsedBytes = Number(executionMetadata?.usageStats?.peakMemoryBytes);

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -688,11 +689,12 @@ func getFileSystemUsage() []*repb.UsageStats_FileSystemUsage {
 			continue
 		}
 		out = append(out, &repb.UsageStats_FileSystemUsage{
-			Source:     fs.DevName,
-			Target:     fs.DirName,
-			Fstype:     fs.SysTypeName,
-			UsedBytes:  int64(fsu.Used),
-			TotalBytes: int64(fsu.Total),
+			Source:         fs.DevName,
+			Target:         fs.DirName,
+			Fstype:         fs.SysTypeName,
+			UsedBytes:      int64(fsu.Used),
+			TotalBytes:     int64(fsu.Total),
+			AvailableBytes: new(int64(fsu.Avail)),
 		})
 	}
 	return out
@@ -719,18 +721,17 @@ func updatePeakFileSystemUsage(peak, current []*repb.UsageStats_FileSystemUsage)
 			// Keep it in the `peak` list with its last observed value.
 			continue
 		}
-		if cur.UsedBytes > p.UsedBytes {
-			// Create a modified copy of the message.
-			p = p.CloneVT()
-			p.UsedBytes = cur.UsedBytes
-			peak[i] = p
+		if fsutil.FileSystemUtilization(cur) > fsutil.FileSystemUtilization(p) {
+			peak[i] = cur.CloneVT()
 		}
 	}
 	for i, c := range current {
 		// If we see an FS that we haven't previously observed in the `peak`
 		// list then append it to the end.
 		if !observed[i] {
-			peak = append(peak, c)
+			// Clone to avoid retaining pointers to caller-owned `current` entries.
+			// This keeps `peak` independent from future mutations of `current`.
+			peak = append(peak, c.CloneVT())
 		}
 	}
 	// Sort to ensure deterministic ordering.
