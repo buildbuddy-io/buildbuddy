@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -22,14 +21,14 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-type readerCountingCache struct {
+type getMultiCountingCache struct {
 	interfaces.Cache
-	readerCalls int
+	getMultiCalls int
 }
 
-func (c *readerCountingCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	c.readerCalls++
-	return c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+func (c *getMultiCountingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	c.getMultiCalls += len(resources)
+	return c.Cache.GetMulti(ctx, resources)
 }
 
 func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.T) {
@@ -49,7 +48,7 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 	t.Cleanup(func() { pc.Stop() })
 
 	baseCache := pc
-	cache := &readerCountingCache{Cache: baseCache}
+	cache := &getMultiCountingCache{Cache: baseCache}
 
 	const blobSize = 100 * 1024 * 1024
 	blobData := make([]byte, blobSize)
@@ -87,9 +86,9 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
 	require.NoError(t, firstManifest.Store(ctx, cache))
-	require.Equal(t, len(chunkDigests), cache.readerCalls, "first store should hash all chunks")
+	require.Equal(t, len(chunkDigests), cache.getMultiCalls, "first store should hash all chunks")
 
-	cache.readerCalls = 0
+	cache.getMultiCalls = 0
 	secondManifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
 		ChunkDigests:   chunkDigests,
@@ -97,5 +96,5 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
 	require.NoError(t, secondManifest.Store(ctx, cache))
-	assert.Equal(t, 0, cache.readerCalls, "second store should reuse shared validation marker and open no readers")
+	assert.Equal(t, 0, cache.getMultiCalls, "second store should reuse shared validation marker and open no readers")
 }
