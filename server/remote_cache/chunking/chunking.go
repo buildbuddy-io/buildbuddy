@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -363,62 +364,40 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	readers := make(chan io.ReadCloser, 1)
-	var eg errgroup.Group
-	eg.Go(func() error {
-		defer close(readers)
-		for i, chunkDigest := range cm.ChunkDigests {
+	var totalSize int64
+	// This should be high enough to send at least 1 request per cache shard,
+	// but low enough to avoid buffering too much data in memory. The
+	// distributed cache splits the request per shard, but the local caches
+	// will usually proccess their batches sequentially.
+	const batchSize = 20
+	resources := make([]*rspb.ResourceName, 0, batchSize)
+	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
+		for _, chunkDigest := range chunkDigestsPart {
+			// TODO(vanja): Maybe read these compressed and decompress while
+			// hashing, to save network bandwidth, instead of decompressing on
+			// the server.
 			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
 			if err := chunkRN.Validate(); err != nil {
-				return status.InvalidArgumentErrorf("invalid chunk digest at index %d for blob %s: %s", i, cm.BlobDigest.GetHash(), err)
+				return status.InvalidArgumentErrorf("invalid chunk resource name %v for blob %s: %s", chunkRN, cm.BlobDigest.GetHash(), err)
 			}
-			r, err := cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
-			if err != nil {
-				if r != nil {
-					_ = r.Close()
-				}
-				if status.IsNotFoundError(err) {
-					return status.InvalidArgumentErrorf("invalid manifest: chunk %d not found in the CAS: %s", i, chunkDigest.GetHash())
-				}
-				return status.WrapErrorf(err, "read chunk %d for blob %s from CAS", i, cm.BlobDigest.GetHash())
-			}
-			select {
-			case readers <- r:
-			case <-ctx.Done():
-				_ = r.Close()
-				return ctx.Err()
-			}
+			resources = append(resources, chunkRN.ToProto())
 		}
-		return nil
-	})
-
-	closers := make(chan io.Closer, 10)
-	defer close(closers)
-	go func() {
-		for c := range closers {
-			_ = c.Close()
-		}
-	}()
-
-	var (
-		totalSize int64
-		chunkIdx  int
-	)
-	for reader := range readers {
-		n, err := io.Copy(hasher, reader)
-		closers <- reader
+		chunks, err := cache.GetMulti(ctx, resources)
 		if err != nil {
-			return status.WrapErrorf(err, "hash chunk %d for blob %s", chunkIdx, cm.BlobDigest.GetHash())
+			return status.WrapErrorf(err, "read chunks for blob %s from CAS", cm.BlobDigest.GetHash())
 		}
-		totalSize += n
-		chunkIdx++
-	}
-
-	if err := eg.Wait(); err != nil {
-		return err
+		for _, r := range resources {
+			chunkData, ok := chunks[r.GetDigest()]
+			if !ok {
+				return status.InvalidArgumentErrorf("invalid manifest: chunk %v not found in the CAS for blob %v", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+			}
+			_, err := hasher.Write(chunkData)
+			if err != nil {
+				return status.WrapErrorf(err, "hash chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+			}
+			totalSize += int64(len(chunkData))
+		}
+		resources = resources[:0]
 	}
 
 	computedDigest := &repb.Digest{
