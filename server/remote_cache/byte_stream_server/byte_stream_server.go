@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -23,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -207,8 +209,16 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 
 	rns := manifest.ChunkResourceNames()
 	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+		}).Inc()
 		return nil, err
 	} else if len(missing) > 0 {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunks_missing",
+			metrics.StatusHumanReadableLabel:  "NotFound",
+		}).Inc()
 		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
 	}
 
@@ -218,6 +228,10 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 		chunkRN.SetCompressor(rn.GetCompressor())
 		rc, err := s.cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
 		if err != nil {
+			metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+				metrics.ChunkedFailureReasonLabel: "chunk_read_error",
+				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			}).Inc()
 			for _, openCloser := range rcs {
 				openCloser.Close()
 			}

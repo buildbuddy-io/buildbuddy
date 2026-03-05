@@ -177,8 +177,10 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		// If chunking is enabled and the blob is large enough, try to read the chunks.
 		// TODO(buildbuddy-internal#6426): Once most large blobs are chunked, consider
 		// attempting the chunked read first.
+		var chunkedErr error
 		if s.shouldReadChunked(ctx, req, rn) {
-			chunkMetrics, chunkedErr := s.readChunked(ctx, req, stream, rn)
+			chunkMetrics, err := s.readChunked(ctx, req, stream, rn)
+			chunkedErr = err
 			if chunkedErr == nil {
 				return readMetrics{
 					cacheStatus:  metrics.MissStatusLabel,
@@ -189,15 +191,18 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 					chunksLocal:  chunkMetrics.chunksLocal,
 					chunksRemote: chunkMetrics.chunksRemote,
 				}, nil
-			} else if !status.IsNotFoundError(chunkedErr) {
-				log.CtxWarningf(ctx, "Error reading chunked blob %s: %s", rn.DownloadString(), chunkedErr)
 			}
 		}
 
+		remoteErr := s.readRemoteWriteLocal(req, stream)
+		if remoteErr != nil && chunkedErr != nil {
+			// TODO(buildbuddy-internal#6426): Remove once root cause for missing digests is found.
+			log.CtxWarningf(ctx, "Proxy chunked read failed for %s (remote fallback also failed): chunkedErr=%s remoteErr=%s", rn.DownloadString(), chunkedErr, remoteErr)
+		}
 		return readMetrics{
 			cacheStatus: metrics.MissStatusLabel,
 			compressor:  rn.GetCompressor().String(),
-		}, s.readRemoteWriteLocal(req, stream)
+		}, remoteErr
 	} else {
 		return readMetrics{
 			cacheStatus: metrics.HitStatusLabel,
@@ -229,6 +234,10 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	// Using the interface.Cache requires namespacing the AC keys by group ID.
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
 	if err != nil {
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "auth_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+		}).Inc()
 		return m, err
 	}
 
@@ -242,6 +251,10 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	}
 	splitResp, err := s.remoteCAS.SplitBlob(ctx, splitReq)
 	if err != nil {
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "split_blob_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+		}).Inc()
 		return m, err
 	}
 	for _, chunkDigest := range splitResp.GetChunkDigests() {
@@ -249,10 +262,18 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		chunkRN.SetCompressor(rn.GetCompressor())
 		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
 			if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
+				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
+					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+				}).Inc()
 				return m, err
 			}
 			m.chunksRemote++
 		} else if err != nil {
+			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
+				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			}).Inc()
 			return m, err
 		} else {
 			m.chunksLocal++
