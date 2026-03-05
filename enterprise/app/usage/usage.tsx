@@ -648,5 +648,5 @@ function formatBytes(bytes: Long | number, totalBytes: Long | number) {
 }
 
 function formatMinutes(usec: number, category?: string): string {
-  return `${formatWithCommas(usec / 60e6, { minimumFractionDigits: 3 })}${category ? " " + category : ""} minutes`;
+  return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
 }
