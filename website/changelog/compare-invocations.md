@@ -1,7 +1,8 @@
 ---
-title: Compare Invocations: compare two builds side-by-side
-date: 2026-03-09:09:00:00
+title: "Compare Invocations: compare two builds side-by-side"
+date: 2026-03-09T09:00:00
 author: siggi
+tags: [bazel, debugging, featured]
 ---
 
 The Compare Invocations view allows you to diff two invocations side-by-side.
