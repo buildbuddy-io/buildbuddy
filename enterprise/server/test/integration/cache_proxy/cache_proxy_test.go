@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -120,6 +121,54 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	res := cmd.Wait()
 	require.Equal(t, 0, res.ExitCode)
 	require.Equal(t, "hello\n", res.Stdout)
+}
+
+func TestAtimeUpdater_AuthHeadersPropagated(t *testing.T) {
+	// This test exercises the code path where auth headers are captured
+	// via GetAuthHeaders, stored, and later reconstructed on a new context
+	// via AddAuthHeadersToContext. The reconstructed context must support
+	// GetAuthHeaders (for the batch operator's Enqueue check) and must
+	// carry the JWT in outgoing gRPC metadata (for dispatch calls to the
+	// remote CAS).
+	//
+	// This is the exact pattern used in pebble_cache.updateAtime and
+	// batch_operator.dispatch.
+	authenticator := &testauth.TestAuthenticator{}
+
+	// Simulate auth headers captured from a request context. In
+	// production, these are captured by ContextWithCachedAuthHeaders
+	// during request processing. When the request only has JWT auth (no
+	// ClientIdentityHeader), the headers contain only ContextTokenStringKey.
+	originalHeaders := map[string][]string{
+		authutil.ContextTokenStringKey: {"test-jwt-token"},
+	}
+
+	// Reconstruct a context from background + saved auth headers. This is
+	// what pebble_cache.updateAtime (line 998) and batch_operator.dispatch
+	// (line 577) do.
+	reconstructed := authutil.AddAuthHeadersToContext(
+		context.Background(), originalHeaders, authenticator)
+
+	// 1. Verify GetAuthHeaders round-trip works (batch_operator.Enqueue
+	//    checks this at line 323; failure causes the "Dropping batch op
+	//    due to missing auth headers" log).
+	recovered := authutil.GetAuthHeaders(reconstructed)
+	require.NotEmpty(t, recovered,
+		"GetAuthHeaders must find headers on a context created by "+
+			"AddAuthHeadersToContext (needed for batch_operator.Enqueue)")
+	require.Equal(t, originalHeaders[authutil.ContextTokenStringKey],
+		recovered[authutil.ContextTokenStringKey],
+		"JWT must survive the GetAuthHeaders -> AddAuthHeadersToContext "+
+			"-> GetAuthHeaders round-trip")
+
+	// 2. Verify JWT is in outgoing gRPC metadata (batch_operator.dispatch
+	//    passes this context to the atime updater's FindMissingBlobs call;
+	//    without the JWT in outgoing metadata, the remote server can't
+	//    authenticate the request).
+	outMD, _ := metadata.FromOutgoingContext(reconstructed)
+	require.NotEmpty(t, outMD.Get(authutil.ContextTokenStringKey),
+		"JWT must be in outgoing gRPC metadata so downstream RPCs "+
+			"from the batch operator are authenticated")
 }
 
 func TestFindMissing_Encryption(t *testing.T) {

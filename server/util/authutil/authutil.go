@@ -251,10 +251,15 @@ func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, a
 				ctx = metadata.AppendToOutgoingContext(ctx, ClientIdentityHeaderName, value)
 			} else if key == ContextTokenStringKey {
 				ctx = authenticator.AuthContextFromTrustedJWT(ctx, value)
+				ctx = metadata.AppendToOutgoingContext(ctx, ContextTokenStringKey, value)
 			} else {
 				log.Warningf("Ignoring unrecognized auth header: %s", key)
 			}
 		}
 	}
+	// Cache the headers so that GetAuthHeaders can retrieve them via
+	// the primary authHeadersKey lookup, not just the outgoing metadata
+	// fallback (which doesn't cover ContextTokenStringKey).
+	ctx = context.WithValue(ctx, authHeadersKey, headers)
 	return ctx
 }

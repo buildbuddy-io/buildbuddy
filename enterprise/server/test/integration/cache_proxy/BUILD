@@ -11,6 +11,7 @@ go_test(
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/testutil/testauth",
         "//server/testutil/testkeys",
         "//server/util/authutil",
         "//server/util/claims",
