@@ -3,6 +3,7 @@ package snaploader
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -1233,7 +1234,11 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		// Treat manifest lookup failures as cache misses unless the parent context
 		// itself expired/canceled. This lets us fall back to local ext4->COW
 		// conversion when remote manifest fetch times out independently.
-		if ctx.Err() != nil || !(status.IsNotFoundError(err) || status.IsUnavailableError(err) || status.IsDeadlineExceededError(err)) {
+		isManifestLookupCacheMiss := status.IsNotFoundError(err) ||
+			status.IsUnavailableError(err) ||
+			status.IsDeadlineExceededError(err) ||
+			errors.Is(err, context.DeadlineExceeded)
+		if ctx.Err() != nil || !isManifestLookupCacheMiss {
 			return nil, err
 		}
 	}

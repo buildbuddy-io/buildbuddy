@@ -721,43 +721,61 @@ func TestMergeQueueBranch(t *testing.T) {
 }
 
 func TestUnpackContainerImage_FallbackOnRemoteManifestDeadlineExceeded(t *testing.T) {
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "grpc status deadline exceeded",
+			err:  status.DeadlineExceededError("injected timeout"),
+		},
+		{
+			name: "raw context deadline exceeded",
+			err:  context.DeadlineExceeded,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	ctx := context.Background()
-	env := setupEnv(t)
-	loader, err := snaploader.New(env)
-	require.NoError(t, err)
+			ctx := context.Background()
+			env := setupEnv(t)
+			loader, err := snaploader.New(env)
+			require.NoError(t, err)
 
-	// Inject a timeout when checking the remote manifest action result.
-	env.SetActionCacheClient(&deadlineExceededActionCacheClient{
-		delegate: env.GetActionCacheClient(),
-	})
+			// Inject a timeout when checking the remote manifest action result.
+			env.SetActionCacheClient(&deadlineExceededActionCacheClient{
+				delegate: env.GetActionCacheClient(),
+				err:      tc.err,
+			})
 
-	workDir := testfs.MakeTempDir(t)
-	imagePath := makeRandomFile(t, workDir, "containerfs.ext4", 512*1024)
-	outDir := testfs.MakeDirAll(t, workDir, "unpacked")
+			workDir := testfs.MakeTempDir(t)
+			imagePath := makeRandomFile(t, workDir, "containerfs.ext4", 512*1024)
+			outDir := testfs.MakeDirAll(t, workDir, "unpacked")
 
-	cow, err := snaploader.UnpackContainerImage(
-		ctx,
-		loader,
-		"instance-A",
-		"gcr.io/test/container-image@sha256:0123456789abcdef",
-		imagePath,
-		outDir,
-		64*1024,
-		true, // remoteEnabled
-	)
-	require.NoError(t, err)
-	require.NotNil(t, cow)
+			cow, err := snaploader.UnpackContainerImage(
+				ctx,
+				loader,
+				"instance-A",
+				"gcr.io/test/container-image@sha256:0123456789abcdef",
+				imagePath,
+				outDir,
+				64*1024,
+				true, // remoteEnabled
+			)
+			require.NoError(t, err)
+			require.NotNil(t, cow)
+		})
+	}
 }
 
 type deadlineExceededActionCacheClient struct {
 	delegate repb.ActionCacheClient
+	err      error
 }
 
 func (c *deadlineExceededActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
-	return nil, status.DeadlineExceededError("injected timeout")
+	return nil, c.err
 }
 
 func (c *deadlineExceededActionCacheClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
