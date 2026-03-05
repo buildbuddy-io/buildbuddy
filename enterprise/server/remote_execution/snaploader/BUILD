@@ -54,7 +54,9 @@ go_test(
         "//server/util/platform",
         "//server/util/prefix",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

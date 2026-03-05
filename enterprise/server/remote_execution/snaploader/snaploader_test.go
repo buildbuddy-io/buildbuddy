@@ -24,8 +24,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -716,6 +718,50 @@ func TestMergeQueueBranch(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, snapMetadata)
+}
+
+func TestUnpackContainerImage_FallbackOnRemoteManifestDeadlineExceeded(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+
+	// Inject a timeout when checking the remote manifest action result.
+	env.SetActionCacheClient(&deadlineExceededActionCacheClient{
+		delegate: env.GetActionCacheClient(),
+	})
+
+	workDir := testfs.MakeTempDir(t)
+	imagePath := makeRandomFile(t, workDir, "containerfs.ext4", 512*1024)
+	outDir := testfs.MakeDirAll(t, workDir, "unpacked")
+
+	cow, err := snaploader.UnpackContainerImage(
+		ctx,
+		loader,
+		"instance-A",
+		"gcr.io/test/container-image@sha256:0123456789abcdef",
+		imagePath,
+		outDir,
+		64*1024,
+		true, // remoteEnabled
+	)
+	require.NoError(t, err)
+	require.NotNil(t, cow)
+}
+
+type deadlineExceededActionCacheClient struct {
+	delegate repb.ActionCacheClient
+}
+
+func (c *deadlineExceededActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.DeadlineExceededError("injected timeout")
+}
+
+func (c *deadlineExceededActionCacheClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.delegate.UpdateActionResult(ctx, req, opts...)
 }
 
 func keysWithInstanceName(t *testing.T, ctx context.Context, loader *snaploader.FileCacheLoader, instanceName string) *fcpb.SnapshotKeySet {
