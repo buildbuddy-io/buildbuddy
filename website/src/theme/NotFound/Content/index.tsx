@@ -1,10 +1,21 @@
+import { useLocation } from "@docusaurus/router";
 import Heading from "@theme/Heading";
 import Image from "@theme/IdealImage";
 import type { Props } from "@theme/NotFound/Content";
 import clsx from "clsx";
 import React from "react";
 
+import ChangelogEmptyFilterState from "../../../../theme/ChangelogListPage/ChangelogEmptyFilterState";
+
 export default function NotFoundContent({ className }: Props): JSX.Element {
+  const { pathname } = useLocation();
+
+  const changelogTagMatch = pathname.match(/\/changelog\/tags\/([^/]+)\/?$/i);
+  if (changelogTagMatch) {
+    const selectedTagUrl = `/changelog/tags/${decodeURIComponent(changelogTagMatch[1]).toLowerCase()}`;
+    return <ChangelogEmptyFilterState selectedTagUrl={selectedTagUrl} className={className} />;
+  }
+
   return (
     <main className={clsx("container margin-vert--xl", className)}>
       <div className="row row--offset-2">

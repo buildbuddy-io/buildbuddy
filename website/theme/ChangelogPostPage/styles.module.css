@@ -1,0 +1,44 @@
+.article {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.backLink {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+}
+
+.backLink:hover {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.date {
+  display: block;
+  margin-bottom: 1rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.author {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 1rem;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.article :global(.markdown) a:hover {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.tag {
+  background: var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}

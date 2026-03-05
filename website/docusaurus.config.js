@@ -75,6 +75,29 @@ const bazelBinPlugin = function (context, options) {
   };
 };
 
+// Guard analytics globals so route transitions don't crash when analytics scripts
+// are blocked or unavailable (for example, ad blockers in local/dev environments).
+const analyticsShimPlugin = function () {
+  return {
+    name: "docusaurus-analytics-shim-plugin",
+    injectHtmlTags() {
+      return {
+        headTags: [
+          {
+            tagName: "script",
+            innerHTML: `
+              window.ga = window.ga || function() { (window.ga.q = window.ga.q || []).push(arguments); };
+              window.ga.l = window.ga.l || +new Date();
+              window.dataLayer = window.dataLayer || [];
+              window.gtag = window.gtag || function() { window.dataLayer.push(arguments); };
+            `,
+          },
+        ],
+      };
+    },
+  };
+};
+
 import { themes as prismThemes } from "prism-react-renderer";
 
 module.exports = {
@@ -215,6 +238,12 @@ module.exports = {
         {
           label: "Blog",
           href: "/blog/",
+          target: "_self",
+          position: "left",
+        },
+        {
+          label: "Changelog",
+          href: "/changelog/",
           target: "_self",
           position: "left",
         },
@@ -433,6 +462,22 @@ module.exports = {
       },
     ],
     [
+      "@docusaurus/plugin-content-blog",
+      {
+        id: "changelog",
+        routeBasePath: "changelog",
+        path: "changelog",
+        postsPerPage: 25,
+        showReadingTime: false,
+        blogSidebarCount: 0,
+        authorsMapPath: "../blog/authors.yaml",
+        blogListComponent: "../theme/ChangelogListPage",
+        blogTagsPostsComponent: "../theme/FilteredChangelogListPage",
+        blogPostComponent: "../theme/ChangelogPostPage",
+        editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/changelog/",
+      },
+    ],
+    [
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
@@ -447,6 +492,7 @@ module.exports = {
         ],
       },
     ],
+    analyticsShimPlugin,
     bazelBinPlugin,
   ],
 };
