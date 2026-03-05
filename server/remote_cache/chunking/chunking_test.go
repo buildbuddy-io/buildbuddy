@@ -593,6 +593,13 @@ func (c *slowReaderOpenAndReadCache) Reader(ctx context.Context, r *rspb.Resourc
 	}, nil
 }
 
+func (c *slowReaderOpenAndReadCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	if err := sleepWithContext(ctx, c.openDelay+c.readDelay); err != nil {
+		return nil, err
+	}
+	return c.Cache.GetMulti(ctx, resources)
+}
+
 type slowReadCloser struct {
 	io.ReadCloser
 	readDelay time.Duration
