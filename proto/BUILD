@@ -63,6 +63,7 @@ proto_library(
         ":invocation_proto",
         ":iprules_proto",
         ":secrets_proto",
+        ":user_list_proto",
         ":workflow_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -970,6 +971,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":iprules_go_proto",
         ":secrets_go_proto",
+        ":user_list_go_proto",
         ":workflow_go_proto",
     ],
 )
@@ -1861,6 +1863,7 @@ ts_proto_library(
         ":iprules_ts_proto",
         ":secrets_ts_proto",
         ":timestamp_ts_proto",
+        ":user_list_ts_proto",
         ":workflow_ts_proto",
     ],
 )

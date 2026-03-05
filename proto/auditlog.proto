@@ -10,6 +10,7 @@ import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
 import "proto/secrets.proto";
+import "proto/user_list.proto";
 import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -43,6 +44,7 @@ enum ResourceType {
   SECRET = 4;
   INVOCATION = 5;
   IP_RULE = 6;
+  USER_LIST = 7;
 }
 
 enum Action {
@@ -101,6 +103,10 @@ message Entry {
     iprules.DeleteRuleRequest delete_ip_rule = 17;
     iprules.SetRulesConfigRequest set_rules_config = 18;
     workflow.InvalidateSnapshotRequest invalidate_snapshot = 19;
+    user_list.CreateUserListRequest create_user_list = 20;
+    user_list.DeleteUserListRequest delete_user_list = 21;
+    user_list.UpdateUserListRequest update_user_list = 22;
+    user_list.UpdateUserListMembershipRequest update_user_list_membership = 23;
   }
   message Request {
     APIRequest api_request = 1;

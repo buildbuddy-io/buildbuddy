@@ -2161,6 +2161,129 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	}
 }
 
+func TestUserListAuditLogs(t *testing.T) {
+	env := newTestEnv(t)
+	al := testauditlog.New(t)
+	env.SetAuditLogger(al)
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	userCtx := authUserCtx(ctx, env, t, "US1")
+	al.Reset()
+
+	// Create a user list.
+	_, err := env.GetBuildBuddyServer().CreateUserList(userCtx, &ulpb.CreateUserListRequest{
+		Name: "my-list",
+	})
+	require.NoError(t, err)
+	require.Len(t, al.GetAllEntries(), 1)
+
+	e := al.GetAllEntries()[0]
+	require.Equal(t, alpb.ResourceType_USER_LIST, e.Resource.GetType())
+	require.Equal(t, "my-list", e.Resource.GetName())
+	require.Equal(t, alpb.Action_CREATE, e.Action)
+
+	createReq := e.Request.(*ulpb.CreateUserListRequest)
+	require.Equal(t, "my-list", createReq.GetName())
+
+	userListID := e.Resource.GetId()
+
+	// Update user list.
+	al.Reset()
+	_, err = env.GetBuildBuddyServer().UpdateUserList(userCtx, &ulpb.UpdateUserListRequest{
+		UserList: &ulpb.UserList{
+			UserListId: userListID,
+			Name:       "new-name",
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, al.GetAllEntries(), 1)
+
+	e = al.GetAllEntries()[0]
+	require.Equal(t, alpb.ResourceType_USER_LIST, e.Resource.GetType())
+	require.Equal(t, userListID, e.Resource.GetId())
+	require.Equal(t, "new-name", e.Resource.GetName())
+	require.Equal(t, alpb.Action_UPDATE, e.Action)
+
+	updateReq := e.Request.(*ulpb.UpdateUserListRequest)
+	require.Equal(t, "new-name", updateReq.GetUserList().GetName())
+
+	// Delete user list.
+	al.Reset()
+	_, err = env.GetBuildBuddyServer().DeleteUserList(userCtx, &ulpb.DeleteUserListRequest{
+		UserListId: userListID,
+	})
+	require.NoError(t, err)
+	require.Len(t, al.GetAllEntries(), 1)
+
+	e = al.GetAllEntries()[0]
+	require.Equal(t, alpb.ResourceType_USER_LIST, e.Resource.GetType())
+	require.Equal(t, userListID, e.Resource.GetId())
+	require.Equal(t, "new-name", e.Resource.GetName())
+	require.Equal(t, alpb.Action_DELETE, e.Action)
+}
+
+func TestUserListMembershipAuditLogs(t *testing.T) {
+	env := newTestEnv(t)
+	al := testauditlog.New(t)
+	env.SetAuditLogger(al)
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org1.io")
+	userCtx := authUserCtx(ctx, env, t, "US1")
+
+	// Create a user list.
+	_, err := env.GetBuildBuddyServer().CreateUserList(userCtx, &ulpb.CreateUserListRequest{
+		Name: "my-list",
+	})
+	require.NoError(t, err)
+	userListID := al.GetAllEntries()[0].Resource.GetId()
+
+	// Add member.
+	{
+		al.Reset()
+		req := &ulpb.UpdateUserListMembershipRequest{
+			UserListId: userListID,
+			Update: []*ulpb.UpdateUserListMembershipRequest_Update{{
+				UserId: &uidpb.UserId{Id: "US2"},
+				Action: ulpb.UpdateUserListMembershipRequest_ADD,
+			}},
+		}
+		_, err = env.GetBuildBuddyServer().UpdateUserListMembership(userCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_USER_LIST, e.Resource.GetType())
+		require.Equal(t, userListID, e.Resource.GetId())
+		require.Equal(t, "my-list", e.Resource.GetName())
+		require.Equal(t, alpb.Action_UPDATE_MEMBERSHIP, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	// Remove member.
+	{
+		al.Reset()
+		req := &ulpb.UpdateUserListMembershipRequest{
+			UserListId: userListID,
+			Update: []*ulpb.UpdateUserListMembershipRequest_Update{{
+				UserId: &uidpb.UserId{Id: "US2"},
+				Action: ulpb.UpdateUserListMembershipRequest_REMOVE,
+			}},
+		}
+		_, err = env.GetBuildBuddyServer().UpdateUserListMembership(userCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_USER_LIST, e.Resource.GetType())
+		require.Equal(t, userListID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_UPDATE_MEMBERSHIP, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+}
+
 func TestCapabilitiesForUserRole(t *testing.T) {
 	for _, test := range []struct {
 		Name                 string
