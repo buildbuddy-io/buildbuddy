@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -27,15 +28,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
@@ -65,17 +67,17 @@ func New(env environment.Env) (*runnerService, error) {
 
 // checkPreconditions verifies the RunRequest is not missing any required params.
 func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
-	if req.GetGitRepo().GetRepoUrl() == "" {
-		return status.InvalidArgumentError("A repo url is required.")
-	}
 	if req.GetBazelCommand() == "" && len(req.GetSteps()) == 0 {
 		return status.InvalidArgumentError("A command to run is required.")
 	}
 	if req.GetBazelCommand() != "" && len(req.GetSteps()) > 0 {
 		return status.InvalidArgumentError("Only one of `BazelCommand` or `Steps` should be specified.")
 	}
-	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
-		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+	// Branch/commit are only required when a repo URL is specified
+	if req.GetGitRepo().GetRepoUrl() != "" {
+		if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
+			return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+		}
 	}
 	return nil
 }
@@ -90,8 +92,28 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
+	// The top level OS and arch fields are deprecated, so prefer the platform property values.
+	os := req.GetOs()
+	arch := req.GetArch()
+	if osProp := getExecProperty(req.GetExecProperties(), platform.OperatingSystemPropertyName); osProp != "" {
+		os = osProp
+	} else if os != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.OperatingSystemPropertyName,
+			Value: req.GetOs(),
+		})
+	}
+	if archProp := getExecProperty(req.GetExecProperties(), platform.CPUArchitecturePropertyName); archProp != "" {
+		arch = archProp
+	} else if arch != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.CPUArchitecturePropertyName,
+			Value: req.GetArch(),
+		})
+	}
+
 	in := instanceName(req)
-	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, req.GetOs(), req.GetArch())
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, os, arch)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
@@ -107,7 +129,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	repoURL := req.GetGitRepo().GetRepoUrl()
-	if !req.GetGitRepo().GetUseSystemGitCredentials() {
+	if repoURL != "" && !req.GetGitRepo().GetUseSystemGitCredentials() {
 		// Use https for git operations.
 		u, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
@@ -151,21 +173,33 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
-		"--target_repo_url=" + repoURL,
-		"--pushed_repo_url=" + repoURL,
-		"--pushed_branch=" + req.GetRepoState().GetBranch(),
 		"--invocation_id=" + invocationID,
-		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
 		"--timeout=" + timeout.String(),
 		"--remote_instance_name=" + in,
+	}
+	if repoURL != "" {
+		args = append(args,
+			"--target_repo_url="+repoURL,
+			"--pushed_repo_url="+repoURL,
+			"--pushed_branch="+req.GetRepoState().GetBranch(),
+			"--commit_sha="+req.GetRepoState().GetCommitSha(),
+			"--target_branch="+req.GetRepoState().GetBranch(),
+		)
+	} else {
+		args = append(args, "--skip_auto_checkout")
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
 	}
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
+	}
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
+		if bazelCommandOverride != "" {
+			args = append(args, "--bazel_command="+bazelCommandOverride)
+		}
 	}
 	args = append(args, req.GetRunnerFlags()...)
 
@@ -198,7 +232,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Containers/VMs aren't supported on darwin - default to bare execution
 	// and use the action workspace as the working directory.
-	if req.GetOs() == "darwin" || isolationType == "none" {
+	if os == "darwin" || isolationType == "none" {
 		wd = ""
 		image = ""
 		isolationType = "none"
@@ -242,19 +276,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
 			},
 		},
-	}
-
-	if req.GetOs() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.OperatingSystemPropertyName,
-			Value: req.GetOs(),
-		})
-	}
-	if req.GetArch() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.CPUArchitecturePropertyName,
-			Value: req.GetArch(),
-		})
 	}
 
 	for k, v := range req.GetEnv() {
@@ -332,7 +353,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	}
 	// If the token is still not set, try fetching the token from a Workflow
 	// configured for the same repo.
-	if accessToken == "" {
+	if accessToken == "" && req.GetGitRepo().GetRepoUrl() != "" {
 		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, status.WrapError(err, "normalize git repo url")
@@ -348,7 +369,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 
 	// Use env override headers for credentials.
 	envOverrides := []string{
-		"BUILDBUDDY_API_KEY=" + apiKey.Value,
+		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		"REPO_USER=" + req.GetGitRepo().GetUsername(),
 		"REPO_TOKEN=" + accessToken,
 	}
@@ -474,12 +495,13 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
-	if req.GetAsync() {
+
+	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_QUEUED {
 		return res, nil
 	}
 
 	executionID := op.GetName()
-	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
+	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID, req.GetWaitUntil()); err != nil {
 		return nil, err
 	}
 
@@ -488,7 +510,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 // waitUntilInvocationExists waits until the specified invocationID exists or
 // an error is encountered. Borrowed from workflow.go.
-func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string) error {
+func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string, waitUntil rnpb.WaitCondition) error {
 	executionClient := env.GetRemoteExecutionClient()
 	if executionClient == nil {
 		return status.UnimplementedError("Missing remote execution client.")
@@ -499,7 +521,7 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	}
 
 	errCh := make(chan error)
-	opCh := make(chan *longrunning.Operation)
+	opCh := make(chan *longrunningpb.Operation)
 
 	waitStream, err := executionClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 		Name: executionID,
@@ -538,8 +560,13 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			return err
 		case <-time.After(1 * time.Second):
 			if executing {
-				_, err := invocationDB.LookupInvocation(ctx, invocationID)
-				if err == nil {
+				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
+				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
+					return nil
+				}
+				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETED &&
+					(inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) ||
+						inv.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)) {
 					return nil
 				}
 			}

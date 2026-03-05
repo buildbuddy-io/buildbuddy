@@ -6,28 +6,38 @@ import error_service from "../errors/error_service";
 import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 
+const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
+
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
-  return rsp.repoUrls.filter((url) => url === repoUrl).length > 0;
+  return rsp.repos.some((repo) => repo.repoUrl === repoUrl);
 }
 
 export function triggerRemoteRun(
   invocationModel: InvocationModel,
   command: string,
   autoOpenChild: boolean,
-  platformProps: Map<string, string> | null
+  platformProps: Map<string, string> | null,
+  runnerFlags: string[] = []
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
-  if (platformProps) {
-    for (let [key, value] of platformProps) {
-      execProps.push(
-        new build.bazel.remote.execution.v2.Platform.Property({
-          name: key,
-          value: value,
-        })
-      );
-    }
+
+  if (!platformProps) {
+    platformProps = new Map<string, string>();
+  }
+
+  if (!platformProps.has("container-image")) {
+    platformProps.set("container-image", DEFAULT_CONTAINER_IMAGE);
+  }
+
+  for (let [key, value] of platformProps) {
+    execProps.push(
+      new build.bazel.remote.execution.v2.Platform.Property({
+        name: key,
+        value: value,
+      })
+    );
   }
 
   const request = new runner.RunRequest({
@@ -53,6 +63,7 @@ export function triggerRemoteRun(
       GIT_BASE_BRANCH: "main",
     },
     execProperties: execProps,
+    runnerFlags: runnerFlags,
   });
 
   rpcService.service

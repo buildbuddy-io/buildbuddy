@@ -7,7 +7,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:remote_execution_go_proto",
         "//server/backends/blobstore",
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
@@ -16,7 +15,6 @@ go_library(
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_client",
-        "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",
@@ -29,7 +27,6 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/testing/flags",
-        "//server/util/vtprotocodec",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//test/bufconn",

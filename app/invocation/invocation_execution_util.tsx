@@ -48,11 +48,15 @@ export function getExecutionStatus(execution: execution_stats.Execution): Execut
   return STATUSES_BY_STAGE[execution.stage];
 }
 
+function isZeroTimestamp(ts: google_ts.protobuf.ITimestamp) {
+  return !ts.seconds && !ts.nanos;
+}
+
 export function subtractTimestamp(
   timestampA?: google_ts.protobuf.ITimestamp | null,
   timestampB?: google_ts.protobuf.ITimestamp | null
 ) {
-  if (!timestampA || !timestampB) return NaN;
+  if (!timestampA || !timestampB || isZeroTimestamp(timestampA) || isZeroTimestamp(timestampB)) return NaN;
   let microsA = +(timestampA.seconds ?? 0) * 1000000 + +(timestampA.nanos ?? 0) / 1000;
   let microsB = +(timestampB.seconds ?? 0) * 1000000 + +(timestampB.nanos ?? 0) / 1000;
   return microsA - microsB;

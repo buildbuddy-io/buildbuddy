@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
@@ -15,10 +14,10 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -151,9 +150,57 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 				},
 			}}},
 		},
+		{
+			name: "redact passwords in urls in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:passwordthatshouldberedacted@repo.example.com/package.tar.gz",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:<REDACTED>@repo.example.com/package.tar.gz",
+				},
+			}}},
+		},
+		{
+			name: "redact _json_key_base64 credentials in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:totallysecretkey@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:<REDACTED>@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in finished failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:secret@github.com/org/repo.git",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:<REDACTED>@github.com/org/repo.git",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in aborted description",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:passwordthatshouldberedacted@example.com/resource",
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:<REDACTED>@example.com/resource",
+			}}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(te)
+			redactor := redact.NewStreamingRedactor()
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -161,8 +208,70 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 	}
 }
 
+func TestRedactEnvVar(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "unquoted var assignment",
+			input:    "--action_env=FOO=bar",
+			expected: "--action_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "double quoted var assignment",
+			input:    `--client_env="FOO=bar baz"`,
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "single quoted var assignment",
+			input:    "--repo_env='FOO=bar=baz'",
+			expected: "--repo_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "multiline quoted var assignment",
+			input:    "--client_env=\"FOO=bar\nbaz\"",
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "no equals sign",
+			input:    "--host_action_env",
+			expected: "--host_action_env",
+		},
+		{
+			name:     "empty var value",
+			input:    "--action_env=FOO=",
+			expected: "--action_env=FOO=",
+		},
+		{
+			name:     "inherit var",
+			input:    "--action_env=FOO",
+			expected: "--action_env=FOO",
+		},
+		{
+			name:     "clear var",
+			input:    "--repo_env==FOO",
+			expected: "--repo_env==FOO",
+		},
+		{
+			name:     "boolean value",
+			input:    "--repo_env=REPIN=TRUE",
+			expected: "--repo_env=REPIN=TRUE",
+		},
+		{
+			name:     "boolean-like value",
+			input:    "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+			expected: "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.RedactEnvVar(tc.input))
+		})
+	}
+}
+
 func TestRedactEntireSections(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -202,7 +311,7 @@ func TestRedactEntireSections(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(te)
+			redactor := redact.NewStreamingRedactor()
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -211,7 +320,6 @@ func TestRedactEntireSections(t *testing.T) {
 }
 
 func TestRedactRemoteHeaders(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -273,7 +381,7 @@ func TestRedactRemoteHeaders(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(te)
+			redactor := redact.NewStreamingRedactor()
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -282,7 +390,6 @@ func TestRedactRemoteHeaders(t *testing.T) {
 }
 
 func TestRemoveRepoURLCredentials(t *testing.T) {
-	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
@@ -327,7 +434,7 @@ func TestRemoveRepoURLCredentials(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(te)
+			redactor := redact.NewStreamingRedactor()
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -361,7 +468,7 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
@@ -411,7 +518,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
 			"--flag=@repo//package",
@@ -448,8 +555,177 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		optionsParsed.ExplicitCmdLine)
 }
 
+func TestRedactMetadata_OptionsParsed_RedactsMultilineEnvVar(t *testing.T) {
+	redactor := redact.NewStreamingRedactor()
+	const multiLineValue = `this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`
+	flagValue := "--action_env=MULTILINE_VAR=" + multiLineValue
+	optionsParsed := &bespb.OptionsParsed{
+		CmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+	}
+
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
+	})
+	require.NoError(t, err)
+
+	expected := "--action_env=MULTILINE_VAR=<REDACTED>"
+	require.Len(t, optionsParsed.CmdLine, 3)
+	require.Len(t, optionsParsed.ExplicitCmdLine, 3)
+	assert.Equal(t, expected, optionsParsed.CmdLine[2])
+	assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
+	assert.NotContains(t, optionsParsed.CmdLine[2], "OPENSSH PRIVATE KEY")
+	assert.NotContains(t, optionsParsed.ExplicitCmdLine[2], "OPENSSH PRIVATE KEY")
+}
+
+func TestRedactCmdLine(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		input  []string
+		expect []string
+	}{
+		{
+			name: "multi line env var",
+			input: []string{
+				"bazel",
+				"build",
+				`--action_env=MULTILINE_VAR=this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`,
+			},
+			expect: []string{
+				"bazel",
+				"build",
+				"--action_env=MULTILINE_VAR=<REDACTED>",
+			},
+		},
+		{
+			name: "single line env var",
+			input: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=secret",
+			},
+			expect: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=<REDACTED>",
+			},
+		},
+		{
+			name: "quoted env var",
+			input: []string{
+				"bazel",
+				`--client_env="FOO=bar baz"`,
+			},
+			expect: []string{
+				"bazel",
+				`--client_env="FOO=<REDACTED>"`,
+			},
+		},
+		{
+			name: "remote headers",
+			input: []string{
+				"bazel",
+				"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_downloader_header=harmless_string_that_should_be_redacted_anyhow",
+				"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+			},
+			expect: []string{
+				"bazel",
+				"--remote_header=<REDACTED>",
+				"--remote_cache_header=<REDACTED>",
+				"--remote_exec_header=<REDACTED>",
+				"--remote_downloader_header=<REDACTED>",
+				"--bes_header=<REDACTED>",
+			},
+		},
+		{
+			name: "explicit command line",
+			input: []string{
+				"bazel",
+				`--build_metadata=EXPLICIT_COMMAND_LINE=["SECRET"]`,
+			},
+			expect: []string{
+				"bazel",
+				"",
+			},
+		},
+		{
+			name: "known multi flag url secret",
+			input: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:password@domain,BAZ=",
+			},
+			expect: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@domain,BAZ=",
+			},
+		},
+		{
+			name: "flag with url secret",
+			input: []string{
+				"bazel",
+				"--some_other_flag=url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"--some_other_flag=url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "plain token url secret",
+			input: []string{
+				"bazel",
+				"url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "safe tokens unchanged",
+			input: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+			expect: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := append([]string(nil), tc.input...)
+			redact.RedactCmdLine(tokens)
+			require.Equal(t, tc.expect, tokens)
+		})
+	}
+}
+
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
 			"ALLOW_ENV":             "SHELL",
@@ -469,7 +745,7 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	workspaceStatus := &bespb.WorkspaceStatus{
 		Item: []*bespb.WorkspaceStatus_Item{
 			{Key: "REPO_URL", Value: "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url"},
@@ -524,7 +800,7 @@ func TestRedactAPIKey(t *testing.T) {
 			},
 		}}},
 	}
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	ctx := context.WithValue(context.Background(), "x-buildbuddy-api-key", apiKey)
 
 	for _, e := range events {
@@ -603,7 +879,7 @@ func TestRedactRunResidual(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			redactor := redact.NewStreamingRedactor()
 
 			chunkList := &clpb.ChunkList{
 				Chunk: tc.given,
@@ -669,9 +945,72 @@ func TestRedactTxt(t *testing.T) {
 			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
 		},
+		{
+			name: "multiline environment variable - single quoted private key",
+			txt: "--test_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
+				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
+				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
+			expected: "--test_env=PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - double quoted certificate",
+			txt: "--action_env=\"MY_CERT=-----BEGIN CERTIFICATE-----\n" +
+				"xYzAbC123dEfGhI456jKlMnO789pQrStU012vWxYz345AbCdE\n" +
+				"fakeMultiLineCertificateDataHereForTestingPurposesOnly\n" +
+				"-----END CERTIFICATE-----\" --action_env=\"NORMAL_VAR=test123\"",
+			expected: "--action_env=MY_CERT=<REDACTED> --action_env=NORMAL_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - single quoted with trailing comment",
+			txt: "--repo_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"madeUpSecretKey999888777666555444333222111000ZZZYYY\n" +
+				"-----END PRIVATE KEY-----' # gitleaks:allow",
+			expected: "--repo_env=PRIVATE_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - mixed with unquoted",
+			txt: "--test_env=SIMPLE_VAR=simple_value --test_env='MULTILINE_SECRET=line1\n" +
+				"line2\n" +
+				"line3' --action_env=ANOTHER_VAR=another_value",
+			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
+func TestRedactTextWithValues(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		txt             string
+		redactionValues []string
+		expected        string
+	}{
+		{
+			name:            "applies default redactions and custom values",
+			txt:             "ok --remote_header=x-buildbuddy-api-key=secret token=super_secret and --repo_env=AWS_SECRET_ACCESS_KEY=abc",
+			redactionValues: []string{"super_secret"},
+			expected:        "ok --remote_header=<REDACTED> token=<REDACTED> and --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED>",
+		},
+		{
+			name:            "redacts overlapping values longest first",
+			txt:             "token=abcdef short=abc",
+			redactionValues: []string{"abc", "abcdef"},
+			expected:        "token=<REDACTED> short=<REDACTED>",
+		},
+		{
+			name:            "ignores empty values and deduplicates",
+			txt:             "x=secret y=secret",
+			redactionValues: []string{"", "secret", "secret"},
+			expected:        "x=<REDACTED> y=<REDACTED>",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactTextWithValues(tc.txt, tc.redactionValues)
 			require.Equal(t, tc.expected, redacted)
 		})
 	}
@@ -715,7 +1054,7 @@ func TestRedactAPIKeys(t *testing.T) {
 					},
 				},
 			}
-			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			redactor := redact.NewStreamingRedactor()
 			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())

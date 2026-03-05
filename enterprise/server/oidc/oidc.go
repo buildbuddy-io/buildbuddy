@@ -222,10 +222,9 @@ type apiKeyGroupCacheEntry struct {
 type OpenIDAuthenticator struct {
 	env                  environment.Env
 	myURL                *url.URL
-	parseClaims          func(token string) (*claims.Claims, error)
+	parseClaims          func(ctx context.Context, token string) (*claims.Claims, error)
 	authenticators       []authenticator
 	enableAnonymousUsage bool
-	adminGroupID         string
 }
 
 func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, authConfigs []OauthProvider, authURL *url.URL) ([]authenticator, error) {
@@ -295,7 +294,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 	return authenticators, nil
 }
 
-func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []OauthProvider, adminGroupID string) (*OpenIDAuthenticator, error) {
+func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []OauthProvider) (*OpenIDAuthenticator, error) {
 	authenticators, err := createAuthenticatorsFromConfig(
 		ctx,
 		env,
@@ -306,22 +305,17 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	claimsFunc := claims.ParseClaims
-	claimsCache, err := claims.NewClaimsCache()
+	claimsParser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
 	if err != nil {
 		return nil, err
-	}
-	if claimsCache != nil {
-		claimsFunc = claimsCache.Get
 	}
 
 	return &OpenIDAuthenticator{
 		env:                  env,
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
-		parseClaims:          claimsFunc,
+		parseClaims:          claimsParser.Parse,
 		enableAnonymousUsage: AnonymousUsageEnabled(),
-		adminGroupID:         adminGroupID,
 	}, nil
 }
 
@@ -330,7 +324,7 @@ func AnonymousUsageEnabled() bool {
 }
 
 func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
-	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/, "")
+	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +332,7 @@ func newForTesting(ctx context.Context, env environment.Env, testAuthenticator a
 	return oia, nil
 }
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, adminGroupID string) (*OpenIDAuthenticator, error) {
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
 	authConfigs := make([]OauthProvider, len(*oauthProviders))
 	copy(authConfigs, *oauthProviders)
 	if selfauth.Enabled() {
@@ -356,16 +350,12 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, adminGroup
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	a, err := newOpenIDAuthenticator(ctx, env, authConfigs, adminGroupID)
+	a, err := newOpenIDAuthenticator(ctx, env, authConfigs)
 	if err != nil {
 		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
 	}
 
 	return a, err
-}
-
-func (a *OpenIDAuthenticator) AdminGroupID() string {
-	return a.adminGroupID
 }
 
 func (a *OpenIDAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/runscript"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
+	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
@@ -30,6 +31,7 @@ import (
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
 	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
+	streamoptdef "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
 )
 
@@ -151,6 +153,7 @@ func run() (exitCode int, err error) {
 		// Handle help command if applicable.
 		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 		StartupDebug(start)
+		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name(), streamoptdef.OnStreamRunLogsFailure.Name())
 		return runHelp(helpArgs)
 	}
 
@@ -288,7 +291,7 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 //
 // originalArgs contains the command as originally typed. We pass it as
 // EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
-func handleBazelCommand(start time.Time, args []string, originalArgs []string) (int, error) {
+func handleBazelCommand(start time.Time, args []string, originalArgs []string) (exitCode int, err error) {
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, args...)); exitCode >= 0 || err != nil {
 		return exitCode, err
@@ -301,7 +304,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	}
 
 	var scriptPath string
-	var exitCode int
+	var streamRunLogsOpts *stream_run_logs.Opts
 	defer func() {
 		// Remove tempdir. Need to do this before invoking the run script
 		// (if applicable), since the run script will replace this process.
@@ -309,11 +312,15 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 		// Invoke the run script only if the build succeeded.
 		if exitCode == 0 && scriptPath != "" {
-			exitCode, err = runscript.Invoke(scriptPath)
+			if streamRunLogsOpts != nil {
+				exitCode, err = runscript.InvokeWithLogStreaming(scriptPath, *streamRunLogsOpts)
+			} else {
+				exitCode, err = runscript.Invoke(scriptPath)
+			}
 		}
 	}()
 
-	plugins, bazelArgs, execArgs, sidecar, err := setup.Setup(args, tempDir)
+	plugins, bazelArgs, execArgs, sidecar, besBackend, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, err
 	}
@@ -330,12 +337,18 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		bazelArgs = picker.HandlePicker(bazelArgs)
 	}
 
+	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, besBackend)
+	if err != nil {
+		return 1, status.WrapErrorf(err, "error configuring run log streaming")
+	}
+
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
 	bazelArgs, scriptPath, err = runscript.Configure(bazelArgs)
 	if err != nil {
 		return 1, err
 	}
+
 	// Append metadata just before running bazelisk.
 	// Note, this means plugins cannot modify this metadata.
 	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs, originalArgs)
@@ -366,7 +379,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	watcher.Pause()
 	defer watcher.Unpause()
 	for _, p := range plugins {
-		if err := p.PostBazel(outputPath); err != nil {
+		if err := p.PostBazel(outputPath, exitCode); err != nil {
 			return 1, err
 		}
 	}

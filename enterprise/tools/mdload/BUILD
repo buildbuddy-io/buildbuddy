@@ -4,6 +4,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "mdload_lib",
     srcs = ["mdload.go"],
@@ -20,6 +22,7 @@ go_library(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/monitoring",
@@ -82,5 +85,3 @@ oci_push(
     remote_tags = "//deployment:oci_tag_file",
     repository = "gcr.io/flame-build/mdload-oci",
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

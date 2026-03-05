@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -14,11 +13,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,7 +32,8 @@ import (
 )
 
 var (
-	pool = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", false, "Whether the executor supports proactive task cancellation.", flag.Internal)
 )
 
 const (
@@ -53,7 +55,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator interfaces.XcodeLocator, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -64,10 +66,15 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 	}
 
 	// Get supported isolation types from platform configuration
-	executorProps := platform.GetExecutorProperties()
+	executorProps := executorplatform.GetExecutorProperties()
 	supportedTypes := make([]string, 0, len(executorProps.SupportedIsolationTypes))
 	for _, t := range executorProps.SupportedIsolationTypes {
 		supportedTypes = append(supportedTypes, string(t))
+	}
+
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		return nil, err
 	}
 
 	return &scpb.ExecutionNode{
@@ -76,8 +83,9 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		Port:                      1,
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
-		AssignableCustomResources: resources.GetAllocatedCustomResources(),
-		Os:                        resources.GetOS(),
+		AssignableCustomResources: customResources,
+		OsFamily:                  resources.GetOSFamily(),
+		OsDisplayName:             resources.GetOSDisplayName(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
 		Version:                   version.Tag(),
@@ -85,6 +93,10 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		ExecutorHostId:            executorHostID,
 		SupportedIsolationTypes:   supportedTypes,
 		CurrentQueueLength:        0,
+		XcodeVersions:             xcodeLocator.Versions(),
+		XcodeSdks:                 xcodeLocator.SDKs(),
+		// TODO: hard-code this to true once it's battle-tested.
+		SupportsProactiveCancellation: *proactiveCancellationEnabled,
 	}, nil
 }
 
@@ -207,9 +219,13 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			requestMoreWorkTicker.Reset(moreWorkResponse.GetDelay().AsDuration())
 			return false, nil
 		}
+		if cancellationRequest := msg.GetCancelTaskReservationRequest(); cancellationRequest != nil {
+			r.taskScheduler.CancelTaskReservation(ctx, cancellationRequest.GetTaskId())
+			return false, nil
+		}
 		if msg.EnqueueTaskReservationRequest == nil {
 			out, _ := prototext.Marshal(msg)
-			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
+			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a supported payload type:\n%s", string(out))
 		}
 		requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
 		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())
@@ -389,7 +405,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	} else if resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, env.GetXcodeLocator(), options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}

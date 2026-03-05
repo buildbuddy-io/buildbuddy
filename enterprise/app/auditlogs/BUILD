@@ -1,5 +1,7 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 exports_files(["auditlogs.css"])
 
 ts_library(
@@ -24,5 +26,3 @@ ts_library(
         "//proto:auditlog_ts_proto",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

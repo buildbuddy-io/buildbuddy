@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -59,8 +60,17 @@ func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) 
 			// Unary RPC
 			actualReqType = methodFunc.In(1)
 			actualResType = methodFunc.Out(0)
+		} else if methodFunc.NumIn() == 1 {
+			// Client-streaming RPC: (stream) -> error
+			streamType := methodFunc.In(0)
+			recvMethod, ok := streamType.MethodByName("Recv")
+			require.True(t, ok)
+			actualReqType = recvMethod.Type.Out(0)
+			sendAndCloseMethod, ok := streamType.MethodByName("SendAndClose")
+			require.True(t, ok)
+			actualResType = sendAndCloseMethod.Type.In(0)
 		} else {
-			// Server-streaming RPC
+			// Server-streaming RPC: (req, stream) -> error
 			actualReqType = methodFunc.In(0)
 			streamType := methodFunc.In(1)
 			sendMethod, ok := streamType.MethodByName("Send")
@@ -147,8 +157,8 @@ func TestAllowedRPCs(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			users := testauth.TestUsers("US1", "GR1")
-			ta := testauth.NewTestAuthenticator(users)
-			ta.ServerAdminGroupID = test.ServerAdminGroupID
+			ta := testauth.NewTestAuthenticator(t, users)
+			flags.Set(t, "auth.admin_group_id", test.ServerAdminGroupID)
 			env.SetAuthenticator(ta)
 			u := users["US1"].(*testauth.TestUser)
 			u.Capabilities = test.Capabilities

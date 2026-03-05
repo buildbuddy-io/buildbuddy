@@ -5,9 +5,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -40,7 +42,7 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
-	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 0, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
+	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 15*time.Second, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 	region                  = flag.String("executor.region", "", "Region metadata associated with executions.")
 	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU sizes up to the nearest whole number.")
@@ -145,13 +147,13 @@ func newTaskQueue(clock clockwork.Clock) *taskQueue {
 	}
 }
 
-func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRequest {
 	reservations := make([]*scpb.EnqueueTaskReservationRequest, 0, len(t.taskIDs))
 
 	for e := t.pqs.Front(); e != nil; e = e.Next() {
 		pq, ok := e.Value.(*groupPriorityQueue)
 		if !ok {
-			log.Error("not a *groupPriorityQueue!??!")
+			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			continue
 		}
 		for _, t := range pq.GetAll() {
@@ -165,7 +167,7 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 // Enqueue enqueues a task reservation request into the task queue.
 // If the task is already enqueued, it will not be enqueued again.
 // Returns true if the task was enqueued, false if it was already enqueued.
-func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
+func (t *taskQueue) Enqueue(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 	enqueuedAt := t.clock.Now()
 
 	// Don't enqueue the same task twice to avoid inflating queue length
@@ -181,7 +183,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		pq, ok = el.Value.(*groupPriorityQueue)
 		if !ok {
 			// Why would this ever happen?
-			log.Error("not a *groupPriorityQueue!??!")
+			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			return false
 		}
 	} else {
@@ -281,14 +283,14 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 	return req
 }
 
-func (t *taskQueue) Peek() *queuedTask {
+func (t *taskQueue) Peek(ctx context.Context) *queuedTask {
 	if t.currentPQ == nil {
 		return nil
 	}
 	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
-		log.Error("not a *groupPriorityQueue!??!")
+		log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 		return nil
 	}
 	v, _ := pq.Peek()
@@ -320,6 +322,22 @@ func (t *taskQueue) HasTask(taskID string) bool {
 	return ok
 }
 
+// findTask returns the position of the task with the given ID, or nil if not found.
+func (t *taskQueue) FindTask(taskID string) *queuePosition {
+	// Do a quick map lookup to avoid more expensive iteration if we know the
+	// task doesn't exist.
+	if !t.HasTask(taskID) {
+		return nil
+	}
+	it := t.Iterator()
+	for task := it.Next(); task != nil; task = it.Next() {
+		if task.GetTaskId() == taskID {
+			return it.Current()
+		}
+	}
+	return nil
+}
+
 type Options struct {
 	RAMBytesCapacityOverride  int64
 	CPUMillisCapacityOverride int64
@@ -347,13 +365,14 @@ type PriorityTaskScheduler struct {
 
 	mu                      sync.Mutex
 	q                       *taskQueue
-	activeTaskCancelFuncs   map[*context.CancelFunc]struct{}
+	activeTaskCancelFuncs   sync.WaitGroup
+	activeCancelFuncsCount  atomic.Int64
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) (*PriorityTaskScheduler, error) {
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -364,23 +383,26 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	}
 	customResourcesCapacity := map[string]customResourceCount{}
 	customResourcesUsed := map[string]customResourceCount{}
-	for _, r := range resources.GetAllocatedCustomResources() {
+	customResourcesAllocated, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range customResourcesAllocated {
 		customResourcesCapacity[r.GetName()] = customResource(r.GetValue())
 		customResourcesUsed[r.GetName()] = 0
 	}
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
-		env:                   env,
-		q:                     newTaskQueue(env.GetClock()),
-		exec:                  exec,
-		taskLeaser:            taskLeaser,
-		clock:                 env.GetClock(),
-		runnerPool:            runnerPool,
-		checkQueueSignal:      make(chan struct{}, 64),
-		rootContext:           rootContext,
-		rootCancel:            rootCancel,
-		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
-		shuttingDown:          false,
+		env:              env,
+		q:                newTaskQueue(env.GetClock()),
+		exec:             exec,
+		taskLeaser:       taskLeaser,
+		clock:            env.GetClock(),
+		runnerPool:       runnerPool,
+		checkQueueSignal: make(chan struct{}, 64),
+		rootContext:      rootContext,
+		rootCancel:       rootCancel,
+		shuttingDown:     false,
 		resourceCapacity: &resourceCounts{
 			RAMBytes:  ramBytesCapacity,
 			CPUMillis: cpuMillisCapacity,
@@ -411,7 +433,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 
 	log.CtxInfof(qes.rootContext, "Initialized task scheduler: %s", qes.stats())
 
-	return qes
+	return qes, nil
 }
 
 func (q *PriorityTaskScheduler) enrichContext(ctx context.Context) context.Context {
@@ -460,15 +482,8 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	}()
 
 	// Wait for all active tasks to finish.
-	for {
-		q.mu.Lock()
-		activeTasks := len(q.activeTaskCancelFuncs)
-		q.mu.Unlock()
-		if activeTasks == 0 {
-			break
-		}
-		q.clock.Sleep(100 * time.Millisecond)
-	}
+	q.activeTaskCancelFuncs.Wait()
+
 	// Since all tasks have finished, no new runners can be created, and it is now
 	// safe to wait for all pending cleanup jobs to finish.
 	q.runnerPool.Wait()
@@ -477,6 +492,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	ctx = q.enrichContext(ctx)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 
 	q.mu.Lock()
@@ -509,7 +525,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 
 	enqueueFn := func() {
 		q.mu.Lock()
-		ok := q.q.Enqueue(req)
+		ok := q.q.Enqueue(ctx, req)
 		q.mu.Unlock()
 		if !ok {
 			// Already enqueued. This normally shouldn't happen since we checked
@@ -532,6 +548,32 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 		enqueueFn()
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
+}
+
+func (q *PriorityTaskScheduler) remove(taskID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if p := q.q.FindTask(taskID); p != nil {
+		q.q.DequeueAt(p)
+		return true
+	}
+	return false
+
+}
+
+func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskID string) {
+	ctx = q.enrichContext(ctx)
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+	if removed := q.remove(taskID); removed {
+		log.CtxInfof(ctx, "Removed completed task from queue")
+		// If the task we removed was at the head of the queue, the task behind
+		// it in the queue might now be schedulable. Wake up the scheduler to
+		// check for that.
+		select {
+		case q.checkQueueSignal <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
@@ -562,6 +604,7 @@ func (q *PriorityTaskScheduler) publishOperation(ctx context.Context, executionI
 }
 
 func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
+	ctx = q.enrichContext(ctx)
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
@@ -599,7 +642,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
-	q.activeTaskCancelFuncs[cancel] = struct{}{}
+	q.activeCancelFuncsCount.Add(1)
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
@@ -610,12 +653,17 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
+		for name, count := range q.resourcesUsed.Custom {
+			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
+				metrics.CustomResourceNameLabel: name,
+			}).Set(float64(count) / 1e6)
+		}
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
 }
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
-	delete(q.activeTaskCancelFuncs, cancel)
+	q.activeCancelFuncsCount.Add(-1)
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
@@ -626,6 +674,11 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
+		for name, count := range q.resourcesUsed.Custom {
+			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
+				metrics.CustomResourceNameLabel: name,
+			}).Set(float64(count) / 1e6)
+		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
 }
@@ -646,43 +699,43 @@ func (q *PriorityTaskScheduler) stats() string {
 		q.resourcesUsed.CPUMillis, q.resourceCapacity.CPUMillis, cpuMillisRemaining,
 		q.resourcesUsed.RAMBytes, q.resourceCapacity.RAMBytes, ramBytesRemaining,
 		customResourcesDesc,
-		len(q.activeTaskCancelFuncs), q.q.Len())
+		q.activeCancelFuncsCount.Load(), q.q.Len())
 }
 
-// canFitTask returns whether the task can fit on the executor, and whether the
-// task is eligible to be skipped due to only being blocked on custom resources.
-// Only tasks which _don't_ need custom resources may skip the task in this
-// case.
-func (q *PriorityTaskScheduler) canFitTask(res *queuedTask) (canFit bool, isSkippable bool) {
+// canFitTask returns whether the task can fit, given the resource capacity and
+// resource reservations. "Reserved" in this context means the resources that
+// are currently assigned to executing tasks, plus the resources needed by tasks
+// that are in front of this task in the queue.
+func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *resourceCounts) bool {
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one
 	// task to run at a time. Otherwise fall through to the logic below.
-	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
-		return false, false
+	if q.exclusiveTaskScheduling && q.activeCancelFuncsCount.Load() >= 1 {
+		return false
 	}
 
 	size := res.GetTaskSize()
 
-	availableRAM := q.resourceCapacity.RAMBytes - q.resourcesUsed.RAMBytes
+	availableRAM := q.resourceCapacity.RAMBytes - reservedResources.RAMBytes
 	if size.GetEstimatedMemoryBytes() > availableRAM {
-		return false, false
+		return false
 	}
 
-	availableCPU := q.resourceCapacity.CPUMillis - q.resourcesUsed.CPUMillis
+	availableCPU := q.resourceCapacity.CPUMillis - reservedResources.CPUMillis
 	if size.GetEstimatedMilliCpu() > availableCPU {
-		return false, false
+		return false
 	}
 
 	for _, r := range size.GetCustomResources() {
-		used, ok := q.resourcesUsed.Custom[r.GetName()]
+		reserved, ok := reservedResources.Custom[r.GetName()]
 		if !ok {
 			// The scheduler server should never send us tasks that require
 			// resources we haven't set up in the config.
 			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
 			continue
 		}
-		available := q.resourceCapacity.Custom[r.GetName()] - used
+		available := q.resourceCapacity.Custom[r.GetName()] - reserved
 		if customResource(r.GetValue()) > available {
-			return false, true
+			return false
 		}
 	}
 
@@ -695,16 +748,16 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask) (canFit bool, isSkip
 		alert.UnexpectedEvent("invalid_task_cpu", "Requested CPU %d is invalid", size.GetEstimatedMilliCpu())
 	}
 
-	return true, false
+	return true
 }
 
-func (q *PriorityTaskScheduler) nextTaskForPruning() *queuedTask {
+func (q *PriorityTaskScheduler) nextTaskForPruning(ctx context.Context) *queuedTask {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.shuttingDown || q.q.Len() == 0 {
 		return nil
 	}
-	return q.q.Peek()
+	return q.q.Peek(ctx)
 }
 
 // This function peeks at the front of the queue and checks to see if the task
@@ -722,7 +775,7 @@ func (q *PriorityTaskScheduler) nextTaskForPruning() *queuedTask {
 //
 // This function returns true if a task was successfully dequeued.
 func (q *PriorityTaskScheduler) trimQueue() bool {
-	nextTask := q.nextTaskForPruning()
+	nextTask := q.nextTaskForPruning(q.rootContext)
 	if nextTask == nil {
 		return false
 	}
@@ -731,7 +784,7 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, nextTask.GetTraceMetadata())
 	resp, err := q.env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: nextTask.GetTaskId()})
 	if err != nil {
-		log.Infof("Failed to check if task exists: %s", err)
+		log.CtxInfof(ctx, "Failed to check if task exists: %s", err)
 		return false
 	}
 	if resp.GetExists() {
@@ -743,7 +796,7 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if nextTask != q.q.Peek() {
+	if nextTask != q.q.Peek(ctx) {
 		return false
 	}
 
@@ -770,37 +823,41 @@ type queuePosition struct {
 
 // getNextSchedulableTask returns the next task that can be scheduled, and a
 // pointer to the task in the queue.
-func (q *PriorityTaskScheduler) getNextSchedulableTask() (*queuedTask, *queuePosition) {
-	// Don't use the experimental custom resource scheduling logic if there are
-	// no custom resources configured.
+func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*queuedTask, *queuePosition) {
+	// Use custom resource configuration as a flag guard for the backfilling
+	// logic, since backfilling only helps if custom resources are configured
+	// anyway.
+	// TODO: add more tests for the multi-tenant case and turn this on
+	// unconditionally to simplify logic.
 	if len(q.resourceCapacity.Custom) == 0 {
-		nextTask := q.q.Peek()
+		nextTask := q.q.Peek(ctx)
 		if nextTask == nil {
 			return nil, nil
 		}
-		if canFit, _ := q.canFitTask(nextTask); !canFit {
+		if canFit := q.canFitTask(nextTask, q.resourcesUsed); !canFit {
 			return nil, nil
 		}
 		return nextTask, q.q.headRef()
 	}
 
-	// If the tasks at the head of the queue are only waiting for custom
-	// resources to be freed up, then peek ahead in the queue to see if there
-	// are any tasks which don't need custom resources, and allow those to run.
-	//
-	// The idea behind this strategy is that custom resources are expected to
-	// only be needed for relatively heavyweight tasks like GPU tests or Apple
-	// simulator tests, and while those tasks are waiting for the custom
-	// resources to be freed up, we want to allow other "normal" actions (e.g.
-	// compilation actions) to run.
+	// Iterate through the queue looking for a task that can schedule, but add
+	// each skipped task's resources to the "reserved" resource counts, which is
+	// initialized to the resource allocation for the tasks currently executing.
+	// This ensures that when tasks skip ahead in the queue, they don't delay
+	// the start time of other tasks that have been waiting for longer.
+	reservedResources := q.resourcesUsed.Clone()
 	iterator := q.q.Iterator()
 	for task := iterator.Next(); task != nil; task = iterator.Next() {
-		canFit, isSkippable := q.canFitTask(task)
+		canFit := q.canFitTask(task, reservedResources)
 		if canFit {
 			return task, iterator.Current()
 		}
-		if !isSkippable {
-			return nil, nil
+		reservedResources.Add(q.taskResourceCounts(task.GetTaskSize()))
+
+		// If all resources are reserved, short circuit - none of the remaining
+		// tasks will be able to schedule.
+		if reservedResources.AllGTE(q.resourceCapacity) {
+			break
 		}
 	}
 	return nil, nil
@@ -822,7 +879,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	if qLen == 0 {
 		return
 	}
-	nextTask, ref := q.getNextSchedulableTask()
+	nextTask, ref := q.getNextSchedulableTask(q.rootContext)
 	if nextTask == nil {
 		return
 	}
@@ -839,7 +896,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 
-	go func() {
+	q.activeTaskCancelFuncs.Go(func() {
 		defer cancel()
 		defer func() {
 			q.mu.Lock()
@@ -875,7 +932,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
 		lease.Close(ctx, err, retry)
-	}()
+	})
 }
 
 func (q *PriorityTaskScheduler) Start() error {
@@ -895,7 +952,18 @@ func (q *PriorityTaskScheduler) Start() error {
 				case <-q.rootContext.Done():
 					return
 				case <-ticker.Chan():
-					for ok := true; ok; ok = q.trimQueue() {
+				}
+				trimCount := 0
+				for q.trimQueue() {
+					trimCount++
+				}
+				if trimCount > 0 {
+					log.CtxDebugf(q.rootContext, "Trimmed %d tasks from queue", trimCount)
+					// Wake up the scheduling loop since the task after the
+					// trimmed task may now be schedulable.
+					select {
+					case q.checkQueueSignal <- struct{}{}:
+					default:
 					}
 				}
 			}
@@ -911,7 +979,7 @@ func (q *PriorityTaskScheduler) Stop() error {
 func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskReservationRequest {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.q.GetAll()
+	return q.q.GetAll(q.rootContext)
 }
 
 // QueueLength returns the current number of tasks in the queue.
@@ -922,9 +990,7 @@ func (q *PriorityTaskScheduler) QueueLength() int {
 }
 
 func (q *PriorityTaskScheduler) ActiveTaskCount() int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return len(q.activeTaskCancelFuncs)
+	return int(q.activeCancelFuncsCount.Load())
 }
 
 // HasExcessCapacity returns a boolean indicating if this executor has excess
@@ -976,4 +1042,53 @@ type resourceCounts struct {
 	RAMBytes  int64
 	CPUMillis int64
 	Custom    map[string]customResourceCount
+}
+
+func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resourceCounts {
+	custom := make(map[string]customResourceCount, len(res.GetCustomResources()))
+	for _, r := range res.GetCustomResources() {
+		// Skip unknown resources for now.
+		if _, ok := q.resourceCapacity.Custom[r.GetName()]; !ok {
+			continue
+		}
+		custom[r.GetName()] = customResource(r.GetValue())
+	}
+	return &resourceCounts{
+		RAMBytes:  res.GetEstimatedMemoryBytes(),
+		CPUMillis: res.GetEstimatedMilliCpu(),
+		Custom:    custom,
+	}
+}
+
+// Clone returns a deep copy of the resourceCounts object.
+func (r *resourceCounts) Clone() *resourceCounts {
+	clone := *r
+	clone.Custom = maps.Clone(r.Custom)
+	return &clone
+}
+
+// Add mutates the resourceCounts object, adding the given counts to it.
+func (r *resourceCounts) Add(other *resourceCounts) {
+	r.RAMBytes += other.RAMBytes
+	r.CPUMillis += other.CPUMillis
+	for k, v := range other.Custom {
+		r.Custom[k] += v
+	}
+}
+
+// AllGTE returns true if all resource counts are greater than or equal to the
+// other resource counts.
+func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
+	if r.RAMBytes < other.RAMBytes {
+		return false
+	}
+	if r.CPUMillis < other.CPUMillis {
+		return false
+	}
+	for k, v := range r.Custom {
+		if v < other.Custom[k] {
+			return false
+		}
+	}
+	return true
 }

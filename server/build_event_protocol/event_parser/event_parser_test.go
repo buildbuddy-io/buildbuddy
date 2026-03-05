@@ -266,6 +266,153 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
 }
 
+func TestBuildMetadataWithTagPrefix(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
+
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		wantTags []string
+	}{
+		{
+			name: "TAG_ prefix creates tags",
+			metadata: map[string]string{
+				"TAG_FOO": "BAR",
+				"TAG_ENV": "production",
+			},
+			wantTags: []string{"ENV=production", "FOO=BAR"},
+		},
+		{
+			name: "TAG_ prefix combined with TAGS",
+			metadata: map[string]string{
+				"TAGS":      "existing,tags",
+				"TAG_BUILD": "v1.2.3",
+				"TAG_TYPE":  "release",
+			},
+			wantTags: []string{"BUILD=v1.2.3", "TYPE=release", "existing", "tags"},
+		},
+		{
+			name: "Empty TAG_ values create tags without equals",
+			metadata: map[string]string{
+				"TAG_EMPTY": "",
+				"TAG_VALID": "value",
+			},
+			wantTags: []string{"EMPTY", "VALID=value"},
+		},
+		{
+			name: "Non-TAG_ prefixed keys are ignored for tags",
+			metadata: map[string]string{
+				"ROLE":      "CI",
+				"TAG_STAGE": "beta",
+			},
+			wantTags: []string{"STAGE=beta"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+
+			buildMetadata := &build_event_stream.BuildMetadata{
+				Metadata: tt.metadata,
+			}
+			event := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
+			}
+
+			parser.ParseEvent(event)
+
+			outputTags := make([]string, 0)
+			for _, tag := range invocation.Tags {
+				outputTags = append(outputTags, tag.Name)
+			}
+
+			assert.ElementsMatch(t, tt.wantTags, outputTags)
+		})
+	}
+}
+func TestTagMerging(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
+
+	tests := []struct {
+		name            string
+		metadata        map[string]string
+		workspaceStatus string
+		wantTags        []string
+	}{
+		{
+			name: "Just metadata tags",
+			metadata: map[string]string{
+				"TAG_metadata_tag_a": "",
+				"TAG_metadata_tag_b": "test",
+				"TAGS":               "metadata_tag_c,metadata_tag_d",
+			},
+			workspaceStatus: "",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b=test", "metadata_tag_c", "metadata_tag_d"},
+		},
+		{
+			name:            "Just workspace status tags",
+			metadata:        map[string]string{},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"workspace_tag_a", "workspace_tag_b"},
+		},
+		{
+			name: "Tags merge",
+			metadata: map[string]string{
+				"TAGS": "metadata_tag_a,metadata_tag_b",
+			},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b", "workspace_tag_a", "workspace_tag_b"},
+		},
+
+		{
+			name: "Tag prefix merge",
+			metadata: map[string]string{
+				"TAG_metadata_tag_a": "",
+				"TAG_metadata_tag_b": "test",
+				"TAGS":               "metadata_tag_c,metadata_tag_d",
+			},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b=test", "metadata_tag_c", "metadata_tag_d", "workspace_tag_a", "workspace_tag_b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+
+			metadataEvent := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: &build_event_stream.BuildMetadata{
+					Metadata: tt.metadata,
+				}},
+			}
+			parser.ParseEvent(metadataEvent)
+
+			workspaceStatusEvent := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: &build_event_stream.WorkspaceStatus{
+					Item: []*build_event_stream.WorkspaceStatus_Item{
+						{Key: "TAGS", Value: tt.workspaceStatus},
+					},
+				}},
+			}
+			parser.ParseEvent(workspaceStatusEvent)
+
+			outputTags := make([]string, 0)
+			for _, tag := range invocation.Tags {
+				outputTags = append(outputTags, tag.Name)
+			}
+
+			assert.ElementsMatch(t, tt.wantTags, outputTags)
+		})
+	}
+}
+
 func TestRemoteCacheOptions(t *testing.T) {
 	tests := []struct {
 		desc                              string

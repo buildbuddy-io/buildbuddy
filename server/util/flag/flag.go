@@ -18,6 +18,8 @@ var Deprecated = flagtags.DeprecatedTag
 var YAMLIgnore = flagtags.YAMLIgnoreTag
 var Internal = flagtags.InternalTag
 
+type Meta = flagtags.MetaTag
+
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError
 var ExitOnError = flag.ExitOnError
@@ -53,11 +55,11 @@ func Int64(name string, value int64, usage string, tags ...flagtags.Taggable) *i
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
-func UInt(name string, value uint, usage string, tags ...flagtags.Taggable) *uint {
+func Uint(name string, value uint, usage string, tags ...flagtags.Taggable) *uint {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
-func UInt64(name string, value uint64, usage string, tags ...flagtags.Taggable) *uint64 {
+func Uint64(name string, value uint64, usage string, tags ...flagtags.Taggable) *uint64 {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 

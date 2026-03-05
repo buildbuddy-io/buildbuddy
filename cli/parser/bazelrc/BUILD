@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "bazelrc",
     srcs = ["bazelrc.go"],
@@ -8,8 +10,6 @@ go_library(
     deps = [
         "//cli/log",
         "//server/util/lib/set",
-        "//server/util/shlex",
+        "@com_github_google_shlex//:shlex",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

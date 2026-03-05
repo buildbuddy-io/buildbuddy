@@ -19,10 +19,11 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -43,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -52,7 +54,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
@@ -76,6 +77,7 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
+	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -103,10 +105,6 @@ const (
 
 	// How long to wait before giving up on processing a webhook payload.
 	webhookWorkerTimeout = 30 * time.Second
-
-	// How many times to retry workflow execution if it fails due to a transient
-	// error.
-	executeWorkflowMaxRetries = 4
 
 	// Additional timeout allowed in addition to user timeout specified in
 	// buildbuddy.yaml (or the default timeout). This is long enough to allow
@@ -398,8 +396,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
-	if req.GetPushedBranch() == "" && req.GetCommitSha() == "" {
-		return nil, status.InvalidArgumentError("At least one of pushed_branch or commit_sha must be set.")
+	if req.GetPushedBranch() == "" && req.GetPushedTag() == "" && req.GetCommitSha() == "" {
+		return nil, status.InvalidArgumentError("At least one of pushed_branch, pushed_tag or commit_sha must be set.")
 	}
 
 	// Authenticate
@@ -425,6 +423,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wd := &interfaces.WebhookData{
 		PushedRepoURL:     req.GetPushedRepoUrl(),
 		PushedBranch:      req.GetPushedBranch(),
+		PushedTag:         req.GetPushedTag(),
 		TargetRepoURL:     req.GetTargetRepoUrl(),
 		TargetBranch:      req.GetTargetBranch(),
 		SHA:               req.GetCommitSha(),
@@ -528,7 +527,7 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	var actions []*config.Action
 	for _, a := range cfg.Actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
-		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
 		if matchesActionName && matchesTrigger {
 			actions = append(actions, a)
 		}
@@ -672,7 +671,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 	indb := ws.env.GetInvocationDB()
 
 	errCh := make(chan error)
-	opCh := make(chan *longrunning.Operation)
+	opCh := make(chan *longrunningpb.Operation)
 
 	waitStream, err := executionClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 		Name: executionID,
@@ -764,7 +763,10 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if err != nil {
 		return nil, err
 	}
-	repos := linkedRepos.GetRepoUrls()
+	var repos []string
+	for _, repo := range linkedRepos.GetRepos() {
+		repos = append(repos, repo.RepoUrl)
+	}
 	if len(repos) == 0 {
 		// Fall back to legacy workflow registrations.
 		repos = []string{}
@@ -1007,10 +1009,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "CI", Value: "true"},
 		{Name: "GIT_COMMIT", Value: wd.SHA},
 		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
+		{Name: "GIT_TAG", Value: wd.PushedTag},
 		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
 		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
 		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
-		{Name: "BUILDBUDDY_INVOCATION_ID", Value: invocationID},
+		{Name: ci_runner_env.BuildBuddyInvocationIDEnvVarName, Value: invocationID},
 	}
 	for k, v := range workflowAction.Env {
 		envVars = append(envVars, &repb.Command_EnvironmentVariable{
@@ -1055,6 +1058,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	visibility := ""
 	if wd.IsTargetRepoPublic {
 		visibility = "PUBLIC"
+	}
+	if workflowAction.Visibility != "" {
+		visibility = workflowAction.Visibility
 	}
 	includeSecretsPropertyValue := "false"
 	if isTrusted && ws.env.GetSecretService() != nil {
@@ -1102,13 +1108,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--commit_sha=" + wd.SHA,
 		"--pushed_repo_url=" + wd.PushedRepoURL,
 		"--pushed_branch=" + wd.PushedBranch,
+		"--pushed_tag=" + wd.PushedTag,
 		"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
 		"--target_repo_url=" + wd.TargetRepoURL,
 		"--target_branch=" + wd.TargetBranch,
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,
-		"--bazel_command=" + ws.ciRunnerBazelCommand(),
+		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		"--timeout=" + timeout.String(),
 		"--serialized_action=" + serializedAction,
@@ -1265,9 +1272,15 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 	return remote_execution_config.RemoteExecutionEnabled() && *workflowsCIRunnerDebug
 }
 
-func (ws *workflowService) ciRunnerBazelCommand() string {
+func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context) string {
 	if !remote_execution_config.RemoteExecutionEnabled() {
 		return ""
+	}
+	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
+		if bazelCommandOverride != "" {
+			return bazelCommandOverride
+		}
 	}
 	return *workflowsCIRunnerBazelCommand
 }
@@ -1304,7 +1317,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
-		workflowRef = webhookData.PushedBranch
+		if webhookData.PushedBranch != "" {
+			workflowRef = webhookData.PushedBranch
+		} else if webhookData.PushedTag != "" {
+			workflowRef = webhookData.PushedTag
+		}
 	}
 
 	var c *config.BuildBuddyConfig
@@ -1445,7 +1462,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
 	opts := retry.DefaultOptions()
-	opts.MaxRetries = executeWorkflowMaxRetries
+	opts.MaxRetries = *workflowsMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
@@ -1458,15 +1475,29 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			return "", nil
 		}
 		if err != nil {
-			// TODO: Create a UI for these errors instead of just logging on the
-			// server.
 			log.CtxWarningf(ctx, "Failed to execute workflow action %q: %s", action.Name, err)
 			lastErr = err
+
+			// TODO: find a way for the retry package to properly handle
+			// MaxRetries=0, and remove this logic.
+			if *workflowsMaxRetries == 0 {
+				break
+			}
+
 			continue // retry
 		}
 
 		return executionID, nil
 	}
+
+	// Publish a status so the user can see why the workflow didn't execute. For
+	// now, encode a small error message in the URL, and link the user to an
+	// page displaying the error directly.
+	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, lastErr)
+	if err := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); err != nil {
+		log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", err)
+	}
+
 	return "", lastErr
 }
 
@@ -1491,7 +1522,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	}
 	if isTrusted {
 		headerEnv := []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: key.Value},
+			{Name: ci_runner_env.BuildBuddyAPIKeyEnvVarName, Value: key.Value},
 			{Name: "REPO_USER", Value: wf.Username},
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}
@@ -1547,6 +1578,21 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	}
 	invocationURL += "?queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
+	if err != nil {
+		return err
+	}
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+}
+
+func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID, errorMessage string) error {
+	invocationURL, err := ws.createBBURL(ctx, "/invocation/"+invocationID)
+	if err != nil {
+		return err
+	}
+	invocationURL += "?runnerStartError=" + url.QueryEscape(errorMessage)
+	status := github.NewGithubStatusPayload(actionName, invocationURL, "Failed to start", github.ErrorState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {

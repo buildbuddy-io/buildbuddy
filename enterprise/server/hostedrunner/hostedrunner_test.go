@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -13,8 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -28,6 +29,10 @@ import (
 )
 
 func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
 	ctx := context.Background()
@@ -102,14 +107,29 @@ func (c *fakeExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitE
 
 type fakeExecuteStream struct{ grpc.ClientStream }
 
-func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
+func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage: repb.ExecutionStage_COMPLETED,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &longrunning.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
+	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
+}
+
+func TestRun_WithoutRepoURL(t *testing.T) {
+	te, ctx := getEnv(t)
+
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
 }
 
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {

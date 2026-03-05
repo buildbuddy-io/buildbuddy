@@ -11,7 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -153,18 +155,6 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 	}
 }
 
-type fakeUsageTracker struct {
-	interfaces.UsageTracker
-	Increments []*tables.UsageCounts
-	Labels     []*tables.UsageLabels
-}
-
-func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
-	ut.Increments = append(ut.Increments, counts)
-	ut.Labels = append(ut.Labels, labels)
-	return nil
-}
-
 func TestHitTrackerService_Usage(t *testing.T) {
 	flags.Set(t, "cache.detailed_stats_enabled", true)
 
@@ -172,26 +162,38 @@ func TestHitTrackerService_Usage(t *testing.T) {
 		name          string
 		cacheType     rspb.CacheType
 		requestType   capb.RequestType
-		expectedUsage []*tables.UsageCounts
+		expectedUsage []testusage.Total
 	}{
 		{
 			name:        "CAS upload",
 			cacheType:   rspb.CacheType_CAS,
 			requestType: capb.RequestType_WRITE,
-			expectedUsage: []*tables.UsageCounts{
-				{},
-				{TotalUploadSizeBytes: 456},
+			expectedUsage: []testusage.Total{
+				{
+					GroupID: "GR1",
+					Labels: tables.UsageLabels{
+						Server: "servicio",
+					},
+					Counts: tables.UsageCounts{
+						TotalUploadSizeBytes: 456,
+					},
+				},
 			},
 		},
 		{
 			name:        "CAS download",
 			cacheType:   rspb.CacheType_CAS,
 			requestType: capb.RequestType_READ,
-			expectedUsage: []*tables.UsageCounts{
-				{CASCacheHits: 1},
+			expectedUsage: []testusage.Total{
 				{
-					CASCacheHits:           1,
-					TotalDownloadSizeBytes: 456,
+					GroupID: "GR1",
+					Labels: tables.UsageLabels{
+						Server: "servicio",
+					},
+					Counts: tables.UsageCounts{
+						CASCacheHits:           2,
+						TotalDownloadSizeBytes: 456,
+					},
 				},
 			},
 		},
@@ -199,18 +201,33 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			name:        "AC upload",
 			cacheType:   rspb.CacheType_AC,
 			requestType: capb.RequestType_WRITE,
-			expectedUsage: []*tables.UsageCounts{
-				{},
-				{TotalUploadSizeBytes: 456},
+			expectedUsage: []testusage.Total{
+				{
+					GroupID: "GR1",
+					Labels: tables.UsageLabels{
+						Server: "servicio",
+					},
+					Counts: tables.UsageCounts{
+						TotalUploadSizeBytes: 456,
+					},
+				},
 			},
 		},
 		{
 			name:        "AC download",
 			cacheType:   rspb.CacheType_AC,
 			requestType: capb.RequestType_READ,
-			expectedUsage: []*tables.UsageCounts{
-				{ActionCacheHits: 1},
-				{ActionCacheHits: 1, TotalDownloadSizeBytes: 456},
+			expectedUsage: []testusage.Total{
+				{
+					GroupID: "GR1",
+					Labels: tables.UsageLabels{
+						Server: "servicio",
+					},
+					Counts: tables.UsageCounts{
+						ActionCacheHits:        2,
+						TotalDownloadSizeBytes: 456,
+					},
+				},
 			},
 		},
 	} {
@@ -219,13 +236,19 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 			require.NoError(t, err)
 			env.SetMetricsCollector(mc)
-			ut := &fakeUsageTracker{}
+			ut := testusage.NewTracker()
 			env.SetUsageTracker(ut)
 			hit_tracker.Register(env)
 			require.NoError(t, hit_tracker_service.Register(env))
 			require.NotNil(t, env.GetHitTrackerServiceServer())
 
 			ctx := context.Background()
+			// Need auth since we don't track usage for anon requests.
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, &testauth.TestUser{
+				UserID:  "US1",
+				GroupID: "GR1",
+			})
+
 			iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 			emptyRmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
@@ -263,15 +286,7 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 			require.NoError(t, err)
 
-			require.Len(t, ut.Increments, 2)
-			require.Equal(t, tc.expectedUsage, ut.Increments)
-			require.Equal(t, len(ut.Increments), len(ut.Labels))
-			for _, l := range ut.Labels {
-				require.Equal(t, &tables.UsageLabels{
-					Server: "servicio",
-				}, l)
-			}
-			ut.Increments = nil
+			require.Equal(t, tc.expectedUsage, ut.Totals())
 		})
 	}
 }

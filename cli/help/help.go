@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
@@ -17,6 +18,48 @@ import (
 const (
 	cliName = "bb"
 )
+
+// FindTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
+// Returns the command name if found, empty string otherwise.
+func FindTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
+	_, command := parsed.Find[*parsed.Command](orderedArgs.Args)
+	if command == nil {
+		return ""
+	}
+
+	// If the command is "help", look for the next positional argument
+	if command.Value == "help" {
+		for i, arg := range orderedArgs.Args {
+			if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
+				// Check the next argument
+				if i+1 < len(orderedArgs.Args) {
+					if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
+						return nextPos.Value
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Otherwise return the command itself
+	return command.Value
+}
+
+// TryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
+// Returns true if help was shown, false if not a BB CLI command.
+func TryShowBBCommandHelp(targetCommand string) bool {
+	if targetCommand == "" {
+		return false
+	}
+
+	if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
+		fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+		return true
+	}
+
+	return false
+}
 
 // HandleHelp Valid cases to trigger help:
 // * bb (no additional command passed)
@@ -27,6 +70,15 @@ const (
 // * bb --help `command name`
 // * bb `command name` --help
 func HandleHelp(args parsed.Args) (exitCode int, err error) {
+	// Check if the help request is for a BB CLI command
+	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
+		targetCommand := FindTargetCommandFromHelpArgs(orderedArgs)
+		if TryShowBBCommandHelp(targetCommand) {
+			return 0, nil
+		}
+	}
+
+	// Not a BB CLI command, forward to Bazel as usual
 	buf := &bytes.Buffer{}
 	exitCode, err = bazelisk.Run(args.Format(), &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {

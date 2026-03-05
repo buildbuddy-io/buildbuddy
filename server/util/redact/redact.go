@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
@@ -47,8 +46,13 @@ const (
 )
 
 var (
-	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
-	envVarOptionNamesRegex *regexp.Regexp
+	envVarOptionNames         = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
+	envVarOptionNamesRegex    *regexp.Regexp
+	envVarDoubleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)"(.*?)"$`)
+	envVarSingleQuotedPattern = regexp.MustCompile(`(?s)^(--[^=]+=)'(.*?)'$`)
+	envVarUnquotedPattern     = regexp.MustCompile(`^(--[^=]+=)(\S+)$`)
+	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
+	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -100,6 +104,7 @@ var (
 		"remote_downloader_header",
 		"bes_header",
 	}
+	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
 )
 
 func init() {
@@ -109,7 +114,17 @@ func init() {
 	for i, n := range envVarOptionNames {
 		escaped[i] = regexp.QuoteMeta(n)
 	}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+	// Match env var flags with values that can be:
+	// - Single-quoted (including multiline): '--flag=VAR_NAME=...' becomes '--flag=VAR_NAME=<REDACTED>'
+	// - Double-quoted (including multiline): "--flag=VAR_NAME=..." becomes "--flag=VAR_NAME=<REDACTED>"
+	// - Unquoted (single line only): --flag=VAR_NAME=value becomes --flag=VAR_NAME=<REDACTED>
+	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
+	// Capture group 1: --flag_name= (without the env var name)
+	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
+
+	for _, header := range headerOptionNames {
+		headerOptionRegexes[header] = regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -215,13 +230,10 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 	}
 }
 
-func stripNonAllowedEnvVars(tokens []string) {
-	for i, token := range tokens {
-		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
-	}
-}
-
-func redactCmdLine(tokens []string) {
+// RedactCmdLine mutates the provided tokenized command line by redacting URL
+// credentials, remote headers, explicit command line payloads, and environment
+// variable flags that are not explicitly allowed.
+func RedactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
@@ -229,11 +241,53 @@ func redactCmdLine(tokens []string) {
 }
 
 func RedactText(txt string) string {
+	return RedactTextWithValues(txt, nil)
+}
+
+// RedactTextWithValues applies standard text redactions and then redacts any
+// additional literal values provided by callers.
+//
+// NOTE: Caller-provided values are sorted longest-first before replacement. This
+// avoids partial redaction leaks when one secret is a substring of another
+// (for example, redacting "abc" before "abcdef" would leave "def" behind).
+func RedactTextWithValues(txt string, redactionValues []string) string {
 	txt = stripURLSecrets(txt)
 	txt = redactRemoteHeaders(txt)
 	txt = redactBuildBuddyAPIKeys(txt)
 	txt = redactEnvVars(txt)
+	for _, value := range sortByLengthDesc(redactionValues) {
+		if value == "" {
+			continue
+		}
+		txt = strings.ReplaceAll(txt, value, redactedPlaceholder)
+	}
 	return txt
+}
+
+// sortByLengthDesc returns a deduplicated copy sorted by descending string
+// length (then lexicographically for stability).
+//
+// Longest-first ordering is required for safe redaction replacement: if a short
+// value is replaced before a longer overlapping value, the longer value may no
+// longer match and could be partially exposed in logs.
+func sortByLengthDesc(values []string) []string {
+	sorted := slices.Clone(values)
+	slices.SortFunc(sorted, func(a, b string) int {
+		if len(a) > len(b) {
+			return -1
+		}
+		if len(a) < len(b) {
+			return 1
+		}
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
+	})
+	return slices.Compact(sorted)
 }
 
 // redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.
@@ -258,15 +312,111 @@ func redactBuildBuddyAPIKeys(txt string) string {
 }
 
 func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	for header, regex := range headerOptionRegexes {
 		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
 	}
 	return txt
 }
 
+// redactEnvVars locates env var flags within an arbitrary string and replaces
+// their values with "<REDACTED>". For example, it transforms
+// "build --action_env=FOO=bar" into "build --action_env=FOO=<REDACTED>".
 func redactEnvVars(txt string) string {
-	return envVarOptionNamesRegex.ReplaceAllString(txt, "${1}<REDACTED>")
+	return envVarOptionNamesRegex.ReplaceAllStringFunc(txt, RedactEnvVar)
+}
+
+// stripNonAllowedEnvVars replaces the payload of env var flags in-place unless
+// the variable name is explicitly permitted. Given ["--action_env=SECRET=top"],
+// the slice becomes ["--action_env=SECRET=<REDACTED>"].
+func stripNonAllowedEnvVars(tokens []string) {
+	for i, token := range tokens {
+		tokens[i] = redactEnvVarToken(token)
+	}
+}
+
+// redactEnvVarToken returns the redacted version of a single env var flag token.
+// For example, "--client_env=FOO=bar" becomes "--client_env=FOO=<REDACTED>".
+// Flags that are not env var options are returned untouched.
+func redactEnvVarToken(token string) string {
+	for _, option := range envVarOptionNames {
+		prefix := "--" + option + "="
+		if strings.HasPrefix(token, prefix) {
+			payload := token[len(prefix):]
+			return prefix + redactEnvVarPayload(payload)
+		}
+	}
+	return token
+}
+
+// redactEnvVarPayload redacts the value portion of an env var payload, preserving
+// the surrounding quoting when present. For instance, `"FOO=bar baz"` becomes
+// `"FOO=<REDACTED>"` and `'FOO=bar'` becomes `'FOO=<REDACTED>'`.
+func redactEnvVarPayload(payload string) string {
+	if len(payload) == 0 {
+		return redactedPlaceholder
+	}
+	quote := payload[0]
+	if quote == '"' || quote == '\'' {
+		if len(payload) >= 2 && payload[len(payload)-1] == quote {
+			inner := payload[1 : len(payload)-1]
+			return string(quote) + redactEnvVarAssignment(inner) + string(quote)
+		}
+		inner := payload[1:]
+		return string(quote) + redactEnvVarAssignment(inner)
+	}
+	return redactEnvVarAssignment(payload)
+}
+
+// redactEnvVarAssignment redacts the value of a VAR=value assignment while
+// preserving the variable name prefix when present. Example: "FOO=bar" ->
+// "FOO=<REDACTED>".
+func redactEnvVarAssignment(value string) string {
+	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
+		varName := assignment[1]
+		varValue := value[len(varName)+1:]
+		// Keep values unredacted that are clearly safe and potentially useful
+		// for debugging.
+		if varValue == "" ||
+			varValue == "0" || varValue == "1" ||
+			strings.EqualFold(varValue, "true") || strings.EqualFold(varValue, "false") {
+			return varName + "=" + varValue
+		}
+		return varName + "=" + redactedPlaceholder
+	}
+	// Don't redact --action_env=FOO (inherit FOO) and --action_env==FOO (unset
+	// FOO). Environment variable names are not expected to be sensitive.
+	return value
+}
+
+// RedactEnvVar replaces the value portion of a Bazel environment variable flag
+// (e.g. `--action_env=FOO=bar`) with the redaction placeholder while preserving the
+// surrounding flag structure, including quotes. This helper is invoked for the
+// env var options listed in envVarOptionNames (action_env, client_env, host_action_env,
+// repo_env, test_env) and handles both quoted and unquoted `VAR=value` payloads,
+// including multiline quoted values. For example, it rewrites
+// `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
+func RedactEnvVar(flag string) string {
+	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
+	}
+	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
+	}
+	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
+	}
+	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
+	}
+	return flag
+}
+
+// redactEnvVarFlagAndAssignment rewrites an env var flag prefix plus payload so the payload
+// becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
+// placeholder. Example input: "--client_env=" as the prefix with
+// `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
+func redactEnvVarFlagAndAssignment(flagName, value string) string {
+	return flagName + redactEnvVarAssignment(value)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -293,7 +443,7 @@ func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 	if m, ok := metadata.Metadata[explicitCommandLineName]; ok {
 		var commandLine []string
 		_ = json.Unmarshal([]byte(m), &commandLine)
-		redactCmdLine(commandLine)
+		RedactCmdLine(commandLine)
 		commandLineJSON, _ := json.Marshal(commandLine)
 		metadata.Metadata[explicitCommandLineName] = string(commandLineJSON)
 	}
@@ -527,17 +677,18 @@ func parseAllowedEnv(optionsDescription string) []string {
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
-	env            environment.Env
 	allowedEnvVars []string
 }
 
-func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
+func NewStreamingRedactor() *StreamingRedactor {
 	return &StreamingRedactor{
-		env:            env,
 		allowedEnvVars: defaultAllowedEnvVars,
 	}
 }
 
+// RedactMetadata walks the provided BuildEvent and redacts sensitive metadata
+// in-place, replacing secrets with "<REDACTED>". Callers needing the original
+// content should clone the event before invoking this method.
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
@@ -545,6 +696,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
+			p.Aborted.Description = RedactText(p.Aborted.Description)
 		}
 	case *bespb.BuildEvent_Started:
 		{
@@ -567,8 +719,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			redactCmdLine(p.OptionsParsed.CmdLine)
-			redactCmdLine(p.OptionsParsed.ExplicitCmdLine)
+			RedactCmdLine(p.OptionsParsed.CmdLine)
+			RedactCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
@@ -592,6 +744,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
 			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
 			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
+			if p.Action.FailureDetail != nil {
+				p.Action.FailureDetail.Message = RedactText(p.Action.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		{
@@ -612,6 +767,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_Finished:
 		{
+			if p.Finished.FailureDetail != nil {
+				p.Finished.FailureDetail.Message = RedactText(p.Finished.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_BuildToolLogs:
 		{
@@ -662,10 +820,13 @@ func RedactCommand(cmd string) (string, error) {
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
-	redactCmdLine(cmdTokens)
+	RedactCmdLine(cmdTokens)
 	return strings.Join(cmdTokens, " "), nil
 }
 
+// RedactAPIKey scrubs BuildBuddy API keys from the provided BuildEvent by
+// rewriting matching values in-place. Clone the event first if the original data
+// must be preserved.
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
 	if !ok || apiKey == "" {
@@ -748,6 +909,9 @@ func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
 	}
 }
 
+// RedactAPIKeysWithSlowRegexp redacts API keys by converting the event to text
+// and back again. It mutates the supplied BuildEvent; clone first if the original
+// event must be preserved.
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
 	eventBytes, err := prototext.Marshal(event)
 	if err != nil {

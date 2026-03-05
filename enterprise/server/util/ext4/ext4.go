@@ -35,7 +35,27 @@ const (
 
 	// FS block size that we always use when creating ext4 images.
 	blockSize = 4096
+
+	mke2fsPath  = "/sbin/mke2fs"
+	debugfsPath = "/sbin/debugfs"
 )
+
+// EnsureDependencies verifies that all external binaries required for ext4
+// image operations are present and executable.
+func EnsureDependencies() error {
+	requiredBinaries := []string{mke2fsPath, debugfsPath}
+
+	for _, binary := range requiredBinaries {
+		info, err := os.Stat(binary)
+		if err != nil {
+			return status.UnavailableErrorf("required binary %q is missing: %s", binary, err)
+		}
+		if info.Mode()&0o111 == 0 {
+			return status.UnavailableErrorf("required binary %q is not executable", binary)
+		}
+	}
+	return nil
+}
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
@@ -48,7 +68,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "''",
 		"-N", "0",
 		"-O", "^64bit",
@@ -94,7 +114,7 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "",
 		"-N", "0",
 		"-O", "^64bit",
@@ -206,7 +226,7 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 		}
 		requests = append(requests, fmt.Sprintf("rdump %q %q", p, filepath.Join(outputDir, parent)))
 	}
-	cmd := exec.CommandContext(ctx, "/sbin/debugfs", inputFile)
+	cmd := exec.CommandContext(ctx, debugfsPath, inputFile)
 	cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return status.InternalErrorf("%s: %s", err, out)

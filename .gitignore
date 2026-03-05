@@ -28,9 +28,6 @@ tramp
 # Bazel directories
 /bazel-*
 
-# MODULE.bazel stuff, for now
-MODULE.bazel.lock
-
 # Generated protos
 **/proto/**/*.pb.go
 **/proto/**/*_ts_proto.d.ts
@@ -65,6 +62,9 @@ enterprise/config/user-configs
 # IntelliJ directory
 /.ijwb/
 
+# VSCode settings
+.vscode/**
+
 # Python cache
 **/__pycache__/**
 
@@ -75,3 +75,10 @@ __debug_*
 # Claude Code
 .claude
 CLAUDE.md
+
+# Cursor
+.cursor
+
+# GoLand
+.idea
+

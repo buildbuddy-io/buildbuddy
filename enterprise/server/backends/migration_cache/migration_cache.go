@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -20,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -29,11 +33,11 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	oss_cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 var (
-	cacheMigrationConfig = flag.Struct("cache.migration", MigrationConfig{}, "Config to specify the details of a cache migration")
+	cacheMigrationConfig = flag.Struct("cache.migration", cache_config.MigrationConfig{}, "Config to specify the details of a cache migration")
 )
 
 type MigrationCache struct {
@@ -88,7 +92,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+func NewMigrationCache(env environment.Env, migrationConfig *cache_config.MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	return &MigrationCache{
 		env: env,
 		defaultConfigDoNotUseDirectly: config{
@@ -109,50 +113,76 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 	}
 }
 
-func validateCacheConfig(config CacheConfig) error {
-	if config.PebbleConfig != nil && config.DiskConfig != nil {
-		return status.FailedPreconditionError("only one cache config can be set")
-	} else if config.PebbleConfig == nil && config.DiskConfig == nil {
-		return status.FailedPreconditionError("a cache config must be set")
+func ValidateCacheConfig(config cache_config.CacheConfig) error {
+	// Count base cache configs (disk or pebble)
+	baseCacheCount := 0
+	if config.DiskConfig != nil {
+		baseCacheCount++
+	}
+	if config.PebbleConfig != nil {
+		baseCacheCount++
+	}
+
+	// Meta cache is standalone
+	if config.MetaConfig != nil {
+		if baseCacheCount > 0 || config.DistributedConfig != nil {
+			return status.FailedPreconditionError("meta cache cannot be combined with other cache configs")
+		}
+		return nil
+	}
+
+	// Otherwise, exactly one base cache must be set
+	if baseCacheCount != 1 {
+		return status.FailedPreconditionError("exactly one base cache config (disk or pebble) must be set")
 	}
 
 	return nil
 }
 
-func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, error) {
-	err := validateCacheConfig(cfg)
+func getCacheFromConfig(env environment.Env, cfg cache_config.CacheConfig) (interfaces.Cache, error) {
+	err := ValidateCacheConfig(cfg)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
 	}
 
-	if cfg.DiskConfig != nil {
-		c, err := diskCacheFromConfig(env, cfg.DiskConfig)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	} else if cfg.PebbleConfig != nil {
-		c, err := pebbleCacheFromConfig(env, cfg.PebbleConfig)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
+	// Meta cache is standalone
+	if cfg.MetaConfig != nil {
+		return metaCacheFromConfig(env, cfg.MetaConfig)
 	}
 
-	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
+	// Create base cache (disk or pebble)
+	var baseCache interfaces.Cache
+	if cfg.DiskConfig != nil {
+		baseCache, err = diskCacheFromConfig(env, cfg.DiskConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else if cfg.PebbleConfig != nil {
+		baseCache, err = pebbleCacheFromConfig(env, cfg.PebbleConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Wrap with distributed cache if specified
+	if cfg.DistributedConfig != nil {
+		return distributedCacheFromConfig(env, baseCache, cfg.DistributedConfig)
+	}
+
+	return baseCache, nil
 }
 
-func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache.DiskCache, error) {
+func diskCacheFromConfig(env environment.Env, cfg *cache_config.DiskCacheConfig) (*disk_cache.DiskCache, error) {
 	opts := &disk_cache.Options{
 		RootDirectory:     cfg.RootDirectory,
 		Partitions:        cfg.Partitions,
 		PartitionMappings: cfg.PartitionMappings,
 		UseV2Layout:       cfg.UseV2Layout,
 	}
-	return disk_cache.NewDiskCache(env, opts, cache_config.MaxSizeBytes())
+	return disk_cache.NewDiskCache(env, opts, oss_cache_config.MaxSizeBytes())
 }
 
-func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
+func pebbleCacheFromConfig(env environment.Env, cfg *cache_config.PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
 	opts := &pebble_cache.Options{
 		Name:                        cfg.Name,
 		RootDirectory:               cfg.RootDirectory,
@@ -185,6 +215,47 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 
 	c.Start()
 	return c, nil
+}
+
+func distributedCacheFromConfig(env environment.Env, baseCache interfaces.Cache, cfg *cache_config.DistributedCacheConfig) (interfaces.Cache, error) {
+	if baseCache == nil {
+		return nil, status.FailedPreconditionError("distributed cache requires a base cache")
+	}
+
+	opts := distributed.Options{
+		ListenAddr:                   cfg.ListenAddr,
+		GroupName:                    cfg.GroupName,
+		Nodes:                        cfg.Nodes,
+		NewNodes:                     cfg.NewNodes,
+		ReplicationFactor:            cfg.ReplicationFactor,
+		ClusterSize:                  cfg.ClusterSize,
+		LookasideCacheSizeBytes:      cfg.LookasideCacheSizeBytes,
+		EnableLocalWrites:            cfg.EnableLocalWrites,
+		EnableLocalCompressionLookup: true,
+		ReadThroughLocalCache:        cfg.ReadThroughLocalCache,
+	}
+
+	dc, err := distributed.NewDistributedCache(env, baseCache, opts, env.GetHealthChecker())
+	if err != nil {
+		return nil, err
+	}
+
+	dc.StartListening()
+	return dc, nil
+}
+
+func metaCacheFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig) (interfaces.Cache, error) {
+	opts, err := metacache.GetOptionsFromConfig(env, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	mc, err := metacache.New(env, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return mc, nil
 }
 
 // Flags and values for experiments which control the migration cache.
@@ -350,9 +421,6 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 						metrics.CacheRequestType: "metadata",
 						metrics.GroupID:          groupID(ctx),
 					}).Inc()
-					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
-				} else {
-					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 				}
 				if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 					log.CtxWarningf(ctx, "Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
@@ -838,19 +906,24 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	if err != nil {
 		return nil, err
 	}
-	if conf.dest == nil {
-		return conf.src.Writer(ctx, r)
-	}
-	if conf.asyncDestWrites {
-		// We will write to the destination cache in the background.
-		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
-		return conf.src.Writer(ctx, r)
-	}
-
 	srcWriter, srcErr := conf.src.Writer(ctx, r)
 	if srcErr != nil {
 		return nil, srcErr
 	}
+	if conf.dest == nil {
+		return srcWriter, nil
+	}
+	if conf.asyncDestWrites {
+		w := ioutil.NewCustomCommitWriteCloser(srcWriter)
+		w.SetCommitFn(func(int64) error {
+			// This is only called when the source writer is successfully committed.
+			// We will force a write to the destination cache in the background.
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+			return nil
+		})
+		return w, nil
+	}
+
 	destWriter, dstErr := conf.dest.Writer(ctx, r)
 	if dstErr != nil {
 		log.CtxWarningf(ctx, "Migration failure creating dest %v writer: %s", r, dstErr)
@@ -916,7 +989,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	if onlyCopyMissing {
 		alreadyCopied, err := conf.dest.Contains(ctx, r)
 		if err != nil {
-			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+			log.CtxWarningf(ctx, "Migration copy err, could not call Contains on dest cache: %s", err)
 			return
 		}
 
@@ -1016,14 +1089,29 @@ func (mc *MigrationCache) copy(c *copyData) {
 	c.ctx = ctx
 	defer cancel()
 
-	destContains, err := c.conf.dest.Contains(c.ctx, c.d)
-	if err != nil {
-		log.CtxWarningf(ctx, "Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
-		return
+	if c.d.GetCacheType() == rspb.CacheType_CAS {
+		// For CAS blobs, we can skip copying if the dest cache already has the
+		// blob. For AC blobs, we always copy since the value could have changed.
+		destContains, err := c.conf.dest.Contains(c.ctx, c.d)
+		if err != nil {
+			log.CtxWarningf(ctx, "Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
+			return
+		}
+		if destContains {
+			log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
+			return
+		}
 	}
-	if destContains {
-		log.CtxDebugf(ctx, "Migration already copied on dequeue, returning early: digest %v", c.d)
-		return
+	if c.d.GetDigest().GetSizeBytes() > 100 && c.conf.src.SupportsCompressor(repb.Compressor_ZSTD) && c.conf.dest.SupportsCompressor(repb.Compressor_ZSTD) {
+		// Use compression if both caches support it. This will usually mean
+		// that at src cache doesn't need to decompress and the dest cache
+		// doesn't need to compress, which saves CPU and speeds up the copy.
+		// Ideally, we would only do this when the destination cache would
+		// automatically compress, but since there's no way to check that, rely
+		// on the fact that `cache.pebble.min_bytes_auto_zstd_compression` is
+		// 100.
+		c.d = c.d.CloneVT()
+		c.d.Compressor = repb.Compressor_ZSTD
 	}
 
 	srcReader, err := c.conf.src.Reader(c.ctx, c.d, 0, 0)
@@ -1130,10 +1218,35 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
+func (mc *MigrationCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	srcPartition, err := mc.defaultConfigDoNotUseDirectly.src.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	destPartition, err := mc.defaultConfigDoNotUseDirectly.dest.Partition(ctx, remoteInstanceName)
+	if err != nil {
+		return "", err
+	}
+	if srcPartition == "" {
+		return destPartition, nil
+	}
+	if destPartition == "" {
+		return srcPartition, nil
+	}
+	return srcPartition + "/" + destPartition, nil
+}
+
 // Compression should only be enabled during a migration if both the source and destination caches support the
 // compressor, in order to reduce complexity around trying to double read/write compressed bytes to one cache and
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
 		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
+}
+
+func (mc *MigrationCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	if err := mc.defaultConfigDoNotUseDirectly.src.RegisterAtimeUpdater(updater); err != nil {
+		return err
+	}
+	return mc.defaultConfigDoNotUseDirectly.dest.RegisterAtimeUpdater(updater)
 }

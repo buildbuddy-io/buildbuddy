@@ -21,4 +21,5 @@ Supported features include:
 - Stateless, horizontally scalable architecture
 - Automatic executor scaling
 - mTLS authentication
-- Build without bytes
+- Build without the bytes
+- Action deduplication / merging

@@ -38,9 +38,9 @@ genrule(
         "//enterprise/app/history:history.css",
         "//enterprise/app/iprules:iprules.css",
         "//enterprise/app/org:org.css",
+        "//enterprise/app/org:org_user_lists.css",
         "//enterprise/app/org_picker:org_picker.css",
         "//enterprise/app/settings:settings.css",
-        "//enterprise/app/quota:quota.css",
         "//enterprise/app/repo:repo.css",
         "//enterprise/app/secrets:secrets.css",
         "//enterprise/app/workflows:workflows.css",
@@ -51,6 +51,7 @@ genrule(
         "//enterprise/app/sidekick/buildfile:buildfile.css",
         "//enterprise/app/sidekick/module:module.css",
         "//enterprise/app/tap:tap.css",
+        "//enterprise/app/targets:targets.css",
         "//enterprise/app/trends:trends.css",
         "//enterprise/app/usage:usage.css",
         "//enterprise/app/root:root.css",
@@ -101,7 +102,6 @@ genrule(
     cmd_bash = "touch $@",
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],

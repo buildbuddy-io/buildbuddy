@@ -100,7 +100,7 @@ func getToolEnv() *real_environment.RealEnv {
 	re.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	re.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	re.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	re.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
+	re.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/))
 	re.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	return re
 }
@@ -176,9 +176,6 @@ func run(ctx context.Context, env environment.Env) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if err := networking.DeleteNetNamespaces(ctx); err != nil {
-		log.Warningf("Failed to clean up network namespaces: %s", err)
-	}
 	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to clean stale VBD mounts: %s", err)
 	}
@@ -212,7 +209,7 @@ func run(ctx context.Context, env environment.Env) error {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			ScratchDiskSizeMb: 100,
-			EnableNetworking:  true,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 		},
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
@@ -260,7 +257,7 @@ func run(ctx context.Context, env environment.Env) error {
 			}
 		}()
 		creds := oci.Credentials{Username: *registryUser, Password: *registryPassword}
-		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage, opts.UseOCIFetcher); err != nil {
 			return status.WrapError(err, "pull image")
 		}
 		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

@@ -353,13 +353,13 @@ func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocatio
 	return invResp.Invocation[0]
 }
 
-func TestCIRunner_RunsBashCommands(t *testing.T) {
+func TestCIRunner_RunsBashCommands_NoBazelWorkspace(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	workspaceContentsWithBashCommands := map[string]string{
 		"buildbuddy.yaml": `
 actions:
-  - name: "Show bazel version"
+  - name: "Test"
     triggers:
       push: { branches: [ master ] }
       pull_request: { branches: [ master ] }
@@ -367,14 +367,15 @@ actions:
       - run: |
           for i in {1..2}; do
             echo "Loop $i: ";
-            bazel version;
           done
 `,
 	}
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBashCommands)
+
+	// Initialize a non-bazel repo
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, workspaceContentsWithBashCommands)
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
-		"--action_name=Show bazel version",
+		"--action_name=Test",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -391,9 +392,9 @@ actions:
 	checkRunnerResult(t, result)
 
 	runnerInvocation := getRunnerInvocation(t, app, result)
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 1:")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 2:")
+	assert.False(t, result.DoNotRecycle)
 }
 
 func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
@@ -1229,6 +1230,125 @@ func TestRunAction_PushedRepoOnly(t *testing.T) {
 	}
 }
 
+func TestRunAction_PushedTag(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	// Create a tag pointing at the initial commit
+	testshell.Run(t, repoPath, `git tag v1.0.0`)
+
+	testCases := []struct {
+		name                    string
+		repoFlags               []string
+		expectedReportingValues map[string]string
+	}{
+		{
+			name: "Pushed tag and commit sha",
+			repoFlags: []string{
+				"--pushed_tag=v1.0.0",
+				"--commit_sha=" + initialCommitSHA,
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"tag":    "v1.0.0",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Just pushed tag",
+			repoFlags: []string{
+				"--pushed_tag=v1.0.0",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"tag":    "v1.0.0",
+				"commit": initialCommitSHA,
+			},
+		},
+	}
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+
+			// Check that metadata was reported correctly
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			var workspaceStatusEvent *bespb.WorkspaceStatus
+			for _, e := range runnerInvocation.Event {
+				if e.BuildEvent.GetWorkspaceStatus() != nil {
+					workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+					break
+				}
+			}
+			require.NotNil(t, workspaceStatusEvent, tc.name)
+
+			workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+			for _, i := range workspaceStatusEvent.Item {
+				workspaceStatusMap[i.GetKey()] = i.GetValue()
+			}
+
+			require.Equal(t, tc.expectedReportingValues["branch"], workspaceStatusMap["GIT_BRANCH"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["tag"], workspaceStatusMap["GIT_TAG"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["commit"], workspaceStatusMap["COMMIT_SHA"], tc.name)
+		})
+	}
+}
+
+func TestRunAction_PushedTagWithoutCommitSHA(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	// Create a tag pointing at the initial commit
+	testshell.Run(t, repoPath, `git tag v1.0.0`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_tag=v1.0.0",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// Check that metadata was reported correctly
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	var workspaceStatusEvent *bespb.WorkspaceStatus
+	for _, e := range runnerInvocation.Event {
+		if e.BuildEvent.GetWorkspaceStatus() != nil {
+			workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+			break
+		}
+	}
+	require.NotNil(t, workspaceStatusEvent)
+
+	workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+	for _, i := range workspaceStatusEvent.Item {
+		workspaceStatusMap[i.GetKey()] = i.GetValue()
+	}
+
+	require.Equal(t, "", workspaceStatusMap["GIT_BRANCH"])
+	require.Equal(t, "v1.0.0", workspaceStatusMap["GIT_TAG"])
+	require.Equal(t, initialCommitSHA, workspaceStatusMap["COMMIT_SHA"])
+}
+
 func TestRunAction_PushedAndTargetBranchAreEqual(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
@@ -1893,4 +2013,58 @@ actions:
 	runnerInvocation := getRunnerInvocation(t, app, result)
 	expectedStr := "--remote_header=<REDACTED> hello okay uri://username:<REDACTED>@uri fine"
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
+}
+
+func TestInvokeCLICommandViaBazelisk(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+
+	// Create a fake CLI that supports a single command called
+	// "fake-cli-command" and fails if any other arguments are passed to it.
+	fakeCLI := testfs.WriteFile(t, tmp, "script.sh", `#!/usr/bin/env bash
+
+for arg in "$@"; do
+	if [[ "$arg" == "fake-cli-command" ]]; then
+		# When running the fake-cli-command, no other bazel-specific args
+		# should be passed.
+		if [[ "$*" != "fake-cli-command" ]]; then
+			echo >&2 "Got unexpected arguments: ${@@Q}"
+			exit 1
+		fi
+		echo "fake-cli-command: OK"
+		exit 0
+	fi
+done
+
+# For other bazel commands, do nothing.
+`)
+	testfs.MakeExecutable(t, tmp, "script.sh")
+
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, map[string]string{
+		".bazelversion": fakeCLI,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    steps:
+      - run: "bazelisk fake-cli-command"
+`,
+	})
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Unset bazel_command so that we use the real bazelisk.
+		"--bazel_command=",
+		"--bazel_startup_flags=",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "fake-cli-command: OK")
 }

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "watcher",
     srcs = ["watcher.go"],
@@ -10,5 +12,3 @@ go_library(
         "@com_github_bduffany_godemon//:godemon",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

@@ -20,10 +20,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	capb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
 
 type executionsClickhouseTest struct {
-	flags []string
+	flags                    []string
+	expectTargetLabelVisible bool
 }
 
 func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClickHouse(t *testing.T) {
@@ -34,6 +37,7 @@ func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClic
 			"--remote_execution.primary_db_reads_enabled=false",
 			"--remote_execution.olap_reads_enabled=true",
 		},
+		expectTargetLabelVisible: true,
 	})
 }
 
@@ -57,6 +61,7 @@ func testInvocationWithRemoteExecutionWithClickHouse(t *testing.T, tc executions
 	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
 	bbFlags := append([]string{
 		"--olap_database.data_source=" + clickhouseDSN,
+		"--olap_database.async_insert=true",
 		"--remote_execution.enable_remote_exec=true",
 		"--remote_execution.olap_reads_enabled=true",
 	}, tc.flags...)
@@ -124,9 +129,13 @@ common --incompatible_strict_action_env=true
 	wt.Find(`[href="#execution"]`).Click()
 	waitForExecutionsToAppear(t, wt)
 
-	// There should be one execution in in-progress state.
+	// There should be one execution in in-progress state, and it should show
+	// the target label (if the new redis implementation is enabled).
 	execution := wt.Find(".invocation-execution-row")
 	require.Regexp(t, "(Executing|Starting)", execution.Text())
+	if tc.expectTargetLabelVisible {
+		require.Contains(t, execution.Text(), "//:target1")
+	}
 	execution.Click()
 	originalExecutionID := wt.Find(`[debug-id="execution-id"]`).Text()
 
@@ -151,10 +160,23 @@ common --incompatible_strict_action_env=true
 	require.Contains(t, execution.Text(), "Succeeded", "should show stage")
 	require.Contains(t, execution.Text(), "genrule-setup.sh", "should show command_snippet")
 
-	// Click the execution and make sure the execution ID matches the original.
+	// Click the execution and make sure the execution ID matches the original,
+	// and that we can see basic execution metadata.
 	execution.Click()
 	executionID2 := wt.Find(`[debug-id="execution-id"]`).Text()
 	require.Equal(t, originalExecutionID, executionID2)
+	if tc.expectTargetLabelVisible {
+		targetLabel := wt.Find(`[debug-id="target-label"]`).Text()
+		require.Equal(t, "//:target1", targetLabel)
+	}
+
+	// Go to the target page and verify executions appear there too.
+	goToTargetPage(t, wt, target.HTTPURL(), iid2, "//:target1", capb.Status_BUILT)
+	wt.Find(`[debug-id="target-section-tab-executions"]`).Click()
+	waitForExecutionsToAppear(t, wt)
+	execution = wt.Find(".invocation-execution-row")
+	require.Contains(t, execution.Text(), "Succeeded", "target page should show execution stage")
+	require.Contains(t, execution.Text(), "genrule-setup.sh", "target page should show command_snippet")
 
 	// Now go to Drilldowns, drilldown by execution wall time, and click the
 	// rectangle shown in the heatmap. This should select the invocations
@@ -180,6 +202,15 @@ func goToInvocationPage(t *testing.T, wt *webtester.WebTester, baseURL, iid stri
 		wt.Find(`.invocation, .state-page, [debug-id="invocation-loading"]`)
 		return len(wt.FindAll(`.invocation`)) > 0
 	}, 1*time.Minute, 500*time.Millisecond, "go to invocation page")
+}
+
+func goToTargetPage(t *testing.T, wt *webtester.WebTester, baseURL, iid, targetLabel string, targetStatus capb.Status) {
+	url := fmt.Sprintf("%s/invocation/%s?target=%s&targetStatus=%d", baseURL, iid, targetLabel, int(targetStatus))
+	require.Eventually(t, func() bool {
+		wt.Get(url)
+		wt.Find(`.target-page, .state-page`)
+		return len(wt.FindAll(`.target-page`)) > 0
+	}, 1*time.Minute, 500*time.Millisecond, "go to target page")
 }
 
 func waitForExecutionsToAppear(t *testing.T, wt *webtester.WebTester) {

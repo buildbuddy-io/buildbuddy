@@ -1,0 +1,127 @@
+commit 7168d802997f17de52211d895b7bf2ee6fa9fe69
+Author: Son Luong Ngoc <sluongng@gmail.com>
+Date:   Wed Jan 21 17:47:02 2026 +0100
+
+    rules_webtesting is archived upstream, so here is a patch that would
+    enable BuildBuddy to continue using this with Bazel 9.
+    
+    1. Patch Module version to match go.{mod,sum} version.
+    Because the tagged releases was created in a Go Module unfriendly
+    fashion, the latest release that works with Go is 0.2.1.
+    This causes a conflict when using both the Bazel Module and the Go
+    Module dependencies in the same setup.
+    
+    2. web_test fixes:
+    - Upgrade runfiles library to v3.
+    - Make sure runfiles bash library are included in the test action.
+    - Fix TEST_TEMPDIR: unbound variable error by using ${VAR:-} instead.
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 1aa6113..b1a6e62 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -1,6 +1,6 @@
+ module(
+     name = "rules_webtesting",
+-    version = "0.4.1",
++    version = "0.2.1-0.20250911195827-e09c04b7d4d1",
+ )
+ 
+ bazel_dep(name = "bazel_skylib", version = "1.7.1")
+diff --git a/web/internal/web_test.bzl b/web/internal/web_test.bzl
+index 22900ec..16d0213 100644
+--- a/web/internal/web_test.bzl
++++ b/web/internal/web_test.bzl
+@@ -78,6 +78,7 @@ def _generate_noop_test(ctx, reason, status = 0):
+         is_executable = True,
+     )
+ 
++    bash_runfile_targets = [ctx.attr._bash_runfile_helpers]
+     additional_runfiles = list(ctx.files._bash_runfile_helpers)
+     if is_windows(ctx):
+         additional_runfiles += [test]
+@@ -91,6 +92,7 @@ def _generate_noop_test(ctx, reason, status = 0):
+             runfiles = runfiles.collect(
+                 ctx = ctx,
+                 files = additional_runfiles,
++                targets = bash_runfile_targets,
+             ),
+         ),
+     ]
+@@ -136,6 +138,7 @@ def _generate_default_test(ctx):
+         is_executable = True,
+     )
+ 
++    bash_runfile_targets = [ctx.attr._bash_runfile_helpers]
+     additional_runfiles = list(ctx.files._bash_runfile_helpers)
+     if is_windows(ctx):
+         additional_runfiles += [test]
+@@ -154,7 +157,7 @@ def _generate_default_test(ctx):
+                     ctx.attr.config,
+                     ctx.attr.launcher,
+                     ctx.attr.test,
+-                ],
++                ] + bash_runfile_targets,
+             ),
+         ),
+         testing.ExecutionInfo(env),
+diff --git a/web/internal/web_test.sh.template b/web/internal/web_test.sh.template
+index 89bb69e..3dfcad4 100644
+--- a/web/internal/web_test.sh.template
++++ b/web/internal/web_test.sh.template
+@@ -19,33 +19,18 @@
+ # Immediately exit if any command fails.
+ set -e
+ 
+-# --- begin runfiles.bash initialization ---
+-# Source the runfiles library:
+-# https://github.com/bazelbuild/bazel/blob/master/tools/bash/runfiles/runfiles.bash
+-# The runfiles library defines rlocation, which is a platform independent function
+-# used to lookup the runfiles locations. This code snippet is needed at the top
+-# of scripts that use rlocation to lookup the location of runfiles.bash and source it
+-if [[ ! -d "${RUNFILES_DIR:-/dev/null}" && ! -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+-    if [[ -f "$0.runfiles_manifest" ]]; then
+-      export RUNFILES_MANIFEST_FILE="$0.runfiles_manifest"
+-    elif [[ -f "$0.runfiles/MANIFEST" ]]; then
+-      export RUNFILES_MANIFEST_FILE="$0.runfiles/MANIFEST"
+-    elif [[ -f "$0.runfiles/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+-      export RUNFILES_DIR="$0.runfiles"
+-    fi
+-fi
+-if [[ -f "${RUNFILES_DIR:-/dev/null}/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+-  source "${RUNFILES_DIR}/bazel_tools/tools/bash/runfiles/runfiles.bash"
+-elif [[ -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+-  source "$(grep -m1 "^bazel_tools/tools/bash/runfiles/runfiles.bash " \
+-            "$RUNFILES_MANIFEST_FILE" | cut -d ' ' -f 2-)"
+-else
+-  echo >&2 "ERROR: cannot find @bazel_tools//tools/bash/runfiles:runfiles.bash"
+-  exit 1
+-fi
+-# --- end runfiles.bash initialization ---
++# --- begin runfiles.bash initialization v3 ---
++# Copy-pasted from the Bazel Bash runfiles library v3.
++set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
++source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
++  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
++  source "$0.runfiles/$f" 2>/dev/null || \
++  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
++  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
++  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
++# --- end runfiles.bash initialization v3 ---
+ 
+-if [[ -z "$TEST_SRCDIR" ]]; then
++if [[ -z "${TEST_SRCDIR:-}" ]]; then
+   case "$0" in
+     /*) self="$0" ;;
+     *)  self="$PWD/$0" ;;
+@@ -59,8 +44,8 @@ if [[ -z "$TEST_SRCDIR" ]]; then
+   fi
+ fi
+ 
+-if [[ -z "$TEST_TEMPDIR" ]]; then
+-  export TEST_TEMPDIR=$(mktemp -d test_tempdir.XXXXXX)
++if [[ -z "${TEST_TEMPDIR:-}" ]]; then
++  export TEST_TEMPDIR="$(mktemp -d test_tempdir.XXXXXX)"
+ fi
+ 
+ %TEMPLATED_env_vars%

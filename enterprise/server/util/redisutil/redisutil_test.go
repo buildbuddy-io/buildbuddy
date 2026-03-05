@@ -2,6 +2,7 @@ package redisutil_test
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -10,12 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,9 +96,14 @@ func genURI(scheme, user, password, addr, database string) string {
 
 	if strings.HasPrefix(scheme, "redis") {
 		if host, port, err := net.SplitHostPort(addr); err == nil {
-			hostport = host
 			if port != "" {
 				hostport = net.JoinHostPort(host, port)
+			} else if strings.Contains(host, ":") {
+				// Keep the trailing ":" so go-redis can default the port without
+				// double-bracketing IPv6 hosts.
+				hostport = net.JoinHostPort(host, port)
+			} else {
+				hostport = host
 			}
 		} else {
 			return ""
@@ -501,6 +511,88 @@ func TestWeakLock(t *testing.T) {
 	// app2 should now be able to acquire lock1.
 	err = lock1App2.Lock(ctx)
 	require.NoError(t, err)
+}
+
+func TestShardsMigration(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
+	ring := testredis.StartShardedTCP(t, 2)
+	// Configure a ring client with 2 configured shards but only 1 shard
+	// enabled.
+	allAddrs := ring.Addrs()
+	defaultEnabledAddrs := allAddrs[:1]
+
+	// Set up an in-memory provider to avoid race conditions with flagd's
+	// file watching goroutines.
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"test_redis.sharded.migration": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"enable-all": map[string]any{"enabled_addrs": allAddrs},
+				"default":    map[string]any{},
+			},
+		},
+	})
+	err := openfeature.SetProviderAndWait(provider)
+	require.NoError(t, err)
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Create a ring client.
+	opts := &redisutil.Opts{
+		Addrs:           allAddrs,
+		MigrationConfig: redisutil.NewMigrationConfig(fp, allAddrs, defaultEnabledAddrs, "test_redis.sharded.migration"),
+	}
+	rdb, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "test_sharded_redis")
+	require.NoError(t, err)
+	defer rdb.Close()
+	// Create individual clients too, so we can send commands directly for
+	// assertion purposes.
+	rdb0 := ring.Shards[0].Client()
+	rdb1 := ring.Shards[1].Client()
+
+	// Write a bunch of random keys.
+	for range 100 {
+		key := "test:" + rand.Text()
+		err = rdb.Set(ctx, key, "1", 0).Err()
+		require.NoError(t, err)
+	}
+	// Only the first shard should have any keys written.
+	keys0, err := rdb0.Keys(ctx, "test:*").Result()
+	require.NoError(t, err)
+	require.Equal(t, 100, len(keys0))
+	keys1, err := rdb1.Keys(ctx, "test:*").Result()
+	require.NoError(t, err)
+	require.Equal(t, 0, len(keys1))
+
+	// Now update the experiment config to enable both shards.
+	provider = memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"test_redis.sharded.migration": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enable-all",
+			Variants: map[string]any{
+				"enable-all": map[string]any{"enabled_addrs": allAddrs},
+				"default":    map[string]any{},
+			},
+		},
+	})
+	err = openfeature.SetProviderAndWait(provider)
+	require.NoError(t, err)
+
+	// Write random keys again. Eventually, one of them should land on the
+	// second shard now that it's enabled.
+	require.Eventually(t, func() bool {
+		key := "test:" + rand.Text()
+		err := rdb.Set(ctx, key, "1", 0).Err()
+		require.NoError(t, err)
+		keys1, err := rdb1.Keys(ctx, "test:*").Result()
+		require.NoError(t, err)
+		return len(keys1) > 0
+	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {

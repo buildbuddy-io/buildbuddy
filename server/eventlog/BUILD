@@ -25,6 +25,7 @@ go_test(
     deps = [
         ":eventlog",
         "//proto:eventlog_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/backends/chunkstore",
         "//server/tables",
         "//server/testutil/mockinvocationdb",

@@ -321,9 +321,17 @@ message SchedulingMetadata {
   string os = 2;
   string arch = 3;
   string pool = 4;
+
+  reserved 14;
+
   // If set, the task will be scheduled only on nodes matching this hostname
-  // prefix within the pool.
-  string hostname_prefix = 14;
+  // pattern within the pool.
+  // DEPRECATED: use routing_config instead.
+  string hostname_pattern = 15 [deprecated = true];
+
+  // Experimental routing config.
+  RoutingConfig routing_config = 16;
+
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
   // request.
@@ -354,6 +362,16 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+}
+
+message RoutingConfig {
+  // If set, the task will be scheduled only on nodes matching this hostname
+  // pattern within the pool.
+  string hostname_pattern = 1;
+
+  // If true, and the routing requirements cannot be satisfied, behave as though
+  // the routing config was not specified at all.
+  bool best_effort = 2;
 }
 
 message ScheduleTaskRequest {
@@ -419,6 +437,15 @@ message EnqueueTaskReservationResponse {
   string task_id = 1;
 }
 
+// CancelTaskReservationRequest may be sent from the scheduler to the executor
+// to cancel a task reservation previously enqueued with EnqueueTaskReservation.
+// The scheduler only sends these messages if the executor sets
+// supports_proactive_cancellation in the node registration request.
+message CancelTaskReservationRequest {
+  // The ID of the task to cancel.
+  string task_id = 1;
+}
+
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
 }
@@ -467,6 +494,10 @@ message RegisterAndStreamWorkResponse {
 
   // How long to backoff if a AskForMoreWorkRequest was sent.
   AskForMoreWorkResponse ask_for_more_work_response = 4;
+
+  // Request to cancel a task reservation previously enqueued with
+  // EnqueueTaskReservationRequest.
+  CancelTaskReservationRequest cancel_task_reservation_request = 5;
 }
 
 service Scheduler {
@@ -507,9 +538,12 @@ message ExecutionNode {
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 
-  // Remote execution node operating system.
-  // Ex. "linux".
-  string os = 5;
+  // Node's operating system family. One of: "darwin", "linux", or "windows".
+  string os_family = 5;
+
+  // Node's operating system with version info, suitable for display. This will
+  // be something like "macOS 10.17 Sierra".
+  string os_display_name = 15;
 
   // Architecture of the remote execution node.
   // Ex. "amd64"
@@ -543,6 +577,17 @@ message ExecutionNode {
 
   // The number of in-flight actions the executor is currently executing.
   int32 active_action_count = 14;
+
+  // The Xcode versions installed on this executor.
+  repeated string xcode_versions = 16;
+
+  // The Xcode SDKs installed on this executor.
+  repeated string xcode_sdks = 17;
+
+  // Whether the executor supports proactive task cancellation, which allows
+  // cancelling queued requests for tasks that have already been completed by
+  // another executor.
+  bool supports_proactive_cancellation = 18;
 }
 
 message GetExecutionNodesRequest {

@@ -3,6 +3,7 @@ package testredis
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -21,6 +22,10 @@ import (
 )
 
 const (
+	// DefaultShardCount is the default number of shards to use when creating a
+	// sharded redis setup.
+	DefaultShardCount = 3
+
 	startupTimeout      = 10 * time.Second
 	startupPingInterval = 5 * time.Millisecond
 )
@@ -157,6 +162,80 @@ func StartTCP(t testing.TB) *Handle {
 	waitUntilHealthy(t, target)
 
 	return handle
+}
+
+type RingHandle struct {
+	Shards []*Handle
+}
+
+// StartSharded starts a ring of redis servers with the given number of shards.
+// Set the shard count to 0 to use a reasonable default.
+func StartSharded(t testing.TB, count int) *RingHandle {
+	if count <= 0 {
+		count = DefaultShardCount
+	}
+	ch := make(chan *Handle)
+	for range count {
+		go func() { ch <- Start(t) }()
+	}
+	shards := make([]*Handle, 0, count)
+	for range count {
+		shards = append(shards, <-ch)
+	}
+	return &RingHandle{Shards: shards}
+}
+
+// StartShardedTCP starts a ring of redis servers with the given number of
+// shards, using TCP addresses.
+// Set the shard count to 0 to use a reasonable default.
+func StartShardedTCP(t testing.TB, count int) *RingHandle {
+	if count <= 0 {
+		count = DefaultShardCount
+	}
+	ch := make(chan *Handle)
+	for range count {
+		go func() { ch <- StartTCP(t) }()
+	}
+	shards := make([]*Handle, 0, count)
+	for range count {
+		shards = append(shards, <-ch)
+	}
+	return &RingHandle{Shards: shards}
+}
+
+// Addrs returns the ordered addresses of each shard. This can be used to
+// construct a custom client in cases where the default options used in
+// [RingHandle.Client] are not suitable.
+func (h *RingHandle) Addrs() []string {
+	out := make([]string, 0, len(h.Shards))
+	for _, shard := range h.Shards {
+		out = append(out, shard.Target)
+	}
+	return out
+}
+
+func (h *RingHandle) Client() redis.UniversalClient {
+	addrs := make(map[string]string)
+	for i, shard := range h.Shards {
+		var addr string
+		if shard.socketPath != "" {
+			addr = shard.socketPath
+		} else {
+			addr = fmt.Sprintf("localhost:%d", shard.port)
+		}
+		addrs[fmt.Sprintf("shard%d", i)] = addr
+	}
+	ringOptions := &redis.RingOptions{
+		Addrs: addrs,
+	}
+	if h.Shards[0].socketPath != "" {
+		// The default ring client dialer only allows TCP addresses for some
+		// reason. Use a custom dialer for sockets.
+		ringOptions.Dialer = func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return net.Dial("unix", addr)
+		}
+	}
+	return redis.NewRing(ringOptions)
 }
 
 func waitUntilHealthy(t testing.TB, target string) {

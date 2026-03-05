@@ -186,6 +186,22 @@ message FrontendConfig {
 
   // Whether the read-only BuildBuddy GitHub app is enabled.
   bool read_only_github_app_enabled = 61;
+
+  bool targets_page_enabled = 62;
+
+  bool user_lists_ui_enabled = 63;
+
+  // Whether action result origin metadata is recorded and can be displayed.
+  bool action_result_origin_enabled = 64;
+
+  // Whether dark mode UI is enabled.
+  bool dark_mode_enabled = 65;
+
+  // Whether API key values can be retrieved after they are created.
+  // If false, API key metadata should still be accessible, but values should
+  // be omitted from read APIs.
+  // If this field is absent, clients should treat it as true.
+  optional bool api_key_value_readback_enabled = 66;
 }
 
 message Region {

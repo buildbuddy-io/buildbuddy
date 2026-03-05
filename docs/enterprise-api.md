@@ -74,11 +74,14 @@ message GetInvocationRequest {
   // If true, includes additional build metadata.
   bool include_metadata = 2;
 
-  // The next_page_token value returned from a previous request, if any.
-  string page_token = 3;
-
   // If true, include artifacts attached to the invocation.
   bool include_artifacts = 4;
+
+  // If true, include child invocations (if this invocation was a workflow).
+  bool include_child_invocations = 5;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 3;
 }
 ```
 
@@ -197,6 +200,10 @@ message Invocation {
 
   // The state of the build event stream for the invocation.
   InvocationStatus invocationStatus = 25;
+
+  // Any invocations spawned during this invocation. Only included if
+  // include_child_invocations = true.
+  repeated Id child_invocations = 26;
 }
 
 // Key value pair containing invocation metadata.
@@ -609,6 +616,10 @@ message ActionSelector {
   // Optional: The Action ID.
   // If set, only the action with this action id will be returned.
   string action_id = 4;
+
+  // Optional: The Target label.
+  // If set, only the action with this target label will be returned.
+  string target_label = 5;
 }
 ```
 
@@ -638,6 +649,21 @@ message Action {
 
   // A list of file references for action level files.
   repeated File file = 2;
+
+  // The label of the target that generated this action.
+  string target_label = 3;
+
+  // The test shard this action represents.
+  // Only populated for test actions.
+  int64 shard = 4;
+
+  // The test run this action represents.
+  // Only populated for test actions.
+  int64 run = 5;
+
+  // The test attempt this action represents.
+  // Only populated for test actions.
+  int64 attempt = 6;
 }
 ```
 
@@ -871,6 +897,10 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 10;
 }
 ```
 
@@ -915,13 +945,24 @@ https://app.buildbuddy.io/api/v1/Run
 rpc Run(RunRequest) returns (RunResponse);
 ```
 
-### Example cURL request
+### Example cURL requests
 
 ```bash
+# Run commands in a git repository
 curl -d '{
-    "repo”: "git@github.com:buildbuddy-io/buildbuddy.git",
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
     "branch":"main",
     "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+```bash
+# Run commands in an empty directory (no git repo)
+curl -d '{
+    "steps": [{"run": "echo hello world"}]
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -932,16 +973,25 @@ https://app.buildbuddy.io/api/v1/Run
 
 ```protobuf
 message RunRequest {
-  // URL of the repo the remote workspace should be initialized for
+  // URL of the repo the remote workspace should be initialized for.
   // Ex. "https://github.com/some-user/acme"
+  // If not provided, commands will run in an empty directory.
   string repo = 1;
 
-  // Git refs to configure the remote git workspace (at least one of `branch` or
-  // `commit_sha` must be set). If only `branch` is set, will run from the tip
-  // of the branch. If only `commit_sha` is set, reporting will not contain the
-  // branch name.
+  // Git refs to configure the remote git workspace. At least one of `branch` or
+  // `commit_sha` must be set when `repo` is provided. If only `branch` is set,
+  // will run from the tip of the branch. If only `commit_sha` is set, reporting
+  // will not contain the branch name.
   string branch = 2;
   string commit_sha = 3;
+
+  // Any local patches that should be applied to the repo before
+  // running the command.
+  // Patches will be applied using "git apply" in the root directory of the
+  // repository.
+  // In JSON requests (e.g. curl request body), this field should be specified
+  // as a list of base64-encoded strings.
+  repeated bytes patches = 11;
 
   // Bash commands to run, in order.
   // If a step fails, subsequent steps are not run.
@@ -955,13 +1005,21 @@ message RunRequest {
   // Ex. {"OSFamily":"linux", "Arch":"amd64"}
   map<string, string> platform_properties = 6;
 
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
+  //
+  // Can be used to set platform properties containing secrets.
+  // Ex. ["x-buildbuddy-platform.env-overrides=SECRET_NAME=SECRET_VALUE"]
+  repeated string remote_headers = 10;
+
   // Max time before run should be canceled.
   // Ex. "15s", "2h"
   string timeout = 7;
 
-  // If true, start the runner but do not wait for the action to be scheduled
-  // before returning a response.
-  bool async = 8;
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
+  WaitCondition wait_until = 13;
 
   // Whether to use github credentials configured on the executor.
   //
@@ -972,10 +1030,27 @@ message RunRequest {
   //
   // This is only supported for bare runners.
   bool use_system_git_credentials = 9;
+
+  // Whether to skip the automatic GitHub setup steps on the remote runner.
+  bool skip_auto_checkout = 12;
 }
 
 message Step {
   string run = 1;
+}
+
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
+
+  // Wait for the invocation to complete.
+  COMPLETED = 3;
 }
 ```
 

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -158,7 +159,9 @@ func TestUnpackFallbackKey(t *testing.T) {
 	// Sanity check that the branch key is not found in cache, to make sure
 	// we're actually falling back.
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: forkKeys.GetBranchKey()}, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.Error(t, err)
 
@@ -339,7 +342,9 @@ func TestSnapshotVersioning(t *testing.T) {
 
 		// We should not be able to find a snapshot for the new key
 		snapshot2, _ := loader.GetSnapshot(ctx, snapshotKey2, &snaploader.GetSnapshotOptions{
-			RemoteReadEnabled: remoteEnabled,
+			SupportsRemoteChunks:   remoteEnabled,
+			SupportsRemoteManifest: remoteEnabled,
+			ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 		})
 		require.Nil(t, snapshot2)
 
@@ -412,7 +417,9 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 	// Delete some artifacts from the local cache, so we can test fetching artifacts
 	// from both the local and remote cache
 	snapMetadata, err := loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.NoError(t, err)
 	for i, f := range snapMetadata.GetFiles() {
@@ -476,7 +483,9 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 
 	// Delete some artifacts from the remote cache (arbitrarily the first one for simplicity)
 	snapMetadata, err := loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.NoError(t, err)
 	for _, f := range snapMetadata.GetFiles() {
@@ -497,7 +506,9 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	// Even though the assets still exist in the local cache, the remote cache
 	// should serve as the source of truth on whether a snapshot is valid
 	_, err = loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.Error(t, err)
 }
@@ -507,7 +518,7 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 		env := setupEnv(t)
-		auth := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+		auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 		env.SetAuthenticator(auth)
 		ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
 		require.NoError(t, err)
@@ -537,7 +548,9 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		// Fetching snapshot with same group id different instance name should fail
 		keysNewInstanceName := keysWithInstanceName(t, ctx, loader, "remote-C")
 		_, err = loader.GetSnapshot(ctx, keysNewInstanceName, &snaploader.GetSnapshotOptions{
-			RemoteReadEnabled: enableRemote,
+			SupportsRemoteChunks:   enableRemote,
+			SupportsRemoteManifest: enableRemote,
+			ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 		})
 		require.Error(t, err)
 
@@ -545,7 +558,9 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		ctxNewGroup, err := auth.WithAuthenticatedUser(context.Background(), "US2")
 		require.NoError(t, err)
 		_, err = loader.GetSnapshot(ctxNewGroup, originalKeys, &snaploader.GetSnapshotOptions{
-			RemoteReadEnabled: enableRemote,
+			SupportsRemoteChunks:   enableRemote,
+			SupportsRemoteManifest: enableRemote,
+			ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 		})
 		require.Error(t, err)
 	}
@@ -587,7 +602,9 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		// snapshot locally only.
 		workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
 		snap, err := loader.GetSnapshot(ctx, keyset, &snaploader.GetSnapshotOptions{
-			RemoteReadEnabled: true,
+			SupportsRemoteChunks:   true,
+			SupportsRemoteManifest: true,
+			ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 		})
 		require.NoError(t, err)
 		unpacked, err := loader.UnpackSnapshot(ctx, snap, workDirB)
@@ -615,7 +632,9 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		// GetSnapshot should use the local snapshot manifest, but fallback to the
 		// remote cache for any missing chunks.
 		snap, err = loader.GetSnapshot(ctx, keyset, &snaploader.GetSnapshotOptions{
-			RemoteReadEnabled: true,
+			SupportsRemoteChunks:   true,
+			SupportsRemoteManifest: true,
+			ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 		})
 		require.NoError(t, err)
 		unpackedC, err := loader.UnpackSnapshot(ctx, snap, workDirC)
@@ -665,7 +684,9 @@ func TestMergeQueueBranch(t *testing.T) {
 
 	// Make sure we can fetch a snapshot for the merge queue branch
 	snapMetadata, err := loader.GetSnapshot(ctx, mergeBranchKeys, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, snapMetadata)
@@ -689,7 +710,9 @@ func TestMergeQueueBranch(t *testing.T) {
 	prBranchKeys, err := loader.SnapshotKeySet(ctx, prTask, "config-hash", "")
 	require.NoError(t, err)
 	snapMetadata, err = loader.GetSnapshot(ctx, prBranchKeys, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, snapMetadata)
@@ -714,6 +737,7 @@ func makeFakeSnapshot(t *testing.T, workDir string, remoteEnabled bool, chunkedF
 		InitrdImagePath:       makeRandomFile(t, workDir, "initrd", 1_000),
 		ContainerFSPath:       makeRandomFile(t, workDir, "containerfs", 1_000),
 		CacheSnapshotRemotely: remoteEnabled,
+		CacheSnapshotLocally:  true,
 		WriteManifestLocally:  !remoteEnabled,
 		ChunkedFiles:          chunkedFiles,
 		VMMetadata:            &fcpb.VMMetadata{SnapshotId: snapshotID},
@@ -741,7 +765,9 @@ func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
 // originally cached contents.
 func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, snapshotKeySet *fcpb.SnapshotKeySet, outDir string, originalSnapshot *snaploader.CacheSnapshotOptions) *snaploader.UnpackedSnapshot {
 	snap, err := loader.GetSnapshot(ctx, snapshotKeySet, &snaploader.GetSnapshotOptions{
-		RemoteReadEnabled: true,
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
 	})
 	require.NoError(t, err)
 	unpacked, err := loader.UnpackSnapshot(ctx, snap, outDir)

@@ -25,8 +25,51 @@ describe("normalizeSpace", () => {
 });
 
 describe("getContent", () => {
+  it("should preserve blank lines", () => {
+    expect(getContent("Hello\n\nWorld", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
+      {
+        plaintext: "Hello",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [{ length: 5, style: {} }],
+      },
+      {
+        plaintext: "",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [],
+      },
+      {
+        plaintext: "World",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [{ length: 5, style: {} }],
+      },
+    ]);
+  });
+
+  it("should preserve trailing blank lines", () => {
+    expect(getContent("Hello\n", { match: "", caseSensitive: false }, 0).rows).toEqual([
+      {
+        plaintext: "Hello",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [{ length: 5, style: {} }],
+      },
+      {
+        plaintext: "",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [],
+      },
+    ]);
+  });
+
   it("should handle ANSI SGR state that persists across lines", () => {
-    expect(getContent("\x1b[32mMulti-line\nColor\x1b[m\nReset", "", 0).rows).toEqual([
+    expect(
+      getContent("\x1b[32mMulti-line\nColor\x1b[m\nReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,
@@ -62,7 +105,10 @@ describe("getContent", () => {
       },
     ]);
 
-    expect(getContent("\x1b[32mMulti-line\nColor\x1b[mReset", "", 0).rows).toEqual([
+    expect(
+      getContent("\x1b[32mMulti-line\nColor\x1b[mReset", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,
@@ -91,7 +137,13 @@ describe("getContent", () => {
       },
     ]);
 
-    expect(getContent("\x1b[32mMulti-line\n\x1b[32mColor\x1b[m\nReset", "", 0).rows).toEqual([
+    expect(
+      getContent(
+        "\x1b[32mMulti-line\n\x1b[32mColor\x1b[m\nReset",
+        { match: "", caseSensitive: false },
+        Number.MAX_SAFE_INTEGER
+      ).rows
+    ).toEqual([
       {
         plaintext: "Multi-line",
         matchStartIndex: null,

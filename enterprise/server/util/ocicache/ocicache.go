@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -43,7 +44,6 @@ const (
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error creating key for manifest %s:%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 
@@ -53,7 +53,6 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	any, err := anypb.New(m)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error constructing manifest contents %s:%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 	ar := &repb.ActionResult{
@@ -64,10 +63,8 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 		},
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, arRN, ar); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest %s:%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
 		return err
 	}
-	log.CtxInfof(ctx, "Successfully wrote manifest %s:%s (original ref %q)", repo, hash, originalRef)
 	return nil
 }
 
@@ -79,12 +76,12 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 }
 
 func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxInfof(ctx, "OCI cache manifest miss %s:%s (original ref %q)", repo, hash, originalRef)
+	log.CtxDebugf(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
 func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
-	log.CtxInfof(ctx, "OCI cache manifest hit %s:%s (original ref %q)", repo, hash, originalRef)
+	log.CtxDebugf(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
@@ -94,39 +91,30 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Error creating key for manifest in %q: %s", repo, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		if !status.IsNotFoundError(err) {
-			log.CtxWarningf(ctx, "Error getting action result for manifest in %q: %s", repo, err)
-		}
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
-	aux := meta.GetAuxiliaryMetadata()
-	if aux == nil || len(aux) != 1 {
-		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
-		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
-	}
-	any := aux[0]
-	var mc ocipb.OCIManifestContent
-	err = any.UnmarshalTo(&mc)
+	mc := &ocipb.OCIManifestContent{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(meta, mc)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
-		log.CtxWarningf(ctx, "Error unmarshalling manifest content in %q: %s", repo, err)
-		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
+		return nil, status.InternalErrorf("could not unmarshal metadata for manifest %s@%s: %s", repo, hash, err)
+	}
+	if !ok {
+		manifestMiss(ctx, repo, hash, originalRef)
+		return nil, status.InternalErrorf("missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
 	}
 	manifestHit(ctx, repo, hash, originalRef)
-	return &mc, nil
+	return mc, nil
 }
 
 func manifestACKey(repo gcrname.Repository, refhash gcr.Hash) (*digest.ACResourceName, error) {
@@ -409,12 +397,14 @@ func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bs
 		return nil, err
 	}
 	return &readThroughCacher{
+		ctx:   ctx,
 		rc:    rc,
 		cache: cache,
 	}, nil
 }
 
 type readThroughCacher struct {
+	ctx   context.Context
 	rc    io.ReadCloser
 	cache interfaces.CommittedWriteCloser
 
@@ -429,21 +419,21 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 
 	if n > 0 {
 		written, writeErr := r.cache.Write(p[:n])
-		if writeErr != nil {
-			log.Warningf("Error writing to cache: %s", writeErr)
-			r.cacheErr = writeErr
-			return n, err
-		}
-		if written < n {
-			r.cacheErr = io.ErrShortWrite
-			return n, err
+		r.cacheErr = writeErr
+		if r.cacheErr == nil {
+			if written < n {
+				log.CtxWarningf(r.ctx, "Short write to cache. Wanted %v, wrote %v", n, written)
+				r.cacheErr = io.ErrShortWrite
+			}
+		} else if !status.IsAlreadyExistsError(r.cacheErr) {
+			log.CtxWarningf(r.ctx, "Error writing to cache: %s", r.cacheErr)
 		}
 	}
 
-	if err == io.EOF {
-		if err := r.cache.Commit(); err != nil {
-			log.Warningf("Error committing blob to cache: %s", err)
-			r.cacheErr = err
+	if err == io.EOF && r.cacheErr == nil {
+		r.cacheErr = r.cache.Commit()
+		if r.cacheErr != nil {
+			log.CtxWarningf(r.ctx, "Error committing blob to cache: %s", r.cacheErr)
 		}
 	}
 
@@ -453,7 +443,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 func (r *readThroughCacher) Close() error {
 	err := r.rc.Close()
 	if err := r.cache.Close(); err != nil {
-		log.Warningf("Error closing cache writer: %s", err)
+		log.CtxWarningf(r.ctx, "Error closing cache writer: %s", err)
 	}
 	return err
 }

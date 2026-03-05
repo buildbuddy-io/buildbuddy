@@ -1,14 +1,19 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -19,13 +24,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -40,6 +46,8 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var userMap = testauth.TestUsers("user1", "group1")
@@ -157,6 +165,24 @@ func TestGetTargetByTag(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 2, len(resp.Target))
+}
+
+func TestGetTargetFailedToBuild(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamFailedBuild(t, env, testInvocationID)
+
+	s := NewAPIServer(env)
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 1, len(resp.Target))
+	target := resp.Target[0]
+	assert.Equal(t, "//failed/target:bar", target.GetLabel())
+	assert.Equal(t, commonpb.Status_FAILED_TO_BUILD, target.GetStatus())
 }
 
 func TestGetAction(t *testing.T) {
@@ -408,7 +434,7 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	}
 
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
@@ -544,7 +570,7 @@ func TestCreateUserApiKey(t *testing.T) {
 	var admin *tables.User
 	var adminGroup *tables.Group
 	for _, u := range users {
-		if u.Groups[0].Role == uint32(role.Admin) {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			adminGroup = &u.Groups[0].Group
 			break
@@ -645,9 +671,86 @@ func TestCreateUserApiKey(t *testing.T) {
 	require.Nil(t, rsp.GetApiKey().GetExpirationTimestamp())
 }
 
+func TestMetrics(t *testing.T) {
+	flags.Set(t, "api.enable_metrics_api", true)
+	const testFlags = `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "api.metrics_federation.enabled": {
+      "state": "ENABLED",
+      "defaultVariant": "false",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "targeting": {
+        "if": [
+			{"==": [ {"var": "group_id"}, "GR1" ]},
+			"true",
+			"false"
+		]
+      }
+    },
+	"api.metrics_federation.match_parameters": {
+      "state": "ENABLED",
+      "defaultVariant": "mac_metrics",
+      "variants": {
+        "mac_metrics": {
+			"job": "(mac-executor|mac-node)"
+		}
+      }
+    }
+  }
+}
+`
+	env := enterprise_testenv.New(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+	fakeProm := &fakePromQuerier{}
+	env.SetPromQuerier(fakeProm)
+	s := NewAPIServer(env)
+
+	for _, tc := range []struct {
+		name                string
+		authenticatedUserID string
+		expectedStatus      int
+		expectedResponse    string
+	}{
+		{
+			name:                "fetch federated metrics as configured group",
+			authenticatedUserID: "US1",
+			expectedStatus:      http.StatusOK,
+			expectedResponse:    `buildbuddy_remote_execution_tasks_executing{job="mac-executor",group_id="GR1"} 1`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if tc.authenticatedUserID != "" {
+				var err error
+				ctx, err = ta.WithAuthenticatedUser(ctx, tc.authenticatedUserID)
+				require.NoError(t, err)
+			}
+			req := &http.Request{}
+			req = req.WithContext(ctx)
+			tw := &testResponseWriter{}
+			s.GetMetricsHandler().ServeHTTP(tw, req)
+			assert.Equal(t, tc.expectedStatus, tw.Status)
+			assert.Contains(t, tw.String(), tc.expectedResponse)
+		})
+	}
+}
+
 func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
+	ta := testauth.NewTestAuthenticator(t, userMap)
 	te.SetAuthenticator(ta)
 	if user == "" {
 		return te, context.Background()
@@ -706,6 +809,28 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, ctx context.Cont
 	assert.NoError(t, err)
 
 	return iid
+}
+
+func streamFailedBuild(t *testing.T, te *testenv.TestEnv, iid string) {
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), iid)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	events := []*anypb.Any{
+		startedEvent("--remote_header='" + authutil.APIKeyHeader + "=user1'"),
+		targetConfiguredEvent("//failed/target:bar", "java_binary rule", "tag-failed"),
+		targetFailedEvent("//failed/target:bar"),
+		finishedEvent(),
+	}
+
+	for idx, evt := range events {
+		err := channel.HandleEvent(streamRequest(evt, iid, int64(idx+1)))
+		assert.NoError(t, err)
+	}
+
+	err = channel.FinalizeInvocation(iid)
+	assert.NoError(t, err)
 }
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
@@ -830,6 +955,36 @@ func targetCompletedEvent(label string) *anypb.Any {
 	return targetCompletedAny
 }
 
+func targetFailedEvent(label string) *anypb.Any {
+	targetFailedAny := &anypb.Any{}
+	targetFailedAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Id: &build_event_stream.BuildEventId{
+			Id: &build_event_stream.BuildEventId_TargetCompleted{
+				TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
+					Label: label,
+					Configuration: &build_event_stream.BuildEventId_ConfigurationId{
+						Id: "config1",
+					},
+				},
+			},
+		},
+		Payload: &build_event_stream.BuildEvent_Completed{
+			Completed: &build_event_stream.TargetComplete{
+				Success: false,
+				FailureDetail: &failure_details.FailureDetail{
+					Message: "worker spawn failed",
+					Category: &failure_details.FailureDetail_Spawn{
+						Spawn: &failure_details.Spawn{
+							Code: *failure_details.Spawn_NON_ZERO_EXIT.Enum(),
+						},
+					},
+				},
+			},
+		},
+	})
+	return targetFailedAny
+}
+
 func actionCompleteEvent(label string) *anypb.Any {
 	actionCompleteEvent := &anypb.Any{}
 	actionCompleteEvent.MarshalFrom(&build_event_stream.BuildEvent{
@@ -931,4 +1086,44 @@ func finishedEvent() *anypb.Any {
 		},
 	})
 	return finishedAny
+}
+
+type testResponseWriter struct {
+	bytes.Buffer
+	Status int
+	header http.Header
+}
+
+func (w *testResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *testResponseWriter) WriteHeader(status int) {
+	w.Status = status
+}
+
+func (w *testResponseWriter) Write(p []byte) (int, error) {
+	if w.Status == 0 {
+		w.WriteHeader(200)
+	}
+	return w.Buffer.Write(p)
+}
+
+type fakePromQuerier struct{}
+
+func (p *fakePromQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
+	return nil, nil
+}
+func (p *fakePromQuerier) FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error {
+	if !strings.Contains(match, `group_id="GR1"`) {
+		return fmt.Errorf("match param must contain group_id filter")
+	}
+	if !strings.Contains(match, "job=~") {
+		return fmt.Errorf("match param must contain job filter")
+	}
+	_, err := w.Write([]byte(`buildbuddy_remote_execution_tasks_executing{job="mac-executor",group_id="GR1"} 1`))
+	return err
 }

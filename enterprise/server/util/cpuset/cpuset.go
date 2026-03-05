@@ -159,17 +159,21 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 		}
 		// Validate "NODE:" prefixes against system CPU information, or populate
 		// them if they were omitted.
-		numaNodes := make(map[int]int, len(systemCPUs))
+		sysCPUs := make(map[int]CPUInfo, len(systemCPUs))
 		for _, cpu := range systemCPUs {
-			numaNodes[cpu.Processor] = cpu.NumaNode
+			sysCPUs[cpu.Processor] = cpu
 		}
 		for i := range c {
 			cpu := &c[i]
+			sysCPU, ok := sysCPUs[cpu.Processor]
+			if !ok {
+				return nil, fmt.Errorf("invalid CPU %d in cpuset flag: CPU does not exist on this machine", cpu.Processor)
+			}
 			if cpu.NumaNode == -1 {
-				cpu.NumaNode = numaNodes[cpu.Processor]
+				cpu.NumaNode = sysCPU.NumaNode
 			} else {
-				if numaNodes[cpu.Processor] != cpu.NumaNode {
-					return nil, fmt.Errorf("invalid node: %d for CPU %d: does not match OS-reported node: %d", cpu.NumaNode, cpu.Processor, numaNodes[cpu.Processor])
+				if sysCPU.NumaNode != cpu.NumaNode {
+					return nil, fmt.Errorf("invalid node: %d for CPU %d: does not match OS-reported node: %d", cpu.NumaNode, cpu.Processor, sysCPU.NumaNode)
 				}
 			}
 		}

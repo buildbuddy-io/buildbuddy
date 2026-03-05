@@ -748,6 +748,16 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 
 	// Block cache metrics.
 	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
+	hitLabel := prometheus.Labels{
+		metrics.CacheNameLabel:     cacheName,
+		metrics.CacheHitMissStatus: "hit",
+	}
+	missLabel := prometheus.Labels{
+		metrics.CacheNameLabel:     cacheName,
+		metrics.CacheHitMissStatus: "miss",
+	}
+	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(hitLabel).Add(float64(m.BlockCache.Hits - om.BlockCache.Hits))
+	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(missLabel).Add(float64(m.BlockCache.Misses - om.BlockCache.Misses))
 
 	// Write Stall metrics
 	count, dur := mc.WriteStallStats()

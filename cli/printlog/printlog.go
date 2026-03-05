@@ -14,6 +14,8 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	// Need to init this so that we can marshal messages type Any such as OriginMetadata
+	_ "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 

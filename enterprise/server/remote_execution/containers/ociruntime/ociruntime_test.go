@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,9 +20,10 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -32,11 +32,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -55,11 +55,10 @@ import (
 
 // Set via x_defs in BUILD file.
 var (
-	crunRlocationpath       string
-	busyboxRlocationpath    string
-	ociBusyboxRlocationpath string
-	testworkerRlocationpath string
-	netToolsImageRef        string
+	crunRlocationpath          string
+	busyboxImageRlocationpath  string
+	netToolsImageRlocationpath string
+	testworkerRlocationpath    string
 )
 
 func init() {
@@ -78,37 +77,21 @@ func setupNetworking(t *testing.T) {
 	flags.Set(t, "executor.oci.network_pool_size", 0)
 }
 
-// Returns a special image ref indicating that a busybox-based rootfs should
-// be provisioned using the 'busybox' binary on the host machine.
-// Skips the test if busybox is not available.
-// TODO: use a static test binary + empty rootfs, instead of relying on busybox
-// for testing
-func manuallyProvisionedBusyboxImage(t *testing.T) string {
-	// Make sure our bazel-provisioned busybox binary is in PATH.
-	busyboxPath, err := runfiles.Rlocation(busyboxRlocationpath)
-	require.NoError(t, err)
-	if path, _ := exec.LookPath("busybox"); path != busyboxPath {
-		err := os.Setenv("PATH", filepath.Dir(busyboxPath)+":"+os.Getenv("PATH"))
-		require.NoError(t, err)
-	}
-	return ociruntime.TestBusyboxImageRef
+// Runs a test image registry and pushes an image from runfiles to it.
+// It returns a ref that can be used to pull the image.
+func serveImageFromRunfiles(t *testing.T, name, rlocationpath string) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
+	registry.Push(t, image, name, nil)
+	return registry.ImageAddress(name)
 }
 
-// Returns an image ref pointing to a remotely hosted busybox image.
-// Skips the test if we don't have mount permissions.
-// TODO: support rootless overlayfs mounts and get rid of this
-func realBusyboxImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return "mirror.gcr.io/library/busybox"
+func busyboxImage(t *testing.T) string {
+	return serveImageFromRunfiles(t, "busybox", busyboxImageRlocationpath)
 }
 
 func netToolsImage(t *testing.T) string {
-	if !hasMountPermissions(t) {
-		t.Skipf("using a real container image with overlayfs requires mount permissions")
-	}
-	return netToolsImageRef
+	return serveImageFromRunfiles(t, "net-tools", netToolsImageRlocationpath)
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image
@@ -131,14 +114,24 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 	})
 }
 
+func installFileCacheInEnv(t testing.TB, env *real_environment.RealEnv) {
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 10_000_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+}
+
 func TestRun(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -183,11 +176,12 @@ func TestRun(t *testing.T) {
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -237,11 +231,12 @@ func TestCgroupSettings(t *testing.T) {
 func TestRunUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -282,6 +277,7 @@ func TestRunWithImage(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -330,11 +326,12 @@ TEST_ENV_VAR=foo
 func TestRunOOM(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -420,11 +417,12 @@ cat /sys/fs/cgroup/memory.events
 func TestCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -441,7 +439,8 @@ func TestCreateExecRemove(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -466,11 +465,12 @@ func TestCreateExecRemove(t *testing.T) {
 func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -501,11 +501,12 @@ func TestTini_Run(t *testing.T) {
 func TestTini_CreateExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -563,11 +564,12 @@ func TestTini_CreateExec(t *testing.T) {
 func TestExecUsageStats(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -610,11 +612,12 @@ func TestExecUsageStats(t *testing.T) {
 func TestStatsPostExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := realBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -673,6 +676,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -712,7 +716,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	// Exec
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-ec", `
-			touch /bin/foo.txt
+			touch ~/foo.txt
 			pwd
 			env | sort
 		`},
@@ -728,7 +732,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, `/buildbuddy-execroot
 GREETING=Hello
-HOME=/root
+HOME=/home/buildbuddy
 HOSTNAME=localhost
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
@@ -746,14 +750,68 @@ TEST_ENV_VAR=foo
 	require.NoError(t, err)
 }
 
-func TestCreateExecPauseUnpause(t *testing.T) {
+func TestCreateExecUser(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	const (
+		testUser   = "buildbuddy"
+		expectedID = "uid=1000 gid=1000"
+	)
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerUser:     testUser,
+	}})
+	require.NoError(t, err)
+
+	// Pull
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+
+	// Create
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\""},
+	}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, expectedID, strings.TrimSpace(string(res.Stdout)))
+}
+
+func TestCreateExecPauseUnpause(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -770,7 +828,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
@@ -855,11 +914,12 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -890,11 +950,12 @@ func TestCreateFailureHasStderr(t *testing.T) {
 func TestDevices(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -946,11 +1007,12 @@ func TestSignal(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -992,7 +1054,7 @@ func TestSignal(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 }
 
-func TestNetwork_Enabled(t *testing.T) {
+func TestNetworking(t *testing.T) {
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -1003,102 +1065,93 @@ func TestNetwork_Enabled(t *testing.T) {
 	// (Note that podman has this same issue.)
 	image := netToolsImage(t)
 
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	for _, tc := range []struct {
+		name                       string
+		defaultNetworkFlag         string
+		dockerNetworkProp          string
+		expectExternalConnectivity bool
+	}{
+		{
+			name:                       "default enabled",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "enabled explicitly via prop",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "disabled via flag",
+			defaultNetworkFlag:         "off",
+			expectExternalConnectivity: false,
+		},
+		{
+			name:                       "disabled via flag but overridden via prop",
+			defaultNetworkFlag:         "off",
+			dockerNetworkProp:          "bridge",
+			expectExternalConnectivity: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
+			installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
+			runtimeRoot := testfs.MakeTempDir(t)
+			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+			if tc.defaultNetworkFlag != "" {
+				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
+			}
 
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
+			buildRoot := testfs.MakeTempDir(t)
+			cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerNetwork:  tc.dockerNetworkProp,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
 
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			ping -c1 -W1 $(hostname)
-			ping -c1 -W2 8.8.8.8
-			ping -c1 -W2 google.com
-		`},
+			// Run
+			cmd := &repb.Command{
+				Arguments: []string{"sh", "-c", `
+					# Should still have a loopback device available.
+					if ping -c1 -W1 $(hostname) >&2 ; then
+						echo PING_LOOPBACK_OK=true
+					else
+						echo PING_LOOPBACK_OK=false
+					fi
+					if ping -c1 -W2 8.8.8.8 >&2 ; then
+						echo PING_EXTERNAL_OK=true
+					else
+						echo PING_EXTERNAL_OK=false
+					fi
+				`},
+			}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			t.Logf("stderr: %s", string(res.Stderr))
+			if tc.expectExternalConnectivity {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", string(res.Stdout))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+			} else {
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", string(res.Stdout))
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
+				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
+			}
+		})
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-}
-
-func TestNetwork_Disabled(t *testing.T) {
-	setupNetworking(t)
-
-	// Note: busybox has ping, but it fails with 'permission denied (are you
-	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
-	// So just use the net-tools image which doesn't have this issue for
-	// whatever reason (presumably it's some difference in the ping
-	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
-	// (Note that podman has this same issue.)
-	image := netToolsImage(t)
-
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
-
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	flags.Set(t, "executor.network_stats_enabled", true)
-
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
-
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
-
-	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
-		DockerNetwork:  "off",
-	}})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	// Run
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-ec", `
-			# Should still have a loopback device available.
-			ping -c1 -W1 $(hostname)
-
-			if ping -c1 -W2 8.8.8.8 2>/dev/null; then
-				echo >&2 'Should not be able to ping external network'
-				exit 1
-			fi
-		`},
-	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-	require.NoError(t, res.Error)
-	t.Logf("stdout: %s", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
-	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 }
 
 func TestUser(t *testing.T) {
@@ -1107,6 +1160,7 @@ func TestUser(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1125,14 +1179,14 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/Default",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 			},
 			expectedID: "uid=0(root) gid=0(root) groups=0(root)",
 		},
 		{
 			name: "Busybox/UnknownUID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024",
 			},
 			expectedID: "uid=2024 gid=0(root) groups=0(root)",
@@ -1140,7 +1194,7 @@ func TestUser(t *testing.T) {
 		{
 			name: "Busybox/UnknownUIDAndGID",
 			props: &platform.Properties{
-				ContainerImage: realBusyboxImage(t),
+				ContainerImage: busyboxImage(t),
 				DockerUser:     "2024:2024",
 			},
 			expectedID: "uid=2024 gid=2024 groups=2024",
@@ -1217,6 +1271,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1253,7 +1308,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 
 	for _, tc := range []struct {
 		layerCount int
@@ -1286,13 +1341,14 @@ func TestHighLayerCount(t *testing.T) {
 
 			// Start registry and push our new image there
 			reg := testregistry.Run(t, testregistry.Opts{})
-			imageRef := reg.Push(t, testImg, "foo:latest")
+			imageRef := reg.Push(t, testImg, "foo:latest", nil)
 
 			// Start container to verify content
 			setupNetworking(t)
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
+			installFileCacheInEnv(t, env)
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
@@ -1319,7 +1375,7 @@ func TestHighLayerCount(t *testing.T) {
 func TestEntrypoint(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Mutate the image with an ENTRYPOINT directive which sets an env var
 	// that we expect to be visible in the command
 	cfg, err := busyboxImg.ConfigFile()
@@ -1330,11 +1386,12 @@ func TestEntrypoint(t *testing.T) {
 	require.NoError(t, err)
 	// Start a test registry and push the mutated busybox image to it
 	reg := testregistry.Run(t, testregistry.Opts{})
-	image := reg.Push(t, img, "test-entrypoint:latest")
+	image := reg.Push(t, img, "test-entrypoint:latest", nil)
 	// Set up the container
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1362,7 +1419,7 @@ func TestEntrypoint(t *testing.T) {
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
-	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
 	// non-root user
 	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(
@@ -1409,11 +1466,12 @@ func TestFileOwnership(t *testing.T) {
 	require.NoError(t, err)
 	// Start a test registry and push the mutated busybox image to it
 	reg := testregistry.Run(t, testregistry.Opts{})
-	image := reg.Push(t, img, "test-file-ownership:latest")
+	image := reg.Push(t, img, "test-file-ownership:latest", nil)
 	// Set up the container
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1476,24 +1534,34 @@ func TestPathSanitization(t *testing.T) {
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
+			// Set up a filecache for the image store
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 1_000_000_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
 			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
-			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
+			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot, fc)
 			require.NoError(t, err)
 			// Load busybox oci image
-			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+			busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 			// Append an invalid layer
 			layer := testregistry.NewBytesLayer(t, test.Tar)
-			img, err := mutate.AppendLayers(busyboxImg, layer)
+			mutatedImg, err := mutate.AppendLayers(busyboxImg, layer)
 			require.NoError(t, err)
 			// Start a test registry and push the mutated busybox image to it
 			reg := testregistry.Run(t, testregistry.Opts{})
-			image := reg.Push(t, img, "test-file-ownership:latest")
+			image := reg.Push(t, mutatedImg, "test-file-ownership:latest", nil)
 
 			// Make sure we get an error when pulling this image.
 			ctx := context.Background()
-			_, err = imageStore.Pull(ctx, image, oci.Credentials{})
+			lockedImg, err := imageStore.PullAndLockImage(ctx, image, oci.Credentials{}, false)
+			if lockedImg != nil {
+				defer lockedImg.Unlock()
+			}
 			require.Error(t, err)
 			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %T", err)
 			assert.Contains(t, err.Error(), test.ExpectedError)
@@ -1504,11 +1572,12 @@ func TestPathSanitization(t *testing.T) {
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1526,11 +1595,13 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-		ContainerImage: image,
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
 	}})
 	require.NoError(t, err)
 
-	// Create container
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, ws.Path())
 	require.NoError(t, err)
@@ -1555,9 +1626,10 @@ func TestPersistentWorker(t *testing.T) {
 	}
 
 	// Start worker (Exec)
-	worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
 		Arguments: []string{"./testworker", "--response_base64", responseBase64},
 	})
+	require.NoError(t, err)
 
 	// Send work request.
 	// The command doesn't matter - the test worker always just returns a fixed
@@ -1566,6 +1638,9 @@ func TestPersistentWorker(t *testing.T) {
 
 	assert.Equal(t, "test-output", string(res.Stderr))
 	assert.Equal(t, 42, res.ExitCode)
+	// Should report non-zero CPU and memory usage.
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0))
+	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 
 	// Pause container and stop worker
 	err = c.Pause(ctx)
@@ -1574,14 +1649,139 @@ func TestPersistentWorker(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestCancelRun(t *testing.T) {
+func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) but don't attempt to read any work requests - just
+	// crash immediately.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			// Crash immediately
+			"sh", "-c", `echo >&2 "Crashing!" && kill -KILL $$`,
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	const sigkillExitCode = 128 + int(syscall.SIGKILL)
+	require.Contains(t, res.Error.Error(), fmt.Sprintf("worker exited with code %d", sigkillExitCode))
+}
+
+func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage:      image,
+		PersistentWorkerKey: "abc123",
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start worker (Exec) with flags telling it to print 'test-stderr' on
+	// stderr, then crash, after receiving the first request.
+	worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+		Arguments: []string{
+			"./testworker",
+			"--fail_with_stderr=test-stderr-message",
+		},
+	})
+	require.NoError(t, err)
+	defer worker.Stop()
+
+	// Send work request.
+	// The command doesn't matter - the test worker always just returns a fixed
+	// response.
+	res := worker.Exec(ctx, &repb.Command{})
+
+	require.Error(t, res.Error)
+	require.Contains(t, res.Error.Error(), "worker exited with code 1")
+	require.Contains(t, res.Error.Error(), "test-stderr-message")
+}
+
+func TestCancelRun(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1632,11 +1832,12 @@ func TestCancelRun(t *testing.T) {
 func TestCancelExec(t *testing.T) {
 	setupNetworking(t)
 
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1652,7 +1853,9 @@ func TestCancelExec(t *testing.T) {
 		ContainerImage: image,
 	}})
 	require.NoError(t, err)
-	// Create
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
 	removed := false
@@ -1759,23 +1962,30 @@ func TestPullImage(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
 			layerDir := t.TempDir()
-			imgStore, err := ociruntime.NewImageStore(resolver, layerDir)
+			fcDir := t.TempDir()
+			fc, err := filecache.NewFileCache(fcDir, 10_000_000_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+			imgStore, err := ociruntime.NewImageStore(resolver, layerDir, fc)
 			require.NoError(t, err)
 
 			ctx := context.Background()
-			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
+			img, err := imgStore.PullAndLockImage(ctx, tc.image, oci.Credentials{}, false)
 			require.NoError(t, err)
 			require.NotNil(t, img)
+			defer img.Unlock()
 		})
 	}
 }
 
 func TestMounts(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
@@ -1820,10 +2030,11 @@ func TestMounts(t *testing.T) {
 
 func TestPersistentVolumes(t *testing.T) {
 	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
+	image := busyboxImage(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
@@ -1870,4 +2081,840 @@ func TestPersistentVolumes(t *testing.T) {
 	require.NoError(t, res.Error)
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
+}
+
+func TestImageEvictionWhileInUse(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	// Note: we don't call installFileCacheInEnv here because we need a custom
+	// filecache with a small size to test eviction behavior.
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// The busybox image is ~2.5MB. Create a filecache with 5MB capacity -
+	// enough to hold the image but small enough that a ~5MB file will trigger
+	// eviction.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull and create
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec a command to verify the container works
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "echo hello"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello\n", string(res.Stdout))
+
+	// Create a file large enough to trigger eviction of the image layers.
+	// We can't use a sparse file because the filecache uses actual disk usage
+	// (stat blocks), not logical file size.
+	largeFile := filepath.Join(fc.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	// Add the file to the filecache, which should trigger eviction of the
+	// image layers
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000000",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// Despite the image being evicted, we should still be able to exec commands
+	// because the overlayfs lowerdir is still mounted and the filecache should
+	// defer deletion until the container releases its lock.
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", "echo 'still works!'"}}
+	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "still works!\n", string(res.Stdout))
+}
+
+func TestImageEvictionAfterContainerRemoval(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	// Note: we don't call installFileCacheInEnv here because we need a custom
+	// filecache with a small size to test eviction behavior.
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// The busybox image is ~2.5MB. Create a filecache with 5MB capacity -
+	// enough to hold the image but small enough that a ~5MB file will trigger
+	// eviction.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull, create, exec, then remove - using the explicit lifecycle pattern
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Find the layer directory path by scanning the image cache.
+	// The structure is: {cacheRoot}/images/oci/v2/sha256/{hash}/
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
+	layerDir := filepath.Join(layersRoot, layerEntries[0].Name())
+
+	// Exec a command to verify the container works
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "echo hello"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello\n", string(res.Stdout))
+
+	// Remove the container - this should unlock the image layers
+	err = c.Remove(ctx)
+	require.NoError(t, err)
+
+	// The layer directory should still exist because we haven't applied
+	// eviction pressure yet.
+	_, err = os.Stat(layerDir)
+	require.NoError(t, err, "layer directory should still exist before eviction pressure")
+
+	// Create a file large enough to trigger eviction of the image layers.
+	// We can't use a sparse file because the filecache uses actual disk usage
+	// (stat blocks), not logical file size.
+	largeFile := filepath.Join(fc.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	// Add the file to the filecache, which should trigger eviction of the
+	// now-unlocked image layers.
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000001",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// The layer directory should now be deleted since the image was unlocked
+	// and eviction pressure was applied.
+	_, err = os.Stat(layerDir)
+	assert.True(t, os.IsNotExist(err), "layer directory should be deleted after eviction, but got error: %v", err)
+}
+
+func TestImageEvictionWithMultipleContainers(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	// Note: we don't call installFileCacheInEnv here because we need a custom
+	// filecache with a small size to test eviction behavior.
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// The busybox image is ~2.5MB. Create a filecache with 5MB capacity -
+	// enough to hold the image but small enough that a ~5MB file will trigger
+	// eviction.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	// Create two containers using the same image
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull and create both containers
+	err = c1.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c1.Create(ctx, wd1)
+	require.NoError(t, err)
+
+	err = c2.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c2.Create(ctx, wd2)
+	require.NoError(t, err)
+
+	// Find the layer directory path
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
+	layerDir := filepath.Join(layersRoot, layerEntries[0].Name())
+
+	// Verify both containers work
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "echo hello from c1"}}
+	res := c1.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello from c1\n", string(res.Stdout))
+
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", "echo hello from c2"}}
+	res = c2.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello from c2\n", string(res.Stdout))
+
+	// Remove container 1 - this should NOT evict the image because container 2
+	// still holds a lock on it
+	err = c1.Remove(ctx)
+	require.NoError(t, err)
+
+	// Apply eviction pressure
+	largeFile := filepath.Join(fc.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000002",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// Layer directory should still exist because container 2 still holds a lock
+	_, err = os.Stat(layerDir)
+	require.NoError(t, err, "layer directory should still exist while container 2 holds a lock")
+
+	// Container 2 should still work
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", "echo c2 still works"}}
+	res = c2.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "c2 still works\n", string(res.Stdout))
+
+	// Remove container 2 - now the deferred deletion should kick in and
+	// delete the layer directory since both locks have been released.
+	err = c2.Remove(ctx)
+	require.NoError(t, err)
+
+	// The layer directory should be deleted via deferred deletion
+	_, err = os.Stat(layerDir)
+	assert.True(t, os.IsNotExist(err), "layer directory should be deleted after all containers released locks, but got error: %v", err)
+}
+
+func TestImageRePullAfterEviction(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	// Note: we don't call installFileCacheInEnv here because we need a custom
+	// filecache with a small size to test eviction behavior.
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// The busybox image is ~2.5MB. Create a filecache with 5MB capacity -
+	// enough to hold the image but small enough that a ~5MB file will trigger
+	// eviction.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	// Create first container, run it, then remove
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	err = c1.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c1.Create(ctx, wd1)
+	require.NoError(t, err)
+
+	// Find the layer directory path
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
+	layerDir := filepath.Join(layersRoot, layerEntries[0].Name())
+
+	// Verify container works
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "echo hello"}}
+	res := c1.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello\n", string(res.Stdout))
+
+	// Remove the container to release the lock
+	err = c1.Remove(ctx)
+	require.NoError(t, err)
+
+	// Apply eviction pressure to delete the image layers
+	largeFile := filepath.Join(fc.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000004",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// Verify the layer directory was deleted
+	_, err = os.Stat(layerDir)
+	require.True(t, os.IsNotExist(err), "layer directory should be deleted after eviction")
+
+	// Now create a new container with the same image - it should re-pull
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c2.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// This PullImage call should re-pull since the layers were evicted
+	err = c2.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c2.Create(ctx, wd2)
+	require.NoError(t, err)
+
+	// Verify the new container works
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", "echo re-pulled successfully"}}
+	res = c2.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "re-pulled successfully\n", string(res.Stdout))
+
+	// Verify layer directory exists again
+	layerEntries, err = os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected layer directory to exist after re-pull")
+}
+
+func TestFileCachePopulatedOnStartup(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// Use a small filecache so we can test eviction behavior
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc1, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	fc1.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc1)
+
+	// Create a provider and pull an image
+	provider1, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+
+	c1, err := provider1.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	err = c1.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c1.Create(ctx, wd1)
+	require.NoError(t, err)
+
+	// Find the layer directory
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries)
+	layerDir := filepath.Join(layersRoot, layerEntries[0].Name())
+
+	// Remove container and close filecache (simulating shutdown)
+	err = c1.Remove(ctx)
+	require.NoError(t, err)
+	err = fc1.Close()
+	require.NoError(t, err)
+
+	// Layer directory should still exist after shutdown
+	_, err = os.Stat(layerDir)
+	require.NoError(t, err, "layer directory should exist after shutdown")
+
+	// Create a NEW filecache and provider (simulating restart)
+	fc2, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc2)
+
+	// This should populate the filecache with the existing layer directories
+	provider2, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	_ = provider2 // We just need it to populate the cache
+
+	// Apply eviction pressure - the layer should be evicted since it's now
+	// tracked by the new filecache
+	largeFile := filepath.Join(fc2.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000005",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc2.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// The layer directory should be deleted because the new ImageStore
+	// populated the filecache with it on startup
+	_, err = os.Stat(layerDir)
+	assert.True(t, os.IsNotExist(err), "layer directory should be evicted after startup population, but got error: %v", err)
+}
+
+func TestImageResurrection(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// Use a small filecache so we can test eviction behavior
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	// Create first container, use the image, then remove it
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	err = c1.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c1.Create(ctx, wd1)
+	require.NoError(t, err)
+
+	// Find the layer directory
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(layersRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries)
+	layerDir := filepath.Join(layersRoot, layerEntries[0].Name())
+
+	// Run a command
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "echo hello"}}
+	res := c1.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "hello\n", string(res.Stdout))
+
+	// Remove container 1
+	err = c1.Remove(ctx)
+	require.NoError(t, err)
+
+	// Apply eviction pressure - the layer should be marked for eviction
+	// but NOT actually deleted yet (since we haven't started any deletion)
+	largeFile := filepath.Join(fc.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000006",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// Before we check if the layer was evicted, quickly create container 2
+	// with the same image. This should "resurrect" the layer if it's still
+	// present, preventing deletion.
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c2.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Pull should succeed - either by resurrection or re-pull
+	err = c2.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c2.Create(ctx, wd2)
+	require.NoError(t, err)
+
+	// Container 2 should work
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", "echo resurrected"}}
+	res = c2.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "resurrected\n", string(res.Stdout))
+
+	// Layer directory should exist (either resurrected or re-pulled)
+	_, err = os.Stat(layerDir)
+	require.NoError(t, err, "layer directory should exist after resurrection/re-pull")
+}
+
+func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
+	// This test verifies that populateFileCache correctly tracks individual
+	// layer directories (e.g., /v2/sha256/abc123...), and not some higher level
+	// dir like /sha256/, which would result in all layer dirs being evicted at
+	// once (which would be bad).
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	// Use a small filecache so we can test eviction behavior.
+	// The busybox image is ~2.5MB.
+	const filecacheSize = 5_000_000
+	fcDir := testfs.MakeTempDir(t)
+	fc1, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	fc1.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc1)
+
+	provider1, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	// Pull an image to create layer directories
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider1.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Remove the container and close the first filecache, simulating an
+	// executor shutdown
+	err = c.Remove(ctx)
+	require.NoError(t, err)
+	fc1.Close()
+
+	// Sanity check that the layer directories still exist after "shutting
+	// down" the executor
+	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layerEntries, err := os.ReadDir(algorithmDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
+
+	var layerDirs []string
+	for _, entry := range layerEntries {
+		if entry.IsDir() {
+			layerDirs = append(layerDirs, filepath.Join(algorithmDir, entry.Name()))
+		}
+	}
+	require.NotEmpty(t, layerDirs, "expected at least one layer directory")
+
+	// Simulate an executor restart by creating a new filecache and provider.
+	// The new provider's populateFileCache should scan and track the existing
+	// layer directories.
+	fc2, err := filecache.NewFileCache(fcDir, filecacheSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc2)
+
+	provider2, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	_ = provider2 // We just need it to populate the cache
+
+	// Apply eviction pressure by adding a large file
+	largeFile := filepath.Join(fc2.TempDir(), "large_file")
+	err = os.WriteFile(largeFile, make([]byte, filecacheSize), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "deadbeef00000000000000000000000000000000000000000000000000000007",
+			SizeBytes: filecacheSize,
+		},
+	}
+	err = fc2.AddFile(ctx, node, largeFile)
+	require.NoError(t, err)
+
+	// The algorithm directory (sha256) must still exist, since we should only
+	// be evicting the individual layer dirs.
+	_, err = os.Stat(algorithmDir)
+	require.NoError(t, err, "algorithm directory (sha256) should NOT be evicted - only individual layers should be tracked")
+
+	// The individual layer directories should be evicted (moved to trash and deleted)
+	for _, layerDir := range layerDirs {
+		_, err = os.Stat(layerDir)
+		assert.True(t, os.IsNotExist(err), "layer directory %s should be evicted, but still exists", layerDir)
+	}
+}
+
+func TestExecrootPath(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	t.Run("Default", func(t *testing.T) {
+		buildRoot := testfs.MakeTempDir(t)
+		cacheRoot := testfs.MakeTempDir(t)
+
+		provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+		require.NoError(t, err)
+		wd := testfs.MakeDirAll(t, buildRoot, "work")
+		testfs.WriteAllFileContents(t, wd, map[string]string{
+			"input.txt": "hello\n",
+		})
+
+		c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+			ContainerImage: image,
+		}})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := c.Remove(ctx)
+			require.NoError(t, err)
+		})
+
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", "pwd && cat input.txt"}}
+		res := c.Run(ctx, cmd, wd, oci.Credentials{})
+		require.NoError(t, res.Error)
+		assert.Equal(t, 0, res.ExitCode)
+		assert.Equal(t, "/buildbuddy-execroot\nhello\n", string(res.Stdout))
+	})
+
+	t.Run("Custom", func(t *testing.T) {
+		buildRoot := testfs.MakeTempDir(t)
+		cacheRoot := testfs.MakeTempDir(t)
+
+		provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+		require.NoError(t, err)
+		wd := testfs.MakeDirAll(t, buildRoot, "work")
+		testfs.WriteAllFileContents(t, wd, map[string]string{
+			"input.txt": "hello\n",
+		})
+
+		c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+			ContainerImage: image,
+			ExecrootPath:   "/custom-execroot",
+		}})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := c.Remove(ctx)
+			require.NoError(t, err)
+		})
+
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", "pwd && cat input.txt"}}
+		res := c.Run(ctx, cmd, wd, oci.Credentials{})
+		require.NoError(t, res.Error)
+		assert.Equal(t, 0, res.ExitCode)
+		assert.Equal(t, "/custom-execroot\nhello\n", string(res.Stdout))
+	})
+
+}
+
+func TestExecrootPath_Exec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		ExecrootPath:   "/custom-execroot",
+	}})
+	require.NoError(t, err)
+
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	cmd := &repb.Command{Arguments: []string{"pwd"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "/custom-execroot\n", string(res.Stdout))
+}
+
+func TestExecrootPath_InvalidRelativePath(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	_, err = provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		ExecrootPath:   "relative/path",
+	}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be an absolute path")
 }

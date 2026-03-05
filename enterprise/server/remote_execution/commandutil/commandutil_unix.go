@@ -3,6 +3,7 @@
 package commandutil
 
 import (
+	"os"
 	"os/exec"
 	"os/user"
 	"strconv"
@@ -106,10 +107,12 @@ func (p *process) killProcessTree() error {
 	return lastErr
 }
 
-// SetCredential adds credentials to the cmd by resolving a "USER[:GROUP]" string
-// to a credential with both uid and gid populated. Both numeric IDs and non-numeric
-// names can be  specified for either USER or GROUP. If no group is specified, then
-// the user's primary group is used.
+// SetCredential adds credentials to the cmd by resolving a "USER[:GROUP]"
+// string to a credential with both uid and gid populated. Both numeric IDs and
+// non-numeric names can be  specified for either USER or GROUP. If a user name
+// is specified, the user must exist, or this will return an error. If a numeric
+// user or group ID is specified, then the user or group does not have to exist.
+// If no group is specified, then the user's primary group is used.
 //
 // NOTE: This function does not authenticate that the user is part of the
 // specified group.
@@ -126,11 +129,21 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 	var g *user.Group
 	var err error
 	if allDigits.MatchString(userSpec) {
+		// If a numeric user ID is specified, attempt to look it up. If it's not
+		// found, that's OK - it's valid to set arbitrary uids in credentials
+		// even if the user doesn't exist.
 		u, err = user.LookupId(userSpec)
 		if err != nil {
-			return status.InvalidArgumentErrorf("uid lookup failed: %s", err)
+			if _, ok := err.(user.UnknownUserIdError); ok {
+				// Don't set gid, since group lookup below will fail.
+				u = &user.User{Uid: userSpec}
+			} else {
+				return status.InvalidArgumentErrorf("uid lookup failed: %s", err)
+			}
 		}
 	} else {
+		// If a user is specified by name, look it up and fail if it doesn't
+		// exist.
 		u, err = user.Lookup(userSpec)
 		if err != nil {
 			return status.InvalidArgumentErrorf("user lookup failed: %s", err)
@@ -142,10 +155,10 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 		groupSpec = parts[1]
 	}
 	var groups []uint32
-	if groupSpec == "" {
-		// If a group isn't explicitly set, use the user's gid as the primary
-		// group ID and use all of their group memberships as supplemental
-		// group IDs.
+	if groupSpec == "" && u.Gid != "" {
+		// If a group isn't explicitly set, and we successfully looked up the
+		// user above, use the user's gid as the primary group ID and use all of
+		// their group memberships as supplemental group IDs.
 		g, err = user.LookupGroupId(u.Gid)
 		if err != nil {
 			return status.InvalidArgumentErrorf("gid lookup failed: %s", err)
@@ -162,15 +175,20 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 			groups = append(groups, uint32(gid))
 		}
 	} else if allDigits.MatchString(groupSpec) {
-		g, err = user.LookupGroupId(groupSpec)
-		if err != nil {
-			return status.InvalidArgumentErrorf("gid lookup failed: %s", err)
-		}
-	} else {
+		// If a numeric group ID is specified, use it directly.
+		g = &user.Group{Gid: groupSpec}
+	} else if groupSpec != "" {
+		// If a group name is specified, look it up and fail if it doesn't
+		// exist.
 		g, err = user.LookupGroup(groupSpec)
 		if err != nil {
 			return status.InvalidArgumentErrorf("group lookup failed: %s", err)
 		}
+	} else {
+		// Group is unspecified and the numeric uid doesn't correspond to a
+		// named user, so we don't know what group to use. Just stick to the
+		// current group ID.
+		g = &user.Group{Gid: strconv.Itoa(os.Getgid())}
 	}
 
 	uid, err := strconv.Atoi(u.Uid)
@@ -180,6 +198,9 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 	gid, err := strconv.Atoi(g.Gid)
 	if err != nil {
 		return status.InternalErrorf("failed to parse gid: %s", err)
+	}
+	if len(groups) == 0 {
+		groups = append(groups, uint32(gid))
 	}
 	cmd.SysProcAttr.Credential = &syscall.Credential{
 		Uid:    uint32(uid),

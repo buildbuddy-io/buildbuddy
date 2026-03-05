@@ -17,6 +17,7 @@ func requireProtoEqual(t *testing.T, expected, actual proto.Message) {
 
 func TestLookupRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
@@ -50,6 +51,7 @@ func TestLookupRangeDescriptor(t *testing.T) {
 
 func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
@@ -81,25 +83,27 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 
 	sender := s1.Sender()
 
-	res, err := sender.LookupRangeDescriptorsForPartition(ctx, "default", 2)
+	res, err := sender.LookupRangeDescriptorsForPartition(ctx, "default")
 	require.NoError(t, err)
-	require.Equal(t, 2, len(res))
+	require.Equal(t, 3, len(res))
 	requireProtoEqual(t, s1.GetRange(2), res[0])
 	requireProtoEqual(t, s1.GetRange(3), res[1])
+	requireProtoEqual(t, s1.GetRange(4), res[2])
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "foo", 3)
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "foo")
 	require.NoError(t, err)
 	require.Equal(t, 2, len(res))
 	requireProtoEqual(t, s1.GetRange(5), res[0])
 	requireProtoEqual(t, s1.GetRange(6), res[1])
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "bar", 1)
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "bar")
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
 
 func TestFetchPartitionDescriptors(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 

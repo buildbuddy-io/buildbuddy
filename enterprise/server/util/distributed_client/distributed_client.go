@@ -11,8 +11,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -20,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -31,17 +32,22 @@ import (
 )
 
 const (
-	// Keep under the limit of ~4MB (save 256KB).
-	// (Match the readBufSizeBytes in byte_stream_server.go)
-	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+	// writeBufSizeBytes controls the maximum size of buffers used for writing
+	// to a remote cache. This is also the maximum payload size for each
+	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
+	// smaller unless the remote cache is falling behind. Experiments and
+	// benchmarks show that 128KB, 256KB, and 512KB are all about as fast.
+	// Values outside that range cause more allocation in gRPC code. This
+	// should be slightly smaller than 2^N, to allow for proto and gRPC
+	// overhead.
+	writeBufSizeBytes = 512 * 1000 // 512 KB
 )
 
 type Proxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	readBufPool           *bytebufferpool.VariableSizePool
-	writeBufPool          *bytebufferpool.VariableWriteBufPool
+	bufPool               *bytebufferpool.VariableSizePool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*grpc_client.ClientConnPool
@@ -53,13 +59,12 @@ type Proxy struct {
 
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 	proxy := &Proxy{
-		env:          env,
-		cache:        c,
-		log:          log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		readBufPool:  bytebufferpool.VariableSize(readBufSizeBytes),
-		writeBufPool: bytebufferpool.NewVariableWriteBufPool(readBufSizeBytes),
-		listenAddr:   listenAddr,
-		mu:           &sync.Mutex{},
+		env:        env,
+		cache:      c,
+		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
+		bufPool:    bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		listenAddr: listenAddr,
+		mu:         &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -159,6 +164,7 @@ func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return ctx, err
 	}
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, c.env.GetAuthenticator())
 	return ctx, err
 }
 
@@ -306,18 +312,17 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	defer reader.Close()
 
-	bufSize := int64(readBufSizeBytes)
-	resourceSize := rn.GetDigest().GetSizeBytes()
-	if resourceSize > 0 && resourceSize < bufSize {
-		bufSize = resourceSize
-	}
-	copyBuf := c.readBufPool.Get(bufSize)
-	defer c.readBufPool.Put(copyBuf)
+	bufSize := int64(digest.SafeBufferSize(rn, *config.ReadBufSizeBytes))
+	copyBuf := c.bufPool.Get(bufSize)
+	defer c.bufPool.Put(copyBuf)
 
 	for {
 		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
 		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			return err
 		}
 		if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
@@ -325,19 +330,13 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
-	return err
+	return nil
 }
 
 func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
 	if c.hintedHandoffCallback != nil {
 		c.hintedHandoffCallback(ctx, peer, r)
 	}
-}
-
-func writeStreamRecv(ctx context.Context, stream dcpb.DistributedCache_WriteServer) (*dcpb.WriteRequest, error) {
-	_, span := tracing.StartSpan(ctx)
-	defer span.End()
-	return stream.Recv()
 }
 
 func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
@@ -351,7 +350,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	var writeCloser interfaces.CommittedWriteCloser
 	handoffPeer := ""
 	for {
-		req, err := writeStreamRecv(ctx, stream)
+		req, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
@@ -690,51 +689,6 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
-type bufferedStreamWriteCloser struct {
-	swc            *streamWriteCloser
-	bufferedWriter *bytebufferpool.BufioWriter
-	returnWriter   func()
-}
-
-func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
-	return bc.bufferedWriter.Write(data)
-}
-
-func (bc *bufferedStreamWriteCloser) Commit() error {
-	if err := bc.bufferedWriter.Flush(); err != nil {
-		return err
-	}
-	return bc.swc.Commit()
-}
-
-func (bc *bufferedStreamWriteCloser) Close() error {
-	bc.returnWriter()
-	return bc.swc.Close()
-}
-
-func safeBufferSize(r *rspb.ResourceName) int64 {
-	size := int64(4096 * 4) // low / safe / default
-	if r.GetCacheType() == rspb.CacheType_CAS {
-		size = r.GetDigest().GetSizeBytes()
-	}
-	if size > readBufSizeBytes {
-		size = readBufSizeBytes
-	}
-	return size
-}
-
-func (c *Proxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
-	bufWriter := c.writeBufPool.Get(safeBufferSize(swc.r))
-	bufWriter.Reset(swc)
-	return &bufferedStreamWriteCloser{
-		swc:            swc,
-		bufferedWriter: bufWriter,
-		returnWriter: func() {
-			c.writeBufPool.Put(bufWriter)
-		},
-	}
-}
-
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -761,7 +715,7 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		stream:      stream,
 		r:           r,
 	}
-	return c.newBufferedStreamWriteCloser(wc), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

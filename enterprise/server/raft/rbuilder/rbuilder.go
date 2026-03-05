@@ -249,6 +249,10 @@ func (br *BatchResponse) AnyError() error {
 	return nil
 }
 
+func (br *BatchResponse) Len() int {
+	return len(br.cmd.GetUnion())
+}
+
 func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -256,6 +260,15 @@ func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, er
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetDirectRead(), br.unionError(u)
+}
+
+func (br *BatchResponse) DirectDeleteResponse(n int) (*rfpb.DirectDeleteResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetDirectDelete(), br.unionError(u)
 }
 
 func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {

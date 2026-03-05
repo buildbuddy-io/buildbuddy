@@ -23,7 +23,7 @@ func TestGetInvocationStat(t *testing.T) {
 	flags.Set(t, "testenv.use_clickhouse", true)
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
 	err := te.GetOLAPDBHandle().GORM(ctx, "test_create_invocations").Create([]olaptables.Invocation{
 		{
@@ -119,7 +119,7 @@ func TestGetStatDrilldown(t *testing.T) {
 	flags.Set(t, "app.trends_heatmap_enabled", true)
 	te := testenv.GetTestEnv(t)
 
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "US1")
@@ -132,5 +132,4 @@ func TestGetStatDrilldown(t *testing.T) {
 		RequestContext: reqCtx,
 	})
 	require.True(t, status.IsInvalidArgumentError(err))
-	require.Error(t, err, "Empty filter for drilldown.")
 }

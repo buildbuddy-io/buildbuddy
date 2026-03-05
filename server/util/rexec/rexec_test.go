@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func TestNormalizeCommand(t *testing.T) {
@@ -109,4 +110,81 @@ func TestNormalizeCommand(t *testing.T) {
 			require.Empty(t, cmp.Diff(test.expected, cmd, protocmp.Transform()))
 		})
 	}
+}
+
+func TestFindFirstAuxiliaryMetadata(t *testing.T) {
+	mustMarshalAny := func(t *testing.T, msg proto.Message) *anypb.Any {
+		a, err := anypb.New(msg)
+		require.NoError(t, err)
+		return a
+	}
+
+	t.Run("returns first matching entry when multiple exist", func(t *testing.T) {
+		first := &repb.Platform{Properties: []*repb.Platform_Property{{Name: "first", Value: "1"}}}
+		second := &repb.Platform{Properties: []*repb.Platform_Property{{Name: "second", Value: "2"}}}
+		md := &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				mustMarshalAny(t, first),
+				mustMarshalAny(t, second),
+			},
+		}
+
+		result := &repb.Platform{}
+		ok, err := rexec.FindFirstAuxiliaryMetadata(md, result)
+
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Empty(t, cmp.Diff(first, result, protocmp.Transform()))
+	})
+
+	t.Run("returns false when no match found", func(t *testing.T) {
+		md := &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				mustMarshalAny(t, &repb.Command{Arguments: []string{"echo"}}),
+			},
+		}
+
+		result := &repb.Platform{}
+		ok, err := rexec.FindFirstAuxiliaryMetadata(md, result)
+
+		require.NoError(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("returns false for nil metadata", func(t *testing.T) {
+		result := &repb.Platform{}
+		ok, err := rexec.FindFirstAuxiliaryMetadata(nil, result)
+
+		require.NoError(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("returns false for empty auxiliary metadata", func(t *testing.T) {
+		md := &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{},
+		}
+
+		result := &repb.Platform{}
+		ok, err := rexec.FindFirstAuxiliaryMetadata(md, result)
+
+		require.NoError(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("returns error on unmarshal failure", func(t *testing.T) {
+		md := &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				{
+					TypeUrl: "type.googleapis.com/build.bazel.remote.execution.v2.Platform",
+					Value:   []byte("invalid proto bytes"),
+				},
+			},
+		}
+
+		result := &repb.Platform{}
+		ok, err := rexec.FindFirstAuxiliaryMetadata(md, result)
+
+		require.Error(t, err)
+		require.False(t, ok)
+	})
 }

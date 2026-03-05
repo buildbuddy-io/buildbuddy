@@ -1,3 +1,4 @@
+import { MoreVertical } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { OutlinedButton } from "../components/button/button";
@@ -9,6 +10,7 @@ import actionComparisonService, { ActionComparisonData } from "./action_comparis
 export interface ActionCompareButtonComponentProps {
   invocationId: string;
   actionDigest: string;
+  mini?: boolean;
 }
 
 interface State {
@@ -36,16 +38,20 @@ export default class ActionCompareButtonComponent extends React.Component<Action
     this.setState({ comparisonActionData: data });
   }
 
-  private onClick = () => {
+  private onClick = (event: React.MouseEvent<HTMLElement>) => {
     this.setState({ isDropdownOpen: true });
+    event.stopPropagation();
+    event.preventDefault();
   };
 
-  private onClickSelectForComparison = () => {
+  private onClickSelectForComparison = (event: React.MouseEvent<HTMLElement>) => {
     actionComparisonService.setComparisonAction(this.props.invocationId, this.props.actionDigest);
     this.setState({ isDropdownOpen: false });
+    event.stopPropagation();
+    event.preventDefault();
   };
 
-  private onClickCompareWithSelected = () => {
+  private onClickCompareWithSelected = (event: React.MouseEvent<HTMLElement>) => {
     const comparisonData = this.state.comparisonActionData;
     if (!comparisonData?.invocationId || !comparisonData?.actionDigest) {
       return;
@@ -63,21 +69,37 @@ export default class ActionCompareButtonComponent extends React.Component<Action
     // Clear the comparison selection
     actionComparisonService.clearComparisonAction();
     this.setState({ isDropdownOpen: false });
+    event.stopPropagation();
+    event.preventDefault();
   };
 
-  private onRequestCloseDropdown = () => {
+  private onRequestCloseDropdown = (event: React.MouseEvent<HTMLElement>) => {
     this.setState({ isDropdownOpen: false });
+    event.stopPropagation();
+    event.preventDefault();
   };
 
   render() {
     const canCompare = actionComparisonService.canCompareWith(this.props.invocationId, this.props.actionDigest);
 
     return (
-      <div className="invocation-compare-button-container">
-        <OutlinedButton onClick={this.onClick}>
-          <ComparisonBufferIllustration isBuffered={Boolean(this.state.comparisonActionData?.actionDigest)} />
-          <div>Compare</div>
-        </OutlinedButton>
+      <div
+        className={
+          this.props.mini ? "invocation-compare-button-container-mini" : "invocation-compare-button-container"
+        }>
+        {!this.props.mini && (
+          <>
+            <OutlinedButton onClick={this.onClick}>
+              <ComparisonBufferIllustration isBuffered={Boolean(this.state.comparisonActionData?.actionDigest)} />
+              <div>Compare</div>
+            </OutlinedButton>
+          </>
+        )}
+        {this.props.mini && (
+          <OutlinedButton className="invocation-menu-button" onClick={this.onClick}>
+            <MoreVertical />
+          </OutlinedButton>
+        )}
         <Popup isOpen={this.state.isDropdownOpen} onRequestClose={this.onRequestCloseDropdown}>
           <Menu>
             <MenuItem onClick={this.onClickSelectForComparison}>Select for comparison</MenuItem>

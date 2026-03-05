@@ -214,7 +214,7 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 			// continue with for loop
 		}
 		if err := h.renewLease(ctx); err != nil {
-			return nil, status.InternalErrorf("failed to renew node liveness: %s", err)
+			return nil, status.WrapError(err, "failed to renew node liveness")
 		}
 		if err := h.verifyLease(ctx, h.lastLivenessRecord); err == nil {
 			break

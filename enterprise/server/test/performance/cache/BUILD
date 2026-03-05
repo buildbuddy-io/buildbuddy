@@ -11,6 +11,7 @@ go_test(
     ],
     tags = ["performance"],
     deps = [
+        "//enterprise/server/backends/cache_config",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",
@@ -29,6 +30,7 @@ go_test(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",
+        "//server/util/tracing",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",

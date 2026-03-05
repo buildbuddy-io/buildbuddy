@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,9 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"github.com/lni/dragonboat/v4"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -126,5 +131,113 @@ func BenchmarkSession(b *testing.B) {
 			})
 		}
 		eg.Wait()
+	}
+}
+
+func TestRunNodehostFn_ErrorCodes(t *testing.T) {
+	tests := []struct {
+		name          string
+		err           error
+		expectedCode  codes.Code
+		checkErrorIs  bool
+		expectedErrIs error
+	}{
+		{
+			name:          "ErrShardNotReady",
+			err:           dragonboat.ErrShardNotReady,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrShardNotReady,
+		},
+		{
+			name:          "ErrShardClosed",
+			err:           dragonboat.ErrShardClosed,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrShardClosed,
+		},
+		{
+			name:         "OutOfRange",
+			err:          status.OutOfRangeError("test error"),
+			expectedCode: codes.OutOfRange,
+		},
+		{
+			name:          "ErrShardNotFound",
+			err:           dragonboat.ErrShardNotFound,
+			expectedCode:  codes.Internal,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrShardNotFound,
+		},
+		{
+			name:          "ErrRejected",
+			err:           dragonboat.ErrRejected,
+			expectedCode:  codes.Internal,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrRejected,
+		},
+		{
+			name:          "ErrTimeout",
+			err:           dragonboat.ErrTimeout,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrTimeout,
+		},
+		{
+			name:          "ErrSystemBusy",
+			err:           dragonboat.ErrSystemBusy,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrSystemBusy,
+		},
+		{
+			name:          "ErrAborted",
+			err:           dragonboat.ErrAborted,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrAborted,
+		},
+		{
+			name:          "ErrCanceled",
+			err:           dragonboat.ErrCanceled,
+			expectedCode:  codes.Canceled,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrCanceled,
+		},
+		{
+			name:          "ErrClosed",
+			err:           dragonboat.ErrClosed,
+			expectedCode:  codes.Unavailable,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrClosed,
+		},
+		{
+			name:          "ErrShardAlreadyExist",
+			err:           dragonboat.ErrShardAlreadyExist,
+			expectedCode:  codes.Internal,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrShardAlreadyExist,
+		},
+		{
+			name:          "ErrShardNotStopped",
+			err:           dragonboat.ErrShardNotStopped,
+			expectedCode:  codes.Internal,
+			checkErrorIs:  true,
+			expectedErrIs: dragonboat.ErrShardNotStopped,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			err := client.RunNodehostFn(ctx, time.Second, func(ctx context.Context) error {
+				return tt.err
+			})
+			require.Error(t, err)
+			require.Equal(t, tt.expectedCode, gstatus.Code(err))
+			if tt.checkErrorIs {
+				require.True(t, errors.Is(err, tt.expectedErrIs))
+			}
+		})
 	}
 }

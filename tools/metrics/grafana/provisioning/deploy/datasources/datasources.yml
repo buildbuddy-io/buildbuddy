@@ -17,11 +17,6 @@ datasources:
       port: 9000
       host: clickhouse-repl-%{ENV}.clickhouse-operator-%{ENV}.svc.cluster.local
       username: buildbuddy_%{ENV}_readonly
-      traces:
-        defaultDatabase: otel_%{ENV}
-        defaultTable: otel_traces
-        otelEnabled: true
-        otelVersion: latest # TODO: pin?
     secureJsonData:
       password: ${CLICKHOUSE_PASSWORD}
   - name: ClickHouse (OTEL)
@@ -30,9 +25,9 @@ datasources:
     jsonData:
       port: 9000
       host: clickhouse-clickhouse-otel.monitor-%{ENV}.svc.cluster.local
-      username: buildbuddy_dev_readonly
+      username: buildbuddy_%{ENV}_readonly
       traces:
-        defaultDatabase: otel_dev
+        defaultDatabase: otel_%{ENV}
         defaultTable: otel_traces
         otelEnabled: true
         otelVersion: latest # TODO: pin?

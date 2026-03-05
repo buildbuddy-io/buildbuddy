@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "testutil",
     testonly = 1,
@@ -7,12 +9,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/logger",
-        "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
@@ -20,12 +22,14 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/gossip",
+        "//server/testutil/mockgcs",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
@@ -36,8 +40,6 @@ go_library(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "testutil_test",

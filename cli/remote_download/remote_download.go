@@ -103,7 +103,6 @@ func HandleRemoteDownload(args []string) (int, error) {
 			Name:  name,
 			Value: value,
 		})
-		fmt.Printf("Qualifier name: %q value: %q\n", name, value)
 	}
 	client := rapb.NewFetchClient(conn)
 

@@ -1,7 +1,7 @@
 .text-link {
   text-decoration: underline;
   cursor: pointer;
-  color: #1565c0;
+  color: var(--color-link);
 }
 
 .text-link.plain {
@@ -9,9 +9,9 @@
 }
 
 .text-link.plain:not(:hover) {
-  color: #000;
+  color: var(--color-link-plain);
 }
 
 .text-link:hover {
-  color: #2196f3;
+  color: var(--color-link-hover);
 }

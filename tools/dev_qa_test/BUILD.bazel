@@ -1,0 +1,81 @@
+load("@bazel_binaries//:defs.bzl", "bazel_binaries")
+load(
+    "@rules_bazel_integration_test//bazel_integration_test:defs.bzl",
+    "bazel_integration_test",
+    "integration_test_utils",
+)
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+sh_binary(
+    name = "dev_qa_test_runner",
+    srcs = ["dev_qa_test_runner.sh"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+bazel_integration_test(
+    name = "abseil_cpp_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.tar.gz",
+        "QA_STRIP_PREFIX": "abseil-cpp-20250814.1",
+        "QA_BAZEL_COMMAND": "test //...",
+        # Exclude tests that need timezone data (missing in RBE containers) and benchmarks.
+        "QA_EXTRA_BAZEL_FLAGS": "--test_tag_filters=-performance,-webdriver,-docker,-bare,-benchmark -- -//absl/time:time_test -//absl/time/internal/cctz:time_zone_format_test -//absl/time/internal/cctz:time_zone_lookup_test -//absl/random/internal:randen_benchmarks",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/abseil_cpp",
+)
+
+bazel_integration_test(
+    name = "rules_python_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/bazelbuild/rules_python/archive/refs/tags/1.6.3.tar.gz",
+        "QA_STRIP_PREFIX": "rules_python-1.6.3",
+        "QA_BAZEL_COMMAND": "test //...",
+        "QA_EXTRA_BAZEL_FLAGS": "--test_tag_filters=-performance,-webdriver,-docker,-bare,-integration-test,-acceptance-test --build_tag_filters=-integration-test -- -//tests/implicit_namespace_packages/... -//tests/whl_with_build_files/... -//tests/toolchains/...",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/rules_python",
+)
+
+bazel_integration_test(
+    name = "bazel_gazelle_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/bazel-contrib/bazel-gazelle/archive/refs/tags/v0.47.0.tar.gz",
+        "QA_STRIP_PREFIX": "bazel-gazelle-0.47.0",
+        "QA_BAZEL_COMMAND": "test //...",
+        "QA_EXTRA_BAZEL_FLAGS": "-- -//internal:bazel_test -//cmd/gazelle:gazelle_test -//docs/... -//tests/bzl_deps/...",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/bazel_gazelle",
+)
+
+bazel_integration_test(
+    name = "buildbuddy_dev_qa_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = "8.4.2",
+    env = {
+        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/eb9115eafcdcd3c356fc470649c58a473910ae3c",
+        "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-eb9115e",
+        "QA_BAZEL_COMMAND": "test //...",
+        "INJECT_TOOLCHAIN": "false",
+        "UPDATE_LOCKFILE": "false",
+    },
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    test_runner = ":dev_qa_test_runner",
+    visibility = ["//visibility:public"],
+    workspace_path = "workspaces/buildbuddy",
+)

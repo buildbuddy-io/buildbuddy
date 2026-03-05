@@ -10,13 +10,26 @@
 }
 
 .api-keys .error-container {
-  background: #ffcdd2;
+  background: var(--color-banner-error-bg);
+  color: var(--color-banner-error-text);
   padding: 16px;
   border-radius: 8px;
 }
 
 .api-keys .api-keys-list {
   padding: 8px 0;
+}
+
+.api-keys .api-key-created-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-keys .api-key-created-value-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .api-keys .api-keys-list > :not(:last-child) {
@@ -86,7 +99,8 @@
 .api-keys .api-key-value {
   font-family: monospace;
   font-size: 12px;
-  background: #eee;
+  background: var(--color-bg-code);
+  color: var(--color-text-primary);
   border-radius: 8px;
   padding-left: 16px;
   padding-right: 4px;
@@ -151,7 +165,7 @@
 }
 
 .api-keys-form .field-description {
-  color: #444;
+  color: var(--color-text-emphasis);
 }
 
 .api-keys-form label {
@@ -180,7 +194,8 @@
 }
 
 .api-keys .no-api-keys-message {
-  background: #e1f5fe;
+  background: var(--color-banner-info-bg);
+  color: var(--color-banner-info-text);
   padding: 16px;
   border-radius: 8px;
 }

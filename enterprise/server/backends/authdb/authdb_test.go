@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -23,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -38,7 +36,6 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -115,7 +112,7 @@ func TestImpersonationKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -139,7 +136,7 @@ func TestImpersonationKeys(t *testing.T) {
 	// Now treat the random group we picked as the server admin group.
 	// Same user should now be able to create an impersonation key for any
 	// group.
-	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	flags.Set(t, "auth.admin_group_id", admin.Groups[0].Group.GroupID)
 	u := users[0]
 	targetGroupID := u.Groups[0].Group.GroupID
 	targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
@@ -179,7 +176,7 @@ func TestGroupKeyExpiration(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -234,7 +231,7 @@ func TestUserKeyExpiration(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -284,6 +281,90 @@ func TestUserKeyExpiration(t *testing.T) {
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 }
 
+func TestAPIKeyValueReadbackDisabled(t *testing.T) {
+	flags.Set(t, "app.api_key_value_readback_enabled", false)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	groupID := admin.Groups[0].Group.GroupID
+
+	orgKeyRsp, err := env.GetBuildBuddyServer().CreateApiKey(adminCtx, &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Label:          "org-key",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, orgKeyRsp.GetApiKey().GetValue())
+	// Key remains usable for authentication even when API key value readback is disabled.
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, orgKeyRsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+
+	orgKeyGetRsp, err := env.GetBuildBuddyServer().GetApiKey(adminCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId: orgKeyRsp.GetApiKey().GetId(),
+	})
+	require.NoError(t, err)
+	// Read APIs should still return metadata, but the key value should be omitted.
+	require.Empty(t, orgKeyGetRsp.GetApiKey().GetValue())
+	orgKey, err := env.GetAuthDB().GetAPIKey(adminCtx, orgKeyRsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	// authdb should also omit values when readback is disabled, even for legacy
+	// unencrypted keys.
+	require.Empty(t, orgKey.Value)
+	orgKeys, err := env.GetAuthDB().GetAPIKeys(adminCtx, groupID)
+	require.NoError(t, err)
+	for _, k := range orgKeys {
+		require.Empty(t, k.Value)
+	}
+
+	// Enable user-owned keys.
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+
+	userKeyRsp, err := env.GetBuildBuddyServer().CreateUserApiKey(adminCtx, &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Label:          "user-key",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, userKeyRsp.GetApiKey().GetValue())
+	// User-owned key remains usable for authentication even when API key value readback is disabled.
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, userKeyRsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+
+	userKeyGetRsp, err := env.GetBuildBuddyServer().GetUserApiKey(adminCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId: userKeyRsp.GetApiKey().GetId(),
+	})
+	require.NoError(t, err)
+	// Same behavior for user-owned keys: metadata is returned, value is omitted.
+	require.Empty(t, userKeyGetRsp.GetApiKey().GetValue())
+	userKey, err := env.GetAuthDB().GetAPIKey(adminCtx, userKeyRsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	// Same expectation for direct authdb access to user-owned keys.
+	require.Empty(t, userKey.Value)
+	userKeys, err := env.GetAuthDB().GetUserAPIKeys(adminCtx, admin.UserID, groupID)
+	require.NoError(t, err)
+	for _, k := range userKeys {
+		require.Empty(t, k.Value)
+	}
+}
+
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {
@@ -318,9 +399,6 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 				{
 					GroupID:      randKey.GroupID,
 					Capabilities: capabilities.FromInt(randKey.Capabilities),
-					// TODO(bduffany): API keys should not have roles - just
-					// capabilities.
-					Role: role.Developer,
 				},
 			}, c.GetGroupMemberships())
 
@@ -413,7 +491,7 @@ func TestGetAPIKeys(t *testing.T) {
 			// Get a random admin user.
 			var admin *tables.User
 			for _, u := range users {
-				if role.Role(u.Groups[0].Role) == role.Admin {
+				if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 					admin = u
 					break
 				}
@@ -450,7 +528,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -505,68 +583,6 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	assert.Equal(t, key.GroupID, akg.GetGroupID())
 	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
-}
-
-func TestLookupUserFromSubID(t *testing.T) {
-	ctx := context.Background()
-	env := setupEnv(t)
-	adb := env.GetAuthDB()
-
-	users := enterprise_testauth.CreateRandomGroups(t, env)
-	randUser := users[rand.Intn(len(users))]
-
-	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
-	require.NoError(t, err)
-	require.Equal(t, randUser, u)
-
-	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-	for i := 0; i < 10; i++ {
-		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
-		require.NoError(t, err)
-		err = env.GetUserDB().UpdateGroupUsers(ctx2, u.Groups[0].GroupID, []*grpb.UpdateGroupUsersRequest_Update{
-			{UserId: &uidpb.UserId{Id: user.UserID}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
-		})
-		require.NoError(t, err)
-
-		u.Groups[0].Role = uint32(grpb.GroupMembershipStatus_MEMBER)
-		user.Groups = append(user.Groups, u.Groups[0])
-	}
-
-	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
-
-	u, err = adb.LookupUserFromSubID(ctx, user.SubID)
-	require.NoError(t, err)
-	require.Equal(t, user, u)
-
-	// Using empty or invalid values should produce an error
-	u, err = adb.LookupUserFromSubID(ctx, "")
-	require.Nil(t, u)
-	require.Truef(
-		t, status.IsNotFoundError(err),
-		"expected RecordNotFound error; got: %v", err)
-	u, err = adb.LookupUserFromSubID(ctx, "INVALID")
-	require.Nil(t, u)
-	require.Truef(
-		t, status.IsNotFoundError(err),
-		"expected RecordNotFound error; got: %v", err)
-}
-
-func TestLookupUserFromSubIDNoGroup(t *testing.T) {
-	flags.Set(t, "database.log_queries", true)
-
-	ctx := context.Background()
-	env := setupEnv(t)
-	adb := env.GetAuthDB()
-
-	flags.Set(t, "app.add_user_to_domain_group", false)
-	flags.Set(t, "app.create_group_per_user", false)
-
-	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-
-	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
-	require.NoError(t, err)
-	require.Equal(t, randUser, u)
 }
 
 func newFakeUser(userID, domain string) *tables.User {
@@ -758,7 +774,7 @@ func TestSubdomainRestrictions(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -800,7 +816,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
@@ -824,7 +840,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	// Now treat the random group we picked as the server admin group.
 	// Same user should now be able to create an impersonation key for any
 	// group.
-	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	flags.Set(t, "auth.admin_group_id", admin.Groups[0].Group.GroupID)
 	for _, u := range users {
 		al.Reset()
 		targetGroupID := u.Groups[0].Group.GroupID
@@ -858,7 +874,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		require.NotEqualValues(t, 0, key.ExpiryUsec)
 
 		// Verify "list" operation does not include the impersonation key.
-		if role.Role(u.Groups[0].Role) == role.Admin {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
 			require.NoError(t, err)
 			require.Equal(t, prevKeys, keys)
@@ -874,7 +890,7 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 	for _, u := range users {
 		authCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)
-		if role.Role(u.Groups[0].Role) != role.Admin {
+		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
 		keys, err := env.GetAuthDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID)

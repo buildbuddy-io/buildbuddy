@@ -20,7 +20,7 @@ var (
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 	return te
 }
 
@@ -81,7 +81,7 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 
 func TestNotGranted_NullAuthenticator_AnonymousUsage_Disabled(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(nullauth.NewNullAuthenticator(false, ""))
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(false))
 
 	anonCtx := context.Background()
 

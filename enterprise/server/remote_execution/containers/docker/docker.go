@@ -18,12 +18,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/docker/api/types/registry"
@@ -77,20 +78,20 @@ var (
 
 func NewClient() (*dockerclient.Client, error) {
 	initDockerClientOnce.Do(func() {
-		if platform.DockerSocket() == "" {
+		if executorplatform.DockerSocket() == "" {
 			return
 		}
-		_, err := os.Stat(platform.DockerSocket())
+		_, err := os.Stat(executorplatform.DockerSocket())
 		if os.IsNotExist(err) {
-			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
+			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", executorplatform.DockerSocket())
 			return
 		}
 		if err != nil {
-			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", platform.DockerSocket(), err)
+			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", executorplatform.DockerSocket(), err)
 			return
 		}
 
-		dockerSocket := platform.DockerSocket()
+		dockerSocket := executorplatform.DockerSocket()
 		if !strings.Contains(dockerSocket, "://") {
 			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
 		}
@@ -117,12 +118,17 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := &DockerOptions{
 		ForceRoot:               args.Props.DockerForceRoot,
 		DockerInit:              args.Props.DockerInit,
 		DockerUser:              args.Props.DockerUser,
-		DockerNetwork:           args.Props.DockerNetwork,
-		Socket:                  platform.DockerSocket(),
+		DockerNetwork:           network,
+		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,
@@ -210,15 +216,16 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
 
+	effectiveCwd := filepath.Join(workDir, command.GetWorkingDirectory())
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		workDir,
+		effectiveCwd,
 	)
 	if err != nil {
 		result.Error = err
@@ -608,7 +615,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	cfg := dockercontainer.ExecOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
-		WorkingDir:   r.workDir,
+		WorkingDir:   filepath.Join(r.workDir, command.GetWorkingDirectory()),
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  stdio.Stdin != nil,

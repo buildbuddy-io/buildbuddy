@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Runs a local OCI image registry with basic authentication
+# (the credentials are "testuser:testpass")
+#
+# Run it with:
+#     ./tools/registry
+# To push images, add these contents to /etc/docker/daemon.json:
+#     {"insecure-registries": ["localhost:5000"]}
+# Then restart the docker daemon:
+#     sudo systemctl restart docker
+# Then add the base64-encoded credentials to ~/.docker/config.json:
+#     {"auths": {"localhost:5000": {"auth": "dGVzdHVzZXI6dGVzdHBhc3M="}}}
+# Now, you can push images to the registry like this:
+#     docker pull busybox && docker tag busybox localhost:5000/busybox && docker push localhost:5000/busybox
+# You can then use refs like 'container-image=docker://localhost:5000/busybox'
+# for local testing.
+#
+# Note: some docker commands like `docker manifest inspect` may require the
+# `--insecure` flag in order to interact with the local registry.
+
+: "${REGISTRY_DATA_DIR:=/tmp/${USER}_bb_test_registry_data}"
+
+# Generate test credentials
+TMP_HTPASSWD=$(mktemp)
+trap 'rm "$TMP_HTPASSWD"' EXIT
+docker run --rm httpd:2.4 \
+    htpasswd -Bbn testuser testpass > "$TMP_HTPASSWD"
+
+# Run registry
+docker run \
+    --rm \
+    --tty \
+    --publish 5000:5000 \
+    --name registry \
+    --volume "$TMP_HTPASSWD:/auth/htpasswd" \
+    --volume "$REGISTRY_DATA_DIR:/var/lib/registry" \
+    --env "REGISTRY_AUTH=htpasswd" \
+    --env "REGISTRY_AUTH_HTPASSWD_REALM=Local Registry" \
+    --env "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" \
+    --env "REGISTRY_HTTP_SECRET=testsecret" \
+    registry:2

@@ -16,7 +16,7 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
   const rowsForLine = computeRows(
     rowData.plaintext,
     data.rowLength,
-    data.search,
+    data.searchQuery,
     rowData.matchStartIndex,
     rowData.tags
   );

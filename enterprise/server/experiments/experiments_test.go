@@ -7,18 +7,24 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
@@ -95,6 +101,13 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
 	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
+	type ObjStruct struct {
+		Foo string `json:"foo"`
+	}
+	var obj ObjStruct
+	err = experiments.ObjectToStruct(fp.Object(ctx, "object_flag", nil), &obj)
+	require.NoError(t, err)
+	require.Equal(t, ObjStruct{Foo: "foo value"}, obj)
 
 	b, d := fp.BooleanDetails(ctx, "bool_flag", false)
 	require.True(t, b)
@@ -177,7 +190,8 @@ func TestStablePercentage(t *testing.T) {
 
 		// Create a new provider after each write. Otherwise the test can race
 		// with the provider's internal goroutine that reads the file.
-		provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+		provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+		require.NoError(t, err)
 		openfeature.SetProviderAndWait(provider)
 		fp, err := experiments.NewFlagProvider("test-name")
 		require.NoError(t, err)
@@ -230,7 +244,8 @@ func TestSelection(t *testing.T) {
 }
 `
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -289,7 +304,8 @@ func TestMultiVariant(t *testing.T) {
 }
 `
 	offlineFlagPath := writeFlagConfig(t, testFlags)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	defer provider.Shutdown()
 
@@ -312,4 +328,255 @@ func TestMultiVariant(t *testing.T) {
 	for color, count := range counts {
 		require.GreaterOrEqual(t, count, 200, color)
 	}
+}
+
+func TestTargetingGroupID(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "test_flag": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "override": "override",
+	        "default": "default"
+	      },
+	      "defaultVariant": "default",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "group_id" }, "GR2"] },
+	          "override",
+	          "default"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("should use ExperimentTargetingGroupID as group_id var if set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:                    "GR1",
+			ExperimentTargetingGroupID: "GR2",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "override", s)
+	})
+	t.Run("should use GroupID as group_id var if no targeting group ID is set", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID: "GR1",
+		})
+		s := fp.String(ctx, "test_flag", "")
+		require.Equal(t, "default", s)
+	})
+}
+
+func TestRegionTargeting(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "regional_feature": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "region" }, "us-west1"] },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("enabled in targeted region", func(t *testing.T) {
+		flags.Set(t, "app.region", "us-west1")
+		require.True(t, fp.Boolean(ctx, "regional_feature", false))
+	})
+
+	t.Run("disabled in non-targeted region", func(t *testing.T) {
+		flags.Set(t, "app.region", "us-central1")
+		require.False(t, fp.Boolean(ctx, "regional_feature", false))
+	})
+}
+
+func TestSubscribe(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "test_flag": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "default": "FOO"
+	      },
+	      "defaultVariant": "default"
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	ch := make(chan struct{}, 4)
+	unsubscribe := fp.Subscribe(ch)
+	defer unsubscribe()
+
+	// Drain any initial updates on the channel (the implementation may or may
+	// not choose to send initial updates)
+	for {
+		select {
+		case <-ch:
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+
+	// Write a change to the config.
+	updatedFlags := strings.Replace(testFlags, "FOO", "BAR", 1)
+	testfs.WriteFile(t, "", offlineFlagPath, updatedFlags)
+
+	// An update should be sent on the channel now that the config has changed.
+	<-ch
+
+	// The flag should evaluate to the new value after we're notified of the
+	// change.
+	flagVal := fp.String(ctx, "test_flag", "")
+	require.Equal(t, "BAR", flagVal)
+}
+
+func TestGroupStatusTargeting(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "enterprise_feature": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          {
+	            "in": [
+	              { "var": "group_status" },
+	              ["ENTERPRISE_GROUP_STATUS", "ENTERPRISE_TRIAL_GROUP_STATUS"]
+	            ]
+	          },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    },
+	    "free_tier_feature": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "group_status" }, "FREE_TIER_GROUP_STATUS"] },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("enterprise group gets enterprise feature", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:     "GR1",
+			GroupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
+		})
+		require.True(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
+
+	t.Run("enterprise trial group gets enterprise feature", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:     "GR2",
+			GroupStatus: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+		})
+		require.True(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
+
+	t.Run("free tier group gets free tier feature", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:     "GR3",
+			GroupStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+		})
+		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.True(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
+
+	t.Run("blocked group gets neither feature", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:     "GR4",
+			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
+		})
+		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
+
+	t.Run("unknown group status gets neither feature", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+			GroupID:     "GR5",
+			GroupStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+		})
+		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
+
+	t.Run("no claims gets neither feature", func(t *testing.T) {
+		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
+		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
+	})
 }

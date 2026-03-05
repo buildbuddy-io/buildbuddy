@@ -4,7 +4,9 @@ import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
 import format from "../format/format";
+import { digestToString } from "../util/cache";
 import { joinReactNodes } from "../util/react";
+import ActionCompareButtonComponent from "./action_compare_button";
 import {
   downloadDuration,
   executionDuration,
@@ -57,7 +59,20 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     </span>
                   )}
                 </div>
+                <ActionCompareButtonComponent
+                  invocationId={this.props.invocationIdProvider(execution)}
+                  actionDigest={digestToString(execution.actionDigest)}
+                  mini={true}
+                />
                 <div className="invocation-execution-row-stats">
+                  {!!execution.primaryOutputPath && (
+                    <div>
+                      Primary output:{" "}
+                      <span className="primary-output" title={execution.primaryOutputPath}>
+                        {formatPrimaryOutput(execution.primaryOutputPath)}
+                      </span>
+                    </div>
+                  )}
                   <div>Executor Host ID: {execution.executedActionMetadata?.worker}</div>
                   <div>Total duration: {format.durationUsec(totalDuration(execution))}</div>
                   <div>Queued duration: {format.durationUsec(queuedDuration(execution))}</div>
@@ -95,4 +110,13 @@ function renderExecutionLabel(execution: execution_stats.Execution) {
       {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
     </span>
   );
+}
+
+function formatPrimaryOutput(path: string) {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 2) {
+    return path;
+  }
+  const tail = segments.slice(-2).join("/");
+  return `…/${tail}`;
 }

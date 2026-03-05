@@ -8,8 +8,23 @@
   margin-right: 16px;
 }
 
-.compare-invocations .show-changes-only-button {
+.compare-invocations .header-buttons {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.compare-invocations .bb-explain-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-invocations .bb-explain-button .icon {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
 }
 
 @media (max-width: 1024px) {
@@ -21,6 +36,13 @@
   .compare-invocations .header > :not(:last-child) {
     margin-right: 0;
     margin-bottom: 8px;
+  }
+
+  .compare-invocations .header-buttons {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: start;
+    width: 100%;
   }
 
   .compare-invocations .show-changes-only-button {
@@ -64,7 +86,7 @@
 }
 
 .compare-invocations .compare-row.different {
-  background: #fff8e1;
+  background: var(--color-compare-diff-row-bg);
 }
 
 .compare-invocations .compare-row div {
@@ -82,14 +104,14 @@
 
 .compare-invocations .difference-left {
   font-weight: 600;
-  color: #d84315;
-  background-color: #ffe0b2;
+  color: var(--color-compare-left-text);
+  background-color: var(--color-compare-left-bg);
 }
 
 .compare-invocations .difference-right {
   font-weight: 600;
-  color: #1565c0;
-  background-color: #bbdefb;
+  color: var(--color-compare-right-text);
+  background-color: var(--color-compare-right-bg);
 }
 
 .invocation-execution-row-file {
@@ -200,4 +222,21 @@
 .diff-tree-node .folder-icon,
 .diff-tree-node .symlink-icon {
   flex-shrink: 0;
+}
+
+.spawn-comparison-row .invocation-execution-row-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.spawn-comparison-row .invocation-execution-row-header svg {
+  width: 16px;
+  height: 16px;
+}
+
+.compare-spawns-more-buttons {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
 }

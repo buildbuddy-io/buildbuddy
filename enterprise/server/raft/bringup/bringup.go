@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -178,10 +180,15 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	cs.bootstrapped = cs.store.ConfiguredClusters() > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", cs.store.ConfiguredClusters(), cs.bootstrapped)
 
-	isBringupCoordinator, err := cs.matchesListenAddress(cs.join[0])
+	isMatch, err := cs.matchesListenAddress(cs.join[0])
 	if err != nil {
-		return err
+		// matchesListenAddress can return no such host error when it doesn't
+		// have info about other nodes that started simultaneously. Don't return
+		// the error as this will restart the server. Instead, we assumes that
+		// this is not the bringup coordinator.
+		cs.log.Infof("failed to match listen address %q: %s", cs.join[0], err)
 	}
+	isBringupCoordinator := (isMatch && err == nil)
 	if cs.bootstrapped || !isBringupCoordinator {
 		cs.markBringupComplete()
 		return nil
@@ -448,31 +455,19 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 	return nil
 }
 
-func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, key []byte, curValue, expectedValue []byte) error {
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   key,
-			Value: curValue,
-		},
-		ExpectedValue: expectedValue,
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := sender.SyncPropose(ctx, key, batchProto)
-	if err != nil {
-		return err
-	}
-	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
-	return batchResp.AnyError()
-}
-
 // InitializeShardsForPartition starts the shards for a partition and also writes
 // the range descriptor into both local range and meta range.
 // Note: since we are writing the range descriptors in a transaction, it might
 // have performance issues when we try to initialize tons of range descriptors at
 // once.
-func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) (returnedErr error) {
+	defer func() {
+		metrics.RaftPartitionOperations.With(prometheus.Labels{
+			metrics.PartitionID:              partition.ID,
+			metrics.RaftPartitionOpLabel:     "initialize",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(returnedErr),
+		}).Inc()
+	}()
 	if partition.NumRanges > 10 {
 		return status.FailedPreconditionErrorf("NumRanges is set to %d (>10) for partition %s", partition.NumRanges, partition.ID)
 	}
@@ -531,7 +526,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 	}
 
 	if shouldWritePD {
-		err = writePartitionDescriptor(ctx, store.Sender(), partitionKey, pdBuf, nil)
+		err = store.Sender().UpdatePartitionDescriptor(ctx, partitionKey, pdBuf, nil)
 		if err != nil {
 			return err
 		}
@@ -611,7 +606,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 
 	err = store.TxnCoordinator().RunTxn(ctx, tx)
 	if err != nil {
-		return status.InternalErrorf("failed to run txn to start %d shards with starting range_id=%d, err: %s", len(ranges), pd.GetFirstRangeId(), err)
+		return status.WrapErrorf(err, "failed to run txn to start %d shards with starting range_id=%d", len(ranges), pd.GetFirstRangeId())
 	}
 	return nil
 }

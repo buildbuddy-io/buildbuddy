@@ -3,6 +3,7 @@ package resources
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -194,15 +195,20 @@ type CustomResource struct {
 	Value float64 `yaml:"value" json:"value"`
 }
 
-func GetAllocatedCustomResources() []*scpb.CustomResource {
+func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 	out := make([]*scpb.CustomResource, 0, len(*customResources))
 	for _, r := range *customResources {
+		// Bazel doesn't support custom resource names that contain periods:
+		// https://github.com/bazelbuild/bazel/issues/27911
+		if strings.Contains(r.Name, ".") {
+			return []*scpb.CustomResource{}, status.InvalidArgumentError("Custom resource names may not contain periods")
+		}
 		out = append(out, &scpb.CustomResource{
 			Name:  r.Name,
 			Value: float32(r.Value),
 		})
 	}
-	return out
+	return out, nil
 }
 
 func GetNodeName() string {
@@ -217,8 +223,30 @@ func GetArch() string {
 	return runtime.GOARCH
 }
 
-func GetOS() string {
+func GetOSFamily() string {
 	return runtime.GOOS
+}
+
+func GetOSDisplayName() string {
+	var command []string
+	switch runtime.GOOS {
+	case "darwin":
+		command = []string{"sh", "-c", "echo \"$(sw_vers -productName) $(sw_vers -productVersion)\""}
+	case "linux":
+		command = []string{"sh", "-c", "grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '\"'"}
+	case "windows":
+		// Calling PowerShell 7 (or newer) which include OS information.
+		command = []string{"pwsh", "-Command", "$PSVersionTable.OS"}
+	}
+	if len(command) == 0 {
+		return runtime.GOOS
+	}
+	b, err := exec.Command(command[0], command[1:]...).Output()
+	if err != nil {
+		log.Warningf("Error getting operating system display name: %v", err)
+		return runtime.GOOS
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func GetMyHostname() (string, error) {

@@ -2,9 +2,11 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -14,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -298,6 +300,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if span.IsRecording() {
 		span.SetAttributes(attribute.String("isolation_type", r.GetIsolationType()))
 	}
+	auxMetadata.RunnerMetadata = r.Metadata()
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
@@ -329,7 +332,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
 	_ = stream.SetState(repb.ExecutionProgress_DOWNLOADING_INPUTS)
-	if err := r.DownloadInputs(ctx); err != nil {
+	err = r.DownloadInputs(ctx)
+	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	if err != nil {
 		// If we failed to download inputs, and preserve-workspace is not
 		// enabled, then it should be safe to attempt recycling:
 		//
@@ -350,7 +355,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
 		// the action timeout yet, so any DeadlineExceeded errors at this point
 		// would be internal timeouts.
-		if status.IsDeadlineExceededError(err) {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
 
@@ -374,7 +379,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 
-	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
@@ -536,6 +540,11 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 }
 
 func validateCommand(cmd *repb.Command) error {
+	if wd := cmd.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	for _, pathList := range [][]string{
 		cmd.GetOutputFiles(),
 		cmd.GetOutputDirectories(),

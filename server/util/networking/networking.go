@@ -42,6 +42,8 @@ var (
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
+	clampMSSToPMTU                = flag.Bool("executor.clamp-mss-to-pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
+	cleanupStaleVethDevices       = flag.Bool("executor.cleanup_stale_veth_devices", false, "If true, clean up stale veth devices with conflicting IPs before creating new ones.", flag.Internal)
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -250,8 +252,45 @@ func randomVethName(prefix string) (string, error) {
 	return prefix + suffix, nil
 }
 
-// createRandomVethPair attempts to create a veth pair with random names, the veth1 end of which will
-// be in the root namespace.
+// cleanupStaleVeths removes any existing veth devices that have the given IP
+// address assigned. This handles the case where a previous process was killed
+// without cleanup (e.g. SIGKILL), leaving orphaned veth devices with stale
+// routes that would cause routing conflicts with newly created veth pairs.
+func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return status.WrapError(err, "list links")
+	}
+	targetIP, _, err := net.ParseCIDR(ipWithCIDR)
+	if err != nil {
+		return status.WrapError(err, "parse target IP")
+	}
+	for _, link := range links {
+		// Only consider veth devices to avoid accidentally deleting
+		// non-veth interfaces that happen to share the same IP.
+		if link.Type() != "veth" {
+			continue
+		}
+		addrs, err := netlink.AddrList(link, 0 /* FAMILY_ALL */)
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if addr.IP.Equal(targetIP) {
+				staleDev := link.Attrs().Name
+				log.CtxWarningf(ctx, "Cleaning up stale veth device %q with IP %s (likely from a killed process)", staleDev, targetIP)
+				if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
+					log.CtxWarningf(ctx, "Failed to delete stale veth device %q: %s", staleDev, err)
+				}
+				break // inner loop: each link has one matching addr at most
+			}
+		}
+	}
+	return nil
+}
+
+// createRandomVethPair attempts to create a veth pair with random names, the
+// veth1 end of which will be in the root namespace.
 func createRandomVethPair(ctx context.Context, netns *Namespace) (string, string, error) {
 	var namespacedVeth, hostVeth string
 	var err error
@@ -376,6 +415,14 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		return zero
 	}
 	n.getVethPair().network = network
+
+	// Clean up stale veths before assigning the new IP, to avoid routing
+	// conflicts with orphaned devices from killed processes.
+	if *cleanupStaleVethDevices {
+		if err := cleanupStaleVeths(ctx, network.HostIPWithCIDR()); err != nil {
+			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", network.HostIPWithCIDR(), err)
+		}
+	}
 
 	// Assign IPs to the host and namespaced side, and create the default route
 	// in the namespace.
@@ -657,9 +704,14 @@ type vethPair struct {
 // setupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace.
 //
+// If enableExternalNetworking is false, the veth pair will not have forwarding
+// rules added to allow traffic to external networks. This is useful for
+// Firecracker VMs that need internal networking (MMDS) but should not have
+// external network access.
+//
 // The Cleanup method must be called on the returned struct to clean up all
 // resources associated with it.
-func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err error) {
+func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworking bool) (_ *vethPair, err error) {
 	// Keep a list of cleanup work to be done.
 	var cleanupStack cleanupStack
 	// If we return an error from this func then we need to clean up any
@@ -692,6 +744,17 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		}
 		return nil
 	})
+
+	// Clean up any stale veth devices from previous processes that were
+	// killed without cleanup (e.g. SIGKILL). The flock on the IP range is
+	// released when the process dies, but the kernel-level veth pairs and
+	// routes persist. If we don't clean these up, return traffic will be
+	// routed to a stale veth instead of ours, breaking connectivity.
+	if *cleanupStaleVethDevices {
+		if err := cleanupStaleVeths(ctx, vp.network.HostIPWithCIDR()); err != nil {
+			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", vp.network.HostIPWithCIDR(), err)
+		}
+	}
 
 	// Create a veth pair with randomly generated names.
 	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netns)
@@ -757,14 +820,24 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 	}
-	iptablesRules = append(iptablesRules, [][]string{
+	if enableExternalNetworking {
 		// Allow forwarding traffic between the host side of the veth pair and
 		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
-		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
-		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-	}...)
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
+			{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
+		}...)
+	} else {
+		// Block external network access by rejecting all forwarded traffic
+		// from/to this veth pair. This is needed because hosts may not have
+		// default-deny policies in iptables.
+		iptablesRules = append(iptablesRules, [][]string{
+			{"FORWARD", "-i", vp.hostDevice, "-j", "REJECT"},
+			{"FORWARD", "-o", vp.hostDevice, "-j", "REJECT"},
+		}...)
+	}
 
 	// IP rules are evaluated in order, so insert restrictions at the top of the
 	// table so they are evaluated before any more permissive default rules.
@@ -859,7 +932,7 @@ func (s cleanupStack) Cleanup(ctx context.Context) error {
 		s = s[:len(s)-1]
 		if err := f(ctx); err != nil {
 			// Short-circuit on the first error.
-			alert.UnexpectedEvent("network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
+			alert.CtxUnexpectedEvent(ctx, "network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
 			return err
 		}
 	}
@@ -880,7 +953,11 @@ type VMNetwork struct {
 
 // CreateVMNetwork initializes a network namespace, networking
 // interfaces, and host configuration required for VM networking.
-func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (_ *VMNetwork, err error) {
+//
+// If enableExternalNetworking is false, the VM will not be able to reach
+// external networks, but internal networking (including MMDS for init-dockerd)
+// will still work.
+func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string, enableExternalNetworking bool) (_ *VMNetwork, err error) {
 	var cleanupStack cleanupStack
 	defer func() {
 		// If we failed to fully set up the network, make sure to clean up any
@@ -900,7 +977,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	})
 
 	// Create a veth pair with one end in the namespace.
-	vethPair, err := setupVethPair(ctx, netns)
+	vethPair, err := setupVethPair(ctx, netns, enableExternalNetworking)
 	if err != nil {
 		return nil, status.WrapError(err, "setup veth pair")
 	}
@@ -926,6 +1003,27 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 			return nil, status.WrapError(err, "set up tap device")
 		}
 	}
+
+	// Rewrite SYN packets sent through the host to have an MTU equal to the
+	// path MTU because GCP machines have smaller MTUs. This requires the
+	// xt_TCPMSS kernel module, which may not be available in all environments.
+	// TODO(go/b/6539): remove this.
+	if *clampMSSToPMTU {
+		if err := runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-A",
+			"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp", "--tcp-flags",
+			"SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
+			log.CtxWarningf(ctx, "Failed to set up TCPMSS clamping (xt_TCPMSS "+
+				"module may not be available): %s", err)
+		} else {
+			cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+				return runCommand(ctx, "iptables", "--wait", "-t", "mangle", "-D",
+					"FORWARD", "-i", vethPair.hostDevice, "-p", "tcp",
+					"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS",
+					"--clamp-mss-to-pmtu")
+			})
+		}
+	}
+
 	v := &VMNetwork{
 		netns:    netns,
 		vmIP:     vmIP,
@@ -1053,7 +1151,7 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	var vethPair *vethPair
 	if !loopbackOnly {
 		// Create a veth pair with one end in the namespace.
-		vp, err := setupVethPair(ctx, netns)
+		vp, err := setupVethPair(ctx, netns, true /*enableExternalNetworking*/)
 		if err != nil {
 			return nil, status.WrapError(err, "setup veth pair")
 		}

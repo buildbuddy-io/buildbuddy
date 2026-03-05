@@ -26,10 +26,12 @@ func init() {
 		l := log.NamedSubLogger(pkgName)
 		// Make the raft library be quieter.
 		switch pkgName {
-		case "raft", "dragonboat", "logdb", "raftpb", "transport":
+		case "raft", "dragonboat", "logdb", "raftpb":
 			l = l.Level(zerolog.Disabled)
 		case "rsm":
 			l = l.Level(zerolog.InfoLevel)
+		case "transport":
+			l = l.Level(zerolog.WarnLevel)
 		}
 		return &dbCompatibleLogger{l}
 	})

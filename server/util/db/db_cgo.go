@@ -34,8 +34,10 @@ func (h *DBHandle) IsDuplicateKeyError(err error) bool {
 		return true
 	}
 	var sqliteErr gosqlite.Error
-	// Defined at https://www.sqlite.org/rescode.html#constraint_unique
-	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
+	// Defined at
+	// https://www.sqlite.org/rescode.html#constraint_unique
+	// https://www.sqlite.org/rescode.html#constraint_primarykey
+	if errors.As(err, &sqliteErr) && (sqliteErr.ExtendedCode == 2067 || sqliteErr.ExtendedCode == 1555) {
 		return true
 	}
 	var postgresqlErr *gopostgresconn.PgError

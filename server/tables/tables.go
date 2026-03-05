@@ -3,10 +3,11 @@
 package tables
 
 import (
-	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -162,6 +164,10 @@ type Invocation struct {
 	RunID                            string
 	BazelExitCode                    string
 
+	// For invocations with run logs, the status of the executable running.
+	// Type is `invocation_status.OverallStatus`.
+	RunStatus int64
+
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
 	DownloadOutputsOption int64
@@ -255,6 +261,9 @@ type Group struct {
 	// When a Group is designated as a "parent" then any Admin keys from that
 	// org also work for managing groups with the same SAML IDP Metadata URL.
 	IsParent bool `gorm:"not null;default:0"`
+
+	// The status of the group: free tier, enterprise, etc.
+	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {
@@ -280,7 +289,13 @@ func (ug *UserGroup) TableName() string {
 
 type GroupRole struct {
 	Group
-	Role uint32
+	// Deprecated. Don't reference this in any new code!
+	Role         *uint32
+	Capabilities []cappb.Capability
+}
+
+func (gr *GroupRole) HasCapability(cap cappb.Capability) bool {
+	return slices.Contains(gr.Capabilities, cap)
 }
 
 type User struct {
@@ -350,6 +365,41 @@ func subIDToAccountType(s string) uspb.AccountType {
 	return uspb.AccountType_OIDC
 }
 
+// UserList is a named collection of users.
+type UserList struct {
+	UserListID string `gorm:"primaryKey"`
+	GroupID    string `gorm:"index:user_list_group_id_index"`
+	Name       string
+}
+
+func (ul *UserList) TableName() string {
+	return "UserLists"
+}
+
+// UserUserList maps users to users lists.
+type UserUserList struct {
+	UserUserID         string `gorm:"primaryKey"`
+	UserListUserListID string `gorm:"primaryKey"`
+}
+
+func (uul *UserUserList) TableName() string {
+	return "UserUserLists"
+}
+
+// UserListGroup maps user lists to groups with an associated role.
+type UserListGroup struct {
+	UserListUserListID string `gorm:"primaryKey"`
+	GroupGroupID       string `gorm:"primaryKey"`
+
+	// The list's role within the group.
+	// Constants are defined in the perms package.
+	Role uint32
+}
+
+func (ug *UserListGroup) TableName() string {
+	return "UserListGroups"
+}
+
 type Token struct {
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
@@ -385,7 +435,13 @@ type APIKey struct {
 	APIKeyID string `gorm:"primaryKey"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
-	Label   string
+	Label string
+	// UserID is set when an API key is associated with a user
+	// (i.e. it's a user API key)
+	// The API key must be treated as invalid if this field is set but this
+	// user does not exist or is not a member of the group.
+	// All read paths should utilize authdb.fetchAPIKeys to take this into
+	// account.
 	UserID  string
 	GroupID string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
@@ -397,6 +453,12 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
+	//
+	// For user API keys this represents "requested capabilities". This value
+	// must be masked by user membership capabilities to derive the effective
+	// capabilities.
+	// All read paths should utilize authdb.fetchAPIKeys to obtain the
+	// effective capabilities.
 	Capabilities        int32 `gorm:"default:1"`
 	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
@@ -766,6 +828,9 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+// DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 type QuotaBucket struct {
 	Model
 	// The namespace indicates a single resource to be protected from abusive
@@ -788,6 +853,9 @@ func (*QuotaBucket) TableName() string {
 	return "QuotaBuckets"
 }
 
+// DEPRECATED: QuotaGroup is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 // QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
 // example, user:X is in bucket:restricted.
 type QuotaGroup struct {
@@ -1356,5 +1424,8 @@ func RegisterTables() {
 	registerTable("UA", &Usage{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
+	registerTable("UL", &UserList{})
+	registerTable("UU", &UserUserList{})
+	registerTable("UM", &UserListGroup{})
 	registerTable("WF", &Workflow{})
 }

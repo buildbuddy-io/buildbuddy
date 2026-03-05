@@ -3,6 +3,7 @@ package testauth
 import (
 	"context"
 	"net/http"
+	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -11,8 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -25,7 +27,7 @@ import (
 // and then test that they are used.
 //
 // Example:
-//   authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+//   authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 //   testEnv.SetAuthenticator(authenticator)
 //   ... test code that uses auth ...
 //
@@ -41,7 +43,6 @@ func User(userID, groupID string) *TestUser {
 			{
 				GroupID:      groupID,
 				Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
-				Role:         role.Admin,
 			},
 		},
 		Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
@@ -74,21 +75,20 @@ type apiKeyUserProvider func(ctx context.Context, apiKey string) (interfaces.Use
 
 type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
-	UserProvider       userProvider
-	APIKeyProvider     apiKeyUserProvider
-	ServerAdminGroupID string
+	UserProvider   userProvider
+	APIKeyProvider apiKeyUserProvider
+	claimsParser   *claims.ClaimsParser
 }
 
-func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
+func NewTestAuthenticator(t testing.TB, testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
+	claimsParser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
+	require.NoError(t, err)
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
 		UserProvider:      func(ctx context.Context, userID string) (interfaces.UserInfo, error) { return testUsers[userID], nil },
 		APIKeyProvider:    func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) { return testUsers[apiKey], nil },
+		claimsParser:      claimsParser,
 	}
-}
-
-func (a *TestAuthenticator) AdminGroupID() string {
-	return a.ServerAdminGroupID
 }
 
 func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
@@ -103,7 +103,9 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 	u, err := a.authenticateGRPCRequest(ctx)
 	var c *claims.Claims
 	if u != nil {
-		c = u.(*claims.Claims)
+		// Copy claims to avoid races reading/writing the JWT in the context
+		newClaims := *u.(*claims.Claims)
+		c = &newClaims
 	}
 	return claims.AuthContextWithJWT(ctx, c, err)
 }
@@ -133,7 +135,7 @@ func (a *TestAuthenticator) authenticateGRPCRequest(ctx context.Context) (interf
 		return u, nil
 	}
 	for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
-		u, err := claims.ParseClaims(jwt)
+		u, err := a.claimsParser.Parse(ctx, jwt)
 		if err != nil {
 			log.Errorf("Failed to authenticate incoming JWT: %s", err)
 			continue
@@ -217,7 +219,13 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 
 // WithAuthenticatedUserInfo sets the authenticated user to the given user.
 func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
-	jwt, err := claims.AssembleJWT(userInfo.(*claims.Claims))
+	// Copy claims to avoid mutating shared state when AssembleJWT sets standard
+	// claims, then set them in context to avoid reparsing.
+	newClaims := *userInfo.(*claims.Claims)
+	c := &newClaims
+	ctx = claims.AuthContext(ctx, c)
+
+	jwt, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
 	if err != nil {
 		log.Errorf("Failed to mint JWT from UserInfo: %s", err)
 		return ctx
@@ -233,5 +241,5 @@ func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {
 	if u == nil {
 		return "", status.PermissionDeniedErrorf("user %s is unknown to TestAuthenticator", userID)
 	}
-	return claims.AssembleJWT(u.(*claims.Claims))
+	return claims.AssembleJWT(u.(*claims.Claims), jwt.SigningMethodHS256)
 }

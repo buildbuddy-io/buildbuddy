@@ -1,3 +1,22 @@
+// Package driver implements a priority queue that drives Raft range management
+// decisions. It periodically examines ranges and partitions, determines what
+// action (if any) is needed, and executes the appropriate change.
+//
+// For ranges, the driver handles:
+//   - Up-replication: adding replicas when a range has fewer than the configured minimum.
+//   - Down-replication: removing replicas when a range exceeds the minimum.
+//   - Dead replica replacement and removal.
+//   - Range splitting when a range exceeds the target size.
+//   - Replica rebalancing to distribute ranges evenly across stores.
+//   - Lease rebalancing to distribute lease ownership evenly across stores.
+//   - Finishing replica removal by cleaning up data on removed nodes.
+//
+// For partitions, the driver handles initialization of new partitions by
+// creating the required Raft shards across available nodes.
+//
+// Actions are prioritized so that critical operations (e.g. replacing dead
+// replicas) run before less urgent ones (e.g. rebalancing). Failed actions are
+// retried with exponential backoff up to a maximum retry count.
 package driver
 
 import (
@@ -5,6 +24,7 @@ import (
 	"container/heap"
 	"context"
 	"flag"
+	"maps"
 	"math"
 	"math/rand"
 	"slices"
@@ -34,9 +54,10 @@ import (
 )
 
 var (
-	minReplicasPerRange   = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
-	minMetaRangeReplicas  = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas each range for meta range")
-	newReplicaGracePeriod = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
+	minReplicasPerRange        = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	minMetaRangeReplicas       = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas the meta range should have")
+	missingLeaseCountThreshold = flag.Int("cache.raft.missing_lease_count_threshold", 5, "When the number of ranges without leases is greater than this number, don't rebalance leases")
+	newReplicaGracePeriod      = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 )
 
 const (
@@ -416,10 +437,12 @@ type Queue struct {
 
 	minReplicasPerRange  int
 	minMetaRangeReplicas int
+
+	efp interfaces.ExperimentFlagProvider
 }
 
-func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock, nhlog)
+func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
+	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
 	q := &Queue{
 		storeMap:             storeMap,
 		store:                store,
@@ -427,6 +450,7 @@ func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.Goss
 		sender:               sender,
 		minReplicasPerRange:  *minReplicasPerRange,
 		minMetaRangeReplicas: *minMetaRangeReplicas,
+		efp:                  efp,
 	}
 	q.baseQueue = newBaseQueue(nhlog, clock, q)
 	return q
@@ -434,6 +458,27 @@ func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.Goss
 
 func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 	return rq.store.GetReplica(rangeID)
+}
+
+const driverEnabledFlag = "cache.raft.enable_driver"
+const splitEnabledFlag = "cache.raft.enable_split"
+
+// isDriverEnabled checks if the driver is enabled via the experiment flag.
+// By default, the driver is enabled (returns true).
+func (rq *Queue) isDriverEnabled(ctx context.Context) bool {
+	if rq.efp == nil {
+		return true
+	}
+	return rq.efp.Boolean(ctx, driverEnabledFlag, true)
+}
+
+// isSplitEnabled checks if split is enabled via the experiment flag.
+// By default, split is enabled (returns true).
+func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
+	if rq.efp == nil {
+		return true
+	}
+	return rq.efp.Boolean(ctx, splitEnabledFlag, true)
 }
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
@@ -444,6 +489,13 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	rd := rq.store.GetRange(rangeID)
 	action := DriverNoop
 	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
+		return action, action.Priority()
+	}
+
+	if rd.GetDeleted() {
+		// If the range descriptor is marked as deleted, we don't want to do
+		// any up/down-replicate and reblance actions, except for finish the
+		// cleanup.
 		return action, action.Priority()
 	}
 
@@ -472,7 +524,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		minReplicas = rq.minMetaRangeReplicas
 	}
 
-	desiredQuorum := computeQuorum(rq.minReplicasPerRange)
+	desiredQuorum := computeQuorum(minReplicas)
 	quorum := computeQuorum(curReplicas)
 
 	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
@@ -494,8 +546,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	numDeadReplicas := len(replicasByStatus.DeadReplicas)
 
 	if numLiveReplicas < quorum {
-		// The cluster is unavailable since we don't have enough live nodes.
-		// There is no point of doing anything right now.
+		// We don't have enough live nodes to do any cluster membership change;
+		// However, RemoveData doesn't require cluster membership change
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
 		log.Debugf("noop because num live replicas of range %d = %d less than quorum =%d", rd.GetRangeId(), numLiveReplicas, quorum)
 		action = DriverNoop
 		return action, action.Priority()
@@ -540,11 +595,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
-	// Do not split if there is a replica is dead or suspect or a replica is
+	// Do not split when there is a store that's unavailable and a replica is
 	// in the middle of a removal.
-	allReady := rq.storeMap.AllAvailableStoresReady()
-	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
-	if isClusterHealthy {
+	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
+	if isClusterHealthy && rq.isSplitEnabled(ctx) {
 		if targetRangeSizeBytes := config.TargetRangeSizeBytes(); targetRangeSizeBytes > 0 {
 			usage, err := repl.Usage()
 			if err != nil {
@@ -561,12 +615,10 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 				}
 			}
 		}
-	} else {
-		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
 	}
 
-	// Do not try to rebalance replica or leases if there is a dead or suspect,
-	// because it can make the system more unstable.
+	// Do not try to rebalance replica or leases when there is a store that's
+	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
 		storesWithStats := rq.storeMap.GetStoresWithStats()
@@ -576,13 +628,11 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 			action = DriverRebalanceReplica
 			return action, action.Priority()
 		}
-		op = rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID())
-		if op != nil {
-			action = DriverRebalanceLease
-			return action, action.Priority()
-		}
-	} else {
-		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d, allReady: %t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, allReady)
+	}
+
+	if rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID()) != nil {
+		action = DriverRebalanceLease
+		return action, action.Priority()
 	}
 
 	action = DriverNoop
@@ -606,7 +656,6 @@ func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAct
 		return rq.computeActionForRangeTask(ctx, task.rangeTask)
 	case PartitionTaskType:
 		return rq.computeActionForPartitionTask(ctx, task.partitionTask)
-
 	}
 	return DriverNoop, DriverNoop.Priority()
 
@@ -681,10 +730,17 @@ func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, pt *partitionTas
 }
 
 func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+	if !rq.isDriverEnabled(ctx) {
+		return
+	}
 	rq.log.Infof("maybe add partition task for %q", p.ID)
 	rq.maybeAddPartitionTask(ctx, &partitionTask{config: p, pd: pd}, attemptRecord{})
 }
+
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
+	if !rq.isDriverEnabled(ctx) {
+		return
+	}
 	rq.maybeAddRangeTask(ctx, &rangeTask{repl: replica}, attemptRecord{})
 }
 
@@ -715,7 +771,6 @@ func (bq *baseQueue) Stop() {
 }
 
 func (bq *baseQueue) processQueue() {
-	bq.log.Info("processQueue")
 	if bq.Len() == 0 {
 		return
 	}
@@ -939,20 +994,21 @@ func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
 	return compareByScore(op1.to, op2.to)
 }
 
-func canConvergeByRebalanceReplica(choice *rebalanceChoice, allStores *storemap.StoresWithStats) bool {
-	if len(choice.candidates) == 0 {
-		return false
-	}
+func canConvergeByRebalanceReplica(existingStores map[string]*candidate, targets []*candidate, allStores *storemap.StoresWithStats) bool {
 	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
 	// The existing store is too far above the mean.
-	if choice.existing.usage.ReplicaCount > overfullThreshold {
-		return true
+	aboveMean := false
+	for _, source := range existingStores {
+		if source.usage.ReplicaCount > overfullThreshold {
+			return true
+		}
+		aboveMean = aboveMean || float64(source.usage.ReplicaCount) > allStores.ReplicaCount.Mean
 	}
 
-	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
-	if float64(choice.existing.usage.ReplicaCount) > allStores.ReplicaCount.Mean {
+	// One existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
+	if aboveMean {
 		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
-		for _, c := range choice.candidates {
+		for _, c := range targets {
 			if c.usage.ReplicaCount < underfullThreshold {
 				return true
 			}
@@ -961,19 +1017,26 @@ func canConvergeByRebalanceReplica(choice *rebalanceChoice, allStores *storemap.
 	return false
 }
 
-func canConvergeByRebalanceLease(choice *rebalanceChoice, allStores *storemap.StoresWithStats) bool {
+func canConvergeByRebalanceLease(choice *rebalanceChoice, mean float64) bool {
 	if len(choice.candidates) == 0 {
 		return false
 	}
-	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(allStores.LeaseCount.Mean)))
+	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(mean)))
 	// The existing store is too far above the mean.
 	if choice.existing.usage.LeaseCount > overfullThreshold {
-		return true
+		// There is a candidate store that's below mean
+		for _, c := range choice.candidates {
+			if float64(c.usage.LeaseCount) < mean {
+				return true
+			}
+		}
+		// No candidate store is below mean, don't transfer.
+		return false
 	}
 
 	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
-	if float64(choice.existing.usage.LeaseCount) > allStores.LeaseCount.Mean {
-		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.LeaseCount.Mean)))
+	if float64(choice.existing.usage.LeaseCount) > mean {
+		underfullThreshold := int64(math.Floor(belowMeanLeaseCountThreshold(mean)))
 		for _, c := range choice.candidates {
 			if c.usage.LeaseCount < underfullThreshold {
 				return true
@@ -1038,6 +1101,10 @@ func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, l
 }
 
 func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
+	globalMean, shouldRebalance := rq.storeMap.CheckLeaseRebalancePrecondition()
+	if !shouldRebalance {
+		return nil
+	}
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""
@@ -1067,7 +1134,7 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 	}
 
 	existing.leaseCount = existing.usage.LeaseCount
-	existing.leaseCountMeanLevel = leaseCountMeanLevel(storesWithStats, existing.usage)
+	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
 	choice := &rebalanceChoice{
 		existing:   existing,
 		candidates: make([]*candidate, 0, len(rd.GetReplicas())-1),
@@ -1090,10 +1157,10 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 			nhid:                repl.GetNhid(),
 			usage:               store.usage,
 			leaseCount:          store.usage.LeaseCount,
-			leaseCountMeanLevel: leaseCountMeanLevel(storesWithStats, store.usage),
+			leaseCountMeanLevel: leaseCountMeanLevel(globalMean, store.usage),
 		})
 	}
-	if !canConvergeByRebalanceLease(choice, storesWithStats) {
+	if !canConvergeByRebalanceLease(choice, globalMean) {
 		return nil
 	}
 
@@ -1109,9 +1176,8 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 }
 
 func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
-	allStores := make(map[string]*candidate)
-
-	existingStores := make(map[string]*candidate)
+	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
+	otherReplicaStores := make(map[string]*candidate, len(rd.GetReplicas()))
 	needRebalance := false
 	for _, su := range storesWithStats.Usages {
 		nhid := su.GetNode().GetNhid()
@@ -1120,101 +1186,61 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			usage:    su,
 			fullDisk: isDiskFull(su),
 		}
-		allStores[nhid] = store
+		candidateStores[nhid] = store
 	}
 
-	nhids := make([]string, 0, len(rd.GetReplicas()))
-	localNHID := ""
 	for _, repl := range rd.GetReplicas() {
-		if repl.GetReplicaId() == localReplicaID {
-			localNHID = repl.GetNhid()
-		}
-		store, ok := allStores[repl.GetNhid()]
+		store, ok := candidateStores[repl.GetNhid()]
 		if !ok {
 			// The store might not be available rn.
+			continue
+		}
+		delete(candidateStores, repl.GetNhid())
+		if repl.GetReplicaId() == localReplicaID {
+			// This is to prevent us from removing the replica on this node. We
+			// can only support this after we have the ability to transfer the
+			// leadership away.
 			continue
 		}
 		if store.fullDisk {
 			// We want to move the replica away from the store with full disk.
 			needRebalance = true
 		}
-		existingStores[repl.GetNhid()] = store
-		nhids = append(nhids, repl.GetNhid())
+		otherReplicaStores[repl.GetNhid()] = store
 	}
 
-	// Add replicas that are in the middle of removal to existingStores to
-	// prevent them from becoming target candidates.
+	// Remove replicas that are in the middle of removal from candidates.
 	for _, repl := range rd.GetRemoved() {
-		store, ok := allStores[repl.GetNhid()]
-		if !ok {
-			// The store might not be available rn.
-			continue
-		}
-		existingStores[repl.GetNhid()] = store
+		delete(candidateStores, repl.GetNhid())
 	}
 
-	// Find valid targeting stores for rebalancing.
-	var choices []*rebalanceChoice
-	for _, existingNHID := range nhids {
-		if existingNHID == localNHID {
-			// This is to prevent us from removing the replica on this node. We
-			// can only support this after we have the ability to transfer the
-			// leadership away.
-			continue
-		}
-		existing := existingStores[existingNHID]
-		var targetCandidates []*candidate
-		for nhid, store := range allStores {
-			if _, ok := existingStores[nhid]; ok {
-				// The store already contains the range.
-				continue
-			}
-			if store.fullDisk {
-				continue
-			}
+	var targetCandidates []*candidate
+	for _, store := range candidateStores {
+		if !store.fullDisk {
+			store.fullDisk = isDiskFullForRebalance(store.usage)
+			store.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, store.usage)
+			store.replicaCount = store.usage.ReplicaCount
 			targetCandidates = append(targetCandidates, store)
 		}
-		if len(targetCandidates) == 0 {
-			continue
-		}
-
-		choices = append(choices, &rebalanceChoice{
-			existing:   existing,
-			candidates: targetCandidates,
-		})
 	}
-
-	if !needRebalance {
-		for _, choice := range choices {
-			if canConvergeByRebalanceReplica(choice, storesWithStats) {
-				needRebalance = true
-				break
-			}
-		}
-	}
-
-	if !needRebalance {
+	if len(targetCandidates) == 0 {
 		return nil
 	}
+	if !needRebalance && !canConvergeByRebalanceReplica(otherReplicaStores, targetCandidates, storesWithStats) {
+		return nil
+	}
+	bestTarget := slices.MaxFunc(targetCandidates, compareByScoreAndID)
 
-	// Populating scores.
-	potentialOps := make([]*rebalanceOp, 0, len(choices))
-	for _, rebalanceChoice := range choices {
-		existing := rebalanceChoice.existing
+	potentialOps := make([]*rebalanceOp, 0, len(otherReplicaStores))
+	for _, nhid := range slices.Sorted(maps.Keys(otherReplicaStores)) {
+		existing := otherReplicaStores[nhid]
 		existing.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, existing.usage)
 		existing.replicaCount = existing.usage.ReplicaCount
 
-		cl := rebalanceChoice.candidates
-		for _, c := range cl {
-			c.fullDisk = isDiskFullForRebalance(c.usage)
-			c.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, c.usage)
-			c.replicaCount = c.usage.ReplicaCount
-		}
-		best := slices.MaxFunc(cl, compareByScoreAndID)
-		if compareByScore(best, existing) >= 0 {
+		if compareByScore(bestTarget, existing) >= 0 {
 			potentialOps = append(potentialOps, &rebalanceOp{
 				from: existing,
-				to:   best,
+				to:   bestTarget,
 			})
 		}
 	}
@@ -1397,7 +1423,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	if op := change.removeDataOp; op != nil {
 		c, err := rq.apiClient.GetForReplica(ctx, op.replDesc)
 		if err != nil {
-			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client: %s", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId(), err)
+			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId())
 			rq.log.Error(err.Error())
 			return err
 		}
@@ -1430,6 +1456,11 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 	if rd == nil {
 		// We might be calling GetRange in the small window between RemoveRange and AddRange
 		return RequeueCheckOtherActions
+	}
+
+	if !rq.isDriverEnabled(ctx) {
+		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
+		return RequeueNoop
 	}
 
 	switch action {
@@ -1490,6 +1521,11 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 }
 
 func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	if !rq.isDriverEnabled(ctx) {
+		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
+		return RequeueNoop
+	}
+
 	var err error
 	switch action {
 	case DriverInitializePartition:
@@ -1634,9 +1670,9 @@ func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.S
 	return aroundMean
 }
 
-func leaseCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
-	maxLeaseCount := aboveMeanReplicaCountThreshold(storesWithStats.LeaseCount.Mean)
-	minLeaseCount := belowMeanReplicaCountThreshold(storesWithStats.LeaseCount.Mean)
+func leaseCountMeanLevel(mean float64, su *rfpb.StoreUsage) meanLevel {
+	maxLeaseCount := aboveMeanLeaseCountThreshold(mean)
+	minLeaseCount := belowMeanLeaseCountThreshold(mean)
 	curLeaseCount := float64(su.GetLeaseCount())
 	if curLeaseCount < minLeaseCount {
 		return belowMean

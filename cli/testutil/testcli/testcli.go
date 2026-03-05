@@ -30,7 +30,7 @@ var (
 	bbRunfilePath string
 
 	streamOutputs = flag.Bool("test_stream_cli_output", false, "Show live CLI output during test execution.")
-	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose=1 to the CLI.")
+	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose to the CLI.")
 
 	initEnvOnce sync.Once
 )
@@ -56,7 +56,7 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		require.NoError(t, err)
 	})
 	if *verbose {
-		args = append(args, "--verbose=1")
+		args = append([]string{"--verbose"}, args...)
 	}
 	cmd := exec.Command(BinaryPath(t), args...)
 	cmd.Dir = workspacePath
@@ -95,6 +95,25 @@ func Output(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Stdout = w
 	err := cmd.Run()
 	return buf.Bytes(), err
+}
+
+// SplitOutput runs the command and returns stdout and stderr in separate
+// buffers. It allows streaming CLI outputs for debugging purposes.
+func SplitOutput(cmd *exec.Cmd) (stdout, stderr []byte, _ error) {
+	stdoutBuf := bytes.NewBuffer(nil)
+	var stdoutW io.Writer = stdoutBuf
+	if *streamOutputs {
+		stdoutW = io.MultiWriter(stdoutW, os.Stderr)
+	}
+	stderrBuf := bytes.NewBuffer(nil)
+	var stderrW io.Writer = stderrBuf
+	if *streamOutputs {
+		stderrW = io.MultiWriter(stderrW, os.Stderr)
+	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+	err := cmd.Run()
+	return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
 }
 
 // CombinedOutput is like cmd.CombinedOutput() except that it allows streaming
@@ -167,11 +186,11 @@ func PTY(t *testing.T) *Terminal {
 }
 
 // Run runs the given command, writing the output to the terminal.
-func (t *Terminal) Run(cmd *exec.Cmd) {
+func (t *Terminal) Run(cmd *exec.Cmd) (int, error) {
 	cmd.Stdout = t.File
 	cmd.Stderr = t.File
 	err := cmd.Run()
-	require.NoError(t.t, err)
+	return cmd.ProcessState.ExitCode(), err
 }
 
 // Raw returns the raw terminal content.
@@ -187,5 +206,5 @@ func (t *Terminal) Render() string {
 	require.NoError(t.t, err)
 	_, err = screen.Write([]byte(t.Raw()))
 	require.NoError(t.t, err)
-	return string(screen.Render())
+	return string(screen.OutputAccumulator.String() + screen.Render())
 }

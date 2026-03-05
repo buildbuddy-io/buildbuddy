@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
@@ -38,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
@@ -49,7 +51,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -65,6 +66,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -139,7 +141,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetRunnerService(runnerService)
 
-	auth_service.Register(env)
+	if err = auth_service.Register(env); err != nil {
+		log.Fatalf("Error setting up auth service: %s", err)
+	}
 	hit_tracker_service.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})
@@ -236,6 +240,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := metacache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := distributed.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -247,7 +254,13 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	libmain.RegisterLocalServersAndClients(realEnv)
+
 	if err := execution_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	// Needs to be registered after the execution server.
+	if err := capabilities_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
@@ -267,9 +280,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := dsingleflight.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := prom.Register(realEnv); err != nil {
@@ -321,6 +331,10 @@ func main() {
 	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

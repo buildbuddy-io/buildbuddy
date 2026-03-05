@@ -108,6 +108,7 @@ export class InvocationComparisonService {
 
   private publishState() {
     this.subject.next({ id: this.invocationId, model: this.invocationModel });
+    window.dispatchEvent(new Event("storage"));
   }
 
   isLoading(): boolean {

@@ -1,5 +1,7 @@
 load("//rules/webdriver:index.bzl", "go_web_test_suite")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_web_test_suite(
     name = "shortcuts_test",
     size = "medium",
@@ -14,5 +16,3 @@ go_web_test_suite(
         "@com_github_tebeka_selenium//:selenium",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

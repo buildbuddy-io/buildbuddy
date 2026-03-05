@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "remote_download",
     srcs = ["remote_download.go"],
@@ -19,5 +21,3 @@ go_library(
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

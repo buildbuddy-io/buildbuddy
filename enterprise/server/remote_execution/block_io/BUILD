@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "block_io",
     srcs = [
@@ -21,5 +23,3 @@ go_library(
         "//conditions:default": [],
     }),
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

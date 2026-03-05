@@ -322,7 +322,7 @@ func (p *pooledByteStreamClient) getGrpcClientConnPoolForURL(target string) (con
 	}
 
 	// We didn't find a connection pool, so we'll make one.
-	connPool, err = grpc_client.DialInternal(p.env, target)
+	connPool, err = grpc_client.DialInternalWithPoolSize(p.env, target, 2)
 	if err != nil {
 		return nil, err
 	}

@@ -140,6 +140,24 @@ const teamMembers = [
       "Previously Director of Engineering at Vercel, Head of Engineering at Replit, and Principal Engineer at Spotify. Studied Computer Science at Cornell & Brown.",
     image: "dan.jpg",
   },
+  {
+    name: "Tyler French",
+    email: "tfrench@buildbuddy.io",
+    github: "tyler-french",
+    linkedin: "tylerdfrench",
+    blurb:
+      "Previously Senior Software Engineer at Uber. Maintains Bazel's rules_go and gazelle. Studied Electrical Engineering at Georgia Tech.",
+    image: "tfrench.jpg",
+  },
+  {
+    name: "Keith Smiley",
+    email: "keith@buildbuddy.io",
+    github: "keith",
+    linkedin: "keith-smiley-6811872a1",
+    blurb:
+      "Previously Senior Staff Software Engineer at Modular. Maintainer of Bazel's iOS support, creator of the Mobile Native Foundation & contributor to LLVM.",
+    image: "keith.png",
+  },
 ];
 
 const emeriti = [

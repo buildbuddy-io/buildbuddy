@@ -2,6 +2,8 @@ package priority_task_scheduler
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -37,15 +40,16 @@ func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb
 }
 
 func TestTaskQueue_SingleGroup(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 	require.Equal(t, 0, q.Len())
-	require.Nil(t, q.Peek())
+	require.Nil(t, q.Peek(ctx))
 
-	q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0))
 	require.Equal(t, 1, q.Len())
 
 	// Peeking should return the reservation but not remove it.
-	req := q.Peek()
+	req := q.Peek(ctx)
 	require.Equal(t, "1", req.GetTaskId())
 	require.Equal(t, 1, q.Len())
 
@@ -56,14 +60,14 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 
 	// Queue should be empty.
 	require.Equal(t, 0, q.Len())
-	require.Nil(t, q.Peek())
+	require.Nil(t, q.Peek(ctx))
 
-	q.Enqueue(newTaskReservationRequest("2", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("3", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("4", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("2", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("3", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("4", testGroupID1, 0))
 	// Enqueue task "1" last but give it the highest priority so it gets
 	// dequeued first.
-	q.Enqueue(newTaskReservationRequest("1", testGroupID1, -1000))
+	q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, -1000))
 
 	require.Equal(t, "1", q.Dequeue().GetTaskId())
 	require.Equal(t, "2", q.Dequeue().GetTaskId())
@@ -72,19 +76,20 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 }
 
 func TestTaskQueue_MultipleGroups(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
 	// First group has 3 task reservations.
-	q.Enqueue(newTaskReservationRequest("group1Task1", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("group1Task2", testGroupID1, 0))
-	q.Enqueue(newTaskReservationRequest("group1Task3", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task1", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task2", testGroupID1, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group1Task3", testGroupID1, 0))
 	// Second group has 1 task reservation.
-	q.Enqueue(newTaskReservationRequest("group2Task1", testGroupID2, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group2Task1", testGroupID2, 0))
 	// Third group has 2 task reservations.
 	// group3Task1 is enqueued last, but has higher priority so it should be
 	// dequeued first.
-	q.Enqueue(newTaskReservationRequest("group3Task2", testGroupID3, 0))
-	q.Enqueue(newTaskReservationRequest("group3Task1", testGroupID3, -1000))
+	q.Enqueue(ctx, newTaskReservationRequest("group3Task2", testGroupID3, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("group3Task1", testGroupID3, -1000))
 
 	require.Equal(t, "group1Task1", q.Dequeue().GetTaskId())
 	require.Equal(t, "group2Task1", q.Dequeue().GetTaskId())
@@ -96,10 +101,11 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 }
 
 func TestTaskQueue_DedupesTasks(t *testing.T) {
+	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
-	require.True(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
-	require.False(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
+	require.True(t, q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0)))
+	require.False(t, q.Enqueue(ctx, newTaskReservationRequest("1", testGroupID1, 0)))
 
 	require.Equal(t, 1, q.Len())
 	require.Equal(t, "1", q.Dequeue().GetTaskId())
@@ -123,14 +129,15 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	runnerPool := &FakeRunnerPool{}
 	leaser := NewFakeTaskLeaser()
 
-	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
 	scheduler.Start()
+	ctx := context.Background()
 	t.Cleanup(func() {
 		err := scheduler.Stop()
 		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
-
-	ctx := context.Background()
 
 	oneCPU := &scpb.TaskSize{
 		EstimatedMilliCpu:    1000,
@@ -185,17 +192,118 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 
 	// Finish the GPU task that is currently running, which should allow the
 	// next GPU task to be scheduled.
-	var gpuExecution *FakeExecution
+	var remainingExecution *FakeExecution
 	if execution1.ScheduledTask.GetExecutionTask().GetExecutionId() == gpuTask1ID {
-		gpuExecution = execution1
+		execution1.Complete()
+		remainingExecution = execution2
 	} else {
-		gpuExecution = execution2
+		execution2.Complete()
+		remainingExecution = execution1
 	}
-	gpuExecution.Complete()
 
 	execution3 := <-executor.StartedExecutions
 	require.Equal(t, gpuTask2ID, execution3.ScheduledTask.GetExecutionTask().GetExecutionId())
 	require.Equal(t, scheduler.q.Len(), 0)
+	execution3.Complete()
+
+	// Complete remaining execution to allow smooth shutdown.
+	remainingExecution.Complete()
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefinitelyBlocked(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "gpu", Value: 2.0},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	gpuLargeSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 2.0}},
+	}
+	gpuSmallSize := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 1.0}},
+	}
+	gpuLargeTaskID := fakeTaskID("gpu-large")
+	gpuSmall1TaskID := fakeTaskID("gpu-small-1")
+	gpuSmall2TaskID := fakeTaskID("gpu-small-2")
+
+	// Schedule one task that requires 1 GPU, then one task that requires 2
+	// GPUs, then another task that requires 1 GPU. The first GPU task should be
+	// allowed to run, and the second GPU task should be blocked waiting for the
+	// first GPU task to complete. The third task should *not* skip ahead in the
+	// queue - if we keep allowing tasks to skip ahead, then the large GPU task
+	// will spend a long time queued.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall1TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	// gpu-small-1 should have started.
+	require.Equal(t, gpuSmall1TaskID, execution1.ScheduledTask.GetExecutionTask().GetExecutionId())
+
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuLargeTaskID,
+		TaskSize:           gpuLargeSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuLargeSize},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuSmall2TaskID,
+		TaskSize:           gpuSmallSize,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: gpuSmallSize},
+	})
+	require.NoError(t, err)
+
+	// Give enough time for the scheduler to attempt to schedule more tasks.
+	// It should not have scheduled any more tasks except the first one.
+	// TODO: use testing/synctest here once we're on Go 1.25
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no tasks should be started until first task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, scheduler.q.Len(), 2)
+	// Complete the first task. The second GPU task should start.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	require.Equal(t, scheduler.q.Len(), 1)
+	execution2.Complete()
+	// Drain the queue.
+	execution3 := <-executor.StartedExecutions
+	execution3.Complete()
+	require.Equal(t, scheduler.q.Len(), 0)
+
+	startedTaskIDs := []string{
+		execution1.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
+	}
+	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
 }
 
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
@@ -233,20 +341,22 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			executor := NewFakeExecutor()
 			runnerPool := &FakeRunnerPool{}
 			leaser := NewFakeTaskLeaser()
-			scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			require.NoError(t, err)
 			scheduler.Start()
+			ctx := context.Background()
 			t.Cleanup(func() {
 				err := scheduler.Stop()
 				require.NoError(t, err)
+				assert.NoError(t, scheduler.Shutdown(ctx))
 			})
-			ctx := context.Background()
 
 			// Set up the fake execution client to inject a failure into CloseAndRecv.
 			executionClient.CloseAndRecvErr = test.streamCloseAndRecvErr
 
 			// Start a task.
 			reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
-			_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+			_, err = scheduler.EnqueueTaskReservation(ctx, reservation)
 			require.NoError(t, err)
 
 			// Fail the task with an error that is normally non-retryable, but because
@@ -258,7 +368,12 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			// Inspect the lease and make sure it was closed with a retry.
 			lease := <-leaser.GrantedLeases
 			retry, err := lease.WaitClosed()
-			require.Equal(t, test.expectedLeaseCloseErr, err, "unexpected lease close error")
+			if test.expectedLeaseCloseErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Equal(t, test.expectedLeaseCloseErr.Error(), err.Error(), "unexpected lease close error")
+			}
 			require.Equal(t, test.expectedLeaseCloseRetry, retry, "unexpected lease retry value")
 		})
 	}
@@ -274,22 +389,69 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	executor := NewFakeExecutor()
 	runnerPool := &FakeRunnerPool{}
 	leaser := NewFakeTaskLeaser()
-	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
 		err := scheduler.Stop()
 		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
 	// Start a task.
 	reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
-	_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+	_, err = scheduler.EnqueueTaskReservation(ctx, reservation)
 	require.NoError(t, err)
 	task := <-executor.StartedExecutions
 	task.Complete()
 
 	// Make sure the local enqueue timestamp looks correct.
 	require.Equal(t, startTime, task.ScheduledTask.GetWorkerQueuedTimestamp().AsTime())
+}
+
+func TestRemoveTaskFromQueue(t *testing.T) {
+	ctx := t.Context()
+	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
+	// after dequeueing the remaining tasks, we should only dequeue the tasks
+	// that were not cancelled.
+	for range 10 {
+		q := newTaskQueue(clockwork.NewRealClock())
+
+		// Enqueue a bunch of tasks, with various group IDs to make sure we're
+		// also exercising the per-group queueing logic.
+		const numTasks = 32
+		var taskIDs []string
+		for taskIDInt := range numTasks {
+			taskID := fakeTaskID(fmt.Sprintf("%d", taskIDInt))
+			taskIDs = append(taskIDs, taskID)
+			groupIDInt := rand.Intn(3)
+			q.Enqueue(ctx, &scpb.EnqueueTaskReservationRequest{
+				TaskId: taskID,
+				SchedulingMetadata: &scpb.SchedulingMetadata{
+					TaskGroupId: fmt.Sprintf("GR%d", groupIDInt),
+				},
+			})
+		}
+
+		// Pick a few random tasks to cancel, and remove them from the list of
+		// expected task IDs.
+		for range 3 {
+			i := rand.Intn(len(taskIDs))
+			canceledTaskID := taskIDs[i]
+			taskIDs = append(taskIDs[:i], taskIDs[i+1:]...)
+			q.DequeueAt(q.FindTask(canceledTaskID))
+		}
+
+		// Dequeue the remaining tasks and make sure they are the ones that were
+		// not cancelled.
+		var dequeuedTaskIDs []string
+		for range taskIDs {
+			task := q.Dequeue()
+			dequeuedTaskIDs = append(dequeuedTaskIDs, task.GetTaskId())
+		}
+		require.Nil(t, q.Dequeue())
+		require.ElementsMatch(t, taskIDs, dequeuedTaskIDs)
+	}
 }
 
 func fakeTaskID(label string) string {

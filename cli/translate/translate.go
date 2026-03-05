@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/translate/js"
-	"github.com/buildbuddy-io/buildbuddy/cli/translate/yaml"
 )
 
 type Translator interface {
@@ -15,8 +14,10 @@ type Translator interface {
 
 var (
 	translators = map[string]Translator{
-		".js":    js.New(),
-		".yaml":  yaml.New(),
+		".js": js.New(),
+		// TODO: this produces an undesired diff in our WORKSPACE file.
+		// Fix and re-enable.
+		// ".yaml":  yaml.New(),
 		".bazel": nil,
 		"":       nil,
 	}

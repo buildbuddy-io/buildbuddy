@@ -72,13 +72,13 @@ type Logger struct {
 }
 
 func (l *Logger) Info(ctx context.Context, format string, args ...any) {
-	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...)...)
 }
 func (l *Logger) Warn(ctx context.Context, format string, args ...any) {
-	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...)...)
 }
 func (l *Logger) Error(ctx context.Context, format string, args ...any) {
-	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...)...)
 }
 
 // Trace is called after every SQL query. If `database.log_queries` is true then

@@ -12,6 +12,7 @@ const debugMessage =
 
 interface Props {
   model: InvocationModel;
+  dark?: boolean;
 }
 
 interface State {
@@ -138,7 +139,8 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
         }
       }
     }
-    let text = lines.join("\n");
+
+    let text = deduplicateLines(lines).join("\n");
     text = deemphasizeSandboxDebug(text);
     text = underlineFileNames(text);
     return text;
@@ -150,7 +152,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     }
 
     return (
-      <div className="invocation-error-card card card-failure">
+      <div className={`invocation-error-card card card-failure ${this.props.dark ? "dark" : "light-terminal"}`}>
         <AlertCircle className="icon red" />
         <div className="content">
           <div className="title">{this.getTitle(this.state.model)}</div>
@@ -158,7 +160,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
           <div className="details">
             <TerminalComponent
               value={this.getBodyText(this.state.model)}
-              lightTheme
+              lightTheme={!this.props.dark}
               scrollTop
               bottomControls
               defaultWrapped
@@ -213,6 +215,10 @@ function formatFailureDescription(failureDetail: failure_details.IFailureDetail)
 
 function joinNonEmpty(parts: string[], join: string) {
   return parts.filter((x) => x).join(join);
+}
+
+function deduplicateLines(lines: string[]): string[] {
+  return lines.filter((x, index, self) => self.indexOf(x) === index);
 }
 
 function modelsEqual(a: CardModel, b: CardModel): boolean {

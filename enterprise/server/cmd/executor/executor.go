@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,8 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -50,26 +51,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
-
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
-	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
-
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
-	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", 100, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target.")
+	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", -1, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target. If -1 (the default), then 100% of cache traffic will be sent to executor.cache_target (which defaults to executor.app_target if not set).")
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
@@ -89,11 +89,6 @@ var (
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
 
-func init() {
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
-}
-
 func isOldEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
 	return err == nil && u.Hostname() == "cloud.buildbuddy.io"
@@ -105,17 +100,29 @@ type cacheClient interface {
 }
 
 func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnPool {
+	log.Infof("Connecting to cache target %q", target)
 	conn, err := grpc_client.DialInternal(env, target)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
-	log.Infof("Connecting to cache target: %s", target)
+	log.Debugf("Connected to cache target: %s", target)
 	return conn
 }
 
 func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTrafficPercent int, realEnv *real_environment.RealEnv) {
 	if isOldEndpoint(appTarget) || isOldEndpoint(cacheTarget) {
 		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` and `executor.cache_target` (if applicable) to remote.buildbuddy.io for improved performance.")
+	}
+
+	// If the user isn't explicitly configuring cache_target_traffic_percent,
+	// then route 100% to cache_target if configured, otherwise 100% to
+	// app_target.
+	if cacheTargetTrafficPercent == -1 {
+		if cacheTarget == "" {
+			cacheTargetTrafficPercent = 0
+		} else {
+			cacheTargetTrafficPercent = 100
+		}
 	}
 
 	if appTarget == "" {
@@ -154,6 +161,7 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
+	realEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(client))
 }
 
 func getExecutorHostID() string {
@@ -185,7 +193,7 @@ func getExecutorHostName() string {
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	mmapLRUEnabled := *platform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
+	mmapLRUEnabled := *executorplatform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}
@@ -193,6 +201,15 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
 	metrics.RemoteExecutionAssignableRAMBytes.Set(math.Floor(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio))
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		log.Fatalf("Error getting allocated custom resources: %v", err)
+	}
+	for _, r := range customResources {
+		metrics.RemoteExecutionAssignableCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: r.GetName(),
+		}).Set(float64(r.GetValue()))
+	}
 
 	if err := auth.Register(context.Background(), realEnv); err != nil {
 		if err := auth.RegisterNullAuth(realEnv); err != nil {
@@ -239,11 +256,12 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		}
 	}
 
+	log.Infof("Connecting to app target: %s", *appTarget)
 	conn, err := grpc_client.DialInternal(realEnv, *appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}
-	log.Infof("Connecting to app target: %s", *appTarget)
+	log.Debugf("Connected to app target: %s", *appTarget)
 
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
@@ -349,7 +367,10 @@ func main() {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
 	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
+	if err != nil {
+		log.Fatalf("Error creating task scheduler: %v", err)
+	}
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
@@ -392,9 +413,14 @@ func main() {
 		reg.Start(rootContext)
 	}()
 
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *port))
+	if err != nil {
+		log.Fatalf("Failed to listen on port %d: %s", *port, err)
+	}
 	go func() {
-		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
+		_ = http.Serve(lis, nil)
 	}()
+
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 

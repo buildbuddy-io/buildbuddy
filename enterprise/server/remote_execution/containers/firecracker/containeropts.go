@@ -37,10 +37,6 @@ type ContainerOpts struct {
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
 
-	// CPUWeightMillis is the CPU weight to assign to this VM, expressed as
-	// CPU-millis. This is set to the task size.
-	CPUWeightMillis int64
-
 	// CgroupParent is the parent cgroup path relative to the cgroup root.
 	CgroupParent string
 
@@ -69,4 +65,8 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }

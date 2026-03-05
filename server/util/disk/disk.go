@@ -18,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -42,6 +43,7 @@ type Partition struct {
 	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
 	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
 	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
+	SoftDeleted  bool   `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
 }
 
 type PartitionMapping struct {
@@ -295,9 +297,7 @@ type writeMover struct {
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(w.ctx)
-	defer spn.End()
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -306,7 +306,7 @@ func (w *writeMover) Write(p []byte) (int, error) {
 }
 
 func (w *writeMover) Commit() error {
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
 	if err != nil {
 		return err
 	}
@@ -320,21 +320,26 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
-	releaseQuota, err := reserveFileWriterQuota(context.Background())
-	if err != nil {
-		return err
+	// Try to reserve quota for the temp file close and delete, but we will
+	// do both either way. Otherwise we would leak temp files.
+	releaseQuota, _ := reserveFileWriterQuota(w.ctx)
+	if releaseQuota != nil {
+		defer releaseQuota()
 	}
-	defer releaseQuota()
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
 	if err := RemoveIfExists(w.File.Name()); err != nil {
-		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+		alert.CtxUnexpectedEvent(w.ctx, "failed_to_delete_tmp_file", "Failed to delete %s: %s", w.File.Name(), err)
 	}
 	return nil
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
+	return FileWriterWithTmpDir(ctx, filepath.Dir(fullPath), fullPath)
+}
+
+func FileWriterWithTmpDir(ctx context.Context, tmpDir, fullPath string) (interfaces.CommittedWriteCloser, error) {
 	releaseQuota, err := reserveFileWriterQuota(ctx)
 	if err != nil {
 		return nil, err
@@ -349,7 +354,7 @@ func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWrite
 		return nil, err
 	}
 
-	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
+	tmpFileName := filepath.Join(tmpDir, filepath.Base(fullPath)+fmt.Sprintf(".%s.tmp", randStr))
 	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "parser",
     srcs = ["parser.go"],
@@ -16,6 +18,7 @@ go_library(
         "//cli/parser/parsed",
         "//cli/shortcuts",
         "//cli/storage",
+        "//cli/stream_run_logs/option_definitions",
         "//cli/watcher/option_definitions",
         "//cli/workspace",
         "//proto:bazel_flags_go_proto",
@@ -24,6 +27,7 @@ go_library(
         "//server/util/disk",
         "//server/util/lib/set",
         "//server/util/proto",
+        "//server/util/status",
     ],
 )
 
@@ -39,5 +43,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

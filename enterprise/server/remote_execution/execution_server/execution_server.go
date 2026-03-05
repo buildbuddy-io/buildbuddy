@@ -3,6 +3,7 @@ package execution_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -11,13 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -27,17 +29,24 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -45,7 +54,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -68,22 +76,15 @@ const (
 	// be discarded after this time. There may be multiple waiters for a single
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
-
-	// When teeing executor work to experiment executors, use this instance name
-	// to identify teed tasks and avoid populating ActionResults under the
-	// real instance name.
-	teeInstanceName = "tee20240805"
-	// When teeing executor work, the experiment executors are expected to be
-	// registered under this name.
-	teePoolName = "tee"
 )
 
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
-	sharedExecutorPoolTeeRate         = flag.Float64("remote_execution.shared_executor_pool_tee_rate", 0, "If non-zero, work for the default shared executor pool will be teed to a separate experiment pool at this rate.", flag.Internal)
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+
+	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -130,6 +131,28 @@ func generateCommandSnippet(command *repb.Command) string {
 	return snippet
 }
 
+func primaryOutputPath(cmd *repb.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	for _, path := range cmd.GetOutputPaths() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputFiles() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputDirectories() {
+		if path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
 func redisKeyForTaskStatusStream(taskID string) string {
 	return fmt.Sprintf("taskStatusStream/%s", taskID)
 }
@@ -146,7 +169,16 @@ type ExecutionServer struct {
 	rdb                               redis.UniversalClient
 	streamPubSub                      *pubsub.StreamPubSub
 	enableRedisAvailabilityMonitoring bool
-	teeLimiter                        *rate.Limiter
+	writeExecutionsToPrimaryDB        bool
+	authenticator                     interfaces.Authenticator
+	dbHandle                          interfaces.DBHandle
+	executionCollector                interfaces.ExecutionCollector
+	invocationDB                      interfaces.InvocationDB
+	taskSizer                         interfaces.TaskSizer
+	actionCacheClient                 repb.ActionCacheClient
+
+	mu          sync.Mutex
+	teeLimiters map[string]*rate.Limiter
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -171,9 +203,30 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if env.GetRemoteExecutionRedisClient() == nil || env.GetRemoteExecutionRedisPubSubClient() == nil {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
-	var teeLimiter *rate.Limiter
-	if *sharedExecutorPoolTeeRate > 0 {
-		teeLimiter = rate.NewLimiter(rate.Limit(*sharedExecutorPoolTeeRate), 1)
+	authenticator := env.GetAuthenticator()
+	if authenticator == nil {
+		return nil, status.FailedPreconditionErrorf("An authenticator is required for remote execution")
+	}
+	writeExecutionsToPrimaryDB := *writeExecutionsToPrimaryDB
+	dbHandle := env.GetDBHandle()
+	if dbHandle == nil && writeExecutionsToPrimaryDB {
+		return nil, status.FailedPreconditionErrorf("A database is required for remote execution")
+	}
+	executionCollector := env.GetExecutionCollector()
+	if executionCollector == nil {
+		return nil, status.FailedPreconditionErrorf("An execution collector is required for remote execution")
+	}
+	invocationDB := env.GetInvocationDB()
+	if invocationDB == nil {
+		return nil, status.FailedPreconditionErrorf("An invocation DB is required for remote execution")
+	}
+	taskSizer := env.GetTaskSizer()
+	if taskSizer == nil {
+		return nil, status.FailedPreconditionErrorf("A task sizer is required for remote execution")
+	}
+	actionCacheClient := env.GetActionCacheClient()
+	if actionCacheClient == nil {
+		return nil, status.FailedPreconditionErrorf("An action cache client is required for remote execution")
 	}
 	return &ExecutionServer{
 		env:                               env,
@@ -181,7 +234,13 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
-		teeLimiter:                        teeLimiter,
+		writeExecutionsToPrimaryDB:        writeExecutionsToPrimaryDB,
+		authenticator:                     authenticator,
+		dbHandle:                          dbHandle,
+		executionCollector:                executionCollector,
+		invocationDB:                      invocationDB,
+		taskSizer:                         taskSizer,
+		actionCacheClient:                 actionCacheClient,
 	}, nil
 }
 
@@ -196,29 +255,23 @@ func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsu
 	return s.streamPubSub.UnmonitoredChannel(redisKeyForTaskStatusStream(executionID))
 }
 
-func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID, snippet string, stage repb.ExecutionStage_Value) error {
+func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID string, command *repb.Command, stage repb.ExecutionStage_Value, requestedPool string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if s.env.GetDBHandle() == nil {
-		return status.FailedPreconditionError("database not configured")
-	}
-	if s.env.GetExecutionCollector() == nil {
-		return status.FailedPreconditionError("redis execution collector not configured")
-	}
 	execution := &tables.Execution{
 		ExecutionID:    executionID,
 		InvocationID:   invocationID,
 		Stage:          int64(stage),
-		CommandSnippet: snippet,
+		CommandSnippet: generateCommandSnippet(command),
 	}
 
 	var permissions *perms.UserGroupPerm
-	if u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+	if u, err := s.authenticator.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
 		permissions = perms.DefaultPermissions(u)
 	}
 
-	if permissions == nil && s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
+	if permissions == nil && s.authenticator.AnonymousUsageEnabled(ctx) {
 		permissions = perms.AnonymousUserPermissions()
 	} else if permissions == nil {
 		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
@@ -232,13 +285,22 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		now := time.Now()
 		execution.Model.CreatedAtUsec = now.UnixMicro()
 		execution.Model.UpdatedAtUsec = now.UnixMicro()
-		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executil.TableExecToProto(execution, nil /*=invocationLink*/)); err != nil {
+		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
+		// Store some basic metadata in the initial proto so we can show a nicer
+		// UI while the execution is in progress.
+		rmd := bazel_request.GetRequestMetadata(ctx)
+		executionProto.TargetLabel = rmd.GetTargetId()
+		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+		executionProto.OutputPath = primaryOutputPath(command)
+		executionProto.RequestedPool = requestedPool
+		executionProto.ClientIp = clientip.Get(ctx)
+		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
 	}
 
-	if *writeExecutionsToPrimaryDB {
-		return s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_execution").Create(execution)
+	if s.writeExecutionsToPrimaryDB {
+		return s.dbHandle.NewQuery(ctx, "execution_server_create_execution").Create(execution)
 	}
 
 	return nil
@@ -263,7 +325,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis", invocationID, linkType)
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		return nil
 	}
 
@@ -272,10 +334,10 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),
 	}
-	err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
+	err := s.dbHandle.NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
 	// This probably means there were duplicate actions in a single invocation
 	// that were merged. Not an error.
-	if err != nil && s.env.GetDBHandle().IsDuplicateKeyError(err) {
+	if err != nil && s.dbHandle.IsDuplicateKeyError(err) {
 		log.CtxWarningf(ctx, "Duplicate execution link while inserting execution %q invocation ID %q link type %s", executionID, invocationID, linkType)
 		return nil
 	}
@@ -283,9 +345,6 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 }
 
 func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
-	if s.env.GetExecutionCollector() == nil {
-		return nil
-	}
 	link := &sipb.StoredInvocationLink{
 		InvocationId: invocationID,
 		ExecutionId:  executionID,
@@ -295,7 +354,7 @@ func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, execu
 	// execution progress state to redis, since these links are only used to
 	// list the in-progress state by invocation ID.
 	storeInvocationExecutionLink := *writeExecutionProgressStateToRedis
-	return s.env.GetExecutionCollector().AddExecutionInvocationLink(ctx, link, storeInvocationExecutionLink)
+	return s.executionCollector.AddExecutionInvocationLink(ctx, link, storeInvocationExecutionLink)
 }
 
 func trimStatus(statusMessage string) string {
@@ -306,12 +365,6 @@ func trimStatus(statusMessage string) string {
 }
 
 func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
-	if *writeExecutionsToPrimaryDB && s.env.GetDBHandle() == nil {
-		return status.FailedPreconditionError("database not configured")
-	} else if *writeExecutionProgressStateToRedis && s.env.GetExecutionCollector() == nil {
-		return status.FailedPreconditionError("redis execution collector not configured")
-	}
-
 	ctx, cancel := background.ExtendContextForFinalization(ctx, updateExecutionTimeout)
 	defer cancel()
 	execution := &tables.Execution{
@@ -374,6 +427,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.Experiments = auxMeta.GetExperiments()
 
 			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
+			executionProto.RunnerId = auxMeta.GetRunnerMetadata().GetRunnerId()
+			executionProto.RunnerTaskNumber = auxMeta.GetRunnerMetadata().GetTaskNumber()
+			executionProto.PlatformHash = auxMeta.GetRunnerMetadata().GetPlatformHash()
+			executionProto.PersistentWorkerKey = auxMeta.GetRunnerMetadata().GetPersistentWorkerKey()
 
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
@@ -384,6 +441,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+				executionProto.RequestedPool = properties.Pool
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -395,6 +453,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
+			if schedulingMeta != nil {
+				executionProto.EffectivePool = schedulingMeta.GetPool()
+			}
 
 			request := auxMeta.GetExecuteRequest()
 			executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
@@ -405,7 +466,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
 			}
 
-			if u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+			if u, err := s.authenticator.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
 				executionProto.GroupId = u.GetGroupID()
 				executionProto.UserId = u.GetUserID()
 
@@ -413,22 +474,22 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
 		}
 
-		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
+		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		return nil
 	}
-	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
+	result := s.dbHandle.GORM(ctx, "execution_server_update_execution").Where(
 		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
 	dbErr := result.Error
 	if dbErr == nil && result.RowsAffected == 0 {
 		// We want to return an error if the execution simply doesn't exist, but
 		// we want to ignore any attempts to update a cancelled execution.
 		var count int64
-		err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
+		err := s.dbHandle.NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
 				SELECT COUNT(*) FROM "Executions" WHERE execution_id = ?
 			`,
 			executionID).Take(&count)
@@ -445,30 +506,28 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
-	} else if s.env.GetExecutionCollector() == nil {
-		return status.FailedPreconditionError("redis execution collector not configured")
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
 	// The execution cannot be retried after this point, so nothing will clean
 	// up this data if we don't do it here.
 	defer func() {
-		err := s.env.GetExecutionCollector().DeleteExecutionInvocationLinks(ctx, executionID)
+		err := s.executionCollector.DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to clean up invocation links in collector: %s", err)
 		}
-		err = s.env.GetExecutionCollector().DeleteInProgressExecution(ctx, executionID)
+		err = s.executionCollector.DeleteInProgressExecution(ctx, executionID)
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
 	}()
 
-	executionProto, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
+	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
-	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
+	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
@@ -476,7 +535,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		executionProto := executionProto.CloneVT()
 		executil.SetInvocationLink(executionProto, link)
 
-		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
+		inv, err := s.executionCollector.GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
 			continue
@@ -486,7 +545,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			// in clickhouse, we inline invocation data in the executions table.
 			// For now, add the execution to the ExecutionCollector and the build
 			// event handler will flush it after the invocation is complete.
-			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
+			if err := s.executionCollector.AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
 				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
@@ -530,7 +589,8 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -538,7 +598,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 
 type streamLike interface {
 	Context() context.Context
-	Send(*longrunning.Operation) error
+	Send(*longrunningpb.Operation) error
 }
 
 // A streamLike that returns a background context and ignores all packets sent
@@ -549,7 +609,7 @@ func (s dummyStream) Context() context.Context {
 	return context.Background()
 }
 
-func (s dummyStream) Send(*longrunning.Operation) error {
+func (s dummyStream) Send(*longrunningpb.Operation) error {
 	return nil
 }
 
@@ -558,11 +618,53 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
-	if s.teeLimiter == nil {
+	if *teeInstanceNamePrefix == "" {
 		return nil
 	}
 
-	if !s.teeLimiter.Allow() {
+	exp := s.env.GetExperimentFlagProvider()
+	if exp == nil {
+		return nil
+	}
+
+	m, details := exp.ObjectDetails(ctx, "remote_execution.task_teeing", nil)
+	if len(m) == 0 {
+		return nil
+	}
+
+	teeRate, ok := m["rate"].(float64)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_rate", "rate was not a float")
+		return nil
+	}
+
+	teePool, ok := m["pool"].(string)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_pool", "pool was not a string")
+		return nil
+	}
+
+	teeInstanceName, ok := m["instance-name"].(string)
+	if !ok {
+		alert.CtxUnexpectedEvent(ctx, "tee_invalid_instance_name", "instance name was not a string")
+		return nil
+	}
+
+	s.mu.Lock()
+	if s.teeLimiters == nil {
+		s.teeLimiters = make(map[string]*rate.Limiter)
+	}
+	limit := rate.Limit(teeRate)
+	limiter := s.teeLimiters[details.Variant()]
+	if limiter == nil {
+		limiter = rate.NewLimiter(limit, 1 /*=burst*/)
+		s.teeLimiters[details.Variant()] = limiter
+	} else if limiter.Limit() != limit {
+		limiter.SetLimit(limit)
+	}
+	s.mu.Unlock()
+
+	if !limiter.Allow() {
 		return nil
 	}
 
@@ -573,13 +675,13 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 
 		log.CtxInfof(ctx, "Teeing execution corresponding to original execution %q", originalExecutionID)
 		teeReq := proto.Clone(req).(*repb.ExecuteRequest)
-		teeReq.InstanceName = teeInstanceName
+		teeReq.InstanceName = *teeInstanceNamePrefix + teeInstanceName
 
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return
 		}
-		md["x-buildbuddy-platform.pool"] = []string{teePoolName}
+		md["x-buildbuddy-platform.pool"] = []string{teePool}
 		ctx = metadata.NewIncomingContext(ctx, md)
 
 		r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
@@ -625,10 +727,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if scheduler == nil {
 		return nil, status.FailedPreconditionErrorf("No scheduler service configured")
 	}
-	sizer := s.env.GetTaskSizer()
-	if sizer == nil {
-		return nil, status.FailedPreconditionError("No task sizer configured")
-	}
+
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	invocationID := rmd.GetToolInvocationId()
 	if invocationID == "" {
@@ -640,6 +739,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return nil, err
 	}
+	if wd := command.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return nil, status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	if action.GetPlatform() == nil && command.GetPlatform() != nil {
 		log.CtxInfof(ctx, "Execution %q has a platform in the command, but not the action. Request metadata: %v", executionID, rmd)
 	}
@@ -649,17 +753,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if rmd != nil {
 		rmd = rmd.CloneVT()
 		rmd.ToolDetails = nil
-	}
-
-	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
-		return nil, status.UnavailableErrorf("create execution: %s", err)
-	}
-
-	// Don't associate teed requests with the original invocation.
-	if !opts.teedRequest {
-		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-			return nil, status.UnavailableErrorf("link execution to invocation: %s", err)
-		}
 	}
 
 	executionTask := &repb.ExecutionTask{
@@ -680,7 +773,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
 
@@ -689,9 +782,31 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, err
 	}
 
+	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN, props.Pool); err != nil {
+		return nil, status.UnavailableErrorf("create execution: %s", err)
+	}
+
+	// Don't associate teed requests with the original invocation.
+	if !opts.teedRequest {
+		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
+			return nil, status.UnavailableErrorf("link execution to invocation: %s", err)
+		}
+	}
+
+	// Check permissions for server admin-only properties.
+	if props.ContainerRegistryBypass {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+			return nil, status.WrapError(err, "authorize container-registry-bypass property")
+		}
+	}
+
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		expOverrides := fp.Object(
-			ctx, "remote_execution.task_size_overrides", nil,
+		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
+		expOverrides, details := fp.ObjectDetails(
+			ctx, taskSizeOverridesExperiment, nil,
+			// Set OriginalPool to allow configuring task sizing based on pool
+			// names from another remote execution platform.
+			experiments.WithContext("OriginalPool", props.OriginalPool),
 			// Set user-requested task size in the experiment context.
 			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
 			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),
@@ -707,6 +822,31 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 				log.CtxWarningf(ctx, "Invalid platform property value %v (type %T) for property %q (expected string)", propertyValueAny, propertyValueAny, propertyName)
 			}
 		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, taskSizeOverridesExperiment+":"+details.Variant())
+		}
+	}
+
+	// Inject use-oci-fetcher platform property via experiment.
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
+		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
+		if useOCIFetcher {
+			executionTask.PlatformOverrides.Properties = append(
+				executionTask.PlatformOverrides.Properties,
+				&repb.Platform_Property{
+					Name:  "use-oci-fetcher",
+					Value: "true",
+				})
+		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, useOCIFetcherExperiment+":"+details.Variant())
+		}
+	}
+
+	efp := s.env.GetExperimentFlagProvider()
+	if chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
@@ -724,32 +864,61 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			return nil, err
 		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+		secretEnvVarNames := make([]string, 0, len(envVars))
+		for _, envVar := range envVars {
+			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
+		}
+		if len(secretEnvVarNames) > 0 {
+			serializedNames, err := json.Marshal(secretEnvVarNames)
+			if err != nil {
+				return nil, status.WrapError(err, "marshal secret env var names")
+			}
+			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+				Value: string(serializedNames),
+			})
+		}
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()
-	serializedTask, err := proto.Marshal(executionTask)
-	if err != nil {
-		// Should never happen.
-		return nil, status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
-	}
-
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
-	measuredSize := sizer.Get(ctx, executionTask)
+	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), command, props, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {
-		predictedSize = sizer.Predict(ctx, executionTask)
+		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.WorkflowID, props.PoolType)
+	if measuredSize != nil {
+		// If we have a measured task size, make sure we associate the p90 cpu
+		// experiment arm with the task, so we can later evaluate the experiment
+		// results. Note, the first time this is evaluated, we'll use the avg
+		// sample, so we'll probably want to ignore the first few days of data.
+		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
+			executionTask.Experiments = append(executionTask.Experiments, experiment)
+		}
+	}
+
+	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
 	}
-	var hostnamePrefix string
+	var hostnamePattern string
+	var routingConfig *scpb.RoutingConfig
 	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
-		hostnamePrefix = exp.String(ctx, "remote_execution.executor_hostname_prefix", "")
-		log.CtxInfof(ctx, "Using executor hostname prefix %q", hostnamePrefix)
+		// TODO: delete this once we're only using routing_config.
+		hostnamePattern = exp.String(ctx, "remote_execution.executor_hostname_pattern", "")
+		const routingConfigExperimentName = "remote_execution.executor_routing_config"
+		routingConfigObj, details := exp.ObjectDetails(ctx, routingConfigExperimentName, nil)
+		if len(routingConfigObj) > 0 {
+			routingConfig = &scpb.RoutingConfig{}
+			if err := experiments.ObjectToProto(routingConfigObj, routingConfig); err != nil {
+				alert.CtxUnexpectedEvent(ctx, "executor_routing_config_invalid", "Error converting routing config object %+#v to proto: %s", routingConfigObj, err)
+			} else if v := details.Variant(); v != "" && v != "default" {
+				executionTask.Experiments = append(executionTask.Experiments, routingConfigExperimentName+":"+v)
+			}
+		}
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
@@ -764,7 +933,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Os:                props.OS,
 		Arch:              props.Arch,
 		Pool:              pool.Name,
-		HostnamePrefix:    hostnamePrefix,
+		HostnamePattern:   hostnamePattern,
+		RoutingConfig:     routingConfig,
 		TaskSize:          taskSize,
 		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,
@@ -774,12 +944,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
 	}
+	serializedTask, err := proto.Marshal(executionTask)
+	if err != nil {
+		// Should never happen.
+		return nil, status.InternalErrorf("marshal execution task %q: %s", executionID, err)
+	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
@@ -800,7 +974,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
 	}
@@ -830,8 +1004,21 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
+
+		// Check CPU time quota before dispatching execution.
+		// Use a 1ns check to verify quota is available before starting.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, 1); err != nil {
+				return err
+			}
+		}
+
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			if err := s.MarkExecutionFailed(ctx, executionID, err); err != nil {
+				log.CtxWarningf(ctx, "Error marking execution failed: %s", err)
+			}
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
@@ -889,7 +1076,7 @@ type InProgressExecution struct {
 	lastLogTime  time.Time
 }
 
-func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
+func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunningpb.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
 	// Log only on stage transitions or if it's been a while since we last
 	// logged.
@@ -929,19 +1116,16 @@ type waitOpts struct {
 }
 
 func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
-	if a := s.env.GetAuthenticator(); a != nil {
-		user, err := a.AuthenticatedUser(ctx)
-		if err != nil {
-			return interfaces.AuthAnonymousUser
-		}
-		return user.GetGroupID()
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
 	}
-	return ""
+	return user.GetGroupID()
 }
 
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
 	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
 	if err != nil {
 		return err
 	}
@@ -1116,11 +1300,11 @@ func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID stri
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
 	}
-	lastOp := &longrunning.Operation{}
+	lastOp := &longrunningpb.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
@@ -1211,7 +1395,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
 			} else if !ok {
@@ -1303,21 +1487,21 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	arn := digest.NewACResourceName(d, taskRN.GetInstanceName(), taskRN.GetDigestFunction())
 
-	redactCachedExecuteResponse(ctx, response)
+	RedactCachedExecuteResponse(ctx, response)
 	b, err := proto.Marshal(response)
 	if err != nil {
 		return err
 	}
 	ar := &repb.ActionResult{StdoutRaw: b}
 
-	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
+	return cachetools.UploadActionResult(ctx, s.actionCacheClient, arn, ar)
 }
 
 func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
-	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
+	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
 }
 
 // markTaskComplete contains logic to be run when the task is complete but
@@ -1335,14 +1519,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	// Skip sizer and usage updates for teed work.
-	if actionResourceName.GetInstanceName() == teeInstanceName {
+	if *teeInstanceNamePrefix != "" && strings.HasPrefix(actionResourceName.GetInstanceName(), *teeInstanceNamePrefix) {
 		return nil
 	}
 
-	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
+	if execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
 		// TODO(vanja) should this be done when the executor got a cache hit?
 		md := executeResponse.GetResult().GetExecutionMetadata()
-		if err := sizer.Update(ctx, action, cmd, md); err != nil {
+		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
 	}
@@ -1374,7 +1558,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		return err
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.WorkflowID, plat.PoolType)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.OriginalPool, plat.WorkflowID, plat.PoolType)
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
@@ -1384,6 +1568,14 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
+
+		// If quota is exceeded, the next execution will be blocked.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
 	}
 	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
@@ -1430,7 +1622,7 @@ func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResou
 	return action, cmd, nil
 }
 
-func redactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
+func RedactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
 	md := rsp.GetResult().GetExecutionMetadata()
 	for _, auxAny := range md.GetAuxiliaryMetadata() {
 		if auxAny.MessageIs(&espb.ExecutionAuxiliaryMetadata{}) {
@@ -1496,6 +1688,11 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
+	if err != nil {
+		return err
+	}
+
 	ids, err := s.getInProgressExecutionIDsForInvocation(ctx, invocationID)
 	if err != nil {
 		return status.InternalErrorf("get in-progress execution IDs for invocation %q: %s", invocationID, err)
@@ -1503,6 +1700,22 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	numCancelled := 0
 	for _, id := range ids {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
+
+		rn, err := digest.ParseUploadResourceName(id)
+		if err == nil {
+			merged, err := action_merger.CheckMerged(ctx, s.rdb, rn)
+			if err != nil {
+				log.CtxWarningf(ctx, "Error checking merge status of %q: %s", id, err)
+			}
+			// Don't cancel execution if it has been merged against.
+			if merged {
+				log.CtxInfof(ctx, "Skip cancellation for %q as it has been merged against.", id)
+				continue
+			}
+		} else {
+			log.CtxWarningf(ctx, "could not parse execution ID %q: %s", id, err)
+		}
+
 		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
 		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
@@ -1527,7 +1740,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 		}
 
 		if inv.RunID != "" {
-			childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.RunID)
+			childrenInvocationIDs, err := s.invocationDB.LookupChildInvocations(ctx, inv.RunID)
 			if err != nil {
 				return err
 			}
@@ -1543,7 +1756,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 }
 
 func (s *ExecutionServer) markInvocationAsDisconnected(ctx context.Context, invocationID string) (*tables.Invocation, error) {
-	inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+	inv, err := s.invocationDB.LookupInvocation(ctx, invocationID)
 	if err != nil {
 		return nil, err
 	}
@@ -1551,7 +1764,7 @@ func (s *ExecutionServer) markInvocationAsDisconnected(ctx context.Context, invo
 	// If the invocation has completed in the meantime, don't overwrite its
 	// completed status.
 	if inv.InvocationStatus == int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS) {
-		if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, &tables.Invocation{
+		if _, err := s.invocationDB.UpdateInvocation(ctx, &tables.Invocation{
 			InvocationID:     invocationID,
 			Attempt:          inv.Attempt,
 			InvocationStatus: int64(invocation_status.InvocationStatus_DISCONNECTED_INVOCATION_STATUS),
@@ -1566,7 +1779,7 @@ func (s *ExecutionServer) getInProgressExecutionIDsForInvocation(ctx context.Con
 	var ids []string
 
 	if *writeExecutionProgressStateToRedis {
-		executions, err := s.env.GetExecutionCollector().GetInProgressExecutions(ctx, invocationID)
+		executions, err := s.executionCollector.GetInProgressExecutions(ctx, invocationID)
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to get in-progress executions for invocation %q: %s", invocationID, err)
 		} else {
@@ -1576,15 +1789,14 @@ func (s *ExecutionServer) getInProgressExecutionIDsForInvocation(ctx context.Con
 		}
 	}
 
-	if !*writeExecutionsToPrimaryDB {
+	if !s.writeExecutionsToPrimaryDB {
 		if *writeExecutionProgressStateToRedis {
 			return ids, nil
 		}
 		return nil, status.UnimplementedErrorf("could not get in-progress execution IDs for invocation: in-progressexecution storage is not configured")
 	}
 
-	dbh := s.env.GetDBHandle()
-	rq := dbh.NewQuery(ctx, "execution_server_get_executions_for_invocation").Raw(
+	rq := s.dbHandle.NewQuery(ctx, "execution_server_get_executions_for_invocation").Raw(
 		`SELECT execution_id FROM "Executions" WHERE invocation_id = ? AND stage != ?`,
 		invocationID,
 		repb.ExecutionStage_COMPLETED)

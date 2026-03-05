@@ -22,6 +22,18 @@ ts_library(
 )
 
 ts_library(
+    name = "certificate_download_link",
+    srcs = ["certificate_download_link.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/button:link_button",
+        "//app/components/link:blob",
+    ],
+)
+
+ts_library(
     name = "user",
     srcs = ["user.ts"],
     deps = [

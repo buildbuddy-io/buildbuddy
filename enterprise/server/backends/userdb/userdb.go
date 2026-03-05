@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -24,6 +26,8 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 )
 
 const (
@@ -31,6 +35,10 @@ const (
 	// Changing this will change the default label text shown on new API
 	// keys if the user leaves the label field blank.
 	defaultAPIKeyLabel = "Default"
+
+	// New users who get a newly created group will default
+	// the group to free tier.
+	defaultSingleGroupStatus = grpb.Group_FREE_TIER_GROUP_STATUS
 )
 
 var (
@@ -58,10 +66,14 @@ var (
 	}
 )
 
-type userGroupJoin struct {
+type MemberRole struct {
+	Role uint32
+}
+
+type userGroupMembership struct {
 	tables.User
-	*tables.UserGroup
 	*tables.Group
+	*MemberRole
 }
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
@@ -77,6 +89,7 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
 		UserID:  u.UserID,
 		Name:    name,
+		Status:  defaultSingleGroupStatus,
 	}, nil
 }
 
@@ -266,6 +279,15 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
 	}
 
+	// Groups default to unknown. If being created from a
+	// free tier or blocked group, the status will inherit.
+	if g.Status == grpb.Group_UNKNOWN_GROUP_STATUS {
+		currentStatus := u.GetGroupStatus()
+		if currentStatus == grpb.Group_FREE_TIER_GROUP_STATUS || currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
+			g.Status = currentStatus
+		}
+	}
+
 	groupID := ""
 	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		gid, err := d.createGroup(ctx, tx, u.GetUserID(), g)
@@ -393,6 +415,19 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 	return groupID, nil
 }
 
+func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return err
+	}
+
+	return d.h.NewQuery(ctx, "userdb_update_group_status").Raw(`
+		UPDATE "Groups" SET status = ?
+		WHERE group_id = ?`,
+		int32(status),
+		groupID,
+	).Exec().Error
+}
+
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
 	q, args := query_builder.
 		NewQuery(`UPDATE "Groups" SET github_token = ''`).
@@ -401,24 +436,49 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.NewQuery(ctx, "userdb_delete_group_github_token").Raw(q, args...).Exec().Error
 }
 
-func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
-	// Count the number of users in the group.
-	// If there are no existing users, then user should join with admin role,
-	// otherwise they should join with default role.
+func (d *UserDB) isGroupEmpty(ctx context.Context, tx interfaces.DB, groupID string) (bool, error) {
 	row := &struct{ Count int64 }{}
 	err := tx.NewQuery(ctx, "userdb_check_group_size").Raw(`
 		SELECT COUNT(*) AS count FROM "UserGroups"
 		WHERE group_group_id = ? AND membership_status = ?
 	`, groupID, grpb.GroupMembershipStatus_MEMBER).Take(row)
 	if err != nil {
+		return false, err
+	}
+	if row.Count > 0 {
+		return false, nil
+	}
+	if authutil.UserListsEnabled() {
+		err := tx.NewQuery(ctx, "userdb_check_group_size_user_lists").Raw(`
+			SELECT COUNT(*) AS count
+			FROM "UserListGroups" AS ulg
+			JOIN "UserUserLists" AS ul
+				ON ul.user_list_user_list_id = ulg.user_list_user_list_id
+			WHERE ulg.group_group_id = ?
+		`, groupID).Take(row)
+		if err != nil {
+			return false, err
+		}
+		if row.Count > 0 {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
+	// If there are no existing members, then user should join with admin role,
+	// otherwise they should join with default role.
+	emptyGroup, err := d.isGroupEmpty(ctx, tx, groupID)
+	if err != nil {
 		return err
 	}
 	r := role.Default
-	if row.Count == 0 {
+	if emptyGroup {
 		r = role.Admin
 	}
 
-	_, err = d.getUser(ctx, tx, userID)
+	_, err = d.getUserByUserID(ctx, tx, userID)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -452,6 +512,13 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 	).Exec().Error
 }
 
+func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) (retErr error) {
+	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
+		`INSERT INTO "UserListGroups" (user_list_user_list_id, group_group_id, role) VALUES(?, ?, ?)`,
+		userListID, groupID, listRole,
+	).Exec().Error
+}
+
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -466,7 +533,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	}
 	var membershipStatus grpb.GroupMembershipStatus
 	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		tu, err := d.getUser(ctx, tx, u.GetUserID())
+		tu, err := d.getUserByUserID(ctx, tx, u.GetUserID())
 		if err != nil {
 			return err
 		}
@@ -517,7 +584,51 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 		return nil, err
 	}
 
-	users := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
+	members := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
+
+	type userListMember struct {
+		UserListID string
+		Name       string
+		Role       role.Role
+	}
+
+	queryUserLists := authutil.UserListsEnabled()
+	// User lists are always members. Don't return any if the caller is
+	// querying for members that have requested to join the group.
+	if !slices.Contains(opts.Statuses, grpb.GroupMembershipStatus_MEMBER) {
+		queryUserLists = false
+	}
+	// User lists don't have Sub IDs. Only return users if the caller is
+	// filtering by Sub ID.
+	if opts.SubIDPrefix != "" {
+		queryUserLists = false
+	}
+	if queryUserLists {
+		ulQuery := d.h.NewQuery(ctx, "userdb_get_group_user_lists").Raw(
+			`SELECT ul.name, ul.user_list_id, ulg.role FROM "UserLists" ul
+			JOIN "UserListGroups" ulg on ulg.user_list_user_list_id = ul.user_list_id
+			WHERE ulg.group_group_id = ?
+			ORDER BY ul.name`,
+			groupID)
+		uls, err := db.ScanAll(ulQuery, &userListMember{})
+		if err != nil {
+			return nil, err
+		}
+		for _, ul := range uls {
+			r, err := role.ToProto(ul.Role)
+			if err != nil {
+				return nil, err
+			}
+			members = append(members, &grpb.GetGroupUsersResponse_GroupUser{
+				UserList: &ulpb.UserList{
+					UserListId: ul.UserListID,
+					Name:       ul.Name,
+				},
+				GroupMembershipStatus: grpb.GroupMembershipStatus_MEMBER,
+				Role:                  r,
+			})
+		}
+	}
 
 	q := query_builder.NewQuery(`
 			SELECT u.user_id, u.email, u.first_name, u.last_name, u.sub_id, ug.membership_status, ug.role
@@ -559,13 +670,13 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 			return err
 		}
 		groupUser.Role = r
-		users = append(users, groupUser)
+		members = append(members, groupUser)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return users, nil
+	return members, nil
 }
 
 func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) error {
@@ -579,13 +690,6 @@ func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, user
 	if err := tx.NewQuery(ctx, "userdb_remove_user_from_group").Raw(`
 						DELETE FROM "UserGroups"
 						WHERE user_user_id = ? AND group_group_id = ?`,
-		userID,
-		groupID).Exec().Error; err != nil {
-		return err
-	}
-	if err := tx.NewQuery(ctx, "userdb_delete_user_api_keys").Raw(`
-						DELETE FROM "APIKeys"
-						WHERE user_id = ? AND group_id = ?`,
 		userID,
 		groupID).Exec().Error; err != nil {
 		return err
@@ -637,25 +741,74 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 	return nil
 }
 
+func (d *UserDB) updateUserListRole(ctx context.Context, tx interfaces.DB, userListID string, groupID string, newRole role.Role) error {
+	err := tx.NewQuery(ctx, "userdb_update_user_role").Raw(`
+		UPDATE "UserListGroups"
+		SET role = ?
+		WHERE user_list_user_list_id = ? AND group_group_id = ?
+	`, newRole, userListID, groupID,
+	).Exec().Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) removeUserListFromGroup(ctx context.Context, tx interfaces.DB, userListID string, groupID string) error {
+	if err := tx.NewQuery(ctx, "userdb_remove_user_list_from_group").Raw(`
+						DELETE FROM "UserListGroups"
+						WHERE user_list_user_list_id = ? AND group_group_id = ?`,
+		userListID,
+		groupID).Exec().Error; err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
 	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
 	}
 	for _, u := range updates {
-		if u.GetUserId().GetId() == "" {
-			return status.InvalidArgumentError("update contains an empty user ID")
+		if u.GetUserId().GetId() == "" && u.GetUserListId() == "" {
+			return status.InvalidArgumentError("update is required to specify a user ID or a user list ID")
+		}
+		if u.GetUserId().GetId() != "" && u.GetUserListId() != "" {
+			return status.InvalidArgumentErrorf("update is required to specify either a user ID or a user list ID, but not both")
+		}
+		if !authutil.UserListsEnabled() && u.GetUserListId() != "" {
+			return status.InvalidArgumentErrorf("user lists are not enabled")
 		}
 	}
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
-				if err := d.removeUserFromGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
-					return err
+				if update.GetUserId().GetId() != "" {
+					if err := d.removeUserFromGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
+						return err
+					}
+				} else if update.GetUserListId() != "" {
+					if err := d.removeUserListFromGroup(ctx, tx, update.GetUserListId(), groupID); err != nil {
+						return err
+					}
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
-				if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
-					return err
+				if update.GetUserId().GetId() != "" {
+					if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
+						return err
+					}
+				} else if update.GetUserListId() != "" {
+					if update.Role == grpb.Group_UNKNOWN_ROLE {
+						return status.InvalidArgumentError("update is required to specify a role when adding a user list")
+					}
+					r, err := role.FromProto(update.GetRole())
+					if err != nil {
+						return err
+					}
+					if err := d.addUserListToGroup(ctx, tx, update.GetUserListId(), groupID, r); err != nil {
+						return err
+					}
 				}
 			case grpb.UpdateGroupUsersRequest_Update_UNKNOWN_MEMBERSHIP_ACTION:
 			default:
@@ -667,8 +820,14 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 				if err != nil {
 					return err
 				}
-				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, r); err != nil {
-					return err
+				if update.GetUserId().GetId() != "" {
+					if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, r); err != nil {
+						return err
+					}
+				} else if update.GetUserListId() != "" {
+					if err := d.updateUserListRole(ctx, tx, update.GetUserListId(), groupID, r); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -774,34 +933,20 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 	}
 
 	for groupID := range groupIDs {
-		err := tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
+		// Check if the group is empty before inserting, so that a
+		// user joining an empty gets promoted to admin.
+		emptyGroup, err := d.isGroupEmpty(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		r := role.Default
+		if emptyGroup {
+			r = role.Admin
+		}
+		err = tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
 			INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role)
 			VALUES (?, ?, ?, ?)
-			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
-		).Exec().Error
-		if err != nil {
-			return err
-		}
-		// Promote from default role to admin if the user is the only one in the
-		// group after joining.
-		preExistingUsers := &struct{ Count int64 }{}
-		err = tx.GORM(ctx, "userdb_new_user_check_group_size").Raw(`
-			SELECT COUNT(*) AS count
-			FROM "UserGroups"
-			WHERE group_group_id = ? AND user_user_id != ?
-			`, groupID, u.UserID,
-		).Scan(preExistingUsers).Error
-		if err != nil {
-			return err
-		}
-		if preExistingUsers.Count > 0 {
-			continue
-		}
-		err = tx.NewQuery(ctx, "userdb_new_user_promote_admin").Raw(`
-			UPDATE "UserGroups"
-			SET role = ?
-			WHERE group_group_id = ?
-			`, uint32(role.Admin), groupID,
+			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(r),
 		).Exec().Error
 		if err != nil {
 			return err
@@ -825,7 +970,7 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 }
 
 func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
-	user, err := d.getUser(ctx, d.h, id)
+	user, err := d.getUserByUserID(ctx, d.h, id)
 	if err != nil {
 		return nil, err
 	}
@@ -843,31 +988,67 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 }
 
 func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
-	return d.getUser(ctx, d.h, id)
+	return d.getUserByUserID(ctx, d.h, id)
 }
 
-func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
-	users := make([]*tables.User, 0)
-	usersMap := make(map[string]*tables.User, 0)
+func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error) {
+	if subID == "" {
+		return nil, status.FailedPreconditionErrorf("subID not specified")
+	}
+	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID})
+}
+
+// processUserGroupMemberships updates the groupRoles map using the results
+// of the passed query which is expected contain user table, group table and
+// role columns.
+// The key of the groupRoles is the groupID and the value is the consolidated
+// membership information. If a user has multiple memberships in a single group,
+// the capabilities will be the union of all the membership capabilities.
+func processUserGroupMemberships(rq interfaces.DBRawQuery, groupRoles map[string]*tables.GroupRole) (*tables.User, error) {
+	ugj, err := db.ScanAll(rq, &userGroupMembership{})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ugj) == 0 {
+		return nil, status.NotFoundError("user not found")
+	}
+
+	user := &ugj[0].User
+
 	for _, v := range ugj {
-		user, ok := usersMap[v.User.UserID]
-		if !ok {
-			user = &tables.User{}
-			*user = v.User
-			usersMap[user.UserID] = user
-			users = append(users, user)
+		// All the query results are expected to be for a single user so we
+		// should never see a row with a different user ID.
+		if v.User.UserID != user.UserID {
+			return nil, status.InternalErrorf("user ID mismatch, new ID %q old ID %q", v.User.UserID, user.UserID)
 		}
-		if v.UserGroup == nil {
-			// no user groups matched this user ID
+
+		// The row only had user information and no membership information
+		// (i.e. the outer join didn't find anything in the non-user tables)
+		if v.MemberRole == nil || v.Group == nil {
 			continue
 		}
-		if v.Group == nil {
-			// no group matched the user group (this shouldn't really happen)
-			return nil, status.InternalErrorf("No group entry matching groupID %s, which is present in UserGroups table.", v.UserGroup.GroupGroupID)
+
+		caps, err := role.ToCapabilities(role.Role(v.MemberRole.Role))
+		if err != nil {
+			return nil, status.WrapError(err, "could not convert role to capabilities")
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
+
+		gr := groupRoles[v.GroupID]
+		if gr == nil {
+			groupRoles[v.GroupID] = &tables.GroupRole{Group: *v.Group, Role: &v.MemberRole.Role, Capabilities: caps}
+		} else {
+			gr.Capabilities = append(gr.Capabilities, caps...)
+			slices.Sort(gr.Capabilities)
+			gr.Capabilities = slices.Compact(gr.Capabilities)
+			// If a user has membership in a group more than once (e.g. via
+			// direct membership and via a user list) then don't populate the
+			// role since it's ambiguous.
+			gr.Role = nil
+		}
 	}
-	return users, nil
+
+	return user, nil
 }
 
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
@@ -878,36 +1059,94 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	if u.IsImpersonating() {
 		return d.GetImpersonatedUser(ctx)
 	}
-	return d.getUser(ctx, d.h, u.GetUserID())
+	return d.getUserByUserID(ctx, d.h, u.GetUserID())
 }
 
-func (d *UserDB) getUser(ctx context.Context, h interfaces.DB, userID string) (*tables.User, error) {
-	rq := h.NewQuery(ctx, "userdb_get_user").Raw(`
-		SELECT u.*, ug.*, g.*
-		FROM "Users" u 
-			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id
-			LEFT JOIN "Groups" AS g
-				ON ug.group_group_id = g.group_id
-		WHERE u.user_id = ?
-		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
-		ORDER BY u.user_id, g.group_id ASC
-		`,
-		userID,
-		int32(grpb.GroupMembershipStatus_MEMBER),
-	)
-	ugj, err := db.ScanAll(rq, &userGroupJoin{})
+// getUserOpts specifies query criteria.
+// Only one field must be set.
+type getUserOpts struct {
+	userID string
+	subID  string
+}
+
+func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUserOpts) (*tables.User, error) {
+	addWhereClause := func(q *query_builder.Query) error {
+		if opts.userID != "" {
+			q.AddWhereClause("u.user_id = ?", opts.userID)
+		} else if opts.subID != "" {
+			q.AddWhereClause("u.sub_id = ?", opts.subID)
+		} else {
+			return status.FailedPreconditionErrorf("query specifies neither sub_id nor user_id")
+		}
+		return nil
+	}
+
+	qb := query_builder.NewQueryWithArgs(`
+		SELECT u.*, g.*, ug.*
+		FROM "Users" AS u
+		LEFT JOIN "UserGroups" AS ug
+		ON u.user_id = ug.user_user_id AND ug.membership_status = ?
+		LEFT JOIN "Groups" AS g
+		ON ug.group_group_id = g.group_id
+	`, []any{int32(grpb.GroupMembershipStatus_MEMBER)})
+
+	if err := addWhereClause(qb); err != nil {
+		return nil, err
+	}
+
+	q, qArgs := qb.Build()
+	rq := h.NewQuery(ctx, "userdb_get_user").Raw(q, qArgs...)
+
+	groupRoles := map[string]*tables.GroupRole{}
+
+	user, err := processUserGroupMemberships(rq, groupRoles)
 	if err != nil {
 		return nil, err
 	}
-	users, err := usersFromUserGroupJoin(ugj)
-	if err != nil {
-		return nil, err
+
+	// Query indirect membership via user lists, if enabled.
+	if authutil.UserListsEnabled() {
+		qb := query_builder.NewQuery(`
+			SELECT u.*, g.*, ug.*
+			FROM "Users" u
+			LEFT JOIN "UserUserLists" AS ul 
+				ON u.user_id = ul.user_user_id
+			LEFT JOIN "UserListGroups" AS ug 
+				ON ug.user_list_user_list_id = ul.user_list_user_list_id
+			LEFT JOIN "Groups" AS g 
+				ON g.group_id = ug.group_group_id
+		`)
+
+		if err := addWhereClause(qb); err != nil {
+			return nil, err
+		}
+
+		q, qArgs := qb.Build()
+		rq := h.NewQuery(ctx, "userdb_get_user_indirect_memberships").Raw(q, qArgs...)
+
+		_, err = processUserGroupMemberships(rq, groupRoles)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if len(users) == 0 {
-		return nil, status.NotFoundError("user not found")
+
+	// Return the groups in a deterministic order.
+
+	var groupIDs []string
+	for _, g := range groupRoles {
+		groupIDs = append(groupIDs, g.GroupID)
 	}
-	return users[0], nil
+	slices.Sort(groupIDs)
+
+	for _, groupID := range groupIDs {
+		user.Groups = append(user.Groups, groupRoles[groupID])
+	}
+
+	return user, nil
+}
+
+func (d *UserDB) getUserByUserID(ctx context.Context, h interfaces.DB, userID string) (*tables.User, error) {
+	return d.getUserByID(ctx, h, &getUserOpts{userID: userID})
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
@@ -933,12 +1172,14 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			WHERE group_id = ?
 		`,
 		u.GetGroupID(),
-	).Take(gr)
+	).Take(&gr.Group)
 	if err != nil {
 		return nil, err
 	}
 	// Grant admin role within the impersonated group.
-	gr.Role = uint32(role.Admin)
+	gr.Capabilities = role.AdminCapabilities
+	r := uint32(role.Admin)
+	gr.Role = &r
 	user.Groups = []*tables.GroupRole{gr}
 	return user, nil
 }
@@ -952,6 +1193,11 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "userdb_delete_user_memberships").Raw(`
 			DELETE FROM "UserGroups" WHERE user_user_id = ?`, userID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_user_lists").Raw(`
+			DELETE FROM "UserUserLists" WHERE user_user_id = ?`, userID)
 		if err := rq.Exec().Error; err != nil {
 			return err
 		}
@@ -1018,6 +1264,216 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 	}
 
 	return pubKey, nil
+}
+
+func (d *UserDB) CreateUserList(ctx context.Context, userList *tables.UserList) error {
+	if err := d.authorizeGroupAdminRole(ctx, userList.GroupID); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(userList.Name) == "" {
+		return status.InvalidArgumentError("name is required")
+	}
+
+	id, err := tables.PrimaryKeyForTable("UserLists")
+	if err != nil {
+		return err
+	}
+	userList.UserListID = id
+
+	if err := d.h.NewQuery(ctx, "userdb_create_user_list").Create(&userList); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) UpdateUserList(ctx context.Context, userList *tables.UserList) error {
+	if err := d.authorizeGroupAdminRole(ctx, userList.GroupID); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(userList.Name) == "" {
+		return status.InvalidArgumentError("name is required")
+	}
+
+	if err := d.h.NewQuery(ctx, "userdb_update_user_list").Raw(`
+			UPDATE "UserLists" 
+			SET name = ?
+			WHERE group_id = ? AND user_list_id = ?`,
+		userList.Name, userList.GroupID, userList.UserListID).Exec().Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+type userListUser struct {
+	tables.UserList
+	tables.User
+}
+
+func (d *UserDB) GetUserLists(ctx context.Context, groupID string) ([]*ulpb.UserList, error) {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
+		return nil, err
+	}
+
+	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(`
+		SELECT ul.*, u.* from "UserLists" AS ul
+		LEFT JOIN "UserUserLists" as uul ON uul.user_list_user_list_id = ul.user_list_id
+		LEFT JOIN "Users" AS u ON u.user_id = uul.user_user_id
+		WHERE ul.group_id = ? 
+		ORDER BY ul.user_list_id, u.email
+	`, groupID)
+	ulus, err := db.ScanAll(rq, &userListUser{})
+	if err != nil {
+		return nil, err
+	}
+
+	var uls []*ulpb.UserList
+	for i, ulu := range ulus {
+		if i == 0 || ulu.UserListID != ulus[i-1].UserListID {
+			ul := &ulpb.UserList{
+				UserListId: ulu.UserList.UserListID,
+				Name:       ulu.UserList.Name,
+			}
+			uls = append(uls, ul)
+			if ulu.User.UserID != "" {
+				ul.User = append(ul.User, ulu.User.ToProto())
+			}
+		} else {
+			uls[len(uls)-1].User = append(uls[len(uls)-1].User, ulu.User.ToProto())
+		}
+	}
+
+	slices.SortFunc(uls, func(a, b *ulpb.UserList) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return uls, nil
+}
+
+func (d *UserDB) GetUserList(ctx context.Context, userListID string) (*ulpb.UserList, error) {
+	rq := d.h.NewQuery(ctx, "userdb_get_user_list").Raw(
+		` SELECT * from "UserLists" WHERE user_list_id = ?`, userListID)
+	ul := &tables.UserList{}
+	if err := rq.Take(ul); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("user list %q not found", userListID)
+		}
+		return nil, err
+	}
+
+	if err := d.authorizeGroupAdminRole(ctx, ul.GroupID); err != nil {
+		return nil, err
+	}
+
+	ms, err := d.getUserListMembers(ctx, ul.UserListID)
+	if err != nil {
+		return nil, err
+	}
+
+	ulp := &ulpb.UserList{
+		UserListId: ul.UserListID,
+		Name:       ul.Name,
+		User:       ms,
+	}
+
+	return ulp, nil
+}
+
+func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return err
+	}
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		rq := tx.NewQuery(ctx, "userdb_delete_user_list_members").Raw(`
+			DELETE FROM "UserUserLists" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list_groups").Raw(`
+			DELETE FROM "UserListGroups" WHERE user_list_user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return err
+		}
+		rq = tx.NewQuery(ctx, "userdb_delete_user_list").Raw(`
+			DELETE FROM "UserLists" WHERE user_list_id = ?`, userListID)
+		if err := rq.Exec().Error; err != nil {
+			return status.NotFoundErrorf("user list %q not found", userListID)
+		}
+		return nil
+	})
+}
+
+func (d *UserDB) addUserToUserList(ctx context.Context, tx interfaces.DB, userListID string, userID string) error {
+	rq := tx.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
+		INSERT INTO "UserUserLists" ("user_list_user_list_id", "user_user_id") VALUES (?, ?)
+	`, userListID, userID)
+	if err := rq.Exec().Error; err != nil {
+		if d.h.IsDuplicateKeyError(err) {
+			return status.AlreadyExistsErrorf("User %q is already part of user list %q", userID, userListID)
+		}
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) getUserListMembers(ctx context.Context, userListID string) ([]*uspb.DisplayUser, error) {
+	rq := d.h.NewQuery(ctx, "userdb_get_user_lists").Raw(` 
+		SELECT u.* from "UserUserLists" AS uul
+		JOIN "Users" AS u ON u.user_id = uul.user_user_id
+		WHERE user_list_user_list_id = ?
+		ORDER BY u.email
+	`, userListID)
+	us, err := db.ScanAll(rq, &tables.User{})
+	if err != nil {
+		return nil, err
+	}
+	var dus []*uspb.DisplayUser
+	for _, u := range us {
+		dus = append(dus, u.ToProto())
+	}
+	return dus, nil
+}
+
+func (d *UserDB) removeUserFromUserList(ctx context.Context, tx interfaces.DB, userListID string, userID string) error {
+	rq := tx.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
+		DELETE FROM "UserUserLists" 
+		WHERE user_list_user_list_id = ? AND user_user_id = ?`, userListID, userID)
+	rv := rq.Exec()
+	if rv.Error != nil {
+		return rv.Error
+	}
+	if rv.RowsAffected == 0 {
+		return status.NotFoundErrorf("User %q is not part of user list %q", userID, userListID)
+	}
+	return nil
+}
+
+func (d *UserDB) UpdateUserListMembers(ctx context.Context, userListID string, updates []*ulpb.UpdateUserListMembershipRequest_Update) error {
+	// Permission check.
+	_, err := d.GetUserList(ctx, userListID)
+	if err != nil {
+		return err
+	}
+
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		for _, u := range updates {
+			switch u.GetAction() {
+			case ulpb.UpdateUserListMembershipRequest_ADD:
+				if err := d.addUserToUserList(ctx, tx, userListID, u.GetUserId().GetId()); err != nil {
+					return status.WrapErrorf(err, "could not add user %q to user list %q", u.GetUserId().GetId(), userListID)
+				}
+			case ulpb.UpdateUserListMembershipRequest_REMOVE:
+				if err := d.removeUserFromUserList(ctx, tx, userListID, u.GetUserId().GetId()); err != nil {
+					return status.WrapErrorf(err, "could not add user %q to user list %q", u.GetUserId().GetId(), userListID)
+				}
+			default:
+			}
+		}
+		return nil
+	})
 }
 
 func getEmailDomain(email string) string {

@@ -280,7 +280,7 @@ func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
 func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
 	commitRange := fmt.Sprintf("%s..%s", firstSha, lastSha)
 
-	changesStr, err := gc.ExecuteCommand("whatchanged", "--first-parent", "--format=%H", "--reverse", commitRange)
+	changesStr, err := gc.ExecuteCommand("log", "--raw", "--first-parent", "--format=%H", "--reverse", commitRange)
 	if err != nil {
 		return nil, err
 	}

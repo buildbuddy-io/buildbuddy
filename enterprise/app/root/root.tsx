@@ -25,6 +25,7 @@ import SettingsComponent from "../settings/settings";
 import ShortcutsComponent from "../shortcuts/shortcuts";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
+import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
 import WorkflowsComponent from "../workflows/workflows";
@@ -64,6 +65,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.workflowsPath,
   Path.settingsPath,
   Path.trendsPath,
+  Path.targetsPath,
   Path.executorsPath,
   Path.tapPath,
   Path.codePath,
@@ -180,6 +182,15 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentDidMount() {
     errorService.register();
+    this.updateDarkModeClass();
+  }
+
+  private updateDarkModeClass() {
+    document.documentElement.classList.toggle("dark", this.state.preferences.darkModeEnabled);
+  }
+
+  componentWillUnmount() {
+    this.state.preferences.cleanup();
   }
 
   handlePathChange() {
@@ -195,6 +206,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
+    this.updateDarkModeClass();
     this.forceUpdate();
   }
 
@@ -218,6 +230,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
+    let targets = this.state.user && this.state.path.startsWith("/targets");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
@@ -236,6 +249,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !orgJoinAuthenticated &&
       !orgAccessDenied &&
       !trends &&
+      !targets &&
       !usage &&
       !executors &&
       !tests &&
@@ -260,11 +274,15 @@ export default class EnterpriseRootComponent extends React.Component {
     let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
     let menu = !sidebar && !repo && !code && !this.state.loading;
 
+    const rootClasses = ["root"];
+    if (this.state.preferences.denseModeEnabled) rootClasses.push("dense");
+    if (this.state.preferences.darkModeEnabled) rootClasses.push("dark");
+    if (sidebar || code) rootClasses.push("left");
+
     return (
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
-        <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
+        <div className={rootClasses.join(" ")}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent
@@ -396,6 +414,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                     </Suspense>
                   )}
+                  {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
                   {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}

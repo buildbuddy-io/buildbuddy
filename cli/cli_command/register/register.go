@@ -15,12 +15,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/cli/record"
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
+	"github.com/buildbuddy-io/buildbuddy/cli/view"
 )
 
 // Register registers all known cli commands in the structures laid out in
@@ -88,6 +91,11 @@ func register() {
 			Handler: printlog.HandlePrint,
 		},
 		{
+			Name:    "record",
+			Help:    "Records command output and streams it to BuildBuddy.",
+			Handler: record.HandleRecord,
+		},
+		{
 			Name:    "remote",
 			Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
 			Handler: remotebazel.HandleRemoteBazel,
@@ -108,6 +116,11 @@ func register() {
 			Handler: index.HandleIndex,
 		},
 		{
+			Name:    "ui",
+			Help:    "Opens an interactive terminal UI for viewing builds.",
+			Handler: ui.HandleUI,
+		},
+		{
 			Name:    "update",
 			Help:    "Updates the bb CLI to the latest version.",
 			Handler: update.HandleUpdate,
@@ -121,6 +134,11 @@ func register() {
 			Name:    "version",
 			Help:    "Prints bb cli version info.",
 			Handler: versioncmd.HandleVersion,
+		},
+		{
+			Name:    "view",
+			Help:    "Views build logs from BuildBuddy.",
+			Handler: view.HandleView,
 		},
 		{
 			Name:    "explain",

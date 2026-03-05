@@ -6,7 +6,7 @@ sidebar_label: Slow Uploads
 
 ## The Build Event Protocol upload timed out
 
-This error means the `bes_timeout` [flag](https://docs.bazel.build/versions/master/command-line-reference.html#flag--bes_timeout) is likely set to a value that's not long enough for bazel to finish uploading all build artifacts.
+This error means the `bes_timeout` [flag](https://bazel.build/reference/command-line-reference#build-flag--bes_timeout) is likely set to a value that's not long enough for bazel to finish uploading all build artifacts.
 
 We recommend using the following flag to increase this upload timeout:
 

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "leasekeeper",
     srcs = ["leasekeeper.go"],
@@ -24,5 +26,3 @@ go_library(
         "@org_golang_x_sync//errgroup",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

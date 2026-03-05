@@ -6,14 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -50,7 +53,7 @@ const (
 	// making backwards-incompatible changes to the storage representation.
 	// Increment this version to cycle to new keys (and discard all old
 	// action-merging data) during the next rollout.
-	keyVersion = 3
+	keyVersion = 4
 )
 
 var (
@@ -67,12 +70,42 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.CASRe
 	if err != nil {
 		return "", err
 	}
-	downloadString := adResource.DownloadString()
-	return fmt.Sprintf("pendingExecution/%d/%s%s", keyVersion, userPrefix, downloadString), nil
+	return fmt.Sprintf(
+		// The {}-wrapped part of the key determines which shard the key is
+		// stored on. Here, we shard by action digest hash.
+		"pendingExecution/%d/%s/%s/{%s}",
+		keyVersion,
+		userPrefix,
+		strings.ToLower(adResource.GetDigestFunction().String()),
+		adResource.GetDigest().GetHash(),
+	), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
-	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
+	// TODO: pass in action resource name separately to avoid a hard dependency
+	// on execution IDs containing action digests.
+	s, err := executionIDWithDigestSharding(executionID)
+	if err != nil {
+		alert.UnexpectedEvent("action_merger_unexpected_execution_id", "%s", err)
+		return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
+	}
+	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, s)
+}
+
+// Returns the execution ID with the hash part of the action digest wrapped with
+// {}, so that when the ID is included in a redis key, the sharding is based
+// only on the action digest hash.
+func executionIDWithDigestSharding(executionID string) (string, error) {
+	_, err := digest.ParseUploadResourceName(executionID)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("execution ID %q is not a valid upload resource name", executionID)
+	}
+	parts := strings.Split(executionID, "/")
+	if len(parts) < 2 {
+		return "", status.InvalidArgumentErrorf("execution ID %q is not a valid upload resource name", executionID)
+	}
+	parts[len(parts)-2] = "{" + parts[len(parts)-2] + "}"
+	return strings.Join(parts, "/"), nil
 }
 
 // This function records a claimed execution in Redis.
@@ -112,6 +145,23 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 	pipe.HSet(ctx, key, lastExecutionSubmitTimeKey, strconv.FormatInt(time.Now().UnixMicro(), 36))
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+// CheckMerged returns true if the specified action has been merged against.
+func CheckMerged(ctx context.Context, rdb redis.UniversalClient, adResource *digest.CASResourceName) (bool, error) {
+	key, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return false, err
+	}
+	rawCount, err := rdb.HGet(ctx, key, actionCountKey).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	count, err := strconv.Atoi(rawCount)
+	if err != nil {
+		return false, err
+	}
+	return count > 1, nil
 }
 
 // This function records a merged execution in Redis.
@@ -295,18 +345,17 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	// that the task is created in the scheduler before merging to avoid a
 	// scenario where we reuse an execution ID that fails to schedule.
 	err = retry.DoVoid(ctx, &retry.Options{
-		InitialBackoff: 5 * time.Millisecond,
-		MaxBackoff:     3 * time.Second,
-		Multiplier:     2,
-		Name:           "Checking scheduler for pending execution",
+		InitialBackoff:        5 * time.Millisecond,
+		MaxBackoff:            3 * time.Second,
+		Multiplier:            2,
+		DontLogFailedAttempts: true,
 	}, func(ctx context.Context) error {
 		existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
 		if err != nil {
-			log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
 			return retry.NonRetryableError(err)
 		}
 		if !existsInScheduler {
-			return fmt.Errorf("pending execution %q does not exist in the scheduler yet", newExecutionID)
+			return fmt.Errorf("pending execution does not exist in the scheduler yet")
 		}
 		return nil
 	})

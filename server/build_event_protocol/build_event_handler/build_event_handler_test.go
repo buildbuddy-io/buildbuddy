@@ -15,9 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +32,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -81,11 +84,12 @@ func (s *besSequence) NextRequest(event *bspb.BuildEvent) *pepb.PublishBuildTool
 }
 
 type FakeGitHubStatusService struct {
-	Clients []*FakeGitHubStatusClient
+	Clients                []*FakeGitHubStatusClient
+	StatusReportingEnabled bool
 }
 
-func (s *FakeGitHubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
-	client := &FakeGitHubStatusClient{AccessToken: accessToken}
+func (s *FakeGitHubStatusService) GetStatusClient() interfaces.GitHubStatusClient {
+	client := &FakeGitHubStatusClient{StatusReportingEnabled: s.StatusReportingEnabled}
 	s.Clients = append(s.Clients, client)
 	return client
 }
@@ -95,9 +99,22 @@ func (s *FakeGitHubStatusService) GetCreatedClient(t *testing.T) *FakeGitHubStat
 	return s.Clients[0]
 }
 
+func (c *FakeGitHubStatusService) HasNoStatuses() bool {
+	if len(c.Clients) == 0 {
+		return true
+	}
+	for _, c := range c.Clients {
+		if len(c.Statuses) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 type FakeGitHubStatusClient struct {
-	AccessToken string
-	Statuses    []*FakeGitHubStatus
+	AccessToken            string
+	Statuses               []*FakeGitHubStatus
+	StatusReportingEnabled bool
 }
 
 type FakeGitHubStatus struct {
@@ -114,6 +131,10 @@ func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, ownerRepo, co
 	}
 	c.Statuses = append(c.Statuses, s)
 	return nil
+}
+
+func (c *FakeGitHubStatusClient) IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error) {
+	return c.StatusReportingEnabled, nil
 }
 
 func (c *FakeGitHubStatusClient) ConsumeStatuses() []*FakeGitHubStatus {
@@ -261,21 +282,9 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 	assert.NotContains(t, string(txt), "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
-type FakeUsageTracker struct {
-	invocations int64
-}
-
-func (t *FakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, usage *tables.UsageCounts) error {
-	t.invocations += usage.Invocations
-	return nil
-}
-
-func (t *FakeUsageTracker) StartDBFlush() {}
-func (t *FakeUsageTracker) StopDBFlush()  {}
-
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -303,7 +312,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -345,7 +354,7 @@ func TestAuthenticatedHandleEventWithOptionlessStartedEvent(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -389,7 +398,7 @@ func TestAuthenticatedHandleEventWithRedactedStartedEvent(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["USER1"])
 	testUUID, err := uuid.NewRandom()
@@ -433,7 +442,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
 	// Map "APIKEY1" to User1.
 	testUsers["APIKEY1"] = testUsers["USER1"]
-	auth := testauth.NewTestAuthenticator(testUsers)
+	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -481,7 +490,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 
 func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -515,7 +524,7 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 
 func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -551,7 +560,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 
 func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -607,7 +616,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 
 func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -669,11 +678,102 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	assert.Contains(t, string(txt), "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
 }
 
+func TestHandleEventRedactsMultilineEnvVar(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("", &bspb.BuildEventId_OptionsParsed{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	const multiLineValue = `this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`
+	flagValue := "--action_env=MULTILINE_VAR=" + multiLineValue
+	optionsParsed := &bspb.OptionsParsed{
+		CmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+	}
+	optionsParsedAny := &anypb.Any{}
+	err = optionsParsedAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
+		Id:      &bspb.BuildEventId{Id: &bspb.BuildEventId_OptionsParsed{}},
+	})
+	require.NoError(t, err)
+
+	request = &pepb.PublishBuildToolEventStreamRequest{
+		OrderedBuildEvent: &pepb.OrderedBuildEvent{
+			StreamId:       &bepb.StreamId{InvocationId: testInvocationID},
+			SequenceNumber: 2,
+			Event: &bepb.BuildEvent{
+				Event: &bepb.BuildEvent_BazelEvent{BazelEvent: optionsParsedAny},
+			},
+		},
+	}
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	err = channel.FinalizeInvocation(testInvocationID)
+	assert.NoError(t, err)
+
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	assert.NoError(t, err)
+
+	const expected = "--action_env=MULTILINE_VAR=<REDACTED>"
+	var actual *bspb.OptionsParsed
+	for _, event := range invocation.Event {
+		if optionsParsed := event.GetBuildEvent().GetOptionsParsed(); optionsParsed != nil {
+			actual = optionsParsed
+			break
+		}
+	}
+	require.NotNil(t, actual, "expected an OptionsParsed event in invocation")
+
+	require.Len(t, actual.CmdLine, 3)
+	require.Len(t, actual.ExplicitCmdLine, 3)
+
+	expectedOptions := &bspb.OptionsParsed{
+		CmdLine: []string{"bazel", "build", expected},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			expected,
+		},
+	}
+	require.Empty(t, cmp.Diff(expectedOptions, actual, protocmp.Transform()))
+
+	txt, err := prototext.Marshal(invocation)
+	require.NoError(t, err)
+	assert.NotContains(t, string(txt), "OPENSSH PRIVATE KEY")
+	assert.Contains(t, string(txt), expected)
+}
+
 func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ut := &FakeUsageTracker{}
+	ut := testusage.NewTracker()
 	te.SetUsageTracker(ut)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -690,7 +790,15 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
 
 	// Send another started event for good measure; we should still only count 1
 	// invocation since it's the same stream.
@@ -698,12 +806,21 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(1), ut.invocations)
+	// Totals should remain the same (1 invocation total)
+	assert.ElementsMatch(t, []testusage.Total{
+		{
+			GroupID: "GROUP1",
+			Labels:  tables.UsageLabels{},
+			Counts: tables.UsageCounts{
+				Invocations: 1,
+			},
+		},
+	}, ut.Totals())
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -753,7 +870,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 
 func TestFinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -801,7 +918,7 @@ func TestFinishedFinalize(t *testing.T) {
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -846,7 +963,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 
 func TestUnfinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
@@ -889,7 +1006,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 
 func TestRetryOnComplete(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -967,7 +1084,7 @@ func TestRetryOnComplete(t *testing.T) {
 
 func TestRetryOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1078,7 +1195,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 
 func TestRetryTwiceOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1262,7 +1379,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 
 func TestRetryOnOldDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
@@ -1400,9 +1517,9 @@ func TestBuildStatusReporting(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)
@@ -1445,7 +1562,7 @@ func TestBuildStatusReporting(t *testing.T) {
 
 			// Should not have reported any statuses yet, since we haven't
 			// handled any metadata events.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle *all but the last* metadata event - no statuses should be
 			// reported yet. We should only report a status once *all* of the
@@ -1456,7 +1573,7 @@ func TestBuildStatusReporting(t *testing.T) {
 				md = md[1:]
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 
 			// Now handle the last metadata event - should report a status,
@@ -1534,9 +1651,9 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: test.enableReportingForRepo}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)
@@ -1611,10 +1728,10 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			for _, event := range buildEvents {
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 			// No statuses should've been reported.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle the Finished event - should not report a status.
 			fin := &bspb.BuildEvent{
@@ -1628,7 +1745,7 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			}
 			err = channel.HandleEvent(seq.NextRequest(fin))
 			require.NoError(t, err)
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 		})
 	}
 }
@@ -1652,9 +1769,9 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			fakeGH := &FakeGitHubStatusService{}
+			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
 			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
 			require.NoError(t, err)
@@ -1728,7 +1845,7 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 
 			// Should not have reported any statuses yet, since we haven't
 			// handled any metadata events.
-			require.Empty(t, fakeGH.Clients)
+			require.True(t, fakeGH.HasNoStatuses())
 
 			// Handle *all but the last* metadata event - no statuses should be
 			// reported yet. We should only report a status once *all* of the
@@ -1739,14 +1856,13 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 				md = md[1:]
 				err := channel.HandleEvent(seq.NextRequest(event))
 				require.NoError(t, err)
-				require.Empty(t, fakeGH.Clients)
+				require.True(t, fakeGH.HasNoStatuses())
 			}
 
 			// Now handle the last metadata event - should report a status,
 			// since all metadata events have been handled.
 			err = channel.HandleEvent(seq.NextRequest(md[0]))
 			require.NoError(t, err)
-			require.Equal(t, 1, len(fakeGH.Clients))
 			client := fakeGH.GetCreatedClient(t)
 			require.Equal(t, []*FakeGitHubStatus{
 				{

@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",

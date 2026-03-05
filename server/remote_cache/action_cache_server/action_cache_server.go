@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -30,6 +32,7 @@ import (
 
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
 
 	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
@@ -63,18 +66,38 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rspb.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
 	}
-	if len(missing) > 0 {
-		return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", missing[0])
+	if len(missing) == 0 {
+		return nil
+	}
+	if !chunkingEnabled {
+		return status.NotFoundErrorf("ActionResult output file %q not found in cache", chunking.DigestsSummary(missing))
+	}
+	checker := chunking.NewMissingChunkChecker(cache)
+	for _, d := range missing {
+		if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
+		}
+		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)
+		if err != nil {
+			return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
+		}
+		anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
+		if err != nil {
+			return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
+		}
+		if anyMissing {
+			return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
+		}
 	}
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, r *repb.ActionResult) error {
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -117,10 +140,10 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, outputFileDigests)
 }
 
-func setWorkerMetadata(ar *repb.ActionResult) error {
+func setWorkerMetadata(ar *repb.ActionResult) {
 	if ar.ExecutionMetadata == nil {
 		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
 			// This will return the Host ID in the normal case and
@@ -131,7 +154,36 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 			Worker: hostid.GetFailsafeHostID(""),
 		}
 	}
+}
+
+func setOriginMetadata(ar *repb.ActionResult, rm *repb.RequestMetadata) error {
+	if !*recordOrigin {
+		return nil
+	}
+	if ar == nil {
+		return nil
+	}
+	invocationID := rm.GetToolInvocationId()
+	if invocationID == "" {
+		return nil
+	}
+
+	om := &repb.OriginMetadata{InvocationId: invocationID}
+	am, err := anypb.New(om)
+	if err != nil {
+		return err
+	}
+	if ar.GetExecutionMetadata() == nil {
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+	}
+	ar.GetExecutionMetadata().AuxiliaryMetadata = append(ar.GetExecutionMetadata().GetAuxiliaryMetadata(), am)
 	return nil
+}
+
+// RecordActionResultOriginEnabled reports whether origin metadata should be recorded
+// and exposed to clients.
+func RecordActionResultOriginEnabled() bool {
+	return *recordOrigin
 }
 
 func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, *repb.ExecutedActionMetadata, int64, error) {
@@ -145,7 +197,8 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 		return nil, nil, 0, err
 	}
 
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
@@ -277,7 +330,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	rm := bazel_request.GetRequestMetadata(ctx)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, rm)
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -285,7 +339,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	if err := setWorkerMetadata(req.ActionResult); err != nil {
+	setWorkerMetadata(req.GetActionResult())
+
+	if err := setOriginMetadata(req.GetActionResult(), rm); err != nil {
 		return nil, err
 	}
 

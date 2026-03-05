@@ -94,7 +94,12 @@ message DeleteSessionsRequest {
 message DeleteSessionsResponse {}
 
 message FetchRangesRequest {
+  // The filters are ORed.
+
+  // If set, filter ranges with the specified range ids.
   repeated uint64 range_ids = 1;
+  // If set, filter ranges that have a replica with this NHID.
+  string nhid = 2;
 }
 
 message FetchRangesResponse {
@@ -398,7 +403,7 @@ message ReplicaUsage {
   int64 read_qps = 5;
   int64 raft_propose_qps = 6;
 
-  repeated storage.PartitionMetadata partitions = 7;
+  reserved 7;
 }
 
 message StoreUsage {
@@ -424,6 +429,7 @@ message NodeDescriptor {
   string nhid = 1;
   string raft_address = 2;
   string grpc_address = 3;
+  string zone = 4;
 }
 
 message ReplicaDescriptor {
@@ -501,6 +507,10 @@ message RangeDescriptor {
   // they are successfully added to raft, we will move the replica descriptor
   // from staging to the replicas field above.
   repeated ReplicaDescriptor staging = 9;
+
+  // If set, this range descriptor is deleted. Don't move, up-replicate,
+  // down-replicate or rebalance.
+  bool deleted = 10;
 }
 
 // SyncPropose, in proto form.
@@ -647,6 +657,8 @@ message FindResponse {
   bool present = 1;
   // The last time this file record was accessed.
   int64 last_access_usec = 2;
+  // The gcs_metadata of this file record, if exist.
+  storage.StorageMetadata.GCSMetadata gcs_metadata = 3;
 }
 
 message GetRequest {
@@ -701,4 +713,22 @@ message GetRangeDebugInfoResponse {
   RaftLeaderInfo leader = 3;
   bool has_lease = 4;
   RaftMembership membership = 5;
+  uint64 last_replica_id = 7;
 }
+
+message RangeDescriptorChange {
+  RangeDescriptor old_descriptor = 1;
+  RangeDescriptor new_descriptor = 2;
+}
+
+message PartitionDescriptorChange {
+  PartitionDescriptor old_descriptor = 1;
+  PartitionDescriptor new_descriptor = 2;
+}
+
+message AdminUpdateDescriptorRequest {
+  RangeDescriptorChange range_descriptor_change = 1;
+  repeated PartitionDescriptorChange partition_descriptor_change = 2;
+}
+
+message AdminUpdateDescriptorResponse {}

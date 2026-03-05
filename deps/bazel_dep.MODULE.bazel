@@ -1,0 +1,105 @@
+## Overrides
+
+bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
+bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        "//buildpatches/bazel_dep:gazelle.patch",
+    ],
+    version = "0.46.0",
+)
+
+bazel_dep(name = "googleapis")
+single_version_override(
+    module_name = "googleapis",
+    patch_strip = 1,
+    patches = [
+        "//buildpatches/bazel_dep:bzlmod_googleapis.patch",
+    ],
+    version = "0.0.0-20241220-5e258e33",
+)
+
+# Note that this is 'rules_nodejs-core'
+bazel_dep(name = "rules_nodejs")
+single_version_override(
+    module_name = "rules_nodejs",
+    version = "6.5.2",
+)
+
+bazel_dep(name = "rules_webtesting")
+archive_override(
+    module_name = "rules_webtesting",
+    integrity = "sha256-aVW/XWEzpcgbNRb9cnAdnp7wAzQrUffBTjbcExPLyY8=",
+    patch_strip = 1,
+    patches = [
+        "//buildpatches/bazel_dep:rules_webtesting.patch",
+    ],
+    strip_prefix = "rules_webtesting-e09c04b7d4d1e91ac1cd6f08283246d350c65379",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/archive/e09c04b7d4d1e91ac1cd6f08283246d350c65379.tar.gz",
+    ],
+)
+
+bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
+archive_override(
+    module_name = "rules_docker",
+    integrity = "sha256-FxaQsDpYJdra159x9pKBHzsf58hrS2VWFYqyn6aiKlM=",
+    strip_prefix = "rules_docker-0f218e517183d5f5de9126c9a894fe7ca510054b",
+    # This is BuildBuddy fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/0f218e517183d5f5de9126c9a894fe7ca510054b.tar.gz"],
+)
+
+bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
+archive_override(
+    module_name = "rules_k8s",
+    integrity = "sha256-J14gxzYpfnrt+fWUZR+xPZZ1qJAK0qeuC2nRLL+31sQ=",
+    strip_prefix = "rules_k8s-2457e25475c111168fc3de8e1169adfe2e817801",
+    # This is our own fork of rules_k8s with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:master
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
+)
+
+bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+
+## Regular bazel_deps
+
+bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.23.0")
+bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
+bazel_dep(name = "aspect_rules_js", version = "2.1.3")
+bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.6.3")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "bazel_worker_api", version = "0.0.10")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "redis", version = "5.0.4")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_oci", version = "2.0.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_python", version = "1.8.1")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.1")
+bazel_dep(name = "rules_uv", version = "0.89.2")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
+
+# BuildBuddy Toolchain
+# Keep up-to-date with
+# - docs/rbe-setup.md
+# - docs/rbe-github-actions.md
+# - tools/dev_qa_test/BUILD
+bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
+bazel_dep(name = "toolchains_musl", version = "0.1.27")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
+bazel_dep(name = "rules_multirun", version = "0.13.0")
+bazel_dep(name = "with_cfg.bzl", version = "0.14.1")
+
+# Bazel uses buildozer for `bazel mod tidy`
+# We want to keep this pre-built binary consistent with our own
+#   github.com/bazelbuild/buildtools
+# version inside go.mod file.
+bazel_dep(name = "buildozer", version = "8.2.1")

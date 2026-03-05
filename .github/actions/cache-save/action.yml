@@ -2,13 +2,13 @@ name: "Save download caches conditionally"
 description: "Conditionally saves external dependencies caches based on cache-hit status, using provided paths."
 inputs:
   repo-cache-dir:
-    description: 'The Bazel Repo cache directory path (determined by cache-restore)'
+    description: "The Bazel Repo cache directory path (determined by cache-restore)"
     required: true
   go-mod-cache-dir:
-    description: 'The Go Mod cache directory path (determined by cache-restore)'
+    description: "The Go Mod cache directory path (determined by cache-restore)"
     required: true
   yarn-cache-dir:
-    description: 'The Yarn cache directory path (determined by cache-restore)'
+    description: "The Yarn cache directory path (determined by cache-restore)"
     required: true
 runs:
   using: "composite"

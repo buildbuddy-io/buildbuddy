@@ -5,6 +5,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs"
 )
 
 // Configure adds `--script_path` to a bazel run command so that we can
@@ -29,6 +30,7 @@ func Configure(args []string) (newArgs []string, scriptPath string, err error) {
 	return args, scriptPath, nil
 }
 
+// Invoke executes the run script, replacing the current process.
 func Invoke(path string) (exitCode int, err error) {
 	if err := os.Chmod(path, 0o755); err != nil {
 		return -1, err
@@ -41,4 +43,10 @@ func Invoke(path string) (exitCode int, err error) {
 		return -1, err
 	}
 	panic("unreachable")
+}
+
+// InvokeWithLogStreaming executes the run script while streaming its output to the server.
+// Unlike Invoke, this does not replace the current process, so it returns after execution.
+func InvokeWithLogStreaming(path string, opts stream_run_logs.Opts) (exitCode int, err error) {
+	return stream_run_logs.Execute(path, opts)
 }

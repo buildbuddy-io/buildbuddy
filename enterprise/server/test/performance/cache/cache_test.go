@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -76,7 +78,7 @@ func getUserContext(t testing.TB, env environment.Env) context.Context {
 func getTestEnv(b *testing.B) *real_environment.RealEnv {
 	te := testenv.GetTestEnv(b)
 	setExperimentProvider(b, te)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1")))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, testauth.TestUsers("user1", "group1")))
 	return te
 }
 
@@ -123,7 +125,7 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 }
 
 func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.Cache) interfaces.Cache {
-	config := &migration_cache.MigrationConfig{
+	config := &cache_config.MigrationConfig{
 		CopyChanBufferSize:             200,
 		MaxCopiesPerSec:                100,
 		NumCopyWorkers:                 1,
@@ -136,7 +138,7 @@ func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.C
 
 func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	conf := distributed.CacheConfig{
+	conf := distributed.Options{
 		ListenAddr:              listenAddr,
 		GroupName:               "default",
 		ReplicationFactor:       1,
@@ -366,6 +368,9 @@ func BenchmarkFindMissing(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
 	te := getTestEnv(b)
 	ctx := getUserContext(b, te)
+	flags.Set(b, "app.trace_fraction", 0.01)
+	err := tracing.ConfigureWithNoopExporter(te)
+	require.NoError(b, err)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {

@@ -7,17 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -31,6 +32,7 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	guuid "github.com/google/uuid"
 	dbcl "github.com/lni/dragonboat/v4/client"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
@@ -75,37 +77,9 @@ func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v d
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
-	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-		nhLog := log.NamedSubLogger(nhid)
-		r := registry.NewDynamicNodeRegistry(ts.gm, streamConnections, v, nhLog)
-		r.AddNode(nhid, ts.RaftAddress, ts.GRPCAddress)
-		ts.Registry = r
-		return r, nil
-	})
-
-	raftListener := listener.NewRaftListener()
-	nhc := dbConfig.NodeHostConfig{
-		WALDir:         filepath.Join(ts.RootDir, "wal"),
-		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
-		RTTMillisecond: 1,
-		RaftAddress:    ts.RaftAddress,
-		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: nrf,
-			LogDB:               dbConfig.GetSmallMemLogDBConfig(),
-		},
-		DefaultNodeRegistryEnabled: false,
-		RaftEventListener:          raftListener,
-		SystemEventListener:        raftListener,
-	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	require.NoError(t, err, "unexpected error creating NodeHost")
-
 	te := testenv.GetTestEnv(t)
 	te.SetClock(sf.clock)
-	apiClient := client.NewAPIClient(te, nodeHost.ID(), ts.Registry)
 
-	rc := rangecache.New()
-	s := sender.New(rc, apiClient)
 	partitions := sf.partitions
 	if len(partitions) == 0 {
 		partitions = []disk.Partition{
@@ -115,23 +89,52 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 			},
 		}
 	}
-	mc := &pebble.MetricsCollector{}
-	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{
-		EventListener: &pebble.EventListener{
-			WriteStallBegin: mc.WriteStallBegin,
-			WriteStallEnd:   mc.WriteStallEnd,
-			DiskSlow:        mc.DiskSlow,
-		},
+
+	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
+		nhLog := log.NamedSubLogger(nhid)
+		r := registry.NewDynamicNodeRegistry(ts.gm, streamConnections, v, nhLog)
+		r.AddNode(nhid, ts.RaftAddress, ts.GRPCAddress)
+		ts.Registry = r
+		return r, nil
 	})
-	require.NoError(t, err)
-	leaser := pebble.NewDBLeaser(db)
-	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, ts.Registry, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc)
+	pebbleOptionsGetter := func(mc *pebble.MetricsCollector) *pebble.Options {
+		return &pebble.Options{
+			EventListener: &pebble.EventListener{
+				WriteStallBegin: mc.WriteStallBegin,
+				WriteStallEnd:   mc.WriteStallEnd,
+				DiskSlow:        mc.DiskSlow,
+			},
+		}
+	}
+	registryGetter := func() registry.NodeRegistry {
+		return ts.Registry
+	}
+	mockGCS := mockgcs.New(sf.clock)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+
+	serverConfig := &config.ServerConfig{
+		RootDir:           ts.RootDir,
+		RaftAddr:          ts.RaftAddress,
+		GRPCAddr:          ts.GRPCAddress,
+		GRPCListeningAddr: ts.GRPCAddress,
+		NHID:              ts.nhid,
+		Partitions:        partitions,
+		LogDBConfigType:   config.SmallMemLogDBConfigType,
+		FileStorer:        fileStorer,
+		GossipManager:     ts.gm,
+	}
+
+	store, err := store.New(te, serverConfig,
+		store.WithNodeRegistryFactory(nrf),
+		store.WithPebbleOptsGetter(pebbleOptionsGetter),
+		store.WithTestNodeHostConfig(),
+		store.WithRegistryGetter(registryGetter))
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
 	store.StartReplicaJanitor()
 	ts.Store = store
+	ts.leaser = store.LeaserForTest()
 
 	t.Cleanup(func() {
 		ts.Stop()
@@ -140,9 +143,11 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	nodeAddr := localAddr(t)
-	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
+	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
+	id, err := guuid.NewRandom()
+	require.NoError(t, err)
 
 	ts := &TestingStore{
 		t:           t,
@@ -150,6 +155,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 		RaftAddress: localAddr(t),
 		GRPCAddress: localAddr(t),
 		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+		nhid:        id.String(),
 	}
 	sf.RecreateStore(t, ts)
 	return ts
@@ -172,6 +178,7 @@ type TestingStore struct {
 	*store.Store
 
 	leaser pebble.Leaser
+	nhid   string
 
 	gm          *gossip.GossipManager
 	Registry    registry.NodeRegistry

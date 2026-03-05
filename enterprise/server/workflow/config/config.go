@@ -54,6 +54,7 @@ type Action struct {
 	GitFetchDepth      *int              `yaml:"git_fetch_depth"`
 	BazelWorkspaceDir  string            `yaml:"bazel_workspace_dir"`
 	Env                map[string]string `yaml:"env"`
+	Visibility         string            `yaml:"visibility"`
 	PlatformProperties map[string]string `yaml:"platform_properties"`
 	Steps              []*rnpb.Step      `yaml:"steps"`
 	Timeout            *time.Duration    `yaml:"timeout"`
@@ -97,6 +98,7 @@ func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
 
 type PushTrigger struct {
 	Branches []string `yaml:"branches"`
+	Tags     []string `yaml:"tags"`
 }
 
 type PullRequestTrigger struct {
@@ -178,7 +180,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.76-buildbuddy.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.78-buildbuddy.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -186,16 +188,47 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
 if [ ! -d "$KYTHE_DIR" ]; then
   mkdir -p "$KYTHE_DIR"
   curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi
+
+# Bazel 8+ removed proto_lang_toolchain from native rules.
+# Patch the Kythe BUILD file to load it from rules_proto.
+if ! grep -q 'proto_lang_toolchain.bzl' "$KYTHE_DIR"/BUILD 2>/dev/null; then
+  sed -i '1s|^|load("@rules_proto//proto:proto_lang_toolchain.bzl", "proto_lang_toolchain")\n|' "$KYTHE_DIR"/BUILD
+fi
+
+# Ensure the Kythe MODULE.bazel declares rules_proto as a dependency
+# (needed when the Kythe module is registered via local_path_override).
+if ! grep -q 'rules_proto' "$KYTHE_DIR"/MODULE.bazel 2>/dev/null; then
+  echo -e '\nbazel_dep(name = "rules_proto", version = "7.1.0")' >> "$KYTHE_DIR"/MODULE.bazel
 fi`, dirName, downloadURL)
 	return buf
 }
 
-func buildWithKythe(dirName string) string {
+func kytheBuildTargets(scope string) string {
+	if scope == "full" {
+		return "//..."
+	}
+	if scope == "proto" {
+		return "//proto/..."
+	}
+	return strings.Join([]string{
+		"//app/...",
+		"//server/...",
+		"//enterprise/server/...",
+		"//proto/...",
+		"-//server/util/bazel/...",
+		"-//tools/probers/...",
+		"-//server/testutil/...",
+	}, " ")
+}
+
+func buildWithKythe(dirName, scope string) string {
 	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
 	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
 	// passes any important flags. While passing flags on the command line is discouraged,
 	// we'll need to handle this eventually.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
+	bazelTargets := kytheBuildTargets(scope)
 	return fmt.Sprintf(`
 BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
 
@@ -231,10 +264,30 @@ else
 fi
 
 # These arguments make the extractors run on java generated code
-KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter='^//'"
+KYTHE_ARGS="$KYTHE_ARGS --experimental_extra_action_top_level_only=false --experimental_extra_action_filter=^//"
+
+# extractors.bazelrc sets keep_going; fail fast so the workflow doesn't churn
+# for a long time after obvious errors.
+KYTHE_ARGS="$KYTHE_ARGS --nokeep_going"
+
+# If the kythe archive is extracted under the workspace root, exclude that local
+# package path so //... won't analyze it as a workspace package (we want the
+# injected @kythe_release repository instead).
+if [[ "$KYTHE_DIR" == "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/* ]]; then
+    kythe_local_pkg="${KYTHE_DIR#"$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/}"
+    KYTHE_ARGS="$KYTHE_ARGS --deleted_packages=$kythe_local_pkg"
+fi
+
+# Bazel 9 defaults config_setting visibility to private, which breaks selects.
+# Also explicitly autoload java rules used by the Kythe BUILD.
+if [ $BZL_MAJOR_VERSION -ge 9 ]; then
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_config_setting_private_default_visibility=false"
+    KYTHE_ARGS="$KYTHE_ARGS --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain,+java_binary,+java_import,+java_library"
+fi
 
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
+echo "Kythe build scope: %s"
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s -- %s`, dirName, scope, bazelConfigFlags, bazelTargets)
 
 }
 
@@ -243,9 +296,12 @@ func prepareKytheOutputs(dirName string) string {
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
 
-find -L ../bazel-out/ -name "*.go.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L ../bazel-out/ -name "*.proto.kzip" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+# Note: intentionally not using xargs -P for parallel indexing, because
+# parallel processes writing binary protobuf entries to a shared pipe can
+# produce interleaved/corrupt output that write_tables cannot decode.
+find -L bazel-out/ -name "*.go.kzip" | xargs -r -n 1 $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out/ -name "*.proto.kzip" | xargs -r -I {} $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out -name '*.java.kzip' | xargs -r -n 1 java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
 # and produces very large indices.
@@ -253,11 +309,11 @@ find -L bazel-out -name '*.java.kzip' | xargs -P $(nproc) -n 1 java -jar $KYTHE_
 # TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
 # memcached binary, or installing it in the container image.
 
-cxx_kzips=$(find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip")
+cxx_kzips=$(find -L bazel-out/*/extra_actions -name "*.cxx.kzip")
 if [ ! -z "$cxx_kzips" ]; then
   sudo apt update && sudo apt install -y memcached
   memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
-  echo "$cxx_kzips" | xargs -P $(nproc) -n 1 $KYTHE_DIR/indexers/cxx_indexer \
+  echo "$cxx_kzips" | xargs -n 1 $KYTHE_DIR/indexers/cxx_indexer \
     --experimental_alias_template_instantiations \
 	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
 	-cache="--SERVER=localhost:11211" \
@@ -273,6 +329,16 @@ fi
 	return buf
 }
 
+func skipIfNotBazelRepo() string {
+	return `
+# If this is not a Bazel repo, skip Kythe indexing.
+if [ ! -f "WORKSPACE" ] && [ ! -f "WORKSPACE.bazel" ] && [ ! -f "MODULE.bazel" ]; then
+  echo "No WORKSPACE, WORKSPACE.bazel, or MODULE.bazel file found. Skipping Kythe indexing."
+  exit 0
+fi
+`
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
@@ -286,19 +352,19 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		ContainerImage: `ubuntu-20.04`,
 		ResourceRequests: ResourceRequests{
-			CPU:    "24",   // 24 BCU
-			Memory: "60GB", // 24 BCU
+			CPU:    "8",
+			Memory: "16GB",
 			Disk:   "100GB",
 		},
 		Steps: []*rnpb.Step{
 			{
-				Run: checkoutKythe(kytheDirName, kytheDownloadURL),
+				Run: skipIfNotBazelRepo() + checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: buildWithKythe(kytheDirName),
+				Run: skipIfNotBazelRepo() + buildWithKythe(kytheDirName, "proto"),
 			},
 			{
-				Run: prepareKytheOutputs(kytheDirName),
+				Run: skipIfNotBazelRepo() + prepareKytheOutputs(kytheDirName),
 			},
 		},
 	}
@@ -361,8 +427,8 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 }
 
 // MatchesAnyTrigger returns whether the action is triggered by the event
-// published to the given branch.
-func MatchesAnyTrigger(action *Action, event, branch string) bool {
+// published to the given branch or tag.
+func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 	// If user has manually requested action dispatch, always run it
 	if event == webhook_data.EventName.ManualDispatch {
 		return true
@@ -373,11 +439,14 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	}
 
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
-		return matchesBranchPatterns(pushCfg.Branches, branch)
+		if tag != "" {
+			return matchesAnyPattern(pushCfg.Tags, tag)
+		}
+		return matchesAnyPattern(pushCfg.Branches, branch)
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesBranchPatterns(prCfg.Branches, branch)
+		return matchesAnyPattern(prCfg.Branches, branch)
 	}
 	return false
 }
@@ -410,10 +479,10 @@ func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
 	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesBranchPatterns(branchPatterns []string, branch string) bool {
+func matchesAnyPattern(haystack []string, needle string) bool {
 	matched := false
-	for _, branchPattern := range branchPatterns {
-		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+	for _, pattern := range haystack {
+		if m, isNegation := matchesRestrictedGlob(pattern, needle); m {
 			matched = !isNegation
 			// Keep going - last pattern wins.
 		}

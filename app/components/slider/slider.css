@@ -5,17 +5,17 @@
 .slider-track {
   height: 4px;
   margin-top: 4px;
-  background-color: #212121;
+  background-color: var(--color-slider-track);
 }
 
 .slider-track-0 {
-  background-color: #e0e0e0;
+  background-color: var(--color-slider-track-inactive);
   border-top-left-radius: 2px;
   border-bottom-left-radius: 2px;
 }
 
 .slider-track-2 {
-  background-color: #e0e0e0;
+  background-color: var(--color-slider-track-inactive);
   border-top-right-radius: 2px;
   border-bottom-right-radius: 2px;
 }
@@ -32,7 +32,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #212121;
+  background: var(--color-slider-track);
 }
 
 .slider-thumb-value {

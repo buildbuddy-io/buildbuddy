@@ -95,9 +95,11 @@ func AddAuthToContext(env environment.Env, ctx context.Context) context.Context 
 	defer span.End()
 	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		span.SetAttributes(attribute.String("group_id", c.GetGroupID()))
 		ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
 		if c.GetUserID() != "" {
-			ctx = log.EnrichContext(ctx, "user_id", c.GetGroupID())
+			span.SetAttributes(attribute.String("user_id", c.GetUserID()))
+			ctx = log.EnrichContext(ctx, "user_id", c.GetUserID())
 		}
 	}
 	return ctx
@@ -113,7 +115,8 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 func addClientIPToContext(ctx context.Context) context.Context {
 	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
 	if len(hdrs) == 0 {
-		return ctx
+		// No proxy header; use direct connection peer address.
+		return addPeerIPToContext(ctx)
 	}
 
 	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
@@ -121,6 +124,11 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		return ctx
 	}
 
+	// X-Forwarded-For header is present but not trusted. Fall back to peer.
+	return addPeerIPToContext(ctx)
+}
+
+func addPeerIPToContext(ctx context.Context) context.Context {
 	if p, ok := peer.FromContext(ctx); ok {
 		ap, err := netip.ParseAddrPort(p.Addr.String())
 		if err != nil {
@@ -129,7 +137,6 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		}
 		return context.WithValue(ctx, clientip.ContextKey, ap.Addr().String())
 	}
-
 	return ctx
 }
 
@@ -483,6 +490,33 @@ func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServe
 		ctx := stream.Context()
 		propagateBazelRequestMetadataIDsToSpan(ctx)
 		return handler(srv, stream)
+	}
+}
+
+// TracedUnaryServerInterceptor returns a unary server interceptor that adds a
+// trace span around the nested interceptor (and all the interceptors it calls).
+func TracedUnaryServerInterceptor(spanName string, interceptor grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (rsp any, err error) {
+		ctx, span := tracing.StartNamedSpan(ctx, spanName)
+		defer span.End()
+		return interceptor(ctx, req, info, handler)
+	}
+}
+
+type contextReplacingStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *contextReplacingStream) Context() context.Context { return s.ctx }
+
+// TracedStreamServerInterceptor is like TracedUnaryServerInterceptor but for
+// server stream interceptors.
+func TracedStreamServerInterceptor(spanName string, interceptor grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, span := tracing.StartNamedSpan(ss.Context(), spanName)
+		defer span.End()
+		return interceptor(srv, &contextReplacingStream{ServerStream: ss, ctx: ctx}, info, handler)
 	}
 }
 

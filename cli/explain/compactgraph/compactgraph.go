@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
@@ -286,21 +287,29 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		}
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
-		// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
-		invalidatedByPrimaryOutput := make(map[string]struct{})
-		for _, invalidatedBy := range result.invalidatedBy {
-			if s, ok := new.spawns[invalidatedBy]; ok {
-				invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
+		// Don't propagate invalidations through local changes:
+		// 1) The local change would cause the spawn to be re-run anyway, which in turn may be responsible for the
+		//    invalidation of dependents.
+		// 2) Avoids pathological memory usage during flattening below for a large number of local changes that each
+		//    invalidate a large number of other local changes - if all of them are flattened, the memory usage can grow
+		//    quadratically in the number of local changes.
+		if !result.localChange {
+			// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
+			invalidatedByPrimaryOutput := make(map[string]struct{})
+			for _, invalidatedBy := range result.invalidatedBy {
+				if s, ok := new.spawns[invalidatedBy]; ok {
+					invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
+				}
 			}
-		}
-		for invalidatedBy, _ := range invalidatedByPrimaryOutput {
-			if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
-				invalidatingResult := invalidatingResultEntry.(*diffResult)
-				foundTransitiveCause = true
-				// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
-				// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided in
-				// the general case.
-				invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
+			for invalidatedBy, _ := range invalidatedByPrimaryOutput {
+				if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
+					invalidatingResult := invalidatingResultEntry.(*diffResult)
+					foundTransitiveCause = true
+					// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
+					// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided
+					// in the general case.
+					invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
+				}
 			}
 		}
 		if result.localChange || !foundTransitiveCause {
@@ -332,6 +341,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 	transitivelyInvalidated := make(map[string]uint32)
 	spawnsSeen := make(map[*Spawn]struct{})
+	slicesSeen := make(map[*any]struct{})
 	toVisit := invalidates
 	for len(toVisit) > 0 {
 		var n any
@@ -346,9 +356,16 @@ func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 				}
 				transitivelyInvalidated[n.Mnemonic+suffix]++
 			}
+		case []any:
+			// The invalidates argument and any slices it transitively references are reachable and not modified while
+			// traversing, so we can identify them with the pointer to their slice data.
+			ptr := unsafe.SliceData(n)
+			if _, seen := slicesSeen[ptr]; !seen {
+				slicesSeen[ptr] = struct{}{}
+				toVisit = append(toVisit, n...)
+			}
 		default:
-			// If n is not a Spawn, it must be a slice of Spawns or slices.
-			toVisit = append(toVisit, n.([]any)...)
+			log.Fatalf("unexpected type in invalidates: %T", n)
 		}
 	}
 	return transitivelyInvalidated

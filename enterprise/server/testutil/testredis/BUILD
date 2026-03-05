@@ -6,10 +6,10 @@ go_library(
     name = "testredis",
     testonly = 1,
     srcs = ["testredis.go"],
-    data = [":redis-server_crossplatform"],
+    data = ["@redis//:redis-server"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis",
     x_defs = {
-        "redisBinRunfilePath": "$(rlocationpath :redis-server_crossplatform)",
+        "redisBinRunfilePath": "$(rlocationpath @redis//:redis-server)",
     },
     deps = [
         "//enterprise/server/util/redisutil",
@@ -21,16 +21,4 @@ go_library(
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
     ],
-)
-
-genrule(
-    name = "redis-server_crossplatform",
-    srcs = select({
-        "//platforms/configs:linux_x86_64": ["@com_github_redis_redis-redis-server-v6.2.1-linux-x86_64//file:downloaded"],
-        "//platforms/configs:linux_arm64": ["@com_github_redis_redis-redis-server-v6.2.1-linux-arm64//file:downloaded"],
-        "//platforms/configs:macos_x86_64": ["@com_github_redis_redis-redis-server-v6.2.6-darwin-x86_64//file:downloaded"],
-        "//platforms/configs:macos_arm64": ["@com_github_redis_redis-redis-server-v6.2.6-darwin-arm64//file:downloaded"],
-    }),
-    outs = ["redis-server"],
-    cmd_bash = "cp $(SRCS) $@",
 )

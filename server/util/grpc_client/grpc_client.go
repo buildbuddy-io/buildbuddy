@@ -5,12 +5,14 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -21,10 +23,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/google"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 )
 
 const (
@@ -38,15 +42,20 @@ const (
 
 var (
 	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+
+	idsMu sync.Mutex
+	ids   = map[string]int{}
 )
 
 type clientConn struct {
 	*grpc.ClientConn
+	index        string
 	wasEverReady atomic.Bool
 }
 
 type ClientConnPool struct {
 	targetForLogging string
+	id               string
 	conns            []*clientConn
 	idx              atomic.Uint64
 }
@@ -90,13 +99,13 @@ func (p *ClientConnPool) Close() error {
 	return nil
 }
 
-func (p *ClientConnPool) getConn() *grpc.ClientConn {
+func (p *ClientConnPool) getConn() *clientConn {
 	idx := p.idx.Add(1)
-	return p.conns[idx%uint64(len(p.conns))].ClientConn
+	return p.conns[idx%uint64(len(p.conns))]
 }
 
 func (p *ClientConnPool) WaitForConn() *grpc.ClientConn {
-	return p.getConn()
+	return p.getConn().ClientConn
 }
 
 // GetReadyConnection returns a connection from the pool that is known to be
@@ -129,7 +138,11 @@ func (p *ClientConnPool) GetReadyConnection() (*grpc.ClientConn, error) {
 }
 
 func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
-	return p.getConn().Invoke(ctx, method, args, reply, opts...)
+	conn := p.getConn()
+	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
+	gauge.Inc()
+	defer gauge.Dec()
+	return conn.Invoke(ctx, method, args, reply, opts...)
 }
 
 func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -143,7 +156,16 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 		},
 	)
 	defer cancel()
-	return p.getConn().NewStream(ctx, desc, method, opts...)
+	conn := p.getConn()
+	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
+	decFn := sync.OnceFunc(func() { gauge.Dec() })
+	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
+	stream, err := conn.NewStream(ctx, desc, method, opts...)
+	if err != nil {
+		return stream, err
+	}
+	gauge.Inc()
+	return stream, nil
 }
 
 // ClientConnPoolSplitter wraps two (or more) ClientConnPools and routes
@@ -238,7 +260,7 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 				return err
 			}
 			mu.Lock()
-			conns = append(conns, &clientConn{ClientConn: conn})
+			conns = append(conns, &clientConn{ClientConn: conn, index: strconv.Itoa(len(conns))})
 			mu.Unlock()
 			return nil
 		})
@@ -246,7 +268,15 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return &ClientConnPool{targetForLogging: target, conns: conns}, nil
+
+	// Increment an index per-target to disambiguate between multiple
+	// connection pools to the same target.
+	idsMu.Lock()
+	id := ids[target]
+	ids[target] = id + 1
+	idsMu.Unlock()
+
+	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
@@ -266,7 +296,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
@@ -275,7 +305,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" {
+		if u.Scheme != "unix" && u.Scheme != "kube" {
 			target = u.Host
 		}
 	}
@@ -341,7 +371,7 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 
 func CommonGRPCClientOptions() []grpc.DialOption {
 	return []grpc.DialOption{
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()))),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),

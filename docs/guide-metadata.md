@@ -236,6 +236,28 @@ Example:
 --build_metadata=TAGS="foo,bar,baz"
 ```
 
+### Using TAG\_ prefix for automatic tag creation
+
+As an alternative to using the `TAGS` field with comma-separated values, you can use build metadata flags piecemeal with a `TAG_` prefix. These will automatically be converted to tags by removing the prefix.
+
+Examples:
+
+```bash
+# Creates a tag "ENV=production"
+--build_metadata=TAG_ENV=production
+
+# Creates a tag "VERSION=v1.2.3"
+--build_metadata=TAG_VERSION=v1.2.3
+
+# Creates a tag "FEATURE" (no value)
+--build_metadata=TAG_FEATURE=
+
+# Multiple TAG_ prefixed flags can be used together
+--build_metadata=TAG_ENV=staging --build_metadata=TAG_REGION=us-west-1
+```
+
+The TAG\_ prefix method can be combined with the regular TAGS field - all tags will be merged together.
+
 You can filter by these tags on build history pages and the trends page. Note that when filtering by tags, you will not see in-progress and disconnected builds.
 
 ## Environment variable redacting

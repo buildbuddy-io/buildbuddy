@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "test_data",
     testonly = 1,
@@ -7,5 +9,3 @@ go_library(
     embedsrcs = ["bazel7.4.0_help_flags-as-proto.b64"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/test_data",
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

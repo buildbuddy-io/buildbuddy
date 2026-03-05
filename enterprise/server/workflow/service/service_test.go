@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -27,11 +28,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -53,9 +55,28 @@ actions:
     triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
     bazel_commands: [ "test //..." ]
 `
+
+	configWithLinuxWorkflowWithPrivateVisibility = `
+actions:
+  - name: "Test (linux_amd64)"
+    triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
+    bazel_commands: [ "test //..." ]
+    visibility: "PRIVATE"
+`
+
+	configWithTagWorkflow = `
+actions:
+  - name: "Release (linux_amd64)"
+    triggers: { push: { tags: [ "v*" ] } }
+    bazel_commands: [ "test //..." ]
+`
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
 	flags.Set(t, "github.app.enabled", true)
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
@@ -199,6 +220,8 @@ func envVars(cmd *repb.Command) map[string]string {
 type fakeExecutionClient struct {
 	repb.ExecutionClient
 	executeRequests chan *executeRequest
+
+	FakeExecuteError error
 }
 
 type executeRequest struct {
@@ -218,6 +241,9 @@ func (c *fakeExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequ
 		Metadata: md,
 		Payload:  req,
 	}
+	if c.FakeExecuteError != nil {
+		return nil, c.FakeExecuteError
+	}
 	return &fakeExecuteStream{}, nil
 }
 
@@ -231,14 +257,14 @@ func (c *fakeExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitE
 
 type fakeExecuteStream struct{ grpc.ClientStream }
 
-func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
+func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage: repb.ExecutionStage_COMPLETED,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &longrunning.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
+	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
 func authenticate(t *testing.T, ctx context.Context, env environment.Env) (authCtx context.Context, uid, gid string) {
@@ -585,6 +611,91 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
+	env := envVars(exec.Command)
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
+}
+
+func TestWebhook_TrustedTagPush_StartsTrustedWorkflow(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "push",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		PushedRepoURL:      "https://github.com/acme-inc/acme",
+		PushedTag:          "v1.0.0",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithTagWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	env := envVars(exec.Command)
+	assert.Equal(t, "v1.0.0", env["GIT_TAG"])
+	assert.Equal(t, "", env["GIT_BRANCH"])
+}
+
+func TestWebhook_RespectsVisibility(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "main",
+		SHA:           "c04d68571cb519e095772c865847007ed3e7fea9",
+		// Target repo is public, but this is overridden by bb.yaml
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflowWithPrivateVisibility}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
 	env := envVars(exec.Command)
 	assert.NotContains(t,
 		env, "BUILDBUDDY_API_KEY",
@@ -636,6 +747,48 @@ func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
 
 	// Verify that no execution requests were triggered.
 	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	// Disable execution retries so that the test completes more quickly.
+	flags.Set(t, "remote_execution.workflows_max_execute_retries", 0)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	// Have workflow execution always fail.
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	execClient.FakeExecuteError = status.UnavailableErrorf("no executors registered")
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "pull_request",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		TargetBranch:       "main",
+		PushedRepoURL:      "https://github.com/untrusteduser/acme",
+		PushedBranch:       "feature",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+		PullRequestAuthor:  "acme-inc-user-1",
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Expect an execution attempt
+	_ = execClient.NextExecuteRequest()
+
+	// Expect a status update with  the failed attempt
+	status := <-provider.Statuses
+	require.Regexp(t, `http://localhost:\d+/invocation/[0-9a-f\-]+\?runnerStartError=.*?no\+executors\+registered`, status.Payload.(*github.RepoStatus).GetTargetURL())
 }
 
 func TestWebhook_UseDefaultWorkflowConfig(t *testing.T) {

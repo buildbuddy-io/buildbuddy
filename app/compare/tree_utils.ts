@@ -27,28 +27,3 @@ export function nodesEqual(nodeA?: TreeNode, nodeB?: TreeNode): boolean {
 
   return false;
 }
-
-export function hasChildDifferences(childrenA: TreeNode[], childrenB: TreeNode[]): boolean {
-  // Check if the number of children differs
-  if (childrenA.length !== childrenB.length) {
-    return true;
-  }
-
-  // Check each child
-  for (const childA of childrenA) {
-    const childB = findNodeByName(childrenB, childA.obj.name || "");
-    if (!nodesEqual(childA, childB)) {
-      return true;
-    }
-  }
-
-  // Check for children that exist only in B
-  for (const childB of childrenB) {
-    const childA = findNodeByName(childrenA, childB.obj.name || "");
-    if (!childA) {
-      return true;
-    }
-  }
-
-  return false;
-}

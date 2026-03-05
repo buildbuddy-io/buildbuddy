@@ -8,21 +8,25 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const ExecutableName = "buildbuddy_ci_runner"
+const CLIBinaryName = "bb"
 
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
+	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
@@ -36,7 +40,9 @@ var (
 // a ci_runner task. This will guarantee the binary is built for the correct os/arch,
 // but it will not update automatically when the apps are upgraded.
 func CanInitFromCache(os, arch string) bool {
-	return (os == "" || os == platform.LinuxOperatingSystemName) && (arch == "" || arch == platform.AMD64ArchitectureName)
+	return *InitCIRunnerFromCache &&
+		(os == "" || os == platform.LinuxOperatingSystemName) &&
+		(arch == "" || arch == platform.AMD64ArchitectureName)
 }
 
 // UploadInputRoot If the ci_runner can be properly initialized from the cache,
@@ -52,17 +58,43 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, status.UnavailableError("no cache configured")
 		}
 
-		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload runner bin")
+		if len(bundle.CiRunnerBytes) == 0 {
+			return nil, status.InternalError("CI runner binary not embedded")
 		}
+		if len(cli_bundle.CLIBytes) == 0 {
+			return nil, status.InternalError("CLI binary not embedded")
+		}
+
+		var runnerBinDigest, bbBinDigest *repb.Digest
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.Go(func() error {
+			var err error
+			runnerBinDigest, err = cachetools.UploadBlobToCAS(egCtx, bsClient, instanceName, repb.DigestFunction_BLAKE3, bundle.CiRunnerBytes)
+			return status.WrapError(err, "upload runner bin")
+		})
+		eg.Go(func() error {
+			var err error
+			bbBinDigest, err = cachetools.UploadBlobToCAS(egCtx, bsClient, instanceName, repb.DigestFunction_BLAKE3, cli_bundle.CLIBytes)
+			return status.WrapError(err, "upload bb bin")
+		})
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+
 		runnerName := filepath.Base(ExecutableName)
 		dir := &repb.Directory{
-			Files: []*repb.FileNode{{
-				Name:         runnerName,
-				Digest:       runnerBinDigest,
-				IsExecutable: true,
-			}},
+			Files: []*repb.FileNode{
+				{
+					Name:         runnerName,
+					Digest:       runnerBinDigest,
+					IsExecutable: true,
+				},
+				{
+					Name:         CLIBinaryName,
+					Digest:       bbBinDigest,
+					IsExecutable: true,
+				},
+			},
 		}
 		return cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, dir)
 	}
