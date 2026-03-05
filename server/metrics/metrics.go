@@ -179,6 +179,8 @@ const (
 	// Whether the request was handled using chunking
 	ChunkedLabel = "chunked"
 
+	ChunkedFailureReasonLabel = "reason"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3683,6 +3685,26 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
+	})
+
+	ByteStreamProxyChunkedReadFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_failures",
+		Help:      "Number of chunked read attempts that failed, by failure reason.",
+	}, []string{
+		ChunkedFailureReasonLabel,
+		StatusHumanReadableLabel,
+	})
+
+	ByteStreamServerChunkedReadFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "byte_stream_chunked_read_failures",
+		Help:      "Number of chunked read attempts that failed on the backend, by failure reason.",
+	}, []string{
+		ChunkedFailureReasonLabel,
+		StatusHumanReadableLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
