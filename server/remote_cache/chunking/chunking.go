@@ -74,6 +74,14 @@ func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvide
 		Enabled(ctx, efp)
 }
 
+func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MaxChunkSizeBytes() &&
+		offset == 0 &&
+		limit == 0 &&
+		(cdc.EnabledViaHeader(ctx) ||
+			(efp != nil && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", false)))
+}
+
 type WriteFunc func([]byte) error
 
 type Chunker struct {
