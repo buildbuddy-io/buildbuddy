@@ -73,6 +73,15 @@ func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvide
 		Enabled(ctx, efp)
 }
 
+// CouldBeChunked returns whether a blob is large enough to have been stored
+// with chunking and the read parameters allow reassembly. Unlike
+// ShouldReadChunked, this does not require the chunking experiment flag.
+func CouldBeChunked(digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MaxChunkSizeBytes() &&
+		offset == 0 &&
+		limit == 0
+}
+
 type WriteFunc func([]byte) error
 
 type Chunker struct {
