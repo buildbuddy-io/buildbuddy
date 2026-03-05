@@ -1233,10 +1233,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		// Treat manifest lookup failures as cache misses unless the parent context
 		// itself expired/canceled. This lets us fall back to local ext4->COW
 		// conversion when remote manifest fetch times out independently.
-		if ctx.Err() != nil {
-			return nil, err
-		}
-		if !(status.IsNotFoundError(err) || status.IsUnavailableError(err) || status.IsDeadlineExceededError(err)) {
+		if ctx.Err() != nil || !(status.IsNotFoundError(err) || status.IsUnavailableError(err) || status.IsDeadlineExceededError(err)) {
 			return nil, err
 		}
 	}
