@@ -36,6 +36,12 @@
   color: var(--ifm-color-emphasis-600);
 }
 
+.article :global(.markdown) img,
+.article :global(.markdown) video {
+  max-width: 800px;
+  height: auto;
+}
+
 .tag {
   background: var(--ifm-color-emphasis-200);
   border-radius: 6px;
