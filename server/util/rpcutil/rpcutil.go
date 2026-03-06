@@ -142,13 +142,23 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 //	}
 func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
 	sendChan := make(chan S, 1)
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	go func() {
 		for {
 			select {
-			case req := <-sendChan:
+			case req, ok := <-sendChan:
+				if !ok {
+					return
+				}
 				err := stream.Send(req)
-				errChan <- err
+				select {
+				case errChan <- err:
+				case <-ctx.Done():
+					return
+				}
+				if err != nil {
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
