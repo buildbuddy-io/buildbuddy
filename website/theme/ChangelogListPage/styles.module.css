@@ -97,10 +97,12 @@
   color: var(--ifm-color-emphasis-600);
 }
 
-.preview :global(img) {
+.preview :global(img),
+.preview :global(video) {
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 8px;
-  max-width: 100%;
+  max-width: 800px;
+  height: auto;
   margin: 1rem 0;
 }
 
