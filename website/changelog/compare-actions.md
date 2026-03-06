@@ -1,7 +1,7 @@
 ---
 title: "Compare Actions: compare two actions side-by-side"
 date: 2026-03-09T08:00:00
-author: siggi
+authors: siggi
 tags: [bazel, debugging, featured]
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: "Compare Invocations: compare two builds side-by-side"
 date: 2026-03-09T09:00:00
-author: siggi
+authors: siggi
 tags: [bazel, debugging, featured]
 ---
 
