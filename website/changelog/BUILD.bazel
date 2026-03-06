@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "changelogtags_test",
+    size = "small",
+    srcs = ["changelogtags_test.go"],
+    data = [
+        "//website:theme/ChangelogListPage/changelogHeader.tsx",
+    ] + glob(
+        [
+            "*.md",
+            "*.mdx",
+        ],
+        allow_empty = True,
+    ),
+    deps = [
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/tools/lint/changelogtags"
 	"golang.org/x/sync/errgroup"
 
 	lintutil "github.com/buildbuddy-io/buildbuddy/tools/lint/util"
@@ -66,8 +65,6 @@ var (
 		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
-		// Checks that tags used in changelog entries are supported.
-		{Name: "ChangelogTags", Run: changelogtags.Run},
 	}
 
 	// File extensions handled by prettier.
