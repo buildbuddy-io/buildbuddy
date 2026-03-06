@@ -365,10 +365,7 @@ func Config() (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
-// getBaseBranchAndCommit returns the git branch and commit that the remote run
-// should be based off
-//
-// remoteData is the output from `git remote show origin`
+// getBaseBranchAndCommit returns the git branch and commit that should be fetched on the remote runner.
 func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch string, commit string, err error) {
 	branch = *runFromBranch
 	commit = *runFromCommit
@@ -381,12 +378,12 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 		return "", "", fmt.Errorf("get current ref: %w", err)
 	}
 
-	currentBranchExistsRemotely, err := branchExistsRemotely(remoteName, currentBranch)
+	currentBranchExistsRemotely, err := branchTrackedRemotely(remoteName, currentBranch)
 	if err != nil {
 		log.Warnf("Failed to check if branch %s exists remotely. Falling back to running on default branch: %s", currentBranch, err)
 	}
 	if currentBranchExistsRemotely {
-		currentCommitExistsRemotely := commitExistsRemotely(remoteName, currentBranch, "HEAD")
+		currentCommitExistsRemotely := commitTrackedInRemoteBranch(remoteName, currentBranch, "HEAD")
 		if currentCommitExistsRemotely {
 			currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
 			if err != nil {
@@ -436,7 +433,14 @@ func getCurrentRef() (string, error) {
 	return strings.TrimSpace(matches[1]), nil
 }
 
-func branchExistsRemotely(remoteName string, branch string) (bool, error) {
+// branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
+// the local git state.
+//
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local
+// git state hasn't been updated, though this case should be rare.
+func branchTrackedRemotely(remoteName string, branch string) (bool, error) {
 	ref := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
 	_, err := runGit("show-ref", "--verify", ref)
 	if err != nil {
@@ -448,7 +452,13 @@ func branchExistsRemotely(remoteName string, branch string) (bool, error) {
 	return true, nil
 }
 
-func commitExistsRemotely(remoteName, branch, commit string) bool {
+// commitTrackedInRemoteBranch returns whether the given commit is tracked in the remote branch.
+// It is used as a proxy for whether the commit exists remotely, and can be fetched on the remote runner.
+//
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local git state hasn't been updated, though this case should be rare.
+func commitTrackedInRemoteBranch(remoteName, branch, commit string) bool {
 	remoteTrackingRef := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
 	_, err := runGit("merge-base", "--is-ancestor", commit, remoteTrackingRef)
 	return err == nil
