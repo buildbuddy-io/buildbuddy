@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://www.buildbuddy.io/changelog</id>
+    <title>BuildBuddy Blog</title>
+    <updated>2026-03-09T12:00:00.000Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
+    <subtitle>BuildBuddy Blog</subtitle>
+    <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Changelog]]></title>
+        <id>https://www.buildbuddy.io/changelog/changelog</id>
+        <link href="https://www.buildbuddy.io/changelog/changelog"/>
+        <updated>2026-03-09T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[We're excited to introduce the BuildBuddy Changelog!]]></summary>
+        <author>
+            <name>Maggie Lou</name>
+            <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Dark Mode]]></title>
+        <id>https://www.buildbuddy.io/changelog/dark-mode</id>
+        <link href="https://www.buildbuddy.io/changelog/dark-mode"/>
+        <updated>2026-03-09T11:30:00.000Z</updated>
+        <summary type="html"><![CDATA[We're excited to announce Dark Mode for our UI.]]></summary>
+        <author>
+            <name>Tyler French</name>
+            <uri>https://www.linkedin.com/in/tylerdfrench/</uri>
+        </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[bb explain: understand why your build re-ran actions]]></title>
+        <id>https://www.buildbuddy.io/changelog/bb-explain</id>
+        <link href="https://www.buildbuddy.io/changelog/bb-explain"/>
+        <updated>2026-03-09T11:00:00.000Z</updated>
+        <summary type="html"><![CDATA[bb explain shows a structural diff of two compact execution logs. It helps answer the common questions: "Why did Bazel re-execute that action?" and "What changed between these builds?"]]></summary>
+        <author>
+            <name>Fabian Meumertzheim</name>
+            <uri>https://www.linkedin.com/in/fhenneke</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+        <category label="debugging" term="debugging"/>
+        <category label="featured" term="featured"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Drilldowns: find similarities between slow or failing builds]]></title>
+        <id>https://www.buildbuddy.io/changelog/drilldowns</id>
+        <link href="https://www.buildbuddy.io/changelog/drilldowns"/>
+        <updated>2026-03-09T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[The Trends Drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></summary>
+        <author>
+            <name>Jim Hollenbach</name>
+            <uri>https://www.linkedin.com/in/jim-hollenbach-5a49659/</uri>
+        </author>
+        <category label="debugging" term="debugging"/>
+        <category label="featured" term="featured"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Compare Invocations: compare two builds side-by-side]]></title>
+        <id>https://www.buildbuddy.io/changelog/compare-invocations</id>
+        <link href="https://www.buildbuddy.io/changelog/compare-invocations"/>
+        <updated>2026-03-09T09:00:00.000Z</updated>
+        <summary type="html"><![CDATA[The Compare Invocations view allows you to diff two invocations side-by-side.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+        <category label="debugging" term="debugging"/>
+        <category label="featured" term="featured"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Compare Actions: compare two actions side-by-side]]></title>
+        <id>https://www.buildbuddy.io/changelog/compare-actions</id>
+        <link href="https://www.buildbuddy.io/changelog/compare-actions"/>
+        <updated>2026-03-09T08:00:00.000Z</updated>
+        <summary type="html"><![CDATA[The Compare Actions view allows you to diff two actions side-by-side.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+        <category label="debugging" term="debugging"/>
+        <category label="featured" term="featured"/>
+    </entry>
+</feed>

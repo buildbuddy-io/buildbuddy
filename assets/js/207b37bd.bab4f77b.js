@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[674],{52890:e=>{e.exports=JSON.parse('{"blogBasePath":"/changelog","blogTitle":"Blog","authorsListPath":"/changelog/authors"}')}}]);

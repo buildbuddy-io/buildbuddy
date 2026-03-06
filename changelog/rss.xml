@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+    <channel>
+        <title>BuildBuddy Blog</title>
+        <link>https://www.buildbuddy.io/changelog</link>
+        <description>BuildBuddy Blog</description>
+        <lastBuildDate>Mon, 09 Mar 2026 12:00:00 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>https://github.com/jpmonette/feed</generator>
+        <language>en</language>
+        <item>
+            <title><![CDATA[Changelog]]></title>
+            <link>https://www.buildbuddy.io/changelog/changelog</link>
+            <guid>https://www.buildbuddy.io/changelog/changelog</guid>
+            <pubDate>Mon, 09 Mar 2026 12:00:00 GMT</pubDate>
+            <description><![CDATA[We're excited to introduce the BuildBuddy Changelog!]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Dark Mode]]></title>
+            <link>https://www.buildbuddy.io/changelog/dark-mode</link>
+            <guid>https://www.buildbuddy.io/changelog/dark-mode</guid>
+            <pubDate>Mon, 09 Mar 2026 11:30:00 GMT</pubDate>
+            <description><![CDATA[We're excited to announce Dark Mode for our UI.]]></description>
+        </item>
+        <item>
+            <title><![CDATA[bb explain: understand why your build re-ran actions]]></title>
+            <link>https://www.buildbuddy.io/changelog/bb-explain</link>
+            <guid>https://www.buildbuddy.io/changelog/bb-explain</guid>
+            <pubDate>Mon, 09 Mar 2026 11:00:00 GMT</pubDate>
+            <description><![CDATA[bb explain shows a structural diff of two compact execution logs. It helps answer the common questions: "Why did Bazel re-execute that action?" and "What changed between these builds?"]]></description>
+            <category>bazel</category>
+            <category>debugging</category>
+            <category>featured</category>
+        </item>
+        <item>
+            <title><![CDATA[Drilldowns: find similarities between slow or failing builds]]></title>
+            <link>https://www.buildbuddy.io/changelog/drilldowns</link>
+            <guid>https://www.buildbuddy.io/changelog/drilldowns</guid>
+            <pubDate>Mon, 09 Mar 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[The Trends Drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></description>
+            <category>debugging</category>
+            <category>featured</category>
+        </item>
+        <item>
+            <title><![CDATA[Compare Invocations: compare two builds side-by-side]]></title>
+            <link>https://www.buildbuddy.io/changelog/compare-invocations</link>
+            <guid>https://www.buildbuddy.io/changelog/compare-invocations</guid>
+            <pubDate>Mon, 09 Mar 2026 09:00:00 GMT</pubDate>
+            <description><![CDATA[The Compare Invocations view allows you to diff two invocations side-by-side.]]></description>
+            <category>bazel</category>
+            <category>debugging</category>
+            <category>featured</category>
+        </item>
+        <item>
+            <title><![CDATA[Compare Actions: compare two actions side-by-side]]></title>
+            <link>https://www.buildbuddy.io/changelog/compare-actions</link>
+            <guid>https://www.buildbuddy.io/changelog/compare-actions</guid>
+            <pubDate>Mon, 09 Mar 2026 08:00:00 GMT</pubDate>
+            <description><![CDATA[The Compare Actions view allows you to diff two actions side-by-side.]]></description>
+            <category>bazel</category>
+            <category>debugging</category>
+            <category>featured</category>
+        </item>
+    </channel>
+</rss>
