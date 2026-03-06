@@ -450,8 +450,9 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		offset += d.GetSizeBytes()
 	}
 
+	spliceStart := time.Now()
 	if err := spliceBlobWithRetries(ctx, casClient, manifest.ToSpliceBlobRequest()); err != nil {
-		return nil, uploadedBytes, status.WrapError(err, "splice chunked blob")
+		return nil, uploadedBytes, status.WrapErrorf(err, "splice chunked blob with %d total bytes failed after %v", r.GetDigest().GetSizeBytes(), time.Since(spliceStart))
 	}
 	return r.GetDigest(), uploadedBytes, nil
 }
