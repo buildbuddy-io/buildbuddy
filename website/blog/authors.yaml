@@ -18,7 +18,7 @@ brentley:
 
 maggie:
   name: Maggie Lou
-  title: "Software Engineer @ BuildBuddy"
+  title: "Engineer @ BuildBuddy"
   url: https://www.linkedin.com/in/maggie-lou-4a3bb110a/
   image_url: https://avatars.githubusercontent.com/u/13951661
 
@@ -63,3 +63,21 @@ lulu:
   title: "Engineer @ BuildBuddy"
   url: https://www.linkedin.com/in/luluzhang66
   image_url: https://avatars.githubusercontent.com/u/3977083?v=4
+
+fabian:
+  name: Fabian Meumertzheim
+  title: "Engineer @ BuildBuddy"
+  url: https://www.linkedin.com/in/fhenneke
+  image_url: https://avatars.githubusercontent.com/u/4312191?v=4
+
+tyler-french:
+  name: Tyler French
+  title: "Engineer @ BuildBuddy"
+  url: https://www.linkedin.com/in/tylerdfrench/
+  image_url: https://avatars.githubusercontent.com/u/66684063?v=4
+
+jim:
+  name: Jim Hollenbach
+  title: "Engineer @ BuildBuddy"
+  url: https://www.linkedin.com/in/jim-hollenbach-5a49659/
+  image_url: https://avatars.githubusercontent.com/u/10570856?v=4

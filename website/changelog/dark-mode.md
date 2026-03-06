@@ -1,7 +1,7 @@
 ---
 title: "Dark Mode"
 date: 2026-03-09T11:30:00
-author: tyler french
+authors: tyler-french
 ---
 
 We're excited to announce Dark Mode for our UI.

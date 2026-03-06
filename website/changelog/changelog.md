@@ -1,7 +1,7 @@
 ---
 title: Changelog
 date: 2026-03-09:12:00:00
-author: maggie
+authors: maggie
 ---
 
 We're excited to introduce the BuildBuddy Changelog!

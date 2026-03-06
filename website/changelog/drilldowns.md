@@ -1,7 +1,7 @@
 ---
 title: "Drilldowns: find similarities between slow or failing builds"
 date: 2026-03-09T10:00:00
-author: jim
+authors: jim
 tags: [debugging, featured]
 ---
 

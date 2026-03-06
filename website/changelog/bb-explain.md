@@ -1,7 +1,7 @@
 ---
 title: "bb explain: understand why your build re-ran actions"
 date: 2026-03-09T11:00:00
-author: fabian
+authors: fabian
 tags: [bazel, debugging, featured]
 ---
 
