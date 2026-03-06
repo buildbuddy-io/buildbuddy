@@ -27,6 +27,8 @@ go_library(
         "//server/util/ioutil",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//tools/lint/changelogtags",
+        "//tools/lint/util",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
     ],

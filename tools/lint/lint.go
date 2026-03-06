@@ -16,7 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/tools/lint/changelogtags"
 	"golang.org/x/sync/errgroup"
+
+	lintutil "github.com/buildbuddy-io/buildbuddy/tools/lint/util"
 )
 
 var (
@@ -63,6 +66,8 @@ var (
 		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
+		// Checks that tags used in changelog entries are supported.
+		{Name: "ChangelogTags", Run: changelogtags.Run},
 	}
 
 	// File extensions handled by prettier.
@@ -207,7 +212,7 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	// Otherwise, run on changed files, filtering by extension.
 	if slices.Contains(files, "yarn.lock") || slices.Contains(files, ".prettierrc") {
 		var err error
-		files, err = gitListFilesWithExtensions(prettierExtensions)
+		files, err = lintutil.GitListFilesWithExtensions(prettierExtensions)
 		if err != nil {
 			return fmt.Errorf("list files: %w", err)
 		}
@@ -407,20 +412,6 @@ func getDiffBase() (string, error) {
 		return "", fmt.Errorf("get merge base: %w", err)
 	}
 	return mergeBase, nil
-}
-
-// gitListFilesWithExtensions lists all files known to git with the given
-// extensions.
-func gitListFilesWithExtensions(extensions []string) ([]string, error) {
-	cmd := "git ls-files --"
-	for _, ext := range extensions {
-		cmd += fmt.Sprintf(" '*%s'", ext)
-	}
-	files, err := sh(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("list files with extensions: %w", err)
-	}
-	return lines(files), nil
 }
 
 // sh runs a shell command and returns its stdout as a trimmed string.
