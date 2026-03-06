@@ -62,7 +62,6 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/httpmux",
         "@org_golang_x_tools//go/analysis/passes/httpresponse",
         "@org_golang_x_tools//go/analysis/passes/ifaceassert",
-        "@org_golang_x_tools//go/analysis/passes/loopclosure",
         "@org_golang_x_tools//go/analysis/passes/lostcancel",
         "@org_golang_x_tools//go/analysis/passes/nilfunc",
         "@org_golang_x_tools//go/analysis/passes/nilness",
