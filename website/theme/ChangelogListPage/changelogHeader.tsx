@@ -12,12 +12,12 @@ export type ChangelogTag = {
 export const CHANGELOG_TAGS: ChangelogTag[] = [
   { label: "featured", url: "/changelog/tags/featured" },
   { label: "bazel", url: "/changelog/tags/bazel" },
-  { label: "platform", url: "/changelog/tags/platform" },
-  { label: "performance", url: "/changelog/tags/performance" },
-  { label: "testing", url: "/changelog/tags/testing" },
-  { label: "remote runners", url: "/changelog/tags/remote-runners" },
+  // { label: "platform", url: "/changelog/tags/platfo  rm" },
+  // { label: "performance", url: "/changelog/tags/performance" },
+  // { label: "testing", url: "/changelog/tags/testing" },
+  // { label: "remote runners", url: "/changelog/tags/remote-runners" },
   { label: "debugging", url: "/changelog/tags/debugging" },
-  { label: "AI", url: "/changelog/tags/ai" },
+  // { label: "AI", url: "/changelog/tags/ai" },
 ];
 
 type ChangelogHeaderProps = {
@@ -29,9 +29,6 @@ export function ChangelogHeader({ selectedTagUrl = null }: ChangelogHeaderProps)
 
   return (
     <>
-      <header className={styles.header}>
-        <h1 className={styles.title}>Changelog</h1>
-      </header>
       <section className={styles.filters}>
         <Link
           to="/changelog"

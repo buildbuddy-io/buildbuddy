@@ -50,13 +50,18 @@ export default function ChangelogPostsLayout({ items, metadata, selectedTagUrl =
 
             return (
               <article key={url} className={styles.item}>
-                <time dateTime={date} className={styles.date}>
-                  {formatDate(date)}
-                </time>
+                <div className={styles.itemMeta}>
+                  <time dateTime={date}>{formatDate(date)}</time>
+                  {author && (
+                    <>
+                      <span className={styles.metaDot}>&middot;</span>
+                      <span>{author}</span>
+                    </>
+                  )}
+                </div>
                 <h2 className={styles.itemTitle}>
-                  <Link to={url}>{title}</Link>
+                  {title}
                 </h2>
-                {author && <span className={styles.author}>{author}</span>}
                 <div className={styles.preview}>
                   <MDXProvider components={MDXComponents}>
                     <ChangelogContent />

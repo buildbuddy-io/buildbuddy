@@ -17,13 +17,18 @@ export default function ChangelogPostPage(props: Props): JSX.Element {
       <div className="container margin-vert--lg">
         <article className={styles.article}>
           <Link to="/changelog" className={styles.backLink}>
-            ← Back to changelog
+            &larr; Back to changelog
           </Link>
           <h1>{frontMatter.title}</h1>
-          <time dateTime={metadata.date} className={styles.date}>
-            {formatDate(metadata.date)}
-          </time>
-          {author && <span className={styles.author}>{author}</span>}
+          <div className={styles.meta}>
+            <time dateTime={metadata.date}>{formatDate(metadata.date)}</time>
+            {author && (
+              <>
+                <span className={styles.metaDot}>&middot;</span>
+                <span>{author}</span>
+              </>
+            )}
+          </div>
           {metadata.tags.length > 0 && (
             <div className={styles.tags}>
               {metadata.tags.map(({ label }) => (

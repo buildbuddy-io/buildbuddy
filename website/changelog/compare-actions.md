@@ -1,17 +1,17 @@
 ---
-title: "Compare Actions: compare two actions side-by-side"
+title: "Compare actions: compare two actions side-by-side"
 date: 2026-03-09T08:00:00
 authors: siggi
 tags: [bazel, debugging, featured]
 ---
 
-The Compare Actions view allows you to diff two actions side-by-side.
+The compare actions view allows you to diff two actions side-by-side.
 
 ![](../static/img/changelog/compare-actions.webp)
 
 This can help pinpoint why two seemingly similar actions produced different results or didn't result in a cache hit.
 
-To use Compare Actions:
+To compare actions:
 
 1. From an invocation link, you can find the desired action either in the `Cache` or `Remote Execution` tabs.
 1. Click through to the Action Details view.
