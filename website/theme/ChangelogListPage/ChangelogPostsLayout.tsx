@@ -59,9 +59,7 @@ export default function ChangelogPostsLayout({ items, metadata, selectedTagUrl =
                     </>
                   )}
                 </div>
-                <h2 className={styles.itemTitle}>
-                  {title}
-                </h2>
+                <h2 className={styles.itemTitle}>{title}</h2>
                 <div className={styles.preview}>
                   <MDXProvider components={MDXComponents}>
                     <ChangelogContent />
