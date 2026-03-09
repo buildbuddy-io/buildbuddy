@@ -21,6 +21,7 @@ go_test(
     srcs = ["rpcutil_test.go"],
     deps = [
         ":rpcutil",
+        "//server/util/proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

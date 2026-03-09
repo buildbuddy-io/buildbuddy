@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/stretchr/testify/require"
 
@@ -18,17 +19,17 @@ const (
 	hugeTimeout = 1_000_000 * time.Hour
 )
 
-type message[T any] struct {
+type message[T proto.Message] struct {
 	Val T
 	Err error
 }
 
-type stream[T any] struct {
+type stream[T proto.Message] struct {
 	ch          chan message[T]
 	closeRecvCh chan message[T]
 }
 
-type blockingSendStream[T any] struct {
+type blockingSendStream[T proto.Message] struct {
 	ctx          context.Context
 	sendStarted  chan struct{}
 	sendReturned chan struct{}
