@@ -2,8 +2,6 @@ load("//rules/yarn:index.bzl", "yarn")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["theme/ChangelogListPage/changelogHeader.tsx"])
-
 SRCS = glob([
     "src/**",
     "static/**",

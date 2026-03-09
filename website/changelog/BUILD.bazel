@@ -13,7 +13,11 @@ go_test(
         ],
         allow_empty = True,
     ),
+    x_defs = {
+        "changelogTagsRlocationpath": "$(rlocationpath changelog-tags.json)",
+    },
     deps = [
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_bazel_rules_go//go/runfiles",
     ],
 )

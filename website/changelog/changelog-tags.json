@@ -1,10 +1,5 @@
 [
   { "label": "featured", "url": "/changelog/tags/featured" },
   { "label": "bazel", "url": "/changelog/tags/bazel" },
-  { "label": "platform", "url": "/changelog/tags/platform" },
-  { "label": "performance", "url": "/changelog/tags/performance" },
-  { "label": "testing", "url": "/changelog/tags/testing" },
-  { "label": "remote runners", "url": "/changelog/tags/remote-runners" },
-  { "label": "debugging", "url": "/changelog/tags/debugging" },
-  { "label": "AI", "url": "/changelog/tags/ai" }
+  { "label": "debugging", "url": "/changelog/tags/debugging" }
 ]

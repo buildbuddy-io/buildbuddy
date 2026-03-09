@@ -4,24 +4,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"gopkg.in/yaml.v3"
 )
 
+// Set via x_defs in BUILD file.
+var changelogTagsRlocationpath string
+
 func TestChangelogTagsAreSupported(t *testing.T) {
-	root, tagsPath := workspaceRootAndTagsPath(t)
+	tagsPath, err := runfiles.Rlocation(changelogTagsRlocationpath)
+	if err != nil {
+		t.Fatalf("locate changelog-tags.json: %s", err)
+	}
 
 	allowedTags, err := loadAllowedChangelogTags(tagsPath)
 	if err != nil {
 		t.Fatalf("load supported changelog tags: %s", err)
 	}
 
+	root := filepath.Clean(filepath.Join(filepath.Dir(tagsPath), "../.."))
 	changelogPaths, err := filepath.Glob(filepath.Join(root, "website/changelog/*.md"))
 	if err != nil {
 		t.Fatalf("list changelog entries: %s", err)
@@ -61,46 +67,6 @@ func TestChangelogTagsAreSupported(t *testing.T) {
 	t.Fatal(strings.TrimSuffix(b.String(), "\n"))
 }
 
-func workspaceRootAndTagsPath(t *testing.T) (root, tagsPath string) {
-	t.Helper()
-	const relTagsPath = "website/changelog/changelog-tags.json"
-
-	if wd := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); wd != "" {
-		p := filepath.Join(wd, relTagsPath)
-		if _, err := os.Stat(p); err == nil {
-			return wd, p
-		}
-	}
-
-	candidates := []string{}
-	if ws := os.Getenv("TEST_WORKSPACE"); ws != "" {
-		candidates = append(candidates, ws)
-	}
-	candidates = append(candidates, "_main", "__main__", "buildbuddy")
-
-	for _, ws := range candidates {
-		runfile := path.Join(ws, relTagsPath)
-		p, err := runfiles.Rlocation(runfile)
-		if err != nil {
-			continue
-		}
-		// changelog-tags.json lives at <workspace_root>/website/changelog/changelog-tags.json
-		root = filepath.Clean(filepath.Join(filepath.Dir(p), "../.."))
-		return root, p
-	}
-
-	if _, file, _, ok := runtime.Caller(0); ok {
-		root = filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
-		p := filepath.Join(root, relTagsPath)
-		if _, err := os.Stat(p); err == nil {
-			return root, p
-		}
-	}
-
-	t.Fatalf("could not locate changelog-tags.json via runfiles or local source path (TEST_WORKSPACE=%q)", os.Getenv("TEST_WORKSPACE"))
-	return "", ""
-}
-
 type changelogTag struct {
 	Label string `json:"label"`
 	URL   string `json:"url"`
@@ -129,6 +95,10 @@ func loadAllowedChangelogTags(tagsPath string) (map[string]struct{}, error) {
 	return allowed, nil
 }
 
+type changelogFrontmatter struct {
+	Tags []string `yaml:"tags"`
+}
+
 func parseChangelogFrontmatterTags(path string) ([]string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -138,7 +108,11 @@ func parseChangelogFrontmatterTags(path string) ([]string, error) {
 	if !ok {
 		return nil, nil
 	}
-	return parseTagsFromFrontmatter(frontmatter)
+	var fm changelogFrontmatter
+	if err := yaml.Unmarshal([]byte(frontmatter), &fm); err != nil {
+		return nil, fmt.Errorf("parse frontmatter: %w", err)
+	}
+	return fm.Tags, nil
 }
 
 func extractFrontmatter(content string) (string, bool) {
@@ -152,67 +126,6 @@ func extractFrontmatter(content string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func parseTagsFromFrontmatter(frontmatter string) ([]string, error) {
-	lines := strings.Split(frontmatter, "\n")
-	for i := 0; i < len(lines); i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(trimmed, "tags:") {
-			continue
-		}
-
-		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "tags:"))
-		switch {
-		case value == "":
-			var tags []string
-			for j := i + 1; j < len(lines); j++ {
-				item := strings.TrimSpace(lines[j])
-				if item == "" {
-					continue
-				}
-				if !strings.HasPrefix(item, "-") {
-					break
-				}
-				item = strings.TrimSpace(strings.TrimPrefix(item, "-"))
-				if item == "" || strings.Contains(item, ":") {
-					return nil, fmt.Errorf("unsupported tags format in frontmatter")
-				}
-				tags = append(tags, cleanTagValue(item))
-			}
-			return tags, nil
-		case strings.HasPrefix(value, "["):
-			closing := strings.LastIndex(value, "]")
-			if closing == -1 {
-				return nil, fmt.Errorf("malformed inline tags list in frontmatter")
-			}
-			inner := value[1:closing]
-			if strings.TrimSpace(inner) == "" {
-				return nil, nil
-			}
-			parts := strings.Split(inner, ",")
-			tags := make([]string, 0, len(parts))
-			for _, part := range parts {
-				parsed := cleanTagValue(part)
-				if parsed != "" {
-					tags = append(tags, parsed)
-				}
-			}
-			return tags, nil
-		default:
-			if strings.Contains(value, ":") {
-				return nil, fmt.Errorf("unsupported tags format in frontmatter")
-			}
-			return []string{cleanTagValue(value)}, nil
-		}
-	}
-	return nil, nil
-}
-
-func cleanTagValue(v string) string {
-	v = strings.TrimSpace(v)
-	v = strings.Trim(v, `"'`)
-	return strings.TrimSpace(v)
 }
 
 func sortedTagSet(tags map[string]struct{}) []string {
