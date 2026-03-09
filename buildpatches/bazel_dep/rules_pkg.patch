@@ -1,0 +1,20 @@
+diff --git pkg/private/pkg_files.bzl pkg/private/pkg_files.bzl
+index d781398..e75464b 100644
+--- pkg/private/pkg_files.bzl
++++ pkg/private/pkg_files.bzl
+@@ -437,8 +437,13 @@ def add_from_default_info(
+             # Computing the runfiles root is subtle. It should be based off of
+             # the executable, but that is not always obvious. When in doubt,
+             # the first file of DefaultInfo.files should be the right target.
+-            base_file = the_executable or all_files[0]
+-            base_file_path = dest_path(base_file, data_path, data_path_without_prefix)
++            # If there are no files, these are just runfiles / data dependencies;
++            # just package them in ".runfiles".
++            base_file_path = ""
++            if the_executable != None:
++                base_file_path = dest_path(the_executable, data_path, data_path_without_prefix)
++            elif len(all_files) > 0:
++                base_file_path = dest_path(all_files[0], data_path, data_path_without_prefix)
+             base_path = base_file_path + ".runfiles/" + workspace_name
+ 
+             for rf in runfiles.files.to_list():
