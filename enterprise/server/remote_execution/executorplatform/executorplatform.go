@@ -132,6 +132,36 @@ func GetExecutorProperties() *ExecutorProperties {
 	return p
 }
 
+// bazelLabelToExecrootPath converts a Bazel label to an execroot-relative path.
+// If the value is not a label (does not start with "//"), it is returned as-is.
+//
+// Label format: //[package]:[target]
+// Examples:
+//
+//	//tools/wrapper:script  → tools/wrapper/script
+//	//tools:wrapper         → tools/wrapper
+//	//tools/wrapper         → tools/wrapper/wrapper (implicit target = last pkg component)
+func bazelLabelToExecrootPath(label string) string {
+	if !strings.HasPrefix(label, "//") {
+		return label
+	}
+	rest := strings.TrimPrefix(label, "//")
+	pkg, target, hasColon := strings.Cut(rest, ":")
+	if !hasColon {
+		// Implicit target name is the last component of the package path.
+		lastSlash := strings.LastIndex(pkg, "/")
+		if lastSlash >= 0 {
+			target = pkg[lastSlash+1:]
+		} else {
+			target = pkg
+		}
+	}
+	if pkg == "" {
+		return target
+	}
+	return pkg + "/" + target
+}
+
 func containerImageName(input string) string {
 	withoutDockerPrefix := strings.TrimPrefix(input, platform.DockerPrefix)
 	if *containerRegistryRegion == "" {
@@ -240,6 +270,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
+
+	if platformProps.RunUnder != "" {
+		wrapperPath := bazelLabelToExecrootPath(platformProps.RunUnder)
+		command.Arguments = append([]string{wrapperPath}, command.Arguments...)
+	}
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
 	for _, e := range additionalEnvVars {

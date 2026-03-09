@@ -104,6 +104,17 @@ const (
 	RetryPropertyName                       = "retry"
 	PersistentVolumesPropertyName           = "persistent-volumes"
 	execrootPathPropertyName                = "execroot-path"
+	// RunUnderPropertyName specifies a wrapper command to run the action
+	// under. The wrapper is prepended to the command arguments, so the
+	// original executable becomes the first argument of the wrapper.
+	//
+	// The value can be either a direct path to an executable in the execroot,
+	// or a Bazel label (e.g. //path/to:wrapper). Labels are converted to
+	// execroot-relative paths using Bazel's naming convention.
+	//
+	// When using exec_properties in a BUILD file, use "test.run-under" to
+	// restrict this property to test actions only.
+	RunUnderPropertyName = "run-under"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -336,6 +347,12 @@ type Properties struct {
 	// UseOCIFetcher enables using the OCI fetcher service for pulling container
 	// images instead of pulling directly from the registry.
 	UseOCIFetcher bool
+
+	// RunUnder specifies a wrapper executable to prepend to the command.
+	// The original executable becomes the first argument of the wrapper.
+	// The value is either a path relative to the execroot, or a Bazel label
+	// (e.g. //path/to:wrapper) which is converted to an execroot-relative path.
+	RunUnder string
 }
 
 type PersistentVolume struct {
@@ -527,6 +544,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
 		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
+		RunUnder:                  stringProp(m, RunUnderPropertyName, ""),
 	}, nil
 }
 

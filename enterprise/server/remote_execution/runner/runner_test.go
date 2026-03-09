@@ -1133,6 +1133,36 @@ func TestRunnerCrashedExitCodes(t *testing.T) {
 	}
 }
 
+func TestRunUnder_WithRealWrapperScript(t *testing.T) {
+	// Create a wrapper script that records it was called and then exec's the wrapped command.
+	wrapperDir := testfs.MakeTempDir(t)
+	wrapperPath := testfs.WriteFile(t, wrapperDir, "wrapper.sh", "#!/bin/sh\nprintf 'WRAPPER_CALLED\\n'\nexec \"$@\"\n")
+	testfs.MakeExecutable(t, wrapperDir, "wrapper.sh")
+
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg())
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	task := newTask()
+	task.ExecutionTask.Command.Arguments = []string{"sh", "-c", "printf 'ORIGINAL_CALLED\\n'"}
+	task.ExecutionTask.Command.Platform.Properties = append(
+		task.ExecutionTask.Command.Platform.Properties,
+		&repb.Platform_Property{
+			Name:  platform.RunUnderPropertyName,
+			Value: wrapperPath,
+		},
+	)
+
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "WRAPPER_CALLED\nORIGINAL_CALLED\n", string(res.Stdout),
+		"wrapper should be invoked first, then the original command")
+}
+
 func TestTransientErrorExitCodes(t *testing.T) {
 	for _, tc := range []struct {
 		name                        string

@@ -408,3 +408,73 @@ The following `exec_properties` are supported:
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
+
+### Action command modification
+
+The following properties allow modifying the action's command before it is executed.
+
+- `extra-args`: a comma-separated list of additional arguments to append to
+  the action's command-line arguments. For example, `"extra-args": "--verbose,--output=/tmp/out"`.
+
+- `env-overrides`: a comma-separated list of environment variable assignments
+  (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
+  For example, `"env-overrides": "FOO=bar,BAZ=qux"`.
+
+- `run-under`: an executable to use as a wrapper for the action's command.
+  The wrapper is prepended to the command's arguments, so the original
+  executable becomes the first argument of the wrapper. For example, if the
+  action normally runs `["my_test", "--test-arg"]`, setting
+  `"run-under": "tools/trace_wrapper.sh"` will instead run
+  `["tools/trace_wrapper.sh", "my_test", "--test-arg"]`.
+
+  The value can be either a direct path to an executable (relative to the
+  action's working directory / execroot, or absolute), or a Bazel label
+  such as `//tools:wrapper`. Bazel labels are converted to execroot-relative
+  paths using the convention `//pkg:name` → `pkg/name`.
+
+  To restrict wrapping to test actions only, use the `test.` prefix:
+
+  ```python title="BUILD"
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],
+      exec_properties = {
+          "test.run-under": "//tools:trace_wrapper",
+      },
+  )
+  ```
+
+  :::note
+
+  The wrapper executable must be present in the action's input tree (the
+  execroot). Bazel does **not** automatically include files referenced in
+  `exec_properties` values as inputs — you must declare the wrapper as an
+  explicit dependency, typically via `data`:
+
+  ```python
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],   # stages the wrapper in the execroot
+      exec_properties = {
+          "test.run-under": "//tools:trace_wrapper",
+      },
+  )
+  ```
+
+  :::
+
+  :::note
+
+  The `//pkg:name` → `pkg/name` label-to-path conversion only works for
+  **source files** (files committed to the repository). Compiled binary
+  outputs live at a configuration-dependent path such as
+  `bazel-out/k8-fastbuild/bin/tools/trace_wrapper`, which cannot be inferred
+  from the label alone. For compiled wrappers, pass the resolved path
+  directly — for example by expanding it with
+  [`$(execpath //tools:trace_wrapper)`](https://bazel.build/reference/be/make-variables#predefined_label_variables)
+  inside a Starlark macro, or by setting the property via
+  `--remote_default_exec_properties` with the known output path.
+
+  :::

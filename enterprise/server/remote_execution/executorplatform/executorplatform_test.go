@@ -321,6 +321,78 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	require.Equal(t, expectedCmdText, commandText)
 }
 
+func TestRunUnder(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		runUnder         string
+		initialArgs      []string
+		expectedArgs     []string
+	}{
+		{
+			name:         "direct path",
+			runUnder:     "tools/wrapper.sh",
+			initialArgs:  []string{"./some_test", "--test-arg"},
+			expectedArgs: []string{"tools/wrapper.sh", "./some_test", "--test-arg"},
+		},
+		{
+			name:         "bazel label with explicit target",
+			runUnder:     "//tools/wrapper:script",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"tools/wrapper/script", "./some_test"},
+		},
+		{
+			name:         "bazel label with implicit target",
+			runUnder:     "//tools/wrapper",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"tools/wrapper/wrapper", "./some_test"},
+		},
+		{
+			name:         "bazel label top-level package",
+			runUnder:     "//wrapper",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"wrapper/wrapper", "./some_test"},
+		},
+		{
+			name:         "bazel label top-level with explicit target",
+			runUnder:     "//:wrapper",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"wrapper", "./some_test"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "run-under", Value: tc.runUnder},
+			}}
+			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.NoError(t, err)
+			command := &repb.Command{Arguments: tc.initialArgs}
+			env := testenv.GetTestEnv(t)
+			err = ApplyOverrides(env, bare, platformProps, command)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedArgs, command.Arguments)
+		})
+	}
+}
+
+func TestBazelLabelToExecrootPath(t *testing.T) {
+	for _, tc := range []struct {
+		label    string
+		expected string
+	}{
+		{"//tools/wrapper:script", "tools/wrapper/script"},
+		{"//tools:wrapper", "tools/wrapper"},
+		{"//tools/wrapper", "tools/wrapper/wrapper"},
+		{"//wrapper", "wrapper/wrapper"},
+		{"//:wrapper", "wrapper"},
+		{"tools/wrapper.sh", "tools/wrapper.sh"},
+		{"./tools/wrapper.sh", "./tools/wrapper.sh"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			require.Equal(t, tc.expected, bazelLabelToExecrootPath(tc.label))
+		})
+	}
+}
+
 func TestExtraEnvVars(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
