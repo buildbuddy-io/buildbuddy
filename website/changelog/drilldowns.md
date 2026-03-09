@@ -5,7 +5,7 @@ authors: jim
 tags: [debugging, featured]
 ---
 
-The Trends Drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.
+The drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.
 
 ![](../static/img/changelog/trends-heatmap.webp)
 

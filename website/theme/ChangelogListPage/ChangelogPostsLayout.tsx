@@ -49,31 +49,36 @@ export default function ChangelogPostsLayout({ items, metadata, selectedTagUrl =
             const author = authors[0]?.name;
 
             return (
-              <article key={url} className={styles.item}>
-                <time dateTime={date} className={styles.date}>
-                  {formatDate(date)}
-                </time>
-                <h2 className={styles.itemTitle}>
-                  <Link to={url}>{title}</Link>
-                </h2>
-                {author && <span className={styles.author}>{author}</span>}
-                <div className={styles.preview}>
-                  <MDXProvider components={MDXComponents}>
-                    <ChangelogContent />
-                  </MDXProvider>
-                </div>
-                <div className={styles.footer}>
-                  {tags.length > 0 && (
-                    <div className={styles.tagRow}>
-                      {tags.map(({ label, permalink: url }) => (
-                        <Link to={url} key={label} className={styles.tag}>
-                          {label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </article>
+              <Link to={url}>
+                <article key={url} className={styles.item}>
+                  <div className={styles.itemMeta}>
+                    <time dateTime={date}>{formatDate(date)}</time>
+                    {author && (
+                      <>
+                        <span className={styles.metaDot}>&middot;</span>
+                        <span>{author}</span>
+                      </>
+                    )}
+                  </div>
+                  <h2 className={styles.itemTitle}>{title}</h2>
+                  <div className={styles.preview}>
+                    <MDXProvider components={MDXComponents}>
+                      <ChangelogContent />
+                    </MDXProvider>
+                  </div>
+                  <div className={styles.footer}>
+                    {tags.length > 0 && (
+                      <div className={styles.tagRow}>
+                        {tags.map(({ label, permalink: url }) => (
+                          <Link to={url} key={label} className={styles.tag}>
+                            {label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              </Link>
             );
           })}
         </main>

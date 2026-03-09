@@ -1,6 +1,11 @@
 module.exports = {
   someSidebar: {
-    "Getting Started": ["introduction", "quickstart", "contributing"],
+    "Getting Started": [
+      "introduction",
+      "quickstart",
+      { type: "link", label: "Changelog", href: "/changelog" },
+      "contributing",
+    ],
     Guides: ["guides", "guide-auth", "guide-metadata"],
     Cache: ["cache-encryption-keys"],
     "Remote Build Execution": [
