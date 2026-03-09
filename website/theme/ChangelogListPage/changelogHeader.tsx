@@ -12,7 +12,7 @@ export type ChangelogTag = {
 export const CHANGELOG_TAGS: ChangelogTag[] = [
   { label: "featured", url: "/changelog/tags/featured" },
   { label: "bazel", url: "/changelog/tags/bazel" },
-  // { label: "platform", url: "/changelog/tags/platfo  rm" },
+  // { label: "platform", url: "/changelog/tags/platform" },
   // { label: "performance", url: "/changelog/tags/performance" },
   // { label: "testing", url: "/changelog/tags/testing" },
   // { label: "remote runners", url: "/changelog/tags/remote-runners" },
