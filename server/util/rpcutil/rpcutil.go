@@ -114,6 +114,8 @@ func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause 
 		}
 		return err
 	case <-ctx.Done():
+		close(s.sendChan)
+		s.sendChan = nil
 		return context.Cause(ctx)
 	}
 }
@@ -154,7 +156,10 @@ func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream Sen
 	go func() {
 		for {
 			select {
-			case req := <-sendChan:
+			case req, ok := <-sendChan:
+				if !ok {
+					return
+				}
 				err := stream.Send(req)
 				select {
 				case errChan <- err:
