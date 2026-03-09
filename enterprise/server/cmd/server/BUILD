@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_source")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:load.bzl", "image_load")
@@ -102,8 +102,28 @@ go_library(
     ],
 )
 
+BINARY_NAME = "buildbuddy"
+
+filegroup(
+    name = "runfiles",
+    data = [
+        "//enterprise:licenses",
+        "//enterprise/app:app_bundle",
+        "//enterprise/app:sha",
+        "//enterprise/app:style",
+        "//static",
+    ],
+)
+
+filegroup(
+    name = "config_files",
+    data = [
+        "//enterprise/config:config_files",
+    ],
+)
+
 go_binary(
-    name = "buildbuddy",
+    name = BINARY_NAME,
     args = [
         "--config_file=enterprise/config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
@@ -111,62 +131,85 @@ go_binary(
         "--app_directory=/enterprise/app",
     ],
     data = [
-        "//enterprise:licenses",
-        "//enterprise/app:app_bundle",
-        "//enterprise/app:sha",
-        "//enterprise/app:style",
-        "//enterprise/config:config_files",
-        "//static",
+        ":runfiles",
+        ":config_files",
     ],
     embed = [":server_lib"],
 )
 
-PACKAGE_ROOT = "app/%s/buildbuddy.runfiles/%s" % (
-    package_name(),
-    runfiles_directory(),
-)
+PACKAGE_ROOT = "app"
 
-package_runfiles = mutate(
-    package_dir = PACKAGE_ROOT,
-    strip_prefix = "%s/buildbuddy_/buildbuddy.runfiles/%s" % (
-        package_name(),
-        runfiles_directory(),
-    ),
-)
-
-tar(
-    name = "runfiles_tar",
+pkg_tar(
+    name = "binary_tar",
     srcs = [":buildbuddy"],
+    package_dir = PACKAGE_ROOT,
+)
+
+pkg_tar(
+    name = "runfiles_tar",
+    srcs = [
+        ":runfiles",
+    ],
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
     include_runfiles = True,
-    mutate = package_runfiles,
+    package_dir = PACKAGE_ROOT,
+)
+
+pkg_tar(
+    name = "config_files_tar",
+    srcs = [
+        ":config_files",
+    ],
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
 )
 
 pkg_tar(
     name = "symlinks_tar",
     symlinks = {
-        "config.yaml": "/" + PACKAGE_ROOT + "/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "%s/%s.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+            runfiles_directory(),
+        ),
         "buildbuddy": "tmp",
-        "app/enterprise/server/cmd/server/buildbuddy": "/" + PACKAGE_ROOT + "/enterprise/server/cmd/server/buildbuddy_/buildbuddy",
     },
 )
 
 flatten(
-    name = "layer",
+    name = "base_image_layer",
     compress = "gzip",
     tars = [
+        ":binary_tar",
         ":runfiles_tar",
         ":symlinks_tar",
     ],
 )
 
 image_manifest(
-    name = "image_manifest",
+    name = "base_image_manifest",
     base = "//images/distroless/base-nossl:manifest",
     entrypoint = [
-        "/app/enterprise/server/cmd/server/buildbuddy",
+        "/%s/%s" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+        ),
     ],
     layers = [
-        ":layer",
+        ":base_image_layer",
+    ],
+)
+
+image_manifest(
+    name = "image_manifest",
+    base = ":base_image_manifest",
+    layers = [
+        ":config_files_tar",
     ],
 )
 
