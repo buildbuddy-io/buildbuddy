@@ -1697,6 +1697,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	if err != nil {
 		return status.InternalErrorf("get in-progress execution IDs for invocation %q: %s", invocationID, err)
 	}
+	log.CtxInfof(ctx, "Cancelling invocation %q with %v in-progress executions", len(ids))
 	numCancelled := 0
 	for _, id := range ids {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
@@ -1722,7 +1723,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 			numCancelled++
 		}
 		if err != nil {
-			log.Warningf("Failed to cancel task %q: %s", id, err)
+			log.CtxWarningf(ctx, "Failed to cancel task %q: %s", id, err)
 		}
 		if err == nil && cancelled {
 			err = s.MarkExecutionFailed(ctx, id, status.CanceledError("invocation cancelled"))
