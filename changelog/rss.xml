@@ -16,11 +16,11 @@
             <description><![CDATA[We're excited to introduce the BuildBuddy Changelog!]]></description>
         </item>
         <item>
-            <title><![CDATA[Dark Mode]]></title>
+            <title><![CDATA[Dark mode]]></title>
             <link>https://www.buildbuddy.io/changelog/dark-mode</link>
             <guid>https://www.buildbuddy.io/changelog/dark-mode</guid>
             <pubDate>Mon, 09 Mar 2026 11:30:00 GMT</pubDate>
-            <description><![CDATA[We're excited to announce Dark Mode for our UI.]]></description>
+            <description><![CDATA[We're excited to announce dark mode for our UI.]]></description>
         </item>
         <item>
             <title><![CDATA[bb explain: understand why your build re-ran actions]]></title>
@@ -37,26 +37,26 @@
             <link>https://www.buildbuddy.io/changelog/drilldowns</link>
             <guid>https://www.buildbuddy.io/changelog/drilldowns</guid>
             <pubDate>Mon, 09 Mar 2026 10:00:00 GMT</pubDate>
-            <description><![CDATA[The Trends Drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></description>
+            <description><![CDATA[The drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></description>
             <category>debugging</category>
             <category>featured</category>
         </item>
         <item>
-            <title><![CDATA[Compare Invocations: compare two builds side-by-side]]></title>
+            <title><![CDATA[Compare invocations: compare two builds side-by-side]]></title>
             <link>https://www.buildbuddy.io/changelog/compare-invocations</link>
             <guid>https://www.buildbuddy.io/changelog/compare-invocations</guid>
             <pubDate>Mon, 09 Mar 2026 09:00:00 GMT</pubDate>
-            <description><![CDATA[The Compare Invocations view allows you to diff two invocations side-by-side.]]></description>
+            <description><![CDATA[The compare invocations view allows you to diff two invocations side-by-side.]]></description>
             <category>bazel</category>
             <category>debugging</category>
             <category>featured</category>
         </item>
         <item>
-            <title><![CDATA[Compare Actions: compare two actions side-by-side]]></title>
+            <title><![CDATA[Compare actions: compare two actions side-by-side]]></title>
             <link>https://www.buildbuddy.io/changelog/compare-actions</link>
             <guid>https://www.buildbuddy.io/changelog/compare-actions</guid>
             <pubDate>Mon, 09 Mar 2026 08:00:00 GMT</pubDate>
-            <description><![CDATA[The Compare Actions view allows you to diff two actions side-by-side.]]></description>
+            <description><![CDATA[The compare actions view allows you to diff two actions side-by-side.]]></description>
             <category>bazel</category>
             <category>debugging</category>
             <category>featured</category>

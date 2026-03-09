@@ -19,11 +19,11 @@
         </author>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Dark Mode]]></title>
+        <title type="html"><![CDATA[Dark mode]]></title>
         <id>https://www.buildbuddy.io/changelog/dark-mode</id>
         <link href="https://www.buildbuddy.io/changelog/dark-mode"/>
         <updated>2026-03-09T11:30:00.000Z</updated>
-        <summary type="html"><![CDATA[We're excited to announce Dark Mode for our UI.]]></summary>
+        <summary type="html"><![CDATA[We're excited to announce dark mode for our UI.]]></summary>
         <author>
             <name>Tyler French</name>
             <uri>https://www.linkedin.com/in/tylerdfrench/</uri>
@@ -48,7 +48,7 @@
         <id>https://www.buildbuddy.io/changelog/drilldowns</id>
         <link href="https://www.buildbuddy.io/changelog/drilldowns"/>
         <updated>2026-03-09T10:00:00.000Z</updated>
-        <summary type="html"><![CDATA[The Trends Drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></summary>
+        <summary type="html"><![CDATA[The drilldown view displays heatmaps of build and execution metrics over time. It can help isolate why a subset of builds is slower or failing more often.]]></summary>
         <author>
             <name>Jim Hollenbach</name>
             <uri>https://www.linkedin.com/in/jim-hollenbach-5a49659/</uri>
@@ -57,11 +57,11 @@
         <category label="featured" term="featured"/>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Compare Invocations: compare two builds side-by-side]]></title>
+        <title type="html"><![CDATA[Compare invocations: compare two builds side-by-side]]></title>
         <id>https://www.buildbuddy.io/changelog/compare-invocations</id>
         <link href="https://www.buildbuddy.io/changelog/compare-invocations"/>
         <updated>2026-03-09T09:00:00.000Z</updated>
-        <summary type="html"><![CDATA[The Compare Invocations view allows you to diff two invocations side-by-side.]]></summary>
+        <summary type="html"><![CDATA[The compare invocations view allows you to diff two invocations side-by-side.]]></summary>
         <author>
             <name>Siggi Simonarson</name>
             <uri>https://www.linkedin.com/in/siggisim/</uri>
@@ -71,11 +71,11 @@
         <category label="featured" term="featured"/>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Compare Actions: compare two actions side-by-side]]></title>
+        <title type="html"><![CDATA[Compare actions: compare two actions side-by-side]]></title>
         <id>https://www.buildbuddy.io/changelog/compare-actions</id>
         <link href="https://www.buildbuddy.io/changelog/compare-actions"/>
         <updated>2026-03-09T08:00:00.000Z</updated>
-        <summary type="html"><![CDATA[The Compare Actions view allows you to diff two actions side-by-side.]]></summary>
+        <summary type="html"><![CDATA[The compare actions view allows you to diff two actions side-by-side.]]></summary>
         <author>
             <name>Siggi Simonarson</name>
             <uri>https://www.linkedin.com/in/siggisim/</uri>
