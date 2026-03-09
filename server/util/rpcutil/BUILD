@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/alert",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/vtprotocodec",
         "@io_opentelemetry_go_otel_exporters_prometheus//:prometheus",
         "@io_opentelemetry_go_otel_metric//:metric",

@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -98,12 +99,19 @@ type Sender[S proto.Message, R proto.Message] struct {
 // acknowledge individual messages. A timeout wil only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
 func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
+	if s.sendChan == nil {
+		return status.UnavailableError("Send channel closed")
+	}
 	s.sendChan <- msg
 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
 	select {
 	case err := <-s.errChan:
+		if err != nil {
+			close(s.sendChan)
+			s.sendChan = nil
+		}
 		return err
 	case <-ctx.Done():
 		return context.Cause(ctx)
