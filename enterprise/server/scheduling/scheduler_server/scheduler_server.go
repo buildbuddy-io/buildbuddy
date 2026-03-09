@@ -2440,7 +2440,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
-		log.Infof(fmt.Sprintf("Task %q does not have retries enabled. Not re-enqueuing.", taskID))
+		log.CtxInfof(ctx, "Task %q does not have retries enabled. Not re-enqueuing.", taskID)
 		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(reason)); err != nil {
 			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
 		}
