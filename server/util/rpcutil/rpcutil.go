@@ -158,7 +158,9 @@ func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream Sen
 				err := stream.Send(req)
 				select {
 				case errChan <- err:
-					return
+					if err != nil {
+						return
+					}
 				case <-ctx.Done():
 					return
 				}

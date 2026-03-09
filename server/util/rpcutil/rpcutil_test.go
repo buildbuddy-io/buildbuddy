@@ -103,6 +103,22 @@ func TestSender(t *testing.T) {
 	require.Equal(t, cause, err)
 }
 
+func TestSender_AllowsMultipleSuccessfulSends(t *testing.T) {
+	ctx := context.Background()
+	ch := make(chan message[*tspb.Timestamp], 2)
+	stream := &stream[*tspb.Timestamp]{ch: ch}
+	sender := rpcutil.NewSender(ctx, stream)
+	cause := fmt.Errorf("test-cause")
+	val1 := tspb.Now()
+	val2 := tspb.New(val1.AsTime().Add(time.Second))
+
+	require.NoError(t, sender.SendWithTimeoutCause(val1, hugeTimeout, cause))
+	require.NoError(t, sender.SendWithTimeoutCause(val2, hugeTimeout, cause))
+
+	require.Equal(t, val1, (<-ch).Val)
+	require.Equal(t, val2, (<-ch).Val)
+}
+
 func TestCloseAndRecv(t *testing.T) {
 	ctx := context.Background()
 	cause := fmt.Errorf("test-cause")
