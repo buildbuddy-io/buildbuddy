@@ -1697,7 +1697,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	if err != nil {
 		return status.InternalErrorf("get in-progress execution IDs for invocation %q: %s", invocationID, err)
 	}
-	log.CtxInfof(ctx, "Cancelling invocation %q with %v in-progress executions", len(ids))
+	log.CtxInfof(ctx, "Cancelling invocation %q with %v in-progress executions", invocationID, len(ids))
 	numCancelled := 0
 	for _, id := range ids {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
