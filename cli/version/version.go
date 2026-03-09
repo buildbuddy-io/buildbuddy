@@ -6,6 +6,7 @@ import (
 
 // The bb cli "version" var is generated in this package according to the
 // Bazel flag value --//cli/version:cli_version
+// Blah blah blah edit
 //
 //go:embed version_flag.txt
 var cliVersionFlag string

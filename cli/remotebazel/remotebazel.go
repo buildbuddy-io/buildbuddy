@@ -378,6 +378,7 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 		return "", "", fmt.Errorf("get current ref: %w", err)
 	}
 
+	// Add a comment here and force push
 	currentBranchExistsRemotely, err := branchTrackedRemotely(remoteName, currentBranch)
 	if err != nil {
 		log.Warnf("Failed to check if branch %s exists remotely. Falling back to running on default branch: %s", currentBranch, err)

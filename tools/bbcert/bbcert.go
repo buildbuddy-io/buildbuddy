@@ -19,6 +19,7 @@ import (
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
 )
 
+// Another comment
 var (
 	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times.")
 )
