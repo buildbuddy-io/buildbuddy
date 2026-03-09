@@ -5,7 +5,7 @@ go_test(
     size = "small",
     srcs = ["changelogtags_test.go"],
     data = [
-        "//website:theme/ChangelogListPage/changelogHeader.tsx",
+        "changelog-tags.json",
     ] + glob(
         [
             "*.md",

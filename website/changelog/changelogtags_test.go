@@ -1,11 +1,11 @@
 package changelog
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -15,9 +15,9 @@ import (
 )
 
 func TestChangelogTagsAreSupported(t *testing.T) {
-	root, headerPath := workspaceRootAndHeaderPath(t)
+	root, tagsPath := workspaceRootAndTagsPath(t)
 
-	allowedTags, err := loadAllowedChangelogTags(headerPath)
+	allowedTags, err := loadAllowedChangelogTags(tagsPath)
 	if err != nil {
 		t.Fatalf("load supported changelog tags: %s", err)
 	}
@@ -61,12 +61,12 @@ func TestChangelogTagsAreSupported(t *testing.T) {
 	t.Fatal(strings.TrimSuffix(b.String(), "\n"))
 }
 
-func workspaceRootAndHeaderPath(t *testing.T) (root, headerPath string) {
+func workspaceRootAndTagsPath(t *testing.T) (root, tagsPath string) {
 	t.Helper()
-	const relHeaderPath = "website/theme/ChangelogListPage/changelogHeader.tsx"
+	const relTagsPath = "website/changelog/changelog-tags.json"
 
 	if wd := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); wd != "" {
-		p := filepath.Join(wd, relHeaderPath)
+		p := filepath.Join(wd, relTagsPath)
 		if _, err := os.Stat(p); err == nil {
 			return wd, p
 		}
@@ -79,45 +79,51 @@ func workspaceRootAndHeaderPath(t *testing.T) (root, headerPath string) {
 	candidates = append(candidates, "_main", "__main__", "buildbuddy")
 
 	for _, ws := range candidates {
-		runfile := path.Join(ws, relHeaderPath)
+		runfile := path.Join(ws, relTagsPath)
 		p, err := runfiles.Rlocation(runfile)
 		if err != nil {
 			continue
 		}
-		// header.tsx lives at <workspace_root>/website/theme/ChangelogListPage/changelogHeader.tsx
-		root = filepath.Clean(filepath.Join(filepath.Dir(p), "../../.."))
+		// changelog-tags.json lives at <workspace_root>/website/changelog/changelog-tags.json
+		root = filepath.Clean(filepath.Join(filepath.Dir(p), "../.."))
 		return root, p
 	}
 
 	if _, file, _, ok := runtime.Caller(0); ok {
 		root = filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
-		p := filepath.Join(root, relHeaderPath)
+		p := filepath.Join(root, relTagsPath)
 		if _, err := os.Stat(p); err == nil {
 			return root, p
 		}
 	}
 
-	t.Fatalf("could not locate changelogHeader.tsx via runfiles or local source path (TEST_WORKSPACE=%q)", os.Getenv("TEST_WORKSPACE"))
+	t.Fatalf("could not locate changelog-tags.json via runfiles or local source path (TEST_WORKSPACE=%q)", os.Getenv("TEST_WORKSPACE"))
 	return "", ""
 }
 
-func loadAllowedChangelogTags(headerPath string) (map[string]struct{}, error) {
-	content, err := os.ReadFile(headerPath)
+type changelogTag struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+func loadAllowedChangelogTags(tagsPath string) (map[string]struct{}, error) {
+	content, err := os.ReadFile(tagsPath)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", headerPath, err)
+		return nil, fmt.Errorf("read %s: %w", tagsPath, err)
 	}
 
-	re := regexp.MustCompile(`label:\s*"([^"]+)"`)
-	matches := re.FindAllStringSubmatch(string(content), -1)
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("no changelog tags found in %s", headerPath)
+	var tags []changelogTag
+	if err := json.Unmarshal(content, &tags); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", tagsPath, err)
+	}
+	if len(tags) == 0 {
+		return nil, fmt.Errorf("no changelog tags found in %s", tagsPath)
 	}
 
 	allowed := make(map[string]struct{})
-	for _, m := range matches {
-		label := cleanTagValue(m[1])
-		if label != "" {
-			allowed[label] = struct{}{}
+	for _, tag := range tags {
+		if tag.Label != "" {
+			allowed[tag.Label] = struct{}{}
 		}
 	}
 	return allowed, nil
