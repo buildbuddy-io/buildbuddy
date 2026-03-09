@@ -93,10 +93,11 @@ type Sender[S proto.Message, R proto.Message] struct {
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
 // waiting a maximum of timeout. If timeout is reached, the given cause is
-// returned as the error.
+// returned as the error. If this function returns an error, it must not be
+// called again on the same Sender.
 //
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
-// acknowledge individual messages. A timeout wil only occur if the sender
+// acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
 func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
 	if s.sendChan == nil {
