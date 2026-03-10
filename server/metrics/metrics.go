@@ -372,6 +372,8 @@ const (
 	ImageFetchTriggerLabel = "trigger"
 	// Label name for whether the OCI fetcher service was used for the image fetch.
 	ImageFetchUseOCIFetcherLabel = "use_oci_fetcher"
+
+	ManifestPrefixLabel = "prefix"
 )
 
 // Label value constants
@@ -1002,6 +1004,15 @@ var (
 		Help:      "Number of chunked manifest Store() calls, labeled by whether the shared validation marker was a hit (skipped re-hashing) or miss (full chunk verification performed).",
 	}, []string{
 		CacheHitMissStatus,
+	})
+
+	ChunkedManifestLoadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "chunked_manifest_load_count",
+		Help:      "Number of successful chunked manifest LoadManifest() calls, labeled by manifest key scheme.",
+	}, []string{
+		ManifestPrefixLabel,
 	})
 
 	GetTreeDirectoryLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
