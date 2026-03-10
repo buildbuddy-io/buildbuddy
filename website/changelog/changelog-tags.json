@@ -1,0 +1,5 @@
+[
+  { "label": "featured", "url": "/changelog/tags/featured" },
+  { "label": "bazel", "url": "/changelog/tags/bazel" },
+  { "label": "debugging", "url": "/changelog/tags/debugging" }
+]

@@ -2,6 +2,7 @@ import Link from "@docusaurus/Link";
 import clsx from "clsx";
 import React from "react";
 
+import CHANGELOG_TAGS_DATA from "../../changelog/changelog-tags.json";
 import styles from "./styles.module.css";
 
 export type ChangelogTag = {
@@ -9,16 +10,7 @@ export type ChangelogTag = {
   url: string;
 };
 
-export const CHANGELOG_TAGS: ChangelogTag[] = [
-  { label: "featured", url: "/changelog/tags/featured" },
-  { label: "bazel", url: "/changelog/tags/bazel" },
-  // { label: "platform", url: "/changelog/tags/platform" },
-  // { label: "performance", url: "/changelog/tags/performance" },
-  // { label: "testing", url: "/changelog/tags/testing" },
-  // { label: "remote runners", url: "/changelog/tags/remote-runners" },
-  { label: "debugging", url: "/changelog/tags/debugging" },
-  // { label: "AI", url: "/changelog/tags/ai" },
-];
+export const CHANGELOG_TAGS: ChangelogTag[] = CHANGELOG_TAGS_DATA;
 
 type ChangelogHeaderProps = {
   selectedTagUrl?: string | null;
