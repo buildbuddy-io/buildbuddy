@@ -903,7 +903,239 @@ func TestRebalanceReplica(t *testing.T) {
 			},
 		},
 		{
-			desc: "no-reblance-when-around-mean",
+			// 2 zones: all 3 replicas in zone-a, zone-b is empty.
+			// targetMax=ceil(3/2)=2, targetMin=1. max=3>2 triggers zone
+			// move. Should move from the most loaded source in zone-a to
+			// the less loaded node in zone-b.
+			desc: "2-zones-rebalance-across-zones",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
+					ReplicaCount:   200,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"},
+					ReplicaCount:   300,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-4"},
+			},
+		},
+		{
+			// 3 zones: all 3 replicas in zone-a, zone-b and zone-c are
+			// empty. targetMax=1, targetMin=1. max=3>1 triggers zone
+			// move. Two empty zones with different node loads; should
+			// pick the less loaded node (nhid-5 in zone-c).
+			desc: "3-zones-two-empty-pick-less-loaded",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
+					ReplicaCount:   300,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
+					ReplicaCount:   100,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			// 4 zones: 2 replicas in zone-a, 1 in zone-b, zone-c and
+			// zone-d are empty. targetMax=ceil(3/4)=1, targetMin=0.
+			// max=2>1 triggers zone move. Should move from zone-a to
+			// the less loaded empty zone.
+			desc: "4-zones-rebalance-across-zones",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-c"},
+					ReplicaCount:   200,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-d"},
+					ReplicaCount:   100,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			// 3 zones with balanced distribution (1-1-1). No zone
+			// rebalance is triggered. Normal rebalancing still applies
+			// since source (nhid-2) is above mean and target (nhid-5)
+			// is below mean.
+			desc: "3-zones-balanced-normal-rebalance",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-b"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-c"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-a"},
+					ReplicaCount:   100,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"},
+					ReplicaCount:   100,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			desc: "no-rebalance-when-around-mean",
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
@@ -958,7 +1190,9 @@ func TestRebalanceReplica(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
 			rq := &Queue{
-				storeMap: storeMap,
+				storeMap:             storeMap,
+				minReplicasPerRange:  3,
+				minMetaRangeReplicas: 3,
 			}
 			rq.baseQueue = &baseQueue{
 				log:  log.NamedSubLogger("test"),

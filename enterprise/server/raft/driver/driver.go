@@ -483,6 +483,7 @@ func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
 func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64) {
+	log.Infof("VANJAAAAAAAAAA: computeActionForRangeTask %v", task)
 	// Handle range tasks
 	repl := task.repl
 	rangeID := repl.RangeID()
@@ -595,6 +596,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
+	storesWithStats := rq.storeMap.GetStoresWithStats()
 	// Do not split when there is a store that's unavailable and a replica is
 	// in the middle of a removal.
 	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
@@ -621,7 +623,6 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
-		storesWithStats := rq.storeMap.GetStoresWithStats()
 		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
 		if op != nil {
 			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
@@ -778,6 +779,7 @@ func (bq *baseQueue) processQueue() {
 	if task == nil {
 		return
 	}
+	bq.log.Infof("VANJAAAAAAAAAAAA: processQueue - popped task with key %+v", task.key)
 	requeueType := bq.process(bq.egCtx, task)
 	bq.postProcess(bq.egCtx, task, requeueType)
 }
@@ -1174,8 +1176,106 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 		to:   best,
 	}
 }
-
 func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
+	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
+	var otherReplicaStores []*candidate
+	replicasByZone := make(map[string]int)
+	for _, su := range storesWithStats.Usages {
+		nhid := su.GetNode().GetNhid()
+		store := &candidate{
+			nhid:                  nhid,
+			usage:                 su,
+			fullDisk:              isDiskFull(su),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+			replicaCount:          su.ReplicaCount,
+		}
+		candidateStores[nhid] = store
+		replicasByZone[su.GetNode().GetZone()] = 0
+	}
+
+	for _, repl := range rd.GetReplicas() {
+		store, ok := candidateStores[repl.GetNhid()]
+		if !ok {
+			// The store might not be available rn.
+			continue
+		}
+		replicasByZone[store.usage.GetNode().GetZone()]++
+		delete(candidateStores, repl.GetNhid())
+		if repl.GetReplicaId() != localReplicaID {
+			// This is to prevent us from removing the replica on this node. We
+			// can only support this after we have the ability to transfer the
+			// leadership away.
+			otherReplicaStores = append(otherReplicaStores, store)
+		}
+	}
+	// Remove replicas that are in the middle of removal from candidates.
+	for _, repl := range rd.GetRemoved() {
+		delete(candidateStores, repl.GetNhid())
+	}
+
+	minReplicas := rq.minReplicasPerRange
+	if rd.GetRangeId() == constants.MetaRangeID {
+		minReplicas = rq.minMetaRangeReplicas
+	}
+	// Figure out if replicas are well distributed accross zones. Examples:
+	// 5 replicas, 3 zones, ideal distribution is 2-2-1, targetMaxReplicasPerZone = 2, targetMinReplicasPerZone = 1
+	// 3 replicas, 3 zones, ideal distribution is 1-1-1, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 1
+	// 3 replicas, 4 zones, ideal distribution is 1-1-1-0, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 0
+	// 3 replicas, 2 zones, ideal distribution is 2-1, targetMaxReplicasPerZone = 2, targetMinReplicasPerZone = 1
+	targetMaxReplicasPerZone := int(math.Ceil(float64(minReplicas) / float64(len(replicasByZone))))
+	targetMinReplicasPerZone := minReplicas / len(replicasByZone)
+	replicaCounts := slices.Collect(maps.Values(replicasByZone))
+	minReplicasPerZone, maxReplicasPerZone := slices.Min(replicaCounts), slices.Max(replicaCounts)
+	moveAcrossZones := false
+	if maxReplicasPerZone > targetMaxReplicasPerZone || minReplicasPerZone < targetMinReplicasPerZone {
+		moveAcrossZones = true
+		// The replicas are not balanced across zones, we want to prioritize balancing across zones.
+		filtered := otherReplicaStores[:0]
+		for _, store := range otherReplicaStores {
+			if replicasByZone[store.usage.GetNode().GetZone()] > targetMaxReplicasPerZone {
+				filtered = append(filtered, store)
+			}
+		}
+		otherReplicaStores = filtered
+		for _, candidate := range candidateStores {
+			if replicasByZone[candidate.usage.GetNode().GetZone()] >= targetMinReplicasPerZone {
+				delete(candidateStores, candidate.nhid)
+			}
+		}
+	}
+	if len(otherReplicaStores) == 0 {
+		return nil
+	}
+	bestSource := slices.MinFunc(otherReplicaStores, compareByScoreAndID)
+	var targetCandidates []*candidate
+	for _, store := range candidateStores {
+		if !store.fullDisk {
+			store.fullDisk = isDiskFullForRebalance(store.usage)
+			targetCandidates = append(targetCandidates, store)
+		}
+	}
+	if len(targetCandidates) == 0 {
+		return nil
+	}
+	bestTarget := slices.MaxFunc(targetCandidates, compareByScoreAndID)
+	if !bestSource.fullDisk && !moveAcrossZones {
+		overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
+		if bestSource.usage.ReplicaCount < overfullThreshold {
+			underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
+			if bestTarget.usage.ReplicaCount >= underfullThreshold {
+				// The source is not too overfull and the target is not too underfull, don't rebalance.
+				return nil
+			}
+		}
+	}
+
+	return &rebalanceOp{
+		from: bestSource,
+		to:   bestTarget,
+	}
+}
+
+func (rq *Queue) findRebalanceReplicaOp2(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
 	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
 	otherReplicaStores := make(map[string]*candidate, len(rd.GetReplicas()))
 	needRebalance := false
@@ -1597,6 +1697,10 @@ type candidate struct {
 	replicaCount          int64
 	leaseCount            int64
 	leaseCountMeanLevel   meanLevel
+}
+
+func (c *candidate) String() string {
+	return c.nhid
 }
 
 // compare returns
