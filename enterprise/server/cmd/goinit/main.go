@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -193,8 +194,11 @@ func startDockerd(ctx context.Context) error {
 		args = append(args, "--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375", "--tls=false")
 	}
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
-	// Note: despite the big scary INSECURE env var name, dockerd is completely sandboxed inside a VM, so it's secure for our usage. Once we upgrade our guest kernels to support nf tables, we can remove this.
-	cmd.Env = append(os.Environ(), "DOCKER_INSECURE_NO_IPTABLES_RAW=1")
+	// TODO(bduffany): update arm64 image and remove this check for arm64 as well.
+	if runtime.GOARCH != "amd64" {
+		// Note: despite the big scary INSECURE env var name, dockerd is completely sandboxed inside a VM, so it's secure for our usage. Once we upgrade our guest kernels to support nf tables, we can remove this.
+		cmd.Env = append(os.Environ(), "DOCKER_INSECURE_NO_IPTABLES_RAW=1")
+	}
 	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
 	// enable logging by default
 	if *enableLogging {
