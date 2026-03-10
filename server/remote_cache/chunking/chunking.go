@@ -36,15 +36,9 @@ var (
 )
 
 const (
-	// TODO(buildbuddy-internal#6426): Consider introducing a dedicated CDC
-	// cache type (alongside AC and CAS) so manifests can be stored and
-	// managed independently of the action cache.
-	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
+	chunkedManifestPrefix        = "_bb_chunked_manifest_v2_/"
+	chunkOutputFilePrefix        = "chunk_"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
-
-	// Approximate protobuf wire size of one OutputFile entry in a manifest
-	// (path + digest hash + size). Slightly inflated to prefer overestimate.
-	estimatedBytesPerChunkEntry int64 = 100
 )
 
 func AvgChunkSizeBytes() int64 {
@@ -275,8 +269,9 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}
-	for _, chunkDigest := range cm.ChunkDigests {
+	for i, chunkDigest := range cm.ChunkDigests {
 		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
+			Path:   chunkOutputFilePrefix + strconv.Itoa(i),
 			Digest: chunkDigest,
 		})
 	}
@@ -481,13 +476,7 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 
 func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
 	acInstanceName := chunkedManifestPrefix + instanceName
-	acDigest := &repb.Digest{
-		Hash: blobDigest.GetHash(),
-
-		// Estimate a realistic size. Using the blob size directly can cause the entry to be stored in GCS,
-		// even though the manifest is actually very small and fits on disk.
-		SizeBytes: blobToManifestSize(blobDigest.GetSizeBytes()),
-	}
+	acDigest := blobDigest
 
 	// Optionally salt the AC key with a salt value. This is used to prevent someone uploading
 	// an invalid chunked manifest directly to the AC, which could be used to bypass the chunk
@@ -498,7 +487,7 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 		if err != nil {
 			return nil, err
 		}
-		saltedDigest.SizeBytes = acDigest.SizeBytes
+		saltedDigest.SizeBytes = blobDigest.GetSizeBytes()
 		acDigest = saltedDigest
 	}
 
@@ -507,12 +496,6 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 		return nil, err
 	}
 	return acRN.ToProto(), nil
-}
-
-// blobToManifestSize must be deterministic, since we don't know how many
-// chunks there are on read path.
-func blobToManifestSize(blobSizeBytes int64) int64 {
-	return (blobSizeBytes / *avgChunkSizeBytes + 1) * estimatedBytesPerChunkEntry
 }
 
 // sanitizeManifestError replaces the salted AC key hash with the original blob hash in
