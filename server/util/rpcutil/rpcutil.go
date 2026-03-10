@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -92,20 +93,30 @@ type Sender[S proto.Message, R proto.Message] struct {
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
 // waiting a maximum of timeout. If timeout is reached, the given cause is
-// returned as the error.
+// returned as the error. If this function returns an error, it must not be
+// called again on the same Sender.
 //
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
-// acknowledge individual messages. A timeout wil only occur if the sender
+// acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
 func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
+	if s.sendChan == nil {
+		return status.UnavailableError("Send channel closed")
+	}
 	s.sendChan <- msg
 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
 	select {
 	case err := <-s.errChan:
+		if err != nil {
+			close(s.sendChan)
+			s.sendChan = nil
+		}
 		return err
 	case <-ctx.Done():
+		close(s.sendChan)
+		s.sendChan = nil
 		return context.Cause(ctx)
 	}
 }
@@ -142,13 +153,23 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 //	}
 func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
 	sendChan := make(chan S, 1)
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	go func() {
 		for {
 			select {
-			case req := <-sendChan:
+			case req, ok := <-sendChan:
+				if !ok {
+					return
+				}
 				err := stream.Send(req)
-				errChan <- err
+				select {
+				case errChan <- err:
+					if err != nil {
+						return
+					}
+				case <-ctx.Done():
+					return
+				}
 			case <-ctx.Done():
 				return
 			}

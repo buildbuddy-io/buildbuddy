@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/alert",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/vtprotocodec",
         "@io_opentelemetry_go_otel_exporters_prometheus//:prometheus",
         "@io_opentelemetry_go_otel_metric//:metric",
@@ -21,6 +22,7 @@ go_test(
     srcs = ["rpcutil_test.go"],
     deps = [
         ":rpcutil",
+        "//server/util/proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

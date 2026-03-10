@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/stretchr/testify/require"
 
@@ -17,14 +19,32 @@ const (
 	hugeTimeout = 1_000_000 * time.Hour
 )
 
-type message[T any] struct {
+type message[T proto.Message] struct {
 	Val T
 	Err error
 }
 
-type stream[T any] struct {
+type stream[T proto.Message] struct {
 	ch          chan message[T]
 	closeRecvCh chan message[T]
+}
+
+type blockingSendStream[T proto.Message] struct {
+	ctx          context.Context
+	sendStarted  chan struct{}
+	sendReturned chan struct{}
+}
+
+func (s *blockingSendStream[T]) Send(T) error {
+	close(s.sendStarted)
+	<-s.ctx.Done()
+	close(s.sendReturned)
+	return s.ctx.Err()
+}
+
+func (s *blockingSendStream[T]) CloseAndRecv() (T, error) {
+	var zero T
+	return zero, nil
 }
 
 func (s *stream[T]) Recv() (T, error) {
@@ -83,6 +103,22 @@ func TestSender(t *testing.T) {
 	require.Equal(t, cause, err)
 }
 
+func TestSender_AllowsMultipleSuccessfulSends(t *testing.T) {
+	ctx := context.Background()
+	ch := make(chan message[*tspb.Timestamp], 2)
+	stream := &stream[*tspb.Timestamp]{ch: ch}
+	sender := rpcutil.NewSender(ctx, stream)
+	cause := fmt.Errorf("test-cause")
+	val1 := tspb.Now()
+	val2 := tspb.New(val1.AsTime().Add(time.Second))
+
+	require.NoError(t, sender.SendWithTimeoutCause(val1, hugeTimeout, cause))
+	require.NoError(t, sender.SendWithTimeoutCause(val2, hugeTimeout, cause))
+
+	require.Equal(t, val1, (<-ch).Val)
+	require.Equal(t, val2, (<-ch).Val)
+}
+
 func TestCloseAndRecv(t *testing.T) {
 	ctx := context.Background()
 	cause := fmt.Errorf("test-cause")
@@ -107,4 +143,39 @@ func TestCloseAndRecv(t *testing.T) {
 
 	// Unblock CloseAndRecv goroutine to avoid leaking it in the timeout case.
 	close(closeRecvChTimeout)
+}
+
+func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
+	const iterations = 100
+	baseline := runtime.NumGoroutine()
+
+	for i := 0; i < iterations; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		stream := &blockingSendStream[*tspb.Timestamp]{
+			ctx:          ctx,
+			sendStarted:  make(chan struct{}),
+			sendReturned: make(chan struct{}),
+		}
+		sender := rpcutil.NewSender(ctx, stream)
+
+		err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("test-cause"))
+		require.Error(t, err)
+		select {
+		case <-stream.sendStarted:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for sender goroutine to start Send")
+		}
+
+		cancel()
+		select {
+		case <-stream.sendReturned:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for blocked send to return")
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		return runtime.NumGoroutine() <= baseline+5
+	}, time.Second, 10*time.Millisecond)
 }
