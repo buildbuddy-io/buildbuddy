@@ -97,6 +97,15 @@ actions:
           - "*"
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare"
+  - name: Changelog Slack Notify
+    container_image: ubuntu-22.04
+    triggers:
+      push:
+        branches:
+          - "master"
+    git_fetch_depth: 2
+    steps:
+      - run: "bash tools/changelog_slack_notify.sh"
 
 plugins:
   - path: cli/plugins/go-deps
