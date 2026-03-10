@@ -358,6 +358,14 @@ const (
 
 	GRPCMethodLabel = "grpc_method"
 
+	// Destination cloud provider inferred from the remote IP range: `aws`,
+	// `gcp`, or `other`.
+	EgressDestinationProviderLabel = "provider"
+
+	// Destination region inferred from the remote IP range, or `unknown` if no
+	// known cloud range matches.
+	EgressDestinationRegionLabel = "region"
+
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
@@ -3889,6 +3897,16 @@ var (
 		GRPCPoolIDLabel,
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
+	})
+	GRPCEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "egress_bytes",
+		Help:      "The number of gRPC response bytes sent over the wire, broken down by gRPC method and destination provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
+	}, []string{
+		GroupID,
+		EgressDestinationProviderLabel,
+		EgressDestinationRegionLabel,
 	})
 )
 
