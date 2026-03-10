@@ -2585,6 +2585,14 @@ func runBazelWrapper() error {
 		return err
 	}
 
+	// If the wrapper invokes the CLI, don't recursively invoke the CLI if
+	// specified in .bazelversion.
+	if filepath.Base(bazelBin) == bbBinaryName {
+		if err := os.Setenv("BAZELISK_SKIP_WRAPPER", "true"); err != nil {
+			return err
+		}
+	}
+
 	// Get the current bazel workspace path where we expect to find the
 	// workspace rc file.
 	workspacePath, err := currentBazelWorkspaceAbsPath()
