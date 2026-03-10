@@ -105,12 +105,12 @@ const (
 	PersistentVolumesPropertyName           = "persistent-volumes"
 	execrootPathPropertyName                = "execroot-path"
 	// RunUnderPropertyName specifies a wrapper command to run the action
-	// under. The wrapper is prepended to the command arguments, so the
-	// original executable becomes the first argument of the wrapper.
+	// under. The value is shell-tokenized and the resulting tokens are
+	// prepended to the command arguments, so the original executable becomes
+	// the first argument of the wrapper.
 	//
-	// The value can be either a direct path to an executable in the execroot,
-	// or a Bazel label (e.g. //path/to:wrapper). Labels are converted to
-	// execroot-relative paths using Bazel's naming convention.
+	// The path to the wrapper must be either relative to the execroot or
+	// absolute.
 	//
 	// When using exec_properties in a BUILD file, use "test.run-under" to
 	// restrict this property to test actions only.
@@ -348,10 +348,10 @@ type Properties struct {
 	// images instead of pulling directly from the registry.
 	UseOCIFetcher bool
 
-	// RunUnder specifies a wrapper executable to prepend to the command.
-	// The original executable becomes the first argument of the wrapper.
-	// The value is either a path relative to the execroot, or a Bazel label
-	// (e.g. //path/to:wrapper) which is converted to an execroot-relative path.
+	// RunUnder specifies a wrapper command (shell-tokenized) to prepend to
+	// the command arguments. The original executable becomes the first
+	// argument of the wrapper. The wrapper path must be relative to the
+	// execroot or absolute.
 	RunUnder string
 }
 

@@ -420,17 +420,25 @@ The following properties allow modifying the action's command before it is execu
   (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
   For example, `"env-overrides": "FOO=bar,BAZ=qux"`.
 
-- `run-under`: an executable to use as a wrapper for the action's command.
-  The wrapper is prepended to the command's arguments, so the original
-  executable becomes the first argument of the wrapper. For example, if the
-  action normally runs `["my_test", "--test-arg"]`, setting
-  `"run-under": "tools/trace_wrapper.sh"` will instead run
-  `["tools/trace_wrapper.sh", "my_test", "--test-arg"]`.
+- `run-under`: an executable (and optional arguments) to use as a wrapper
+  for the action's command. The wrapper tokens are prepended to the
+  command's arguments, so the original executable becomes the first
+  argument of the wrapper. For example, if the action normally runs
+  `["my_test", "--test-arg"]`, setting
+  `"run-under": "tools/trace_wrapper.sh --verbose"` will instead run
+  `["tools/trace_wrapper.sh", "--verbose", "my_test", "--test-arg"]`.
 
-  The value can be either a direct path to an executable (relative to the
-  action's working directory / execroot, or absolute), or a Bazel label
-  such as `//tools:wrapper`. Bazel labels are converted to execroot-relative
-  paths using the convention `//pkg:name` → `pkg/name`.
+  The value is shell-tokenized (using the same rules as a POSIX shell),
+  so quoted strings and spaces are handled intuitively:
+
+  ```
+  "run-under": "tools/wrapper.sh 'arg with spaces'"
+  ```
+
+  becomes `["tools/wrapper.sh", "arg with spaces", ...]`.
+
+  The path to the wrapper executable must be either relative to the
+  action's working directory (execroot), or absolute.
 
   To restrict wrapping to test actions only, use the `test.` prefix:
 
@@ -440,7 +448,7 @@ The following properties allow modifying the action's command before it is execu
       srcs = ["my_test.sh"],
       data = ["//tools:trace_wrapper"],
       exec_properties = {
-          "test.run-under": "//tools:trace_wrapper",
+          "test.run-under": "tools/trace_wrapper.sh",
       },
   )
   ```
@@ -458,7 +466,7 @@ The following properties allow modifying the action's command before it is execu
       srcs = ["my_test.sh"],
       data = ["//tools:trace_wrapper"],   # stages the wrapper in the execroot
       exec_properties = {
-          "test.run-under": "//tools:trace_wrapper",
+          "test.run-under": "tools/trace_wrapper.sh",
       },
   )
   ```
@@ -467,14 +475,13 @@ The following properties allow modifying the action's command before it is execu
 
   :::note
 
-  The `//pkg:name` → `pkg/name` label-to-path conversion only works for
-  **source files** (files committed to the repository). Compiled binary
-  outputs live at a configuration-dependent path such as
-  `bazel-out/k8-fastbuild/bin/tools/trace_wrapper`, which cannot be inferred
-  from the label alone. For compiled wrappers, pass the resolved path
-  directly — for example by expanding it with
+  The value must be a path to the wrapper in the execroot, not a Bazel
+  label. For a source file committed to the repository, this is simply the
+  workspace-relative path (e.g. `tools/trace_wrapper.sh`). For a compiled
+  binary, the path includes the output configuration and must be spelled
+  out explicitly (e.g. `bazel-out/k8-fastbuild/bin/tools/trace_wrapper`).
+  You can obtain the correct path with
   [`$(execpath //tools:trace_wrapper)`](https://bazel.build/reference/be/make-variables#predefined_label_variables)
-  inside a Starlark macro, or by setting the property via
-  `--remote_default_exec_properties` with the known output path.
+  inside a Starlark macro.
 
   :::

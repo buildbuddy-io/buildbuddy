@@ -323,40 +323,34 @@ func TestEnvAndArgOverrides(t *testing.T) {
 
 func TestRunUnder(t *testing.T) {
 	for _, tc := range []struct {
-		name             string
-		runUnder         string
-		initialArgs      []string
-		expectedArgs     []string
+		name         string
+		runUnder     string
+		initialArgs  []string
+		expectedArgs []string
 	}{
 		{
-			name:         "direct path",
+			name:         "single token",
 			runUnder:     "tools/wrapper.sh",
 			initialArgs:  []string{"./some_test", "--test-arg"},
 			expectedArgs: []string{"tools/wrapper.sh", "./some_test", "--test-arg"},
 		},
 		{
-			name:         "bazel label with explicit target",
-			runUnder:     "//tools/wrapper:script",
+			name:         "multiple tokens",
+			runUnder:     "tools/wrapper.sh --flag",
 			initialArgs:  []string{"./some_test"},
-			expectedArgs: []string{"tools/wrapper/script", "./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "--flag", "./some_test"},
 		},
 		{
-			name:         "bazel label with implicit target",
-			runUnder:     "//tools/wrapper",
+			name:         "quoted argument with spaces",
+			runUnder:     "tools/wrapper.sh 'with spaces'",
 			initialArgs:  []string{"./some_test"},
-			expectedArgs: []string{"tools/wrapper/wrapper", "./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "with spaces", "./some_test"},
 		},
 		{
-			name:         "bazel label top-level package",
-			runUnder:     "//wrapper",
+			name:         "leading and trailing whitespace stripped",
+			runUnder:     "  tools/wrapper.sh  ",
 			initialArgs:  []string{"./some_test"},
-			expectedArgs: []string{"wrapper/wrapper", "./some_test"},
-		},
-		{
-			name:         "bazel label top-level with explicit target",
-			runUnder:     "//:wrapper",
-			initialArgs:  []string{"./some_test"},
-			expectedArgs: []string{"wrapper", "./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "./some_test"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,25 +364,6 @@ func TestRunUnder(t *testing.T) {
 			err = ApplyOverrides(env, bare, platformProps, command)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
-		})
-	}
-}
-
-func TestBazelLabelToExecrootPath(t *testing.T) {
-	for _, tc := range []struct {
-		label    string
-		expected string
-	}{
-		{"//tools/wrapper:script", "tools/wrapper/script"},
-		{"//tools:wrapper", "tools/wrapper"},
-		{"//tools/wrapper", "tools/wrapper/wrapper"},
-		{"//wrapper", "wrapper/wrapper"},
-		{"//:wrapper", "wrapper"},
-		{"tools/wrapper.sh", "tools/wrapper.sh"},
-		{"./tools/wrapper.sh", "./tools/wrapper.sh"},
-	} {
-		t.Run(tc.label, func(t *testing.T) {
-			require.Equal(t, tc.expected, bazelLabelToExecrootPath(tc.label))
 		})
 	}
 }
