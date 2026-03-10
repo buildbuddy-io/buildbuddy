@@ -253,16 +253,21 @@ func parseRemote(s string) (*gitRemote, error) {
 
 }
 
-// determineDefaultBranch parses `remoteData` (the output from `git ls-remote --symref origin`)
+// determineDefaultBranch parses the output from `git ls-remote --symref origin`
 // and returns the HEAD branch for the repo (often `main` or `master).
 //
-// We expect `remoteData` to contain a string looking like
+// We expect the git data to contain a string looking like
 // `ref: refs/heads/main	HEAD`
 // and this function would return `main`.
-func determineDefaultBranch(remoteData string) (string, error) {
+func determineDefaultBranch(remoteName string) (string, error) {
 	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
 	if defaultBranch != "" {
 		return defaultBranch, nil
+	}
+
+	remoteData, err := runGit("ls-remote", "--symref", remoteName)
+	if err != nil {
+		return "", status.WrapErrorf(err, "git ls-remote --symref %s", remoteName)
 	}
 
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
@@ -332,27 +337,14 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	// Fetching remote data from GitHub can be slow. If we don't need the data
-	// because the user has passed in enough information manually, skip the fetch.
-	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
-	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
-	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
-	var remoteData string
-	if shouldFetchRemote {
-		remoteData, err = runGit("ls-remote", "--symref", remote.name)
-		if err != nil {
-			return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
-		}
+	defaultBranch, err := determineDefaultBranch(remote.name)
+	if err != nil {
+		return nil, status.WrapError(err, "get default branch")
 	}
 
-	branch, commit, err := getBaseBranchAndCommit(remoteData)
+	branch, commit, err := getBaseBranchAndCommit(remote.name, defaultBranch)
 	if err != nil {
 		return nil, status.WrapError(err, "get base branch and commit")
-	}
-
-	defaultBranch, err := determineDefaultBranch(remoteData)
-	if err != nil {
-		log.Warnf("Failed to fetch default branch: %s", err)
 	}
 
 	repoConfig := &RepoConfig{
@@ -373,11 +365,8 @@ func Config() (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
-// getBaseBranchAndCommit returns the git branch and commit that the remote run
-// should be based off
-//
-// remoteData is the output from `git remote show origin`
-func getBaseBranchAndCommit(remoteData string) (branch string, commit string, err error) {
+// getBaseBranchAndCommit returns the git branch and commit that should be fetched on the remote runner.
+func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch string, commit string, err error) {
 	branch = *runFromBranch
 	commit = *runFromCommit
 	if branch != "" || commit != "" {
@@ -389,20 +378,17 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 		return "", "", fmt.Errorf("get current ref: %w", err)
 	}
 
-	currentBranchExistsRemotely := branchExistsRemotely(remoteData, currentBranch)
+	currentBranchExistsRemotely, err := branchTrackedRemotely(remoteName, currentBranch)
+	if err != nil {
+		log.Warnf("Failed to check if branch %s exists remotely. Falling back to running on default branch: %s", currentBranch, err)
+	}
 	if currentBranchExistsRemotely {
-		currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
-		if err != nil {
-			return "", "", status.WrapError(err, "get current commit hash")
-		}
-		currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
-
-		remoteCommitOutput, err := runGit("branch", "-r", "--contains", currentCommitHash)
-		if err != nil {
-			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
-		}
-		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", currentBranch))
+		currentCommitExistsRemotely := commitTrackedInRemoteBranch(remoteName, currentBranch, "HEAD")
 		if currentCommitExistsRemotely {
+			currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
+			if err != nil {
+				return "", "", status.WrapError(err, "get current commit hash")
+			}
 			branch = currentBranch
 			commit = currentCommitHash
 		}
@@ -412,10 +398,6 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 	// not be able to fetch it. In this case, use the default branch for the repo.
 	// Your local changes will be applied as a patchset to the remote runner.
 	if branch == "" || commit == "" {
-		defaultBranch, err := determineDefaultBranch(remoteData)
-		if err != nil {
-			return "", "", status.WrapError(err, "get default branch")
-		}
 		branch = defaultBranch
 
 		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
@@ -451,32 +433,35 @@ func getCurrentRef() (string, error) {
 	return strings.TrimSpace(matches[1]), nil
 }
 
-// branchExistsRemotely parses `remoteData` (the output from “git ls-remote --symref origin)
-// and returns whether `branch` is tracked remotely.
+// branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
+// the local git state.
 //
-// If the branch is tracked remotely, we expect `remoteData` to contain a string looking like
-// `abc123	refs/heads/my_branch`
-func branchExistsRemotely(remoteData string, branch string) bool {
-	regex := fmt.Sprintf("\\brefs/heads/%s\\b", regexp.QuoteMeta(branch))
-	re := regexp.MustCompile(regex)
-	return re.MatchString(remoteData)
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local
+// git state hasn't been updated, though this case should be rare.
+func branchTrackedRemotely(remoteName string, branch string) (bool, error) {
+	ref := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
+	_, err := runGit("show-ref", "--verify", ref)
+	if err != nil {
+		if strings.Contains(err.Error(), "not a valid ref") {
+			return false, nil
+		}
+		return false, status.WrapErrorf(err, "git show-ref --verify %s", ref)
+	}
+	return true, nil
 }
 
-// getHeadCommitForRemoteBranch parses `remoteData` (the output from “git ls-remote --symref origin)
-// and returns the commit at HEAD for the remote branch.
+// commitTrackedInRemoteBranch returns whether the given commit is tracked in the remote branch.
+// It is used as a proxy for whether the commit exists remotely, and can be fetched on the remote runner.
 //
-//	We expect `remoteData` to contain a string looking like
-//
-// `abc123	refs/heads/my_branch`
-// and this function would return `abc123`.
-func getHeadCommitForRemoteBranch(remoteData string, branch string) (string, error) {
-	regex := `\n(\S+)\s+refs/heads/` + branch + `\n`
-	re := regexp.MustCompile(regex)
-	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
-	}
-	return "", status.NotFoundErrorf("failed to get HEAD commit for remote branch %s from:\n%s", branch, remoteData)
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local git state hasn't been updated, though this case should be rare.
+func commitTrackedInRemoteBranch(remoteName, branch, commit string) bool {
+	remoteTrackingRef := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
+	_, err := runGit("merge-base", "--is-ancestor", commit, remoteTrackingRef)
+	return err == nil
 }
 
 // getHeadCommitForLocalBranch returns the commit at HEAD for the local branch.
