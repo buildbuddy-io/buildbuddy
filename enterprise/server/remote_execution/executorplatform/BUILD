@@ -14,6 +14,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/platform",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/usageutil",
     ],

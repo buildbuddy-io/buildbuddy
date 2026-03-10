@@ -408,3 +408,80 @@ The following `exec_properties` are supported:
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
+
+### Action command modification
+
+The following properties allow modifying the action's command before it is executed.
+
+- `extra-args`: a comma-separated list of additional arguments to append to
+  the action's command-line arguments. For example, `"extra-args": "--verbose,--output=/tmp/out"`.
+
+- `env-overrides`: a comma-separated list of environment variable assignments
+  (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
+  For example, `"env-overrides": "FOO=bar,BAZ=qux"`.
+
+- `run-under`: an executable (and optional arguments) to use as a wrapper
+  for the action's command. The wrapper tokens are prepended to the
+  command's arguments, so the original executable becomes the first
+  argument of the wrapper. For example, if the action normally runs
+  `["my_test", "--test-arg"]`, setting
+  `"run-under": "tools/trace_wrapper.sh --verbose"` will instead run
+  `["tools/trace_wrapper.sh", "--verbose", "my_test", "--test-arg"]`.
+
+  The value is shell-tokenized (using the same rules as a POSIX shell),
+  so quoted strings and spaces are handled intuitively:
+
+  ```
+  "run-under": "tools/wrapper.sh 'arg with spaces'"
+  ```
+
+  becomes `["tools/wrapper.sh", "arg with spaces", ...]`.
+
+  The path to the wrapper executable must be either relative to the
+  action's working directory (execroot), or absolute.
+
+  To restrict wrapping to test actions only, use the `test.` prefix:
+
+  ```python title="BUILD"
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],
+      exec_properties = {
+          "test.run-under": "tools/trace_wrapper.sh",
+      },
+  )
+  ```
+
+  :::note
+
+  The wrapper executable must be present in the action's input tree (the
+  execroot). Bazel does **not** automatically include files referenced in
+  `exec_properties` values as inputs — you must declare the wrapper as an
+  explicit dependency, typically via `data`:
+
+  ```python
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],   # stages the wrapper in the execroot
+      exec_properties = {
+          "test.run-under": "tools/trace_wrapper.sh",
+      },
+  )
+  ```
+
+  :::
+
+  :::note
+
+  The value must be a path to the wrapper in the execroot, not a Bazel
+  label. For a source file committed to the repository, this is simply the
+  workspace-relative path (e.g. `tools/trace_wrapper.sh`). For a compiled
+  binary, the path includes the output configuration and must be spelled
+  out explicitly (e.g. `bazel-out/k8-fastbuild/bin/tools/trace_wrapper`).
+  You can obtain the correct path with
+  [`$(execpath //tools:trace_wrapper)`](https://bazel.build/reference/be/make-variables#predefined_label_variables)
+  inside a Starlark macro.
+
+  :::

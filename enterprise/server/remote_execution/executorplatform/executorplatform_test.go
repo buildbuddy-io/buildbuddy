@@ -321,6 +321,53 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	require.Equal(t, expectedCmdText, commandText)
 }
 
+func TestRunUnder(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		runUnder     string
+		initialArgs  []string
+		expectedArgs []string
+	}{
+		{
+			name:         "single token",
+			runUnder:     "tools/wrapper.sh",
+			initialArgs:  []string{"./some_test", "--test-arg"},
+			expectedArgs: []string{"tools/wrapper.sh", "./some_test", "--test-arg"},
+		},
+		{
+			name:         "multiple tokens",
+			runUnder:     "tools/wrapper.sh --flag",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "--flag", "./some_test"},
+		},
+		{
+			name:         "quoted argument with spaces",
+			runUnder:     "tools/wrapper.sh 'with spaces'",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "with spaces", "./some_test"},
+		},
+		{
+			name:         "leading and trailing whitespace stripped",
+			runUnder:     "  tools/wrapper.sh  ",
+			initialArgs:  []string{"./some_test"},
+			expectedArgs: []string{"tools/wrapper.sh", "./some_test"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "run-under", Value: tc.runUnder},
+			}}
+			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.NoError(t, err)
+			command := &repb.Command{Arguments: tc.initialArgs}
+			env := testenv.GetTestEnv(t)
+			err = ApplyOverrides(env, bare, platformProps, command)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedArgs, command.Arguments)
+		})
+	}
+}
+
 func TestExtraEnvVars(t *testing.T) {
 	for _, tc := range []struct {
 		name            string

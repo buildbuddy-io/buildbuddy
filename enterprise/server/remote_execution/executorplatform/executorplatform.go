@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
@@ -240,6 +241,14 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
+
+	if platformProps.RunUnder != "" {
+		tokens, err := shlex.Split(platformProps.RunUnder)
+		if err != nil {
+			return status.InvalidArgumentErrorf("run-under: failed to parse %q: %s", platformProps.RunUnder, err)
+		}
+		command.Arguments = append(tokens, command.Arguments...)
+	}
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
 	for _, e := range additionalEnvVars {
