@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
 
       - name: Restore caches
         id: cache-restore
@@ -40,6 +42,50 @@ jobs:
         with:
           branch: gh-pages
           folder: website/build
+
+      - name: Build notification if there are new changelog entries
+        id: changelog-msg
+        shell: bash
+        run: |
+          prev_sha="${{ github.event.before }}"
+          modified_changelog_files=$(
+            git diff --name-status "$prev_sha" "${{ github.sha }}" -- "website/changelog/*.md" "website/changelog/*.mdx" \
+              | awk '$1 == "A" {print $2}'
+          )
+
+          if [[ -z "$modified_changelog_files" ]]; then
+            echo "No newly added changelog entries."
+            exit 0
+          fi
+
+          msg="*New changelog entries added:*\n"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            slug="$(basename "$file")"
+            slug="${slug%.*}"
+            msg="${msg}• https://www.buildbuddy.io/changelog/${slug}\n"
+          done <<< "$modified_changelog_files"
+
+          {
+            echo "text<<EOF"
+            echo -e "$msg"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post to Slack
+        if: steps.changelog-msg.outputs.text != ''
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: '#1f883d',
+                text: `${{ steps.changelog-msg.outputs.text }}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CHANGELOG_WEBHOOK_URL }}
 
       - name: Save caches
         uses: ./.github/actions/cache-save
