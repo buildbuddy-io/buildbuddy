@@ -58,9 +58,10 @@ import (
 const (
 	BuildBuddyArtifactDir = "bb-out"
 
-	escapeSeq                  = "\u001B["
-	gitConfigSection           = "buildbuddy"
-	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	escapeSeq                         = "\u001B["
+	gitConfigSection                  = "buildbuddy"
+	gitConfigRemoteBazelRemote        = "remote-bazel-remote-name"
+	gitConfigRemoteBazelDefaultBranch = "remote-bazel-default-branch"
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
@@ -253,29 +254,64 @@ func parseRemote(s string) (*gitRemote, error) {
 
 }
 
-// determineDefaultBranch parses the output from `git ls-remote --symref origin`
-// and returns the HEAD branch for the repo (often `main` or `master).
+// determineDefaultBranch returns the HEAD branch for the repo (often `main` or `master`).
 //
-// We expect the git data to contain a string looking like
-// `ref: refs/heads/main	HEAD`
-// and this function would return `main`.
+// Checks local state first and only falls back to `git ls-remote` when needed.
 func determineDefaultBranch(remoteName string) (string, error) {
 	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
 	if defaultBranch != "" {
 		return defaultBranch, nil
 	}
 
-	remoteData, err := runGit("ls-remote", "--symref", remoteName)
-	if err != nil {
-		return "", status.WrapErrorf(err, "git ls-remote --symref %s", remoteName)
+	cachedDefaultBranch, _ := storage.ReadRepoConfig(gitConfigRemoteBazelDefaultBranch)
+	if cachedDefaultBranch != "" {
+		return cachedDefaultBranch, nil
 	}
 
+	// Fast path: try to read refs/remotes/<remote>/HEAD from local refs.
+	defaultBranchRef, err := runGit("symbolic-ref", "--short", fmt.Sprintf("refs/remotes/%s/HEAD", remoteName))
+	if err == nil {
+		defaultBranchRef = strings.TrimSpace(defaultBranchRef)
+		parts := strings.SplitN(defaultBranchRef, "/", 2)
+		if len(parts) == 2 {
+			defaultBranch = parts[1]
+			if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+				log.Warnf("Failed to cache default branch %q in .git/config: %s", defaultBranch, err)
+			}
+			return defaultBranch, nil
+		}
+		log.Debugf("Unexpected remote HEAD ref %q", defaultBranchRef)
+	}
+	if err != nil {
+		log.Debugf("Failed to parse local remote HEAD ref: %s", err)
+	}
+
+	// Secondary local fallback: check common default branch names in remote-tracking refs.
+	for _, candidate := range []string{"main", "master"} {
+		exists, _ := branchTrackedRemotely(remoteName, candidate)
+		if exists {
+			if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, candidate); err != nil {
+				log.Warnf("Failed to cache default branch %q in .git/config: %s", candidate, err)
+			}
+			return candidate, nil
+		}
+	}
+
+	// Last resort: query the remote. This is slow and should only be used as a fallback.
+	remoteData, err := runGit("ls-remote", "--symref", remoteName, "HEAD")
+	if err != nil {
+		return "", status.WrapErrorf(err, "git ls-remote --symref %s HEAD", remoteName)
+	}
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
+	if len(match) < 2 {
+		return "", fmt.Errorf("failed to parse default branch from:\n%s", remoteData)
 	}
-	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
+	defaultBranch = match[1]
+	if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+		log.Warnf("Failed to cache default branch %q in .git/config: %s", defaultBranch, err)
+	}
+	return defaultBranch, nil
 }
 
 func runGit(args ...string) (string, error) {
