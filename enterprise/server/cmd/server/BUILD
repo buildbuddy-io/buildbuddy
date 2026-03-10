@@ -4,9 +4,9 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_source")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
+load("@rules_img//img:layer.bzl", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@tar.bzl", "mtree_mutate", "mtree_spec", "mutate", "tar")
 load("//rules:utils.bzl", "runfiles_directory")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
@@ -105,9 +105,15 @@ go_library(
 BINARY_NAME = "buildbuddy"
 
 filegroup(
-    name = "runfiles",
+    name = "licenses",
     data = [
         "//enterprise:licenses",
+    ],
+)
+
+filegroup(
+    name = "runfiles",
+    data = [
         "//enterprise/app:app_bundle",
         "//enterprise/app:sha",
         "//enterprise/app:style",
@@ -131,8 +137,8 @@ go_binary(
         "--app_directory=/enterprise/app",
     ],
     data = [
-        ":runfiles",
         ":config_files",
+        ":runfiles",
     ],
     embed = [":server_lib"],
 )
@@ -146,15 +152,27 @@ pkg_tar(
 )
 
 pkg_tar(
+    name = "licenses_tar",
+    srcs = [
+        ":licenses",
+    ],
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
+)
+
+pkg_tar(
     name = "runfiles_tar",
     srcs = [
         ":runfiles",
     ],
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
-    include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
 )
 
 pkg_tar(
@@ -162,11 +180,11 @@ pkg_tar(
     srcs = [
         ":config_files",
     ],
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
-    include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
 )
 
 pkg_tar(
@@ -182,13 +200,28 @@ pkg_tar(
 )
 
 flatten(
-    name = "base_image_layer",
-    compress = "gzip",
+    name = "base_image_tar",
     tars = [
+        ":licenses_tar",
         ":binary_tar",
         ":runfiles_tar",
         ":symlinks_tar",
     ],
+)
+
+layer_from_tar(
+    name = "base_image_layer",
+    src = "base_image_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise Buildbuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the buildbuddy binary, runfiles, and symlinks " +
+            "necessary to run the enterprise buildbuddy server. Does not " +
+            "include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "Buildbuddy",
+    },
+    compress = "gzip",
 )
 
 image_manifest(
@@ -205,11 +238,23 @@ image_manifest(
     ],
 )
 
+layer_from_tar(
+    name = "config_files_layer",
+    src = "config_files_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise Buildbuddy Configuration (FOSS)",
+        "org.opencontainers.image.description": (
+            "Contains the FOSS buildbuddy enterprise configuration files."
+        ),
+        "org.opencontainers.image.vendor": "Buildbuddy",
+    },
+)
+
 image_manifest(
     name = "image_manifest",
     base = ":base_image_manifest",
     layers = [
-        ":config_files_tar",
+        ":config_files_layer",
     ],
 )
 
