@@ -2,6 +2,7 @@
 
 load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "java_keystore", "passwd")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
+load("@rules_img//img:layer.bzl", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
 
 package(default_visibility = ["//visibility:public"])
@@ -48,8 +49,7 @@ cacerts(
 
 [
     flatten(
-        name = "layer_%s" % arch,
-        compress = "gzip",
+        name = "tar_%s" % arch,
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -65,6 +65,32 @@ cacerts(
             ":groups",
             ":passwd",
             ":ca_certificates",
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
+
+[
+    layer_from_tar(
+        name = "layer_%s" % arch,
+        src = "tar_%s" % arch,
+        annotations = {
+            "org.opencontainers.image.title": "Distroless static (debian13)",
+            "org.opencontainers.image.description": (
+                "Minimal debian13 environment"
+            ),
+            "org.opencontainers.image.vendor": "Buildbuddy",
+        },
+        compress = "gzip",
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
         ],
     )
     for arch in [
