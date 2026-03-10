@@ -1238,7 +1238,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 		}
 		otherReplicaStores = filtered
 		for _, candidate := range candidateStores {
-			if replicasByZone[candidate.usage.GetNode().GetZone()] >= targetMinReplicasPerZone {
+			if replicasByZone[candidate.usage.GetNode().GetZone()] > targetMinReplicasPerZone {
 				delete(candidateStores, candidate.nhid)
 			}
 		}
