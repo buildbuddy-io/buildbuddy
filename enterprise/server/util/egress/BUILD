@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//server/metrics",
         "//server/util/claims",
+        "//server/util/lru",
         "//server/util/status",
         "@org_golang_google_grpc//stats",
     ],

@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/stats"
 
@@ -19,9 +20,10 @@ import (
 )
 
 const (
-	otherProvider  = "other"
 	unknownGroupID = "unknown"
+	otherProvider  = "other"
 	unknownRegion  = "unknown"
+	cacheMaxSize   = 100_000
 )
 
 type destination struct {
@@ -36,13 +38,15 @@ type ipRange struct {
 
 type classifier struct {
 	ipRanges []ipRange
-	cache    sync.Map
+	cacheMu  sync.Mutex
+	cache    *lru.LRU[destination]
 }
 
 type grpcStatsHandler struct {
 	classifier *classifier
 }
 
+// Context keys for storing peer information in context.
 type connDestinationKey struct{}
 type rpcMetricLabelsKey struct{}
 
@@ -59,21 +63,21 @@ var (
 	//go:embed gcp/gcp.csv
 	gcpRangesCSV []byte
 
-	classifierOnce sync.Once
-	cachedMatcher  *classifier
-	cachedErr      error
+	classifierOnce   sync.Once
+	cachedClassifier *classifier
+	cachedErr        error
 )
 
 // NewStatsHandler returns a gRPC server stats handler that classifies response
 // bytes by destination cloud provider and region using the embedded IP ranges.
 func NewStatsHandler() (stats.Handler, error) {
 	classifierOnce.Do(func() {
-		cachedMatcher, cachedErr = newClassifier()
+		cachedClassifier, cachedErr = newClassifier()
 	})
 	if cachedErr != nil {
 		return nil, cachedErr
 	}
-	return &grpcStatsHandler{classifier: cachedMatcher}, nil
+	return &grpcStatsHandler{classifier: cachedClassifier}, nil
 }
 
 func (h *grpcStatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
@@ -141,7 +145,14 @@ func newClassifier() (*classifier, error) {
 	sort.Slice(ranges, func(i, j int) bool {
 		return ranges[i].prefix.Bits() > ranges[j].prefix.Bits()
 	})
-	return &classifier{ipRanges: ranges}, nil
+	cache, err := lru.NewLRU(&lru.Config[destination]{
+		MaxSize: cacheMaxSize,
+		SizeFn:  func(destination) int64 { return 1 },
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "create egress classifier cache")
+	}
+	return &classifier{ipRanges: ranges, cache: cache}, nil
 }
 
 func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
@@ -189,17 +200,24 @@ func (c *classifier) classify(addr net.Addr) destination {
 		return destination{provider: otherProvider, region: unknownRegion}
 	}
 	cacheKey := ip.String()
-	if value, ok := c.cache.Load(cacheKey); ok {
-		return value.(destination)
+	c.cacheMu.Lock()
+	if value, ok := c.cache.Get(cacheKey); ok {
+		c.cacheMu.Unlock()
+		return value
 	}
+	c.cacheMu.Unlock()
 	for _, entry := range c.ipRanges {
 		if entry.prefix.Contains(ip) {
-			c.cache.Store(cacheKey, entry.destination)
+			c.cacheMu.Lock()
+			c.cache.Add(cacheKey, entry.destination)
+			c.cacheMu.Unlock()
 			return entry.destination
 		}
 	}
 	unknown := destination{provider: otherProvider, region: unknownRegion}
-	c.cache.Store(cacheKey, unknown)
+	c.cacheMu.Lock()
+	c.cache.Add(cacheKey, unknown)
+	c.cacheMu.Unlock()
 	return unknown
 }
 
