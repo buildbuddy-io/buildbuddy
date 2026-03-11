@@ -90,8 +90,12 @@ func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddr
 }
 
 func spliceBlobWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.SpliceBlobRequest) error {
+	// SpliceBlob verifies all chunks server-side (read + hash), so it needs
+	// more time than a typical CAS RPC. Scale by chunk count, clamped to
+	// [casRPCTimeout, 10min].
+	timeout := min(max(250*time.Millisecond*time.Duration(len(req.GetChunkDigests())), *casRPCTimeout), 10*time.Minute)
 	_, err := retry.Do(ctx, retryOptions("SpliceBlob"), func(ctx context.Context) (*repb.SpliceBlobResponse, error) {
-		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return casClient.SpliceBlob(ctx, req)
 	})

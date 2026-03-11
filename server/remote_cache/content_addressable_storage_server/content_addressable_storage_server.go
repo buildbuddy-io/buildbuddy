@@ -1145,6 +1145,15 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 // SpliceBlob is used to tell the server how it can assemble a blob from a list of CAS digests.
 // The server will verify the chunks assembled from the digests match the expected blob digest.
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	start := time.Now()
+	rsp, err := s.spliceBlob(ctx, req)
+	metrics.SpliceBlobDurationUsec.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Observe(float64(time.Since(start).Microseconds()))
+	return rsp, err
+}
+
+func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err

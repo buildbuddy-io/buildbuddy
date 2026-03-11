@@ -997,6 +997,16 @@ var (
 		TreeCacheOperation,
 	})
 
+	SpliceBlobDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "splice_blob_duration_usec",
+		Buckets:   durationUsecBuckets(20*time.Millisecond, 10*time.Minute, 1.4),
+		Help:      "Duration of the full SpliceBlob RPC handler, in **microseconds**.",
+	}, []string{
+		StatusLabel,
+	})
+
 	ChunkedManifestValidationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
