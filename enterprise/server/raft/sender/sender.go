@@ -122,7 +122,7 @@ func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 // fetchRangeDescriptorsFromMetaRange looks up range descriptors for
 // one or more keys in a single batch RPC to the meta range.
 func (s *Sender) fetchRangeDescriptorsFromMetaRange(ctx context.Context, keysToFetch [][]byte) (returnedRDs []*rfpb.RangeDescriptor, returnedErr error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartSpan(ctx)
 	spn.SetAttributes(attribute.Int("num_keys", len(keysToFetch)))
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
@@ -155,7 +155,7 @@ func (s *Sender) fetchRangeDescriptorsFromMetaRange(ctx context.Context, keysToF
 		for i, key := range keysToFetch {
 			scanRsp, err := batchRsp.ScanResponse(i)
 			if err != nil {
-				return err
+				return status.WrapErrorf(err, "scan range descriptor for key %q", key)
 			}
 			kvs := scanRsp.GetKvs()
 			if len(kvs) == 0 {
@@ -569,10 +569,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		remainingKeys = nil
 
 		var mu sync.Mutex
-		var iterRsps []any
-		var iterRemainingKeys []*KeyMeta
-		var iterLastError error
-
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(100)
 		for _, rk := range keysByRange {
@@ -591,8 +587,8 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 						return err
 					}
 					mu.Lock()
-					iterRemainingKeys = append(iterRemainingKeys, rk.keys...)
-					iterLastError = err
+					remainingKeys = append(remainingKeys, rk.keys...)
+					lastError = err
 					mu.Unlock()
 				} else {
 					if i != 0 {
@@ -600,7 +596,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 						s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
 					}
 					mu.Lock()
-					iterRsps = append(iterRsps, rangeRsp)
+					rsps = append(rsps, rangeRsp)
 					mu.Unlock()
 				}
 				return nil
@@ -611,14 +607,10 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 			return nil, err
 		}
 
-		rsps = append(rsps, iterRsps...)
-		remainingKeys = iterRemainingKeys
-		lastError = iterLastError
-		skipRangeCache = len(iterRemainingKeys) > 0
-
 		if len(remainingKeys) == 0 {
 			return rsps, nil
 		}
+		skipRangeCache = true
 	}
 	return nil, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
 }
