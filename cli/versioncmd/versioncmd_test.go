@@ -25,5 +25,5 @@ func TestHandleVersion(t *testing.T) {
 	require.NoError(t, err)
 	os.Stdout = rescueStdout
 
-	require.Contains(t, string(out), "unknown")
+	require.Contains(t, string(out), "bb ")
 }

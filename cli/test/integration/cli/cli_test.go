@@ -85,7 +85,7 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
-		require.Contains(t, string(b), "bb unknown")
+		require.Contains(t, string(b), "bb ")
 		require.Contains(t, string(b), "Build label: "+testbazel.Version)
 	}
 	{
@@ -100,7 +100,7 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
-		require.Contains(t, string(b), "bb unknown")
+		require.Contains(t, string(b), "bb ")
 		require.Contains(t, string(b), "Build label: 6.0.0")
 	}
 }

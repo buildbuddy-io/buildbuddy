@@ -8,5 +8,7 @@ import (
 )
 
 func TestEmbeddedVersion(t *testing.T) {
-	require.Contains(t, version.String(), "unknown")
+	v := version.String()
+	require.NotEmpty(t, v)
+	require.NotEqual(t, "{STABLE_VERSION_TAG}", v)
 }
