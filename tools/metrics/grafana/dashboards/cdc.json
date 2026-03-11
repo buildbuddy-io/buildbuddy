@@ -794,7 +794,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "Histogram heatmap of gRPC server handling duration for /build.bazel.remote.execution.v2.ContentAddressableStorage/SpliceBlob requests",
+      "description": "Histogram heatmap of SpliceBlob RPC duration (custom metric with buckets up to 10min)",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -849,7 +849,7 @@
         "yAxis": {
           "axisPlacement": "left",
           "reverse": false,
-          "unit": "s"
+          "unit": "µs"
         }
       },
       "targets": [
@@ -859,7 +859,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${app_region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SpliceBlob\"}[${window}]))",
+          "expr": "sum by (le) (rate(buildbuddy_remote_cache_splice_blob_duration_usec_bucket{region=\"${app_region}\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -867,7 +867,7 @@
           "refId": "A"
         }
       ],
-      "title": "SpliceBlob gRPC Server Handling Duration Heatmap",
+      "title": "SpliceBlob Duration Heatmap",
       "type": "heatmap"
     },
     {
