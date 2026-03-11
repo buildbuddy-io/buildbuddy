@@ -19,6 +19,8 @@ import (
 	_ "embed"
 )
 
+// TODO(iain): SJC / MacStadium / GitHub IPs
+
 const (
 	unknownGroupID = "unknown"
 	otherProvider  = "other"
@@ -38,7 +40,7 @@ type ipRange struct {
 
 type classifier struct {
 	ipRanges []ipRange
-	cacheMu  sync.Mutex
+	mu       sync.Mutex
 	cache    *lru.LRU[destination]
 }
 
@@ -195,24 +197,24 @@ func (c *classifier) classify(addr net.Addr) destination {
 		return destination{provider: otherProvider, region: unknownRegion}
 	}
 	cacheKey := ip.String()
-	c.cacheMu.Lock()
+	c.mu.Lock()
 	if value, ok := c.cache.Get(cacheKey); ok {
-		c.cacheMu.Unlock()
+		c.mu.Unlock()
 		return value
 	}
-	c.cacheMu.Unlock()
+	c.mu.Unlock()
 	for _, entry := range c.ipRanges {
 		if entry.prefix.Contains(ip) {
-			c.cacheMu.Lock()
+			c.mu.Lock()
 			c.cache.Add(cacheKey, entry.destination)
-			c.cacheMu.Unlock()
+			c.mu.Unlock()
 			return entry.destination
 		}
 	}
 	unknown := destination{provider: otherProvider, region: unknownRegion}
-	c.cacheMu.Lock()
+	c.mu.Lock()
 	c.cache.Add(cacheKey, unknown)
-	c.cacheMu.Unlock()
+	c.mu.Unlock()
 	return unknown
 }
 
