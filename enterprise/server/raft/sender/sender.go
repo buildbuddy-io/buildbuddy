@@ -120,7 +120,10 @@ func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 }
 
 // fetchRangeDescriptorsFromMetaRange looks up range descriptors for
-// one or more keys in a single batch RPC to the meta range.
+// one or more keys in a single batch RPC to the meta range. On
+// success, the returned slice has exactly len(keysToFetch) non-nil
+// elements. If any key's descriptor is not found, an error is
+// returned.
 func (s *Sender) fetchRangeDescriptorsFromMetaRange(ctx context.Context, keysToFetch [][]byte) (returnedRDs []*rfpb.RangeDescriptor, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	spn.SetAttributes(attribute.Int("num_keys", len(keysToFetch)))
@@ -556,6 +559,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
+	var mu sync.Mutex
 	var rsps []any
 	remainingKeys := keys
 	var lastError error
@@ -568,7 +572,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// We'll repopulate remaining keys below.
 		remainingKeys = nil
 
-		var mu sync.Mutex
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(100)
 		for _, rk := range keysByRange {
