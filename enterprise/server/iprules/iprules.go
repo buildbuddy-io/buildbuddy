@@ -8,9 +8,9 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/iprules_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -31,85 +30,17 @@ import (
 
 var (
 	enableIPRules = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
-	cacheTTL      = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
 	allowIPV6     = flag.Bool("auth.ip_rules.allow_ipv6", false, "If true, IPv6 rules will be allowed.")
 )
-
-const (
-	// The number of IP rules (net.IPNet instances) that we will store in memory.
-	cacheSize = 100_000
-)
-
-type ipRuleCacheEntry struct {
-	allowed      []*net.IPNet
-	expiresAfter time.Time
-}
-
-type ipRuleCache interface {
-	Add(groupID string, allowed []*net.IPNet)
-	Get(groupID string) ([]*net.IPNet, bool)
-}
-
-type memIpRuleCache struct {
-	mu  sync.Mutex
-	lru interfaces.LRU[*ipRuleCacheEntry]
-}
-
-func (c *memIpRuleCache) Get(groupID string) (allowed []*net.IPNet, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.lru.Get(groupID)
-	if !ok {
-		return nil, ok
-	}
-	if time.Now().After(entry.expiresAfter) {
-		c.lru.Remove(groupID)
-		return nil, false
-	}
-	return entry.allowed, true
-}
-
-func (c *memIpRuleCache) Add(groupID string, allowed []*net.IPNet) {
-	c.mu.Lock()
-	c.lru.Add(groupID, &ipRuleCacheEntry{allowed: allowed, expiresAfter: time.Now().Add(*cacheTTL)})
-	c.mu.Unlock()
-}
-
-type noopIpRuleCache struct {
-}
-
-func (c *noopIpRuleCache) Add(groupID string, allowed []*net.IPNet) {
-}
-
-func (c *noopIpRuleCache) Get(groupID string) ([]*net.IPNet, bool) {
-	return nil, false
-}
-
-func newIpRuleCache() (ipRuleCache, error) {
-	if *cacheTTL == 0 {
-		return &noopIpRuleCache{}, nil
-	}
-	config := &lru.Config[*ipRuleCacheEntry]{
-		MaxSize: cacheSize,
-		SizeFn:  func(v *ipRuleCacheEntry) int64 { return int64(len(v.allowed)) },
-	}
-	l, err := lru.NewLRU[*ipRuleCacheEntry](config)
-	if err != nil {
-		return nil, err
-	}
-	return &memIpRuleCache{
-		lru: l,
-	}, nil
-}
 
 type Service struct {
 	env environment.Env
 
-	cache ipRuleCache
+	cache iprules_util.Cache
 }
 
 func New(env environment.Env) (*Service, error) {
-	cache, err := newIpRuleCache()
+	cache, err := iprules_util.NewCache()
 	if err != nil {
 		return nil, err
 	}

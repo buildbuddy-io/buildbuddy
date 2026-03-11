@@ -7,6 +7,7 @@ go_library(
     srcs = ["iprules.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules",
     deps = [
+        "//enterprise/server/util/iprules_util",
         "//proto:iprules_go_proto",
         "//proto:server_notification_go_proto",
         "//server/environment",
@@ -19,7 +20,6 @@ go_library(
         "//server/util/clientip",
         "//server/util/db",
         "//server/util/log",
-        "//server/util/lru",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
     ],
