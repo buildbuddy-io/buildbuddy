@@ -56,6 +56,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -308,6 +309,19 @@ func main() {
 	if err := os.MkdirAll(runner.GetBuildRoot(), 0755); err != nil {
 		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
 	}
+
+	log.Infof("VVV dialing xds endpoint")
+	conn, err := grpc.Dial("xds:///cache-proxy-service.cache-proxy-dev.svc.cluster.local:1985", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("VVV Could not connect to server: %s", err)
+	}
+	log.Infof("VVV sending caps request")
+	client := repb.NewCapabilitiesClient(conn)
+	rsp, err := client.GetCapabilities(context.Background(), &repb.GetCapabilitiesRequest{})
+	if err != nil {
+		log.Fatalf("VVV Error getting capabilities: %v", err)
+	}
+	log.Infof("VVV got capabilities: %v", rsp)
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
