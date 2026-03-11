@@ -112,11 +112,6 @@ func (h *grpcStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			return
 		}
 		h.record(ctx, st.WireLength)
-	case *stats.OutTrailer:
-		if st.IsClient() || st.WireLength <= 0 {
-			return
-		}
-		h.record(ctx, st.WireLength)
 	}
 }
 
