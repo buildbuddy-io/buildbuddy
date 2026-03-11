@@ -160,6 +160,7 @@ jobs:
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           path: buildbuddy
+          fetch-depth: 0
 
       - name: Build Artifacts
         id: build
@@ -183,7 +184,7 @@ jobs:
           bazelisk build \
               --repository_cache='~/repo-cache/' \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              --//cli/version:cli_version="$VERSION" \
+              --stamp \
               --compilation_mode=opt \
               --strip=always \
               ${{ matrix.flags }} \

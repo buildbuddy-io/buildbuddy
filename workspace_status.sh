@@ -21,6 +21,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "GIT_TREE_STATUS Unknown"
   echo "STABLE_VERSION_TAG dev"
   echo "STABLE_COMMIT_SHA dev"
+  echo "STABLE_CLI_VERSION_TAG unknown"
   exit 0
 fi
 
@@ -46,3 +47,6 @@ echo "GIT_TREE_STATUS $git_tree_status"
 latest_version_tag=$(./tools/latest_version_tag.sh)
 echo "STABLE_VERSION_TAG $latest_version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
+
+latest_cli_version_tag=$(./tools/latest_cli_version_tag.sh)
+echo "STABLE_CLI_VERSION_TAG $latest_cli_version_tag"
