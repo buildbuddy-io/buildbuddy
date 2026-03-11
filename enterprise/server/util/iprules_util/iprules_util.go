@@ -61,7 +61,7 @@ func (c *noopIpRuleCache) Get(groupID string) ([]*net.IPNet, bool) {
 }
 
 func NewCache() (Cache, error) {
-	if *cacheTTL == 0 {
+	if *cacheTTL <= 0 || *cacheSize <= 0 {
 		return &noopIpRuleCache{}, nil
 	}
 	config := &lru.Config[*cacheEntry]{
