@@ -8,6 +8,7 @@ RUN apt-get update && \
       python3 \
       python3-dev \
       python-is-python3 \
+      python3-pip \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
