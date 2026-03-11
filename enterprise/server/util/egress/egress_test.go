@@ -91,3 +91,43 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 		t.Fatalf("metric value = %v, want 0", got)
 	}
 }
+
+func BenchmarkClassifierClassify(b *testing.B) {
+	b.Run("cached_hit", func(b *testing.B) {
+		classifier := newBenchmarkClassifier(b)
+		addr := &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985}
+		classifier.classify(addr)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			classifier.classify(addr)
+		}
+	})
+
+	b.Run("varying_ips", func(b *testing.B) {
+		classifier := newBenchmarkClassifier(b)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			classifier.classify(benchmarkTCPAddr(i))
+		}
+	})
+}
+
+func newBenchmarkClassifier(b *testing.B) *classifier {
+	b.Helper()
+	classifier, err := newClassifier()
+	if err != nil {
+		b.Fatalf("newClassifier() returned error: %v", err)
+	}
+	return classifier
+}
+
+func benchmarkTCPAddr(i int) *net.TCPAddr {
+	return &net.TCPAddr{
+		IP:   net.IPv4(100, 64, byte(i>>8), byte(i)),
+		Port: 1985,
+	}
+}
