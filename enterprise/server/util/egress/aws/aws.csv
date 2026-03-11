@@ -1,4 +1,3 @@
-AWS,REGION,IP-BLOCK
 AWS,eu-west-1,3.4.12.4/32
 AWS,ap-northeast-2,3.5.140.0/22
 AWS,ap-east-2,15.190.244.0/22

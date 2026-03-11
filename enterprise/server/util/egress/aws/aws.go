@@ -60,9 +60,6 @@ func main() {
 	w := csv.NewWriter(output)
 	defer w.Flush()
 
-	if err := w.Write([]string{"AWS", "REGION", "IP-BLOCK"}); err != nil {
-		log.Fatalf("write header: %v", err)
-	}
 	for _, p := range ranges.Prefixes {
 		if err := w.Write([]string{"AWS", p.Region, p.IPPrefix}); err != nil {
 			log.Fatalf("write IPv4 row: %v", err)

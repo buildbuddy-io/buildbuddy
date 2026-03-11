@@ -57,9 +57,6 @@ func main() {
 	w := csv.NewWriter(output)
 	defer w.Flush()
 
-	if err := w.Write([]string{"GCP", "REGION", "IP-BLOCK"}); err != nil {
-		log.Fatalf("write header: %v", err)
-	}
 	for _, p := range ranges.Prefixes {
 		if p.IPv4Prefix != "" {
 			if err := w.Write([]string{"GCP", p.Scope, p.IPv4Prefix}); err != nil {
