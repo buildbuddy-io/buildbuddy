@@ -8,5 +8,5 @@ import (
 )
 
 func TestEmbeddedVersion(t *testing.T) {
-	require.Contains(t, version.String(), "unknown")
+	require.Equal(t, "unknown", version.String())
 }

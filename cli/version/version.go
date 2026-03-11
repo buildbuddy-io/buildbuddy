@@ -2,14 +2,22 @@ package version
 
 import (
 	_ "embed"
+	"strings"
 )
 
-// The bb cli "version" var is generated in this package according to the
-// Bazel flag value --//cli/version:cli_version
+const unknownValue = "unknown"
+const stampedUnknownValue = "{STABLE_CLI_VERSION}"
+
+// The bb CLI version is populated either from the Bazel flag
+// --//cli/version:cli_version or, in stamped builds, from STABLE_CLI_VERSION.
 //
-//go:embed version_flag.txt
-var cliVersionFlag string
+//go:embed version.txt
+var cliVersion string
 
 func String() string {
-	return cliVersionFlag
+	v := strings.TrimSpace(cliVersion)
+	if v == "" || v == stampedUnknownValue {
+		return unknownValue
+	}
+	return v
 }

@@ -19,6 +19,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "COMMIT_SHA dev"
   echo "GIT_BRANCH unknown"
   echo "GIT_TREE_STATUS Unknown"
+  echo "STABLE_CLI_VERSION unknown"
   echo "STABLE_VERSION_TAG dev"
   echo "STABLE_COMMIT_SHA dev"
   exit 0
@@ -43,6 +44,12 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
+latest_cli_version=$(./tools/latest_cli_version.sh)
+if [ -z "$latest_cli_version" ]; then
+  latest_cli_version=unknown
+fi
+echo "STABLE_CLI_VERSION $latest_cli_version"
+
 latest_version_tag=$(./tools/latest_version_tag.sh)
 echo "STABLE_VERSION_TAG $latest_version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
