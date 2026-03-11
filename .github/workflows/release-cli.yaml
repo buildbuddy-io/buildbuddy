@@ -160,6 +160,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: buildbuddy
+          fetch-depth: 0
 
       - name: Restore caches
         id: cache-restore
@@ -190,7 +191,7 @@ jobs:
           bazelisk build \
               --repository_cache='~/repo-cache/' \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              --//cli/version:cli_version="$VERSION" \
+              --stamp \
               --compilation_mode=opt \
               --strip=always \
               ${{ matrix.flags }} \
