@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
+	"github.com/buildbuddy-io/buildbuddy/cli/analyze_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/mcp"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/record"
@@ -48,6 +50,11 @@ func register() {
 			Handler: analyze.HandleAnalyze,
 		},
 		{
+			Name:    "analyze-profile",
+			Help:    "Analyzes a Bazel timing profile and prints a JSON summary.",
+			Handler: analyze_profile.HandleAnalyzeProfile,
+		},
+		{
 			Name:    "ask",
 			Help:    "Asks for suggestions about your last invocation.",
 			Handler: ask.HandleAsk,
@@ -79,6 +86,11 @@ func register() {
 			Name:    "login",
 			Help:    "Configures bb commands to use your BuildBuddy API key.",
 			Handler: login.HandleLogin,
+		},
+		{
+			Name:    "mcp",
+			Help:    "Starts a BuildBuddy MCP server over stdio.",
+			Handler: mcp.HandleMCP,
 		},
 		{
 			Name:    "logout",

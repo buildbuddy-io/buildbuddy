@@ -684,7 +684,6 @@ func BenchmarkFilecacheLink(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for _, node := range nodes {
-					node := node
 					eg.Go(func() error {
 						if rand.Float64() > test.ReadFraction {
 							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))

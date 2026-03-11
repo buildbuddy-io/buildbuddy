@@ -231,6 +231,68 @@ func TestParseUploadResourceName(t *testing.T) {
 	}
 }
 
+func TestParseBytestreamURI(t *testing.T) {
+	validResourceName := "my-instance/blobs/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234"
+	want := digest.NewCASResourceName(
+		&repb.Digest{
+			Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
+			SizeBytes: 1234,
+		},
+		"my-instance",
+		repb.DigestFunction_BLAKE3,
+	)
+
+	testCases := []struct {
+		name    string
+		input   string
+		want    *digest.CASResourceName
+		wantErr bool
+	}{
+		{
+			name:  "bytestream URI",
+			input: "bytestream://remote.buildbuddy.io/" + validResourceName,
+			want:  want,
+		},
+		{
+			name:  "leading slash resource name",
+			input: "/" + validResourceName,
+			want:  want,
+		},
+		{
+			name:  "plain resource name",
+			input: validResourceName,
+			want:  want,
+		},
+		{
+			name:    "empty URI",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "missing resource name",
+			input:   "bytestream://remote.buildbuddy.io",
+			wantErr: true,
+		},
+		{
+			name:    "invalid resource name",
+			input:   "bytestream://remote.buildbuddy.io/not-a-resource-name",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := digest.ParseBytestreamURI(tc.input)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, casrnsEqual(got, tc.want), "got=%s want=%s", got.DownloadString(), tc.want.DownloadString())
+		})
+	}
+}
+
 func TestActionCacheString(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -94,7 +94,6 @@ func getCacheConfig(t *testing.T) *config.ServerConfig {
 func allHealthy(caches ...*metadata.Server) bool {
 	eg := errgroup.Group{}
 	for _, cache := range caches {
-		cache := cache
 		eg.Go(func() error {
 			return cache.Check(context.Background())
 		})
@@ -107,7 +106,6 @@ func parallelShutdown(caches ...*metadata.Server) {
 	eg := errgroup.Group{}
 	ctx := context.Background()
 	for _, cache := range caches {
-		cache := cache
 		eg.Go(func() error {
 			cache.Stop(ctx)
 			return nil
@@ -166,9 +164,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 	}
 
 	for i, config := range configs {
-		i := i
 		lN := joinList[i]
-		joinList := joinList
 		gs, err := gossip.NewWithArgs(config.config.NHID, lN, joinList)
 		require.NoError(t, err)
 		config.config.GossipManager = gs

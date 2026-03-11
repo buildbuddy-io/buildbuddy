@@ -270,7 +270,6 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		go func() {
 			ctx := context.Background()
 			mu.Lock()
-			state := state
 			mu.Unlock()
 			if state != ctrExitedCleanly {
 				if err := r.client.ContainerKill(ctx, cid, "SIGKILL"); err != nil {

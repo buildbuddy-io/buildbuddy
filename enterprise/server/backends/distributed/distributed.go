@@ -991,7 +991,6 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (
 	groupID := groupID(ctx)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
-		bf := bf
 		eg.Go(func() error {
 			start := time.Now()
 			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
@@ -1142,8 +1141,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteFindMissing(gCtx, peer, isolation, resources)
 				peerMissingHashes := make(map[string]struct{})
@@ -1335,8 +1332,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		}
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteGetMulti(gCtx, peer, isolation, resources)
 				mu.Lock()
@@ -1406,7 +1401,6 @@ type multiWriteCloser struct {
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
-		wc := wc
 		eg.Go(func() error {
 			n, err := wc.Write(data)
 			if err != nil {
@@ -1425,8 +1419,6 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 func (mc *multiWriteCloser) Commit() error {
 	var eg errgroup.Group
 	for peer, wc := range mc.peerClosers {
-		wc := wc
-		peer := peer
 		eg.Go(func() error {
 			if err := wc.Commit(); err != nil {
 				return err

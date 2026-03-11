@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//cli/add",
         "//cli/analyze",
+        "//cli/analyze_profile",
         "//cli/ask",
         "//cli/cli_command",
         "//cli/download",
@@ -18,6 +19,7 @@ go_library(
         "//cli/fix",
         "//cli/index",
         "//cli/login",
+        "//cli/mcp",
         "//cli/plugin",
         "//cli/printlog",
         "//cli/record",

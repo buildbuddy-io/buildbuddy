@@ -433,12 +433,10 @@ func (g *DependencyGraph) LongestPath() []string {
 			l := length[n] + 1
 			if l > length[m] {
 				length[m] = l
-				n := n
 				pred[m] = &n
 			}
 			if l > longestPathLength {
 				longestPathLength = l
-				m := m
 				longestPathEnd = &m
 			}
 		}

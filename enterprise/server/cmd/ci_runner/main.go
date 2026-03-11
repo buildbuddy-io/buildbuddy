@@ -1482,8 +1482,6 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	// Output directories in runfiles are symlinks to physical directories.
 	// We upload the real directory, but return the logical directory that the binary expects.
 	for placePath, realPath := range dirs {
-		placePath := placePath
-		realPath := realPath
 		eg.Go(func() error {
 			_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, realPath)
 			if err != nil {

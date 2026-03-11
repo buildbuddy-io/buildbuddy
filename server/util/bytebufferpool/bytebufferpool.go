@@ -46,7 +46,6 @@ type VariableSizePool struct {
 func VariableSize(maxBufferSize int) *VariableSizePool {
 	bp := &VariableSizePool{}
 	for size := 1; ; size *= 2 {
-		size := size
 		bp.pools = append(bp.pools, fixedSize(size))
 		if size >= maxBufferSize {
 			break
@@ -117,7 +116,6 @@ type VariableWriteBufPool struct {
 func NewVariableWriteBufPool(maxBufferSize int) *VariableWriteBufPool {
 	bp := &VariableWriteBufPool{}
 	for size := 1; ; size *= 2 {
-		size := size
 		bp.pools = append(bp.pools, sync.Pool{
 			New: func() any {
 				return newWriterSize(size)

@@ -783,8 +783,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
-		i := i
-		part := part
 		eg.Go(func() error {
 			if err := disk.EnsureDirectoryExists(pc.blobDirectory); err != nil {
 				return err
@@ -3370,7 +3368,6 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{})
 	for _, evictor := range p.evictors {
-		evictor := evictor
 		p.eg.Go(func() error {
 			return evictor.run(p.quitChan)
 		})

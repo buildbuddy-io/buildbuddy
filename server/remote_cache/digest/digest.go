@@ -12,6 +12,7 @@ import (
 	"hash"
 	"io"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -626,6 +627,40 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 		return nil, err
 	}
 	return rn.CheckCAS()
+}
+
+// ParseBytestreamURI parses a bytestream download URI into a CAS resource name.
+//
+// The input may be a full bytestream URI such as:
+//
+//	bytestream://remote.buildbuddy.io/instance/blobs/<hash>/<size>
+//
+// or a plain download resource name path such as:
+//
+//	/instance/blobs/<hash>/<size>
+//
+// The returned resource name is always normalized as a CAS download resource
+// name.
+func ParseBytestreamURI(resourceURI string) (*CASResourceName, error) {
+	resourceURI = strings.TrimSpace(resourceURI)
+	if resourceURI == "" {
+		return nil, status.InvalidArgumentError("empty bytestream URI")
+	}
+
+	resourceName := resourceURI
+	if strings.HasPrefix(resourceURI, "bytestream://") {
+		parsedURL, err := url.Parse(resourceURI)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("parse bytestream URI %q: %s", resourceURI, err)
+		}
+		resourceName = parsedURL.Path
+	}
+
+	resourceName = strings.TrimPrefix(resourceName, "/")
+	if resourceName == "" {
+		return nil, status.InvalidArgumentErrorf("bytestream URI %q does not contain a resource name", resourceURI)
+	}
+	return ParseDownloadResourceName(resourceName)
 }
 
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {

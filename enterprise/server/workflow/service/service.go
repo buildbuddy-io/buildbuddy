@@ -447,7 +447,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wg := sync.WaitGroup{}
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
 	for _, action := range actions {
-		action := action
 		actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 			ActionName: action.Name,
 		}
@@ -1434,7 +1433,6 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 
 	var wg sync.WaitGroup
 	for _, action := range actions {
-		action := action
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
 			return err

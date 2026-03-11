@@ -510,9 +510,6 @@ func (w *Writer) Flush() error {
 		postingLists := w.fieldPostingLists[fieldName]
 		log.Printf("field: %q had %d ngrams", fieldName, len(postingLists))
 		for ngram, docIDs := range postingLists {
-			ngram := ngram
-			fieldName := fieldName
-			docIDs := docIDs
 			eg.Go(func() error {
 				return writePLs(w.postingListKey(ngram, fieldName), docIDs)
 			})

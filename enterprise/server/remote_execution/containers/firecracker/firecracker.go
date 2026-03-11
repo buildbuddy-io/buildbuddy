@@ -903,7 +903,6 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 		perThreadBytes = alignToMultiple(perThreadBytes, storeChunkSizeBytes)
 	}
 	for i := 0; i < concurrency; i++ {
-		i := i
 		offset := perThreadBytes * int64(i)
 		regionEnd := perThreadBytes * int64(i+1)
 		if regionEnd > inInfo.Size() {

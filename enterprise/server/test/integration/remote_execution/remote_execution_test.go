@@ -2231,7 +2231,6 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)
@@ -2329,7 +2328,6 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)

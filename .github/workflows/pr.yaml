@@ -1,3 +1,9 @@
+# This is a non-blocking PR check which runs in parallel to our main workflows
+# found in buildbuddy.yaml at the repo root.
+#
+# It is mostly useful for comparing the performance of GH actions with our own
+# BB workflows product.
+
 name: PR
 
 on:

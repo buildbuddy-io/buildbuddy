@@ -36,7 +36,6 @@ func TestDo(t *testing.T) {
 	usedWorker := ""
 
 	for i := 0; i < numWorkers; i++ {
-		i := i
 		worker := fmt.Sprintf("worker_%d", i)
 		wg.Go(func() error {
 			res, err := c.Do(ctx, key, func() ([]byte, error) {

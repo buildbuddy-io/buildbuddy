@@ -658,7 +658,6 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
-		i := i
 		go func() {
 			defer wg.Done()
 			c := containers[i]
@@ -3404,7 +3403,6 @@ func TestFirecrackerStressIO(t *testing.T) {
 	eg, ctx := errgroup.WithContext(context.Background())
 	eg.SetLimit(concurrency)
 	for i := 1; i <= runs; i++ {
-		i := i
 		eg.Go(func() (err error) {
 			if t.Failed() {
 				return nil

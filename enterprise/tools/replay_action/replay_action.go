@@ -1082,7 +1082,6 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 	}
 	executeErr := make(chan error, *n)
 	for i := 1; i <= *n; i++ {
-		i := i
 		r.executeGroup.Go(func() error {
 			err := execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq, md, action, r.statsCollector)
 			executeErr <- err

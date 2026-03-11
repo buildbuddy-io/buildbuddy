@@ -231,7 +231,6 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
 		// declare local var that shadows loop var for closure capture
-		authConfig := authConfig
 		oidcConfig := &oidc.Config{
 			ClientID:        authConfig.ClientID,
 			SkipExpiryCheck: false,

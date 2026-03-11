@@ -225,7 +225,6 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for name, ck := range checkers {
-		name := name
 		checkFn := ck
 		eg.Go(func() error {
 			err := checkFn.Check(ctx)

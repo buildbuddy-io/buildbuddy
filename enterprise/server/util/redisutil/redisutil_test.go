@@ -611,7 +611,6 @@ func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {
 		{10, 10},
 		{100, 100},
 	} {
-		p := p
 		b.Run(fmt.Sprintf("Keys=%d,Fields=%d,", p.nRedisKeys, p.nHashKeys), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 

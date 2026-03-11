@@ -190,7 +190,6 @@ func (r *Env) shutdownBuildBuddyServers() {
 	log.Info("Waiting for buildbuddy servers to shutdown")
 	var wg sync.WaitGroup
 	for app := range r.buildBuddyServers {
-		app := app
 		app.env.GetHealthChecker().Shutdown()
 		wg.Add(1)
 		go func() {

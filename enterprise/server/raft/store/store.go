@@ -1168,7 +1168,6 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
-		clusterInfo := clusterInfo
 		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
 			// skip if not the leader
 			continue

@@ -737,7 +737,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	// Put the files from the snapshot into the cache and record their
 	// names and digests in an ActionResult so they can be unpacked later.
 	for _, filePath := range enumerateFiles(opts) {
-		filePath := filePath
 		out := &repb.OutputFile{
 			Path: filepath.Base(filePath),
 			// Digest is computed in goroutine.
@@ -1050,8 +1049,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			break
 		}
 
-		i := i
-		c := c
 
 		// Make sure chunks are appended in order
 		fn := &repb.FileNode{

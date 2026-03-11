@@ -244,7 +244,6 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 	var eg errgroup.Group
 	eg.SetLimit(8)
 	for _, d := range digests {
-		d := d
 		eg.Go(func() error {
 			log.Infof("Uploading %s", d.GetHash())
 			path := filepath.Join(tmpDir, fmt.Sprintf("%s.%d.tmp", d.GetHash(), rand.Int()))

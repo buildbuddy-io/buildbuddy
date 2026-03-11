@@ -80,7 +80,6 @@ func main() {
 		}
 		metricStatuses = append(metricStatuses, status)
 
-		metric := metric
 		eg.Go(func() error {
 			pollingIntervalSec := spec.PollingIntervalSeconds
 			if metric.PollingIntervalSeconds != 0 {

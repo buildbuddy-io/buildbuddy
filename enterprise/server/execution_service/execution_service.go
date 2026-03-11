@@ -354,7 +354,6 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
 		for _, ex := range rsp.Execution {
-			ex := ex
 			eg.Go(func() error {
 				// TODO: if the authenticated user has access to the group
 				// that owns the execution, switch to that group's ctx.

@@ -277,7 +277,6 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	field := doc.Field(contentField)
 	if h.contentMatcher != nil {
 		for _, region := range match(h.contentMatcher.Clone(), field.Contents()) {
-			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
 				region: region,

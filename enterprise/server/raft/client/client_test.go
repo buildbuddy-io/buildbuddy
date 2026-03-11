@@ -71,7 +71,6 @@ func TestSessionInParallel(t *testing.T) {
 	ctx := context.Background()
 	eg, egCtx := errgroup.WithContext(ctx)
 	for i := 1; i <= 5; i++ {
-		i := i
 		eg.Go(func() error {
 			increment(t, egCtx, uint64(i), proposers[i-1], session, 1)
 			increment(t, egCtx, uint64(i), proposers[i-1], session, 2)
@@ -98,7 +97,6 @@ func TestRefreshSession(t *testing.T) {
 	ctx := context.Background()
 	eg, egCtx := errgroup.WithContext(ctx)
 	for i := 1; i <= 3; i++ {
-		i := i
 		eg.Go(func() error {
 			increment(t, egCtx, uint64(i), proposers[i-1], session, 1)
 			increment(t, egCtx, uint64(i), proposers[i-1], session, 2)
@@ -123,7 +121,6 @@ func BenchmarkSession(b *testing.B) {
 		eg, egCtx := errgroup.WithContext(ctx)
 		b.StartTimer()
 		for i := 1; i <= 5; i++ {
-			i := i
 			eg.Go(func() error {
 				increment(b, egCtx, uint64(i), proposers[i-1], session, 1)
 				increment(b, egCtx, uint64(i), proposers[i-1], session, 2)

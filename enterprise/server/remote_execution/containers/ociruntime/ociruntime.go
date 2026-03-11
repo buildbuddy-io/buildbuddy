@@ -1757,7 +1757,6 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 	var eg errgroup.Group
 	eg.SetLimit(min(8, runtime.NumCPU()))
 	for _, layer := range layers {
-		layer := layer
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
 		eg.Go(func() (err error) {
