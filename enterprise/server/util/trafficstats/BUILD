@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "trafficstats",
     srcs = ["trafficstats.go"],
-    embedsrcs = [
+    embedsrcs = [  # keep
         "//enterprise/server/util/trafficstats/data:aws.csv",
         "//enterprise/server/util/trafficstats/data:azure.csv",
         "//enterprise/server/util/trafficstats/data:gcp.csv",
