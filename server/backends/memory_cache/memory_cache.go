@@ -25,7 +25,7 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l            interfaces.LRU[[]byte]
+	l            lru.LRU[[]byte]
 	lock         *sync.RWMutex
 	atimeUpdater interfaces.DigestOperator
 }
@@ -63,7 +63,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
+	l, err := lru.New[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}

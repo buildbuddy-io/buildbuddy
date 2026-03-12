@@ -2,7 +2,6 @@
 ## Copy to your user-specific user.bazelrc (which is in .gitignore) with the following command:
 ## cp template-user.bazelrc user.bazelrc
 
-
 ################
 # Windows only #
 ################
@@ -46,3 +45,9 @@
 # Enable disk cache and garbage collection
 #common --disk_cache=~/.bazel/disk_cache/
 #common --experimental_disk_cache_gc_max_age=7d
+#
+# Always build Go sources from protobuf
+# Always build nogo lint fix patches when available
+#common --output_groups=+go_generated_srcs,+nogo_fix
+# Download nogo patch files to bazel-out
+#common:remote-minimal --remote_download_regex=.*_nogo/nogo.patch$

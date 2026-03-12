@@ -847,6 +847,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	efp := s.env.GetExperimentFlagProvider()
 	if chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
+		executionTask.FastCdc_2020Params = chunking.FastCDCParams()
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.

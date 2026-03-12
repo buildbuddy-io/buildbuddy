@@ -82,7 +82,7 @@ type ociFetcherServer struct {
 	acClient repb.ActionCacheClient
 
 	mu        sync.Mutex
-	pullerLRU *lru.LRU[*pullerLRUEntry]
+	pullerLRU lru.LRU[*pullerLRUEntry]
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
@@ -108,7 +108,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, err
 	}
-	pullerLRU, err := lru.NewLRU[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
+	pullerLRU, err := lru.New[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
 	})

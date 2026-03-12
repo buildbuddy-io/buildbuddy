@@ -85,7 +85,7 @@ var (
 type fileCache struct {
 	rootDir     string
 	lock        sync.Mutex
-	l           *lru.LRU[*entry]
+	l           lru.LRU[*entry]
 	dirScanDone chan struct{}
 	// Directories that are marked for deletion and are waiting for the last
 	// user to unlock the directory. The key is the directory path.
@@ -207,7 +207,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	l, err := lru.NewLRU[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
+	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}

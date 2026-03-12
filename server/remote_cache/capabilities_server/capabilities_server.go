@@ -90,13 +90,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		}
 
 		if chunkingEnabled {
-			avgChunkSizeBytes := chunking.AvgChunkSizeBytes()
-			if avgChunkSizeBytes > 0 {
-				c.CacheCapabilities.FastCdc_2020Params = &repb.FastCdc2020Params{
-					AvgChunkSizeBytes: uint64(avgChunkSizeBytes),
-					Seed:              0,
-				}
-			}
+			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams()
 		}
 	}
 	if s.supportRemoteExec {

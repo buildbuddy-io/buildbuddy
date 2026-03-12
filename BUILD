@@ -13,6 +13,7 @@ load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
+load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -111,7 +112,7 @@ nogo(
         "-QF1011",
         "-QF1012",
         "-U1000",
-    ]),
+    ]) + MODERNIZE_ANALYZERS,
 )
 
 gazelle_binary(

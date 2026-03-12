@@ -112,7 +112,7 @@ type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
 	lookasideMu          *sync.Mutex
-	lookaside            interfaces.LRU[lookasideCacheEntry]
+	lookaside            lru.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
@@ -231,7 +231,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 
 	if opts.LookasideCacheSizeBytes > 0 {
-		l, err := lru.NewLRU[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))

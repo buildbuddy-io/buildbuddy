@@ -1461,7 +1461,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, 0 /*=avgChunkSizeBytes*/)
 
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
@@ -2583,6 +2583,14 @@ func runBazelWrapper() error {
 	}
 	if err := os.Unsetenv("BAZEL_BIN"); err != nil {
 		return err
+	}
+
+	// If the wrapper invokes the CLI, don't recursively invoke the CLI if
+	// specified in .bazelversion.
+	if filepath.Base(bazelBin) == bbBinaryName {
+		if err := os.Setenv("BAZELISK_SKIP_WRAPPER", "true"); err != nil {
+			return err
+		}
 	}
 
 	// Get the current bazel workspace path where we expect to find the

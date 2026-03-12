@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -197,6 +198,45 @@ func TestStoreAndLoad(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadManifest_LegacyFallback(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+
+	allData := append(chunk1Data, chunk2Data...)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	manifestBytes, err := proto.Marshal(&repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{Path: "chunk_0", Digest: chunk1RN.GetDigest()},
+			{Path: "chunk_1", Digest: chunk2RN.GetDigest()},
+		},
+	})
+	require.NoError(t, err)
+
+	legacyACDigest := &repb.Digest{Hash: blobDigest.GetHash(), SizeBytes: blobDigest.GetSizeBytes()}
+	legacyRN := digest.NewACResourceName(legacyACDigest, "_bb_chunked_manifest_v2_/", repb.DigestFunction_SHA256)
+	require.NoError(t, cache.Set(ctx, legacyRN.ToProto(), manifestBytes))
+
+	loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(loaded.ChunkDigests))
+	assert.Equal(t, chunk1RN.GetDigest().GetHash(), loaded.ChunkDigests[0].GetHash())
+	assert.Equal(t, chunk2RN.GetDigest().GetHash(), loaded.ChunkDigests[1].GetHash())
+
+	flags.Set(t, "cache.chunking.check_legacy_manifests", false)
+	_, err = chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
+	require.True(t, status.IsNotFoundError(err))
 }
 
 func TestStore_MissingChunk(t *testing.T) {

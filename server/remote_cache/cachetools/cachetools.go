@@ -90,8 +90,12 @@ func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddr
 }
 
 func spliceBlobWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.SpliceBlobRequest) error {
+	// SpliceBlob verifies all chunks server-side (read + hash), so it needs
+	// more time than a typical CAS RPC. Scale by chunk count, clamped to
+	// [casRPCTimeout, 10min].
+	timeout := min(max(250*time.Millisecond*time.Duration(len(req.GetChunkDigests())), *casRPCTimeout), 10*time.Minute)
 	_, err := retry.Do(ctx, retryOptions("SpliceBlob"), func(ctx context.Context) (*repb.SpliceBlobResponse, error) {
-		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return casClient.SpliceBlob(ctx, req)
 	})
@@ -705,13 +709,12 @@ type BatchCASUploader struct {
 	digestFunction    repb.DigestFunction_Value
 	unsentBatchSize   int64
 	stats             UploadStats
-	chunkingEnabled   bool
 	avgChunkSizeBytes int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, avgChunkSizeBytes int64) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, avgChunkSizeBytes int64) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	// TODO(tyler-french): Set a concurrency limit on ul.eg so total uploader
 	// file operations are globally bounded.
@@ -724,7 +727,6 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		instanceName:      instanceName,
 		digestFunction:    digestFunction,
 		uploads:           make(map[digest.Key]struct{}),
-		chunkingEnabled:   chunkingEnabled,
 		avgChunkSizeBytes: avgChunkSizeBytes,
 	}
 }
@@ -760,7 +762,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
-		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingEnabled && ul.avgChunkSizeBytes > 0 {
+		if ras, ok := rsc.(readAtSeeker); ok && ul.avgChunkSizeBytes > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
 				// BatchCASUploader already controls per-file concurrency, so keep
@@ -954,7 +956,7 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, 0 /*=avgChunkSizeBytes*/)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)

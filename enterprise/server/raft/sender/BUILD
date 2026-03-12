@@ -24,6 +24,7 @@ go_library(
         "//server/util/tracing",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

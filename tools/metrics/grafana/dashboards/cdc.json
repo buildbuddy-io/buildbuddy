@@ -794,7 +794,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "Histogram heatmap of gRPC server handling duration for /build.bazel.remote.execution.v2.ContentAddressableStorage/SpliceBlob requests",
+      "description": "Histogram heatmap of SpliceBlob RPC duration (custom metric with buckets up to 10min)",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -849,7 +849,7 @@
         "yAxis": {
           "axisPlacement": "left",
           "reverse": false,
-          "unit": "s"
+          "unit": "µs"
         }
       },
       "targets": [
@@ -859,7 +859,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate(grpc_server_handling_seconds_bucket{region=\"${app_region}\", grpc_service=\"build.bazel.remote.execution.v2.ContentAddressableStorage\", grpc_method=\"SpliceBlob\"}[${window}]))",
+          "expr": "sum by (le) (rate(buildbuddy_remote_cache_splice_blob_duration_usec_bucket{region=\"${app_region}\"}[${window}]))",
           "format": "heatmap",
           "instant": false,
           "legendFormat": "__auto",
@@ -867,7 +867,7 @@
           "refId": "A"
         }
       ],
-      "title": "SpliceBlob gRPC Server Handling Duration Heatmap",
+      "title": "SpliceBlob Duration Heatmap",
       "type": "heatmap"
     },
     {
@@ -2109,6 +2109,102 @@
         }
       ],
       "title": "Proxy Chunked Read Failures by Reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Manifest loads by AC key prefix (current vs legacy scheme)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 88
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (prefix) (rate(buildbuddy_remote_cache_chunked_manifest_load_count{region=\"${app_region}\"}[${window}]))",
+          "legendFormat": "{{prefix}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Manifest Loads by Key Scheme",
       "type": "timeseries"
     }
   ],
