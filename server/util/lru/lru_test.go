@@ -151,24 +151,23 @@ func TestRemoveOldest(t *testing.T) {
 	})
 }
 
-func testExpiringConfigs[V any](t *testing.T, clock clockwork.Clock, fn func(t *testing.T, config *lru.Config[V])) {
+func testExpiringConfigs[V any](t *testing.T, fn func(t *testing.T, config *lru.Config[V])) {
 	t.Helper()
 	configs := map[string]*lru.Config[V]{
 		"ExpiringLRU": {
 			MaxSize: 10,
 			SizeFn:  func(value V) int64 { return int64(1) },
 			TTL:     5 * time.Second,
-			Clock:   clock,
 		},
 		"ExpiringThreadSafeLRU": {
 			MaxSize:    10,
 			SizeFn:     func(value V) int64 { return int64(1) },
 			TTL:        5 * time.Second,
-			Clock:      clock,
 			ThreadSafe: true,
 		},
 	}
 	for name, config := range configs {
+		config.Clock = clockwork.NewFakeClock()
 		t.Run(name, func(t *testing.T) {
 			fn(t, config)
 		})
@@ -176,13 +175,12 @@ func testExpiringConfigs[V any](t *testing.T, clock clockwork.Clock, fn func(t *
 }
 
 func TestExpiringLRU_GetAfterExpiry(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	testExpiringConfigs(t, clock, func(t *testing.T, config *lru.Config[int]) {
+	testExpiringConfigs(t, func(t *testing.T, config *lru.Config[int]) {
 		l, err := lru.New[int](config)
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		clock.Advance(6 * time.Second)
+		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
 		v, ok := l.Get("a")
 		require.False(t, ok)
 		require.Zero(t, v)
@@ -190,21 +188,19 @@ func TestExpiringLRU_GetAfterExpiry(t *testing.T) {
 }
 
 func TestExpiringLRU_ContainsAfterExpiry(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	testExpiringConfigs(t, clock, func(t *testing.T, config *lru.Config[int]) {
+	testExpiringConfigs(t, func(t *testing.T, config *lru.Config[int]) {
 		l, err := lru.New[int](config)
 		require.NoError(t, err)
 
 		l.Add("a", 1)
 		require.True(t, l.Contains("a"))
-		clock.Advance(6 * time.Second)
+		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
 		require.False(t, l.Contains("a"))
 	})
 }
 
 func TestExpiringLRU_TTLEvictionCallback(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	testExpiringConfigs(t, clock, func(t *testing.T, config *lru.Config[int]) {
+	testExpiringConfigs(t, func(t *testing.T, config *lru.Config[int]) {
 		evictions := []eviction{}
 		cfg := *config
 		cfg.OnEvict = func(key string, value int, reason lru.EvictionReason) {
@@ -214,23 +210,22 @@ func TestExpiringLRU_TTLEvictionCallback(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		clock.Advance(6 * time.Second)
+		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
 		l.Get("a")
 		require.Equal(t, []eviction{{"a", 1, lru.TTLEviction}}, evictions)
 	})
 }
 
 func TestExpiringLRU_AddResetsTTL(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	testExpiringConfigs(t, clock, func(t *testing.T, config *lru.Config[int]) {
+	testExpiringConfigs(t, func(t *testing.T, config *lru.Config[int]) {
 		cfg := *config
 		l, err := lru.New[int](&cfg)
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		clock.Advance(4 * time.Second)
+		config.Clock.(clockwork.FakeClock).Advance(4 * time.Second)
 		l.Add("a", 2)
-		clock.Advance(4 * time.Second)
+		config.Clock.(clockwork.FakeClock).Advance(4 * time.Second)
 		v, ok := l.Get("a")
 		require.True(t, ok, "item should not have expired since it was re-added")
 		require.Equal(t, 2, v)
