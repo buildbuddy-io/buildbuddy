@@ -5,11 +5,11 @@
 //
 // Run it from the repository root:
 //
-//	bazel run //enterprise/server/util/egress/cmd
+//	bazel run //enterprise/server/util/trafficstats/cmd
 //
 // Or with go run:
 //
-//	go run enterprise/server/util/egress/cmd/main.go
+//	go run enterprise/server/util/trafficstats/cmd/main.go
 //
 // Data sources:
 //   - AWS:        https://ip-ranges.amazonaws.com/ip-ranges.json

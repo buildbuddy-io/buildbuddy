@@ -1,4 +1,4 @@
-package egress
+package trafficstats
 
 import (
 	"bytes"
@@ -87,7 +87,6 @@ func NewServerHandler() (stats.Handler, error) {
 	}
 	return &statsHandler{classifier: classifier}, nil
 }
-
 
 func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
 	if info == nil {

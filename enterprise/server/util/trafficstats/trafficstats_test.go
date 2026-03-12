@@ -1,4 +1,4 @@
-package egress
+package trafficstats
 
 import (
 	"context"

@@ -10,5 +10,5 @@ go_binary(
 go_library(
     name = "cmd_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/egress/cmd",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats/cmd",
 )

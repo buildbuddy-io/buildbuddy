@@ -3,16 +3,16 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "egress",
-    srcs = ["egress.go"],
+    name = "trafficstats",
+    srcs = ["trafficstats.go"],
     embedsrcs = [
-        "//enterprise/server/util/egress/data:aws.csv",
-        "//enterprise/server/util/egress/data:azure.csv",
-        "//enterprise/server/util/egress/data:gcp.csv",
-        "//enterprise/server/util/egress/data:github.csv",
-        "//enterprise/server/util/egress/data:macstadium.csv",
+        "//enterprise/server/util/trafficstats/data:aws.csv",
+        "//enterprise/server/util/trafficstats/data:azure.csv",
+        "//enterprise/server/util/trafficstats/data:gcp.csv",
+        "//enterprise/server/util/trafficstats/data:github.csv",
+        "//enterprise/server/util/trafficstats/data:macstadium.csv",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/egress",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats",
     deps = [
         "//server/metrics",
         "//server/util/claims",
@@ -23,9 +23,9 @@ go_library(
 )
 
 go_test(
-    name = "egress_test",
-    srcs = ["egress_test.go"],
-    embed = [":egress"],
+    name = "trafficstats_test",
+    srcs = ["trafficstats_test.go"],
+    embed = [":trafficstats"],
     deps = [
         "//server/metrics",
         "//server/testutil/testmetrics",
