@@ -844,7 +844,7 @@ type imageExistsCache struct {
 }
 
 func newImageExistsCache() (*imageExistsCache, error) {
-	l, err := lru.NewLRU(&lru.Config[time.Time]{
+	l, err := lru.New(&lru.Config[time.Time]{
 		MaxSize: imageExistsCacheSize,
 		SizeFn:  func(time.Time) int64 { return 1 },
 	})

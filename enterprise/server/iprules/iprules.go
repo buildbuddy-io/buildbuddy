@@ -93,7 +93,7 @@ func newIpRuleCache() (ipRuleCache, error) {
 		MaxSize: cacheSize,
 		SizeFn:  func(v *ipRuleCacheEntry) int64 { return int64(len(v.allowed)) },
 	}
-	l, err := lru.NewLRU[*ipRuleCacheEntry](config)
+	l, err := lru.New[*ipRuleCacheEntry](config)
 	if err != nil {
 		return nil, err
 	}

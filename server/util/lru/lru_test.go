@@ -16,7 +16,7 @@ type eviction struct {
 func TestAdd(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU[int](&lru.Config[int]{
+	l, err := lru.New[int](&lru.Config[int]{
 		MaxSize: 10,
 		OnEvict: func(key string, value int, reason lru.EvictionReason) {
 			evictions = append(evictions, eviction{key, value, reason})
@@ -47,7 +47,7 @@ func TestAdd(t *testing.T) {
 func TestAdd_UpdateInPlace(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU[int](&lru.Config[int]{
+	l, err := lru.New[int](&lru.Config[int]{
 		MaxSize: 10,
 		OnEvict: func(key string, value int, reason lru.EvictionReason) {
 			evictions = append(evictions, eviction{key, value, reason})
@@ -76,7 +76,7 @@ func TestAdd_UpdateInPlace(t *testing.T) {
 func TestPushBack(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU[int](&lru.Config[int]{
+	l, err := lru.New[int](&lru.Config[int]{
 		MaxSize: 10,
 		OnEvict: func(key string, value int, reason lru.EvictionReason) {
 			evictions = append(evictions, eviction{key, value, reason})
@@ -99,7 +99,7 @@ func TestPushBack(t *testing.T) {
 func TestRemoveOldest(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU[int](&lru.Config[int]{
+	l, err := lru.New[int](&lru.Config[int]{
 		MaxSize: 10,
 		OnEvict: func(key string, value int, reason lru.EvictionReason) {
 			evictions = append(evictions, eviction{key, value, reason})
