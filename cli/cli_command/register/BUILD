@@ -15,6 +15,7 @@ go_library(
         "//cli/download",
         "//cli/execute",
         "//cli/execution",
+        "//cli/expand_bazelrc",
         "//cli/explain",
         "//cli/fix",
         "//cli/index",

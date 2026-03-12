@@ -768,6 +768,17 @@ func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs
 	return p.resolveArgs(parsedArgs, ws)
 }
 
+// ResolveArgsWithWorkspace behaves like ResolveArgs, but uses the explicitly
+// provided workspace dir to resolve workspace-relative rc paths such as
+// `%workspace%/...`.
+func ResolveArgsWithWorkspace(parsedArgs *parsed.OrderedArgs, workspaceDir string) (*parsed.OrderedArgs, error) {
+	p, err := GetParser()
+	if err != nil {
+		return nil, err
+	}
+	return p.resolveArgs(parsedArgs, workspaceDir)
+}
+
 // ResolveArgs removes all rc-file options from the args, appends an
 // `ignore_all_rc_files` option to the startup options, parses those rc-files
 // into Configs, and expands all config options (as well as any
@@ -779,6 +790,13 @@ func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArg
 		log.Debugf("Could not determine workspace dir: %s", err)
 	}
 	return p.resolveArgs(parsedArgs, ws)
+}
+
+// ResolveArgsWithWorkspace behaves like ResolveArgs, but uses the explicitly
+// provided workspace dir to resolve workspace-relative rc paths such as
+// `%workspace%/...`.
+func (p *Parser) ResolveArgsWithWorkspace(parsedArgs *parsed.OrderedArgs, workspaceDir string) (*parsed.OrderedArgs, error) {
+	return p.resolveArgs(parsedArgs, workspaceDir)
 }
 
 func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
