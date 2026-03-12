@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -78,6 +79,7 @@ const (
 	ubuntuImage                 = "mirror.gcr.io/library/ubuntu:20.04"
 	imageWithDockerInstalled    = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	imageWithDockerV28Installed = platform.Ubuntu24_04Image
+	dockerDindImage             = "gcr.io/flame-public/test-docker-dind@sha256:68f6d9ab84623d1116c5432a3b924a07ee09960e6129ca1cb03ef14010588cb4"
 
 	// Minimum memory needed for a firecracker VM. This may need to be increased
 	// if the size of initrd.cpio increases.
@@ -151,7 +153,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "d6e20637585cf821192d1b13d34b87316307ae286b4c31d27307052a3d7df45c"
+		expectedHash    = "8cdc0a30ab7f5a85b90cfc5fa06c6c0339b79110ecf7f0d9789a4653a39b660c"
 		expectedVersion = "18"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -2456,6 +2458,70 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
+func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		// TODO(bduffany): update arm64 image and enable this test
+		t.Skipf("test is not yet supported on arm64")
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			set -e
+
+			# IPv4 should be available with external networking.
+			if [ ! -r /proc/sys/net/ipv4/ip_forward ]; then
+				echo "missing /proc/sys/net/ipv4/ip_forward" >&2
+				exit 1
+			fi
+			if ! grep -Eq '^[[:space:]]*eth0:' /proc/net/dev; then
+				echo "expected eth0 device; got:" >&2
+				cat /proc/net/dev >&2
+				exit 1
+			fi
+
+			# IPv6 should also be enabled.
+			if grep -q 'ipv6.disable=1' /proc/cmdline; then
+				echo "kernel cmdline has ipv6.disable=1: $(cat /proc/cmdline)" >&2
+				exit 1
+			fi
+			if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" != "0" ] || [ "$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6)" != "0" ]; then
+				echo "IPv6 disable flags: all=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6) default=$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6)" >&2
+				exit 1
+			fi
+			if ! grep -q . /proc/net/if_inet6; then
+				echo "expected non-empty /proc/net/if_inet6" >&2
+				cat /proc/net/if_inet6 >&2 || true
+				exit 1
+			fi
+			echo ipv4_ipv6_enabled
+		`},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "", string(res.Stderr))
+	assert.Equal(t, "ipv4_ipv6_enabled\n", string(res.Stdout))
+}
+
 func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	if *skipDockerTests {
 		t.Skip()
@@ -2466,15 +2532,17 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
+		Arguments: []string{"sh", "-c", `
 			set -e
 
 			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+			docker pull ` + busyboxImage + ` >/dev/null 2>&1
 
-			# Try running a few commands
-			docker run --rm -p 127.0.0.1:18080:80 ` + busyboxImage + ` echo Hello
-			docker run --rm ` + busyboxImage + ` echo world
+			# Test basic command
+			docker run --rm ` + busyboxImage + ` echo Hello
+
+			# Test port publishing
+			docker run --rm -p 127.0.0.1:18080:80 ` + busyboxImage + ` echo world
 
 			# Check what storage driver docker is using
 			docker info 2>/dev/null | grep 'Storage Driver'
@@ -2505,11 +2573,15 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	expectedStorageDriver := "vfs"
+	stdout := string(res.Stdout)
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
-		expectedStorageDriver = "overlay2"
+		// Docker may report the native overlay-backed fast path as either the
+		// legacy graphdriver name ("overlay2") or the newer containerd
+		// snapshotter name ("overlayfs"), depending on daemon configuration.
+		assert.Regexp(t, `^Hello\nworld\n Storage Driver: (overlay2|overlayfs)\n$`, stdout, "stdout should contain docker output with a native overlay storage driver")
+	} else {
+		assert.Equal(t, "Hello\nworld\n Storage Driver: vfs\n", stdout, "stdout should contain docker output")
 	}
-	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 }
 
@@ -2518,7 +2590,22 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDockerV28OverUDS(t *testing.T) {
+	// docker v28 requires nf_raw in order to bind ports, so this tests that the
+	// 'raw' table is properly set up in the guest.
 	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerV28Installed)
+}
+
+func TestFirecrackerRunWithDockerDindOverUDS(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		// TODO(bduffany): make this work on arm64
+		t.Skipf("test is not yet supported on arm64")
+	}
+
+	// docker:dind has docker but doesn't have iptables-legacy, so this tests
+	// that we've properly set up the newer nftables-based iptables in the
+	// guest. It also tests that we've set up NAT correctly which is also needed
+	// to make this image work.
+	testFirecrackerRunWithDockerOverUDS(t, dockerDindImage)
 }
 
 func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
