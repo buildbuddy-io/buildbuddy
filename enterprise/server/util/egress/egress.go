@@ -137,23 +137,26 @@ func (h *statsHandler) record(ctx context.Context, wireLength int) {
 
 func newClassifier() (*classifier, error) {
 	var ranges []ipRange
-	for name, csv := range map[string][]byte{
-		"AWS":        awsRangesCSV,
-		"Azure":      azureRangesCSV,
-		"GCP":        gcpRangesCSV,
-		"GitHub":     githubRangesCSV,
-		"MacStadium": macstadiumRangesCSV,
-		"Metal":      metalRangesCSV,
+	for _, csv := range []struct {
+		name string
+		data []byte
+	}{
+		{"GitHub", githubRangesCSV}, // GitHub needs to be before Azure because some GitHub IPs are subsets of Azure IPs.
+		{"AWS", awsRangesCSV},
+		{"Azure", azureRangesCSV},
+		{"GCP", gcpRangesCSV},
+		{"MacStadium", macstadiumRangesCSV},
+		{"Metal", metalRangesCSV},
 	} {
-		entries, err := parseRangeEntries(csv)
+		entries, err := parseRangeEntries(csv.data)
 		if err != nil {
-			return nil, status.WrapErrorf(err, "parse %s egress ranges", name)
+			return nil, status.WrapErrorf(err, "parse %s egress ranges", csv.name)
 		}
+		slices.SortFunc(entries, func(a, b ipRange) int {
+			return b.prefix.Bits() - a.prefix.Bits()
+		})
 		ranges = append(ranges, entries...)
 	}
-	slices.SortFunc(ranges, func(a, b ipRange) int {
-		return b.prefix.Bits() - a.prefix.Bits()
-	})
 	cache, err := lru.NewLRU(&lru.Config[destination]{
 		MaxSize: cacheMaxSize,
 		SizeFn:  func(destination) int64 { return 1 },

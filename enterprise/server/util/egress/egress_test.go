@@ -40,6 +40,41 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			region:   "asia-east1",
 		},
 		{
+			name:     "azure",
+			ip:       "4.198.32.1",
+			groupID:  "GR234",
+			provider: "azure",
+			region:   "australiacentral2",
+		},
+		{
+			name:     "github",
+			ip:       "185.199.108.1",
+			groupID:  "GR345",
+			provider: "github",
+			region:   "",
+		},
+		{
+			name:     "macstadium",
+			ip:       "208.52.145.1",
+			groupID:  "GR567",
+			provider: "macstadium",
+			region:   "atlanta",
+		},
+		{
+			name:     "metal",
+			ip:       "23.176.168.1",
+			groupID:  "GR678",
+			provider: "metal",
+			region:   "us-sjc",
+		},
+		{
+			name:     "github_over_azure",
+			ip:       "4.148.0.1", // In both GitHub 4.148.0.0/16 and Azure 4.148.0.0/16; GitHub should win.
+			groupID:  "GR890",
+			provider: "github",
+			region:   "",
+		},
+		{
 			name:     "other",
 			ip:       "203.0.113.10",
 			groupID:  "GR789",
