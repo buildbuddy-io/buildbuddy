@@ -31,7 +31,6 @@ type Config[V any] struct {
 // time-based expiration on reads.
 //
 // TODO(iain): use this to replace hand-rolled expiring LRUs in these places:
-// - iprules.go
 // - authdb.go
 // - oci.go
 // - podman.go

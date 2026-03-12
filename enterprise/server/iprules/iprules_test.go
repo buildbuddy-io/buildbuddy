@@ -3,6 +3,7 @@ package iprules_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 )
 
@@ -164,4 +166,65 @@ func TestEnforcement(t *testing.T) {
 	err = irs.Authorize(authCtx)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestEnforcementRefreshesAfterCacheExpiry(t *testing.T) {
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	ctx := context.Background()
+
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", time.Minute)
+
+	irs, err := iprules.New(env)
+	require.NoError(t, err)
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	g := u.Groups[0].Group
+	groupID := g.GroupID
+
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := irs.AddRule(authCtx, &irpb.AddRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Rule:           &irpb.IPRule{Cidr: "1.2.3.0/24", Description: "rule1"},
+	})
+	require.NoError(t, err)
+
+	g.EnforceIPRules = true
+	g.URLIdentifier = "foo"
+	_, err = env.GetUserDB().UpdateGroup(authCtx, &g)
+	require.NoError(t, err)
+
+	authCtx, err = auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+	authCtx = context.WithValue(authCtx, clientip.ContextKey, "1.2.3.15")
+
+	err = irs.Authorize(authCtx)
+	require.NoError(t, err)
+
+	rule := rsp.GetRule()
+	rule.Cidr = "8.8.8.8/32"
+	_, err = irs.UpdateRule(authCtx, &irpb.UpdateRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Rule:           rule,
+	})
+	require.NoError(t, err)
+
+	err = irs.Authorize(authCtx)
+	require.NoError(t, err)
+
+	fakeClock.Advance(time.Minute + time.Nanosecond)
+
+	err = irs.Authorize(authCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	authCtx = context.WithValue(authCtx, clientip.ContextKey, "8.8.8.8")
+	err = irs.Authorize(authCtx)
+	require.NoError(t, err)
 }

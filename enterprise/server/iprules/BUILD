@@ -18,9 +18,11 @@ go_library(
         "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/db",
+        "//server/util/expiring_lru",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )
@@ -40,6 +42,7 @@ go_test(
         "//server/util/clientip",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
