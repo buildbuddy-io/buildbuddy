@@ -4,8 +4,10 @@ import (
 	"container/list"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 )
 
 // LRU implements a Least Recently Used cache.
@@ -30,6 +32,9 @@ type LRU[V any] interface {
 	// removed.
 	Remove(key string) bool
 
+	// Removes the value from the LRU for the provided EvictionReason.
+	RemoveWithReason(key string, reason EvictionReason) bool
+
 	// Returns the total "size" of the LRU.
 	Size() int64
 
@@ -47,6 +52,9 @@ const (
 	// SizeEviction means this was the least recently used entry which had to be
 	// evicted to make room for newer entries.
 	SizeEviction EvictionReason = "size"
+
+	// TTLEviction means this entry expired and was removed due to age.
+	TTLEviction EvictionReason = "ttl"
 
 	// ManualEviction means this entry was evicted via a call to Remove.
 	ManualEviction EvictionReason = "manual"
@@ -67,6 +75,15 @@ type SizeFn[V any] func(value V) int64
 // Config specifies how the LRU cache is to be constructed.
 // MaxSize & SizeFn are required.
 type Config[V any] struct {
+	// Optional clock implementation used by implementations that need one. If
+	// not provided a default (real) clock will be used.
+	Clock clockwork.Clock
+
+	// A maximum TTL to store objects in the LRU. Time-based eviction happens
+	// lazily on read, so items are not evicted immediately if they expire,
+	// but they will not be returned by LRU read operations.
+	TTL time.Duration
+
 	// Function to calculate size of cache entries.
 	SizeFn SizeFn[V]
 
@@ -107,6 +124,13 @@ type lru[V any] struct {
 	updateInPlace bool
 }
 
+// An LRU wrapper that lazily expires entries based on age.
+type expiringLRU[V any] struct {
+	ttl   time.Duration
+	clock clockwork.Clock
+	inner LRU[*expiringEntry[V]]
+}
+
 // A thread-safe wrapper around an LRU.
 type threadSafeLRU[V any] struct {
 	mu    sync.Mutex
@@ -119,6 +143,11 @@ type Entry[V any] struct {
 	value V
 }
 
+type expiringEntry[V any] struct {
+	value     V
+	createdAt time.Time
+}
+
 // New constructs an LRU based on the specified config.
 func New[V any](config *Config[V]) (LRU[V], error) {
 	if config.MaxSize <= 0 {
@@ -127,7 +156,8 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 	if config.SizeFn == nil {
 		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
-	c := &lru[V]{
+	var c LRU[V]
+	c = &lru[V]{
 		currentSize:   0,
 		maxSize:       config.MaxSize,
 		evictList:     list.New(),
@@ -135,6 +165,31 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 		onEvict:       config.OnEvict,
 		sizeFn:        config.SizeFn,
 		updateInPlace: config.UpdateInPlace,
+	}
+	if config.TTL > 0 {
+		clock := config.Clock
+		if clock == nil {
+			clock = clockwork.NewRealClock()
+		}
+		c = &expiringLRU[V]{
+			ttl:   config.TTL,
+			clock: clock,
+			inner: &lru[*expiringEntry[V]]{
+				currentSize: 0,
+				maxSize:     config.MaxSize,
+				evictList:   list.New(),
+				items:       make(map[string]*list.Element),
+				onEvict: func(key string, value *expiringEntry[V], reason EvictionReason) {
+					if config.OnEvict != nil {
+						config.OnEvict(key, value.value, reason)
+					}
+				},
+				sizeFn: func(value *expiringEntry[V]) int64 {
+					return config.SizeFn(value.value)
+				},
+				updateInPlace: config.UpdateInPlace,
+			},
+		}
 	}
 	if config.ThreadSafe {
 		return &threadSafeLRU[V]{
@@ -144,7 +199,6 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 	return c, nil
 }
 
-// Add adds a value to the cache. Returns true if the key was added.
 func (c *lru[V]) Add(key string, value V) bool {
 	if ent, ok := c.items[key]; ok {
 		if c.updateInPlace {
@@ -203,7 +257,6 @@ func (c *lru[V]) PushBack(key string, value V) bool {
 	return true
 }
 
-// Get looks up a key's value from the cache.
 func (c *lru[V]) Get(key string) (V, bool) {
 	if ent, ok := c.items[key]; ok {
 		c.evictList.MoveToFront(ent)
@@ -213,24 +266,23 @@ func (c *lru[V]) Get(key string) (V, bool) {
 	return v, false
 }
 
-// Contains checks if a key is in the cache.
 func (c *lru[V]) Contains(key string) bool {
 	_, ok := c.Get(key)
 	return ok
 }
 
-// Remove removes the provided key from the cache, returning if the
-// key was contained.
 func (c *lru[V]) Remove(key string) (present bool) {
+	return c.RemoveWithReason(key, ManualEviction)
+}
+
+func (c *lru[V]) RemoveWithReason(key string, reason EvictionReason) bool {
 	if ent, ok := c.items[key]; ok {
-		c.removeElement(ent, ManualEviction)
+		c.removeElement(ent, reason)
 		return true
 	}
 	return false
 }
 
-// RemoveOldest removes the oldest item from the cache.
-// The OnEvict callback treats this as a SizeEviction.
 func (c *lru[V]) RemoveOldest() (V, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
@@ -241,7 +293,6 @@ func (c *lru[V]) RemoveOldest() (V, bool) {
 	return v, false
 }
 
-// Len returns the number of items in the cache.
 func (c *lru[V]) Len() int {
 	return c.evictList.Len()
 }
@@ -250,7 +301,6 @@ func (c *lru[V]) Size() int64 {
 	return c.currentSize
 }
 
-// removeOldest is just like RemoveOldest, but without any return values.
 func (c *lru[V]) removeOldest() {
 	ent := c.evictList.Back()
 	if ent != nil {
@@ -258,8 +308,6 @@ func (c *lru[V]) removeOldest() {
 	}
 }
 
-// addElement adds a new item to the cache. It does not perform any
-// size checks.
 func (c *lru[V]) addItem(key string, value V, size int64, front bool) {
 	// Add new item
 	kv := &Entry[V]{key, value}
@@ -273,7 +321,6 @@ func (c *lru[V]) addItem(key string, value V, size int64, front bool) {
 	c.currentSize += size
 }
 
-// removeElement is used to remove a given list element from the cache
 func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry[V])
@@ -284,58 +331,115 @@ func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
 	}
 }
 
-// Add adds a value to the cache. Returns true if the key was added.
+func (c *expiringLRU[V]) Add(key string, value V) bool {
+	return c.inner.Add(key, c.wrapValue(value))
+}
+
+func (c *expiringLRU[V]) PushBack(key string, value V) bool {
+	return c.inner.PushBack(key, c.wrapValue(value))
+}
+
+func (c *expiringLRU[V]) Get(key string) (V, bool) {
+	entry, ok := c.inner.Get(key)
+	if !ok {
+		var zero V
+		return zero, false
+	}
+	if c.clock.Now().Sub(entry.createdAt) > c.ttl {
+		if _, ok := c.inner.Get(key); ok {
+			c.inner.RemoveWithReason(key, TTLEviction)
+		}
+		var zero V
+		return zero, false
+	}
+	return entry.value, true
+}
+
+func (c *expiringLRU[V]) Contains(key string) bool {
+	_, ok := c.Get(key)
+	return ok
+}
+
+func (c *expiringLRU[V]) Remove(key string) bool {
+	return c.inner.Remove(key)
+}
+
+func (c *expiringLRU[V]) RemoveWithReason(key string, reason EvictionReason) bool {
+	return c.inner.RemoveWithReason(key, reason)
+}
+
+func (c *expiringLRU[V]) RemoveOldest() (V, bool) {
+	entry, ok := c.inner.RemoveOldest()
+	if !ok {
+		var zero V
+		return zero, false
+	}
+	return entry.value, true
+}
+
+func (c *expiringLRU[V]) Len() int {
+	return c.inner.Len()
+}
+
+func (c *expiringLRU[V]) Size() int64 {
+	return c.inner.Size()
+}
+
+func (c *expiringLRU[V]) wrapValue(value V) *expiringEntry[V] {
+	return &expiringEntry[V]{
+		value:     value,
+		createdAt: c.clock.Now(),
+	}
+}
+
 func (c *threadSafeLRU[V]) Add(key string, value V) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Add(key, value)
 }
 
-// PushBack adds a value to the back of the cache, but only if there is
-// sufficient capacity.
 func (c *threadSafeLRU[V]) PushBack(key string, value V) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.PushBack(key, value)
 }
 
-// Get looks up a key's value from the cache.
 func (c *threadSafeLRU[V]) Get(key string) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Get(key)
 }
 
-// Contains checks if a key is in the cache.
 func (c *threadSafeLRU[V]) Contains(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Contains(key)
 }
 
-// Remove removes the provided key from the cache, returning if the
-// key was contained.
 func (c *threadSafeLRU[V]) Remove(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Remove(key)
 }
 
-// RemoveOldest removes the oldest item from the cache.
+func (c *threadSafeLRU[V]) RemoveWithReason(key string, reason EvictionReason) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.RemoveWithReason(key, reason)
+}
+
 func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.RemoveOldest()
 }
 
-// Len returns the number of items in the cache.
 func (c *threadSafeLRU[V]) Len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Len()
 }
 
-// Size returns the total size of items in the cache.
 func (c *threadSafeLRU[V]) Size() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
