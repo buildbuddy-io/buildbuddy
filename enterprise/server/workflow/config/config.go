@@ -58,6 +58,9 @@ type Action struct {
 	PlatformProperties map[string]string `yaml:"platform_properties"`
 	Steps              []*rnpb.Step      `yaml:"steps"`
 	Timeout            *time.Duration    `yaml:"timeout"`
+	// Whether the BuildBuddy CLI (`bb`) should be used as the bazel command for this action.
+	// If set, this overrides the repo-level setting.
+	UseCLI *bool `yaml:"use_cli"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
