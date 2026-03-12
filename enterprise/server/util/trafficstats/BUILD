@@ -5,12 +5,12 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "trafficstats",
     srcs = ["trafficstats.go"],
-    embedsrcs = [  # keep
-        "//enterprise/server/util/trafficstats/data:aws.csv",
-        "//enterprise/server/util/trafficstats/data:azure.csv",
-        "//enterprise/server/util/trafficstats/data:gcp.csv",
-        "//enterprise/server/util/trafficstats/data:github.csv",
-        "//enterprise/server/util/trafficstats/data:macstadium.csv",
+    embedsrcs = [
+        "data/aws.csv",
+        "data/azure.csv",
+        "data/gcp.csv",
+        "data/github.csv",
+        "data/macstadium.csv",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats",
     deps = [
