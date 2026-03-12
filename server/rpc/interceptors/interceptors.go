@@ -187,8 +187,8 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
-			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
+		if after, ok := strings.CutPrefix(info.FullMethod, buildBuddyServicePrefix); ok {
+			methodName := after
 			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
 				return err
 			}
@@ -199,8 +199,8 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
-			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
+		if after, ok := strings.CutPrefix(info.FullMethod, buildBuddyServicePrefix); ok {
+			methodName := after
 			if err := capabilities_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
 				return nil, err
 			}

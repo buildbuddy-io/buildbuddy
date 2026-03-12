@@ -260,11 +260,12 @@ func snapshotDebugString(ctx context.Context, env environment.Env, s *fcpb.Snaps
 }
 
 func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet, remote bool) string {
-	keySetStr := snapshotDebugString(ctx, env, s.GetBranchKey(), remote, "" /*snapshotID*/)
+	var keySetStr strings.Builder
+	keySetStr.WriteString(snapshotDebugString(ctx, env, s.GetBranchKey(), remote, "" /*snapshotID*/))
 	for _, key := range s.FallbackKeys {
-		keySetStr += fmt.Sprintf(", %s", snapshotDebugString(ctx, env, key, remote, "" /*snapshotID*/))
+		keySetStr.WriteString(fmt.Sprintf(", %s", snapshotDebugString(ctx, env, key, remote, "" /*snapshotID*/)))
 	}
-	return keySetStr
+	return keySetStr.String()
 }
 
 func SnapshotDebugString(ctx context.Context, env environment.Env, s *Snapshot) string {
@@ -1190,11 +1191,11 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 }
 
 func hashStrings(strs ...string) string {
-	out := ""
+	var out strings.Builder
 	for _, s := range strs {
-		out += hash.String(s)
+		out.WriteString(hash.String(s))
 	}
-	return hash.String(out)
+	return hash.String(out.String())
 }
 
 func groupID(ctx context.Context, env environment.Env) (string, error) {

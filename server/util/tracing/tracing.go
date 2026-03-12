@@ -70,17 +70,18 @@ type fractionSampler struct {
 }
 
 func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
-	configDescription := fmt.Sprintf("default=%f", fraction)
+	var configDescription strings.Builder
+	configDescription.WriteString(fmt.Sprintf("default=%f", fraction))
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
 		boundOverrides[n] = uint64(f * math.MaxInt64)
-		configDescription += fmt.Sprintf(",%s=%f", n, f)
+		configDescription.WriteString(fmt.Sprintf(",%s=%f", n, f))
 	}
 
 	return &fractionSampler{
 		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
-		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
+		description:                fmt.Sprintf("FractionSampler(%s)", configDescription.String()),
 		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
 	}
 }

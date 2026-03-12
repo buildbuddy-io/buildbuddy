@@ -442,8 +442,8 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 
 	// Support TAG_ prefixed metadata
 	for key, value := range metadata {
-		if strings.HasPrefix(key, "TAG_") {
-			tagKey := strings.TrimPrefix(key, "TAG_")
+		if after, ok := strings.CutPrefix(key, "TAG_"); ok {
+			tagKey := after
 			if value != "" {
 				tagValues = append(tagValues, tagKey+"="+value)
 			} else {

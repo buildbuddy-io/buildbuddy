@@ -444,8 +444,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	// Parse custom resources
 	var customResources []*scpb.CustomResource
 	for k, v := range m {
-		if strings.HasPrefix(k, customResourcePrefix) {
-			name := strings.TrimPrefix(k, customResourcePrefix)
+		if after, ok := strings.CutPrefix(k, customResourcePrefix); ok {
+			name := after
 			value, err := strconv.ParseFloat(v, 32)
 			if err != nil {
 				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float32", k)
@@ -667,7 +667,7 @@ func milliCPUProp(props map[string]string, name string, defaultValue int64) int6
 
 func stringListProp(props map[string]string, name string) []string {
 	vals := []string{}
-	for _, item := range strings.Split(props[strings.ToLower(name)], ",") {
+	for item := range strings.SplitSeq(props[strings.ToLower(name)], ",") {
 		item := strings.TrimSpace(item)
 		if item != "" {
 			vals = append(vals, item)
@@ -682,7 +682,7 @@ func intListProp(props map[string]string, name string) []int {
 		return nil
 	}
 	vals := []int{}
-	for _, item := range strings.Split(p, ",") {
+	for item := range strings.SplitSeq(p, ",") {
 		item := strings.TrimSpace(item)
 		i, err := strconv.Atoi(item)
 		if err != nil {

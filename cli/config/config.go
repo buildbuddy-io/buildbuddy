@@ -142,8 +142,8 @@ func ParseDiskCapacityBytes(size any, directory string) (int64, error) {
 	case int64:
 		return v, nil
 	case string:
-		if strings.HasSuffix(v, "%") {
-			percentage, err := strconv.Atoi(strings.TrimSuffix(v, "%"))
+		if before, ok := strings.CutSuffix(v, "%"); ok {
+			percentage, err := strconv.Atoi(before)
 			if err != nil {
 				return 0, fmt.Errorf("parse percentage as int: %w", err)
 			}

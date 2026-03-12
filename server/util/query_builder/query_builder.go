@@ -130,18 +130,19 @@ func (q *Query) SetOffset(offset int64) *Query {
 }
 func (q *Query) Build() (string, []interface{}) {
 	// Reference: SELECT foo FROM TABLE [JOIN TABLE2 ON a = b] WHERE bar = baz ORDER BY ack ASC LIMIT 10
-	fullQuery := q.baseQuery
+	var fullQuery strings.Builder
+	fullQuery.WriteString(q.baseQuery)
 	if q.fromClause != nil {
 		fromClauseStr, args := q.fromClause.Build()
 		q.arguments = append(args, q.arguments...)
 		fromClauseStr = " FROM (" + fromClauseStr + ")"
-		fullQuery += fromClauseStr
+		fullQuery.WriteString(fromClauseStr)
 	}
 	var argsInJoinClauses []interface{}
 	for _, j := range q.joinClauses {
 		joinClause, args := j.Build()
 		argsInJoinClauses = append(argsInJoinClauses, args...)
-		fullQuery += joinClause
+		fullQuery.WriteString(joinClause)
 	}
 	q.arguments = append(argsInJoinClauses, q.arguments...)
 	if len(q.whereClauses) > 0 {
@@ -150,26 +151,26 @@ func (q *Query) Build() (string, []interface{}) {
 			whereClauses = append(whereClauses, " ("+c+") ")
 		}
 		whereRestrict := strings.Join(whereClauses, andQueryJoiner)
-		fullQuery += pad(whereSQLKeyword) + pad(whereRestrict)
+		fullQuery.WriteString(pad(whereSQLKeyword) + pad(whereRestrict))
 	}
 	if q.groupBy != "" {
-		fullQuery += pad(groupBySQLPhrase) + pad(q.groupBy)
+		fullQuery.WriteString(pad(groupBySQLPhrase) + pad(q.groupBy))
 	}
 	if q.orderBy != "" {
-		fullQuery += pad(orderBySQLPhrase) + pad(q.orderBy)
+		fullQuery.WriteString(pad(orderBySQLPhrase) + pad(q.orderBy))
 		if q.ascending {
-			fullQuery += "ASC"
+			fullQuery.WriteString("ASC")
 		} else {
-			fullQuery += "DESC"
+			fullQuery.WriteString("DESC")
 		}
 	}
 	if q.limit != nil {
-		fullQuery += pad(limitSQLKeyword) + pad(fmt.Sprintf("%d", *q.limit))
+		fullQuery.WriteString(pad(limitSQLKeyword) + pad(fmt.Sprintf("%d", *q.limit)))
 	}
 	if q.offset != nil {
-		fullQuery += pad(offsetSQLKeyword) + pad(fmt.Sprintf("%d", *q.offset))
+		fullQuery.WriteString(pad(offsetSQLKeyword) + pad(fmt.Sprintf("%d", *q.offset)))
 	}
-	return fullQuery, q.arguments
+	return fullQuery.String(), q.arguments
 }
 
 type OrClauses struct {

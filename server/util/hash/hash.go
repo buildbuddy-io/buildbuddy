@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
@@ -17,11 +18,11 @@ func String(input string) string {
 }
 
 func Strings(input ...string) string {
-	h := ""
+	var h strings.Builder
 	for _, s := range input {
-		h += String(s)
+		h.WriteString(String(s))
 	}
-	return String(h)
+	return String(h.String())
 }
 
 //go:noescape

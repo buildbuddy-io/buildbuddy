@@ -42,11 +42,11 @@ func expandStringValue(value string) (string, error) {
 	ctx := context.Background()
 	var expandErr error
 	expandedValue := os.Expand(value, func(s string) string {
-		if strings.HasPrefix(s, externalSecretPrefix) {
+		if after, ok := strings.CutPrefix(s, externalSecretPrefix); ok {
 			if SecretProvider == nil {
 				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
 			} else {
-				name := strings.TrimPrefix(s, externalSecretPrefix)
+				name := after
 				secret, err := SecretProvider.GetSecret(ctx, name)
 				if err != nil {
 					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)

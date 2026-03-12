@@ -469,13 +469,13 @@ func MatchesAnyActionName(action *Action, names []string) bool {
 func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
 	pattern, isNegation = strings.CutPrefix(pattern, "!")
 
-	idx := strings.Index(pattern, "*")
-	if idx == -1 {
+	before, after, ok := strings.Cut(pattern, "*")
+	if !ok {
 		// No wildcard; exact match.
 		return pattern == text, isNegation
 	}
-	prefix := pattern[:idx]
-	suffix := pattern[idx+1:]
+	prefix := before
+	suffix := after
 	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 

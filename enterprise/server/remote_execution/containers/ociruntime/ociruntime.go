@@ -2276,12 +2276,13 @@ func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
 // kernel source is here:
 // https://github.com/torvalds/linux/blob/07e27ad16399afcd693be20211b0dfae63e0615f/kernel/cgroup/cgroup-v1.c#L676-L705
 func getFakeProcCgroupsContent() string {
-	out := "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+	var out strings.Builder
+	out.WriteString("#subsys_name\thierarchy\tnum_cgroups\tenabled\n")
 	for _, v1Controller := range []string{
 		"cpuset", "cpu", "cpuacct", "blkio", "memory", "devices", "freezer",
 		"net_cls", "perf_event", "net_prio", "hugetlb", "pids", "rdma", "misc",
 	} {
-		out += v1Controller + "\t0\t1\t1\n"
+		out.WriteString(v1Controller + "\t0\t1\t1\n")
 	}
-	return out
+	return out.String()
 }

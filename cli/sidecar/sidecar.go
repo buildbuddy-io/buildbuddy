@@ -357,8 +357,8 @@ func bytestreamURIPrefix(cacheTarget, instanceName string) string {
 
 func stripProtocol(target string) string {
 	for _, protocol := range []string{"grpc://", "grpcs://", "http://", "https://"} {
-		if strings.HasPrefix(target, protocol) {
-			return strings.TrimPrefix(target, protocol)
+		if after, ok := strings.CutPrefix(target, protocol); ok {
+			return after
 		}
 	}
 	return target

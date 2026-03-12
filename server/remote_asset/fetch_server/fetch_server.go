@@ -142,8 +142,8 @@ func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *d
 func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Value, string, error) {
 	for _, digestFunc := range digest.SupportedDigestFunctions() {
 		pr := fmt.Sprintf("%s-", strings.ToLower(repb.DigestFunction_Value_name[int32(digestFunc)]))
-		if strings.HasPrefix(qualifier.GetValue(), pr) {
-			b64hash := strings.TrimPrefix(qualifier.GetValue(), pr)
+		if after, ok := strings.CutPrefix(qualifier.GetValue(), pr); ok {
+			b64hash := after
 			decodedHash, err := base64.StdEncoding.DecodeString(b64hash)
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
@@ -178,15 +178,15 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier) {
+		if after, ok := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier); ok {
 			sharedHeader.Add(
-				strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier),
+				after,
 				qualifier.GetValue(),
 			)
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier) {
-			idxAndKey := strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier)
+		if after, ok := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier); ok {
+			idxAndKey := after
 			halves := strings.Split(idxAndKey, ":")
 			if len(halves) != 2 {
 				// The http_header_url qualifier should be in the form

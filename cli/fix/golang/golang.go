@@ -72,11 +72,12 @@ func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]stri
 		return deps
 	}
 	if foundGoModFiles && len(goModFiles) > 1 {
-		goWorkContents := "go " + defaultGoVersion + "\n"
+		var goWorkContents strings.Builder
+		goWorkContents.WriteString("go " + defaultGoVersion + "\n")
 		for _, m := range goModFiles {
-			goWorkContents += "use ./" + path.Dir(m) + "\n"
+			goWorkContents.WriteString("use ./" + path.Dir(m) + "\n")
 		}
-		os.WriteFile(goWorkFileName, []byte(goWorkContents), 0777)
+		os.WriteFile(goWorkFileName, []byte(goWorkContents.String()), 0777)
 		delete(deps, goModFileName)
 	}
 	if foundGoWorkFiles && len(goWorkFiles) > 1 {

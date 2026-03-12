@@ -90,8 +90,8 @@ func Format[I constraints.Integer](cpus ...I) string {
 // for mapping these processor IDs to physical IDs.
 func parseCPUs(s string) ([]CPUInfo, error) {
 	var cpus []CPUInfo
-	nodeRanges := strings.Split(s, ",")
-	for _, r := range nodeRanges {
+	nodeRanges := strings.SplitSeq(s, ",")
+	for r := range nodeRanges {
 		numaNode := -1
 		if numaStr, rangeStr, ok := strings.Cut(r, ":"); ok {
 			numaID, err := strconv.Atoi(numaStr)

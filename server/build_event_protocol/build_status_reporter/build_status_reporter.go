@@ -295,7 +295,7 @@ func (r *BuildStatusReporter) targetURL(label string) string {
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {
 	r.groups = make(map[string]*GroupStatus)
-	for _, group := range strings.Split(testGroups, ",") {
+	for group := range strings.SplitSeq(testGroups, ",") {
 		r.groups[group] = &GroupStatus{
 			name: group,
 		}

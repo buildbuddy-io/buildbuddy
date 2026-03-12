@@ -124,8 +124,8 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 			return nil, nil
 		}
 		ref := event.GetRef()
-		if strings.HasPrefix(ref, "refs/tags/") {
-			tag := strings.TrimPrefix(ref, "refs/tags/")
+		if after, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
+			tag := after
 			return &interfaces.WebhookData{
 				EventName:               webhook_data.EventName.Push,
 				PushedRepoURL:           event.GetRepo().GetCloneURL(),

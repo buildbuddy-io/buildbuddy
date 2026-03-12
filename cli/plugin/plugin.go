@@ -145,8 +145,8 @@ func HandleInstall(args []string) (exitCode int, err error) {
 
 func parsePluginSpec(spec, pathArg string) (*config.PluginConfig, error) {
 	var repoSpec, versionSpec, pathSpec string
-	if strings.HasPrefix(spec, ":") {
-		pathSpec = strings.TrimPrefix(spec, ":")
+	if after, ok := strings.CutPrefix(spec, ":"); ok {
+		pathSpec = after
 	} else {
 		m := repoPattern.FindStringSubmatch(spec)
 		if len(m) == 0 {

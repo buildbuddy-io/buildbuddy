@@ -50,14 +50,14 @@ func Split(command string) ([]string, error) {
 // The fourth argument "~" has a tilde which would be expanded to $HOME,
 // so must also be escaped.
 func Quote(tokens ...string) string {
-	out := ""
+	var out strings.Builder
 	for i, arg := range tokens {
-		out += quoteSingle(arg)
+		out.WriteString(quoteSingle(arg))
 		if i < len(tokens)-1 {
-			out += " "
+			out.WriteString(" ")
 		}
 	}
-	return out
+	return out.String()
 }
 
 func quoteSingle(arg string) string {

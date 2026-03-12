@@ -132,7 +132,7 @@ func parseFlags(parsedArgs *parsed.OrderedArgs) (enabled bool, onFailure Failure
 
 func handleErr(msg string, onFailure FailureMode) error {
 	if onFailure == FailureModeFail {
-		return status.InternalErrorf(msg)
+		return status.InternalErrorf("%s", msg)
 	}
 	log.Warnf(msg)
 	return nil
@@ -186,7 +186,7 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 
 func handleStreamingFailure(scriptPath string, sigChan <-chan os.Signal, mode FailureMode, errorMsg string) (int, error) {
 	if mode == FailureModeFail {
-		return 1, status.InternalErrorf(errorMsg)
+		return 1, status.InternalErrorf("%s", errorMsg)
 	}
 	log.Warnf(errorMsg)
 	log.Warnf("Falling back to running script without run log streaming")

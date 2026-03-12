@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -97,16 +98,17 @@ func NewHealthChecker(serverType string) *HealthChecker {
 func (h *HealthChecker) Statusz(ctx context.Context) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	buf := `<table style="width: 150px;"><tr><th>Name</th><th>Status</th></tr>`
+	var buf strings.Builder
+	buf.WriteString(`<table style="width: 150px;"><tr><th>Name</th><th>Status</th></tr>`)
 	for _, serviceStatus := range h.lastStatus {
 		statusString := "OK"
 		if serviceStatus.Error != nil {
 			statusString = serviceStatus.Error.Error()
 		}
-		buf += fmt.Sprintf("<tr><td>%s</td><td>%s</td></tr>", serviceStatus.Name, statusString)
+		buf.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td></tr>", serviceStatus.Name, statusString))
 	}
-	buf += "</table>"
-	return buf
+	buf.WriteString("</table>")
+	return buf.String()
 }
 
 func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
