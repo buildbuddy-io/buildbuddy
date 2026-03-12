@@ -3,6 +3,7 @@ package lru
 import (
 	"container/list"
 	"errors"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -68,15 +69,31 @@ type SizeFn[V any] func(value V) int64
 type Config[V any] struct {
 	// Function to calculate size of cache entries.
 	SizeFn SizeFn[V]
+
 	// Optional callback for cache eviction events.
+	//
+	// The eviction callback may be invoked from within LRU methods, so if used
+	// with ThreadSafe, it must not call cache methods to avoid deadlock.
 	OnEvict EvictedCallback[V]
+
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
 	MaxSize int64
+
 	// Whether adding an item with a key that already exists should update the
 	// existing entry's size and value, instead of evicting the old entry and
 	// invoking the OnEvict callback.
 	UpdateInPlace bool
+
+	// Whether to protect individual LRU method calls with a mutex. This makes
+	// the returned LRU safe for concurrent use, but it does not make sequences
+	// of multiple method calls atomic; callers using compound operations should
+	// add their own synchronization.
+	//
+	// The wrapped LRU may invoke OnEvict synchronously during mutation, so
+	// eviction callbacks can run while the mutex is held. Those callbacks must
+	// not call back into the same LRU.
+	ThreadSafe bool
 }
 
 // lru implements a non-thread safe fixed size LRU cache
@@ -88,6 +105,12 @@ type lru[V any] struct {
 	maxSize       int64
 	currentSize   int64
 	updateInPlace bool
+}
+
+// A thread-safe wrapper around an LRU.
+type threadSafeLRU[V any] struct {
+	mu    sync.Mutex
+	inner LRU[V]
 }
 
 // Entry is used to hold a value in the evictList
@@ -112,6 +135,11 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 		onEvict:       config.OnEvict,
 		sizeFn:        config.SizeFn,
 		updateInPlace: config.UpdateInPlace,
+	}
+	if config.ThreadSafe {
+		return &threadSafeLRU[V]{
+			inner: c,
+		}, nil
 	}
 	return c, nil
 }
@@ -254,4 +282,62 @@ func (c *lru[V]) removeElement(e *list.Element, reason EvictionReason) {
 	if c.onEvict != nil {
 		c.onEvict(kv.key, kv.value, reason)
 	}
+}
+
+// Add adds a value to the cache. Returns true if the key was added.
+func (c *threadSafeLRU[V]) Add(key string, value V) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Add(key, value)
+}
+
+// PushBack adds a value to the back of the cache, but only if there is
+// sufficient capacity.
+func (c *threadSafeLRU[V]) PushBack(key string, value V) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.PushBack(key, value)
+}
+
+// Get looks up a key's value from the cache.
+func (c *threadSafeLRU[V]) Get(key string) (V, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Get(key)
+}
+
+// Contains checks if a key is in the cache.
+func (c *threadSafeLRU[V]) Contains(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Contains(key)
+}
+
+// Remove removes the provided key from the cache, returning if the
+// key was contained.
+func (c *threadSafeLRU[V]) Remove(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Remove(key)
+}
+
+// RemoveOldest removes the oldest item from the cache.
+func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.RemoveOldest()
+}
+
+// Len returns the number of items in the cache.
+func (c *threadSafeLRU[V]) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Len()
+}
+
+// Size returns the total size of items in the cache.
+func (c *threadSafeLRU[V]) Size() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Size()
 }
