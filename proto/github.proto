@@ -190,6 +190,11 @@ message GitRepository {
   // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
   // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 2;
+
+  // Whether to use the BuildBuddy CLI (`bb`) as the bazel command in
+  // workflows. If enabled, --bazel_command is set to `bb` when running CI
+  // runner actions. This can be overridden per-workflow via buildbuddy.yaml.
+  bool use_cli_in_workflows = 3;
 }
 
 message GetLinkedReposResponse {
@@ -241,6 +246,10 @@ message UpdateRepoSettingsRequest {
   // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
   // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 3;
+
+  // Whether to use the BuildBuddy CLI (`bb`) as the bazel command in
+  // workflows. See GitRepository.use_cli_in_workflows.
+  bool use_cli_in_workflows = 4;
 }
 
 message UpdateRepoSettingsResponse {

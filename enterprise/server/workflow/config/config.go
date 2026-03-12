@@ -36,6 +36,12 @@ const (
 
 type BuildBuddyConfig struct {
 	Actions []*Action `yaml:"actions"`
+
+	// UseCLIInWorkflows overrides the repo-level UseCLIInWorkflows setting from
+	// GitRepository. If set, determines whether the BuildBuddy CLI (`bb`) is
+	// used as the bazel command in workflows. Defaults to false (not set),
+	// meaning the repo-level setting applies.
+	UseCLIInWorkflows *bool `yaml:"use_cli_in_workflows"`
 }
 
 type Action struct {
@@ -61,6 +67,11 @@ type Action struct {
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
+
+	// UseCLIInWorkflows is set internally when processing the BuildBuddyConfig
+	// to propagate the config-level use_cli_in_workflows override to the action.
+	// It is not read from or written to YAML.
+	UseCLIInWorkflows *bool `yaml:"-"`
 }
 
 type Step struct {

@@ -280,6 +280,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     user={this.props.user}
                     repoUrl={repo.repoUrl}
                     useDefaultWorkflowConfig={repo.useDefaultWorkflowConfig}
+                    useCLIInWorkflows={repo.useCLIInWorkflows}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
                     onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
                     history={this.renderActionList(workflowHistory, repo.repoUrl)}
@@ -294,6 +295,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     useDefaultWorkflowConfig={true} /* Default for legacy workflows */
+                    useCLIInWorkflows={false} /* Not applicable for legacy workflows */
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
                     onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
@@ -353,6 +355,7 @@ type RepoItemProps = {
   repoUrl: string;
   webhookUrl?: string;
   useDefaultWorkflowConfig: boolean;
+  useCLIInWorkflows: boolean;
   onClickUnlinkItem: (url: string) => void;
   onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
@@ -370,6 +373,7 @@ type RepoItemState = {
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
   startTime: Date | null;
   useDefaultWorkflowConfig: boolean;
+  useCLIInWorkflows: boolean;
 };
 
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
@@ -384,6 +388,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     runWorkflowActionStatuses: null,
     startTime: null,
     useDefaultWorkflowConfig: this.props.useDefaultWorkflowConfig,
+    useCLIInWorkflows: this.props.useCLIInWorkflows,
   };
 
   private onClickMenuButton() {
@@ -406,6 +411,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     const request = new github.UpdateRepoSettingsRequest({
       repoUrl: this.props.repoUrl,
       useDefaultWorkflowConfig: updated,
+      useCLIInWorkflows: this.state.useCLIInWorkflows,
     });
 
     alert_service.loading();
@@ -423,6 +429,33 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   private onClickUpdateDefaultConfigMenuItem() {
     this.setState({ isMenuOpen: false });
     this.onClickUpdateDefaultConfig(!this.state.useDefaultWorkflowConfig);
+  }
+
+  private onClickUpdateUseCLIInWorkflows(updated: boolean) {
+    const prev = this.state.useCLIInWorkflows;
+    this.setState({ useCLIInWorkflows: updated });
+
+    const request = new github.UpdateRepoSettingsRequest({
+      repoUrl: this.props.repoUrl,
+      useDefaultWorkflowConfig: this.state.useDefaultWorkflowConfig,
+      useCLIInWorkflows: updated,
+    });
+
+    alert_service.loading();
+    rpcService.service
+      .updateGitHubRepoSettings(request)
+      .then(() => {
+        alert_service.success(`Successfully updated repository settings`);
+      })
+      .catch((e) => {
+        this.setState({ useCLIInWorkflows: prev });
+        errorService.handleError(e);
+      });
+  }
+
+  private onClickUpdateUseCLIInWorkflowsMenuItem() {
+    this.setState({ isMenuOpen: false });
+    this.onClickUpdateUseCLIInWorkflows(!this.state.useCLIInWorkflows);
   }
 
   private onClickUnlinkMenuItem() {
@@ -540,6 +573,10 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         ? "Disable default workflow config"
         : "Enable default workflow config";
       menuItems.push(<MenuItem onClick={this.onClickUpdateDefaultConfigMenuItem.bind(this)}>{configText}</MenuItem>);
+      const cliText = this.state.useCLIInWorkflows ? "Disable CLI in workflows" : "Enable CLI in workflows";
+      menuItems.push(
+        <MenuItem onClick={this.onClickUpdateUseCLIInWorkflowsMenuItem.bind(this)}>{cliText}</MenuItem>
+      );
     }
 
     return (

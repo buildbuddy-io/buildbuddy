@@ -529,6 +529,9 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
 		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
 		if matchesActionName && matchesTrigger {
+			// Propagate the config-level UseCLIInWorkflows override to each
+			// action so it can be accessed in createActionForWorkflow.
+			a.UseCLIInWorkflows = cfg.UseCLIInWorkflows
 			actions = append(actions, a)
 		}
 	}
@@ -1115,7 +1118,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,
-		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx),
+		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		"--timeout=" + timeout.String(),
 		"--serialized_action=" + serializedAction,
@@ -1272,17 +1275,17 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 	return remote_execution_config.RemoteExecutionEnabled() && *workflowsCIRunnerDebug
 }
 
-func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context) string {
-	if !remote_execution_config.RemoteExecutionEnabled() {
-		return ""
+func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.Workflow, workflowAction *config.Action) string {
+	// Determine whether to use the CLI based on the repo-level setting,
+	// optionally overridden by the config-level setting.
+	useCLI := wf.GitRepository != nil && wf.GitRepository.UseCLIInWorkflows
+	if workflowAction.UseCLIInWorkflows != nil {
+		useCLI = *workflowAction.UseCLIInWorkflows
 	}
-	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
-		if bazelCommandOverride != "" {
-			return bazelCommandOverride
-		}
+	if useCLI {
+		return "bb"
 	}
-	return *workflowsCIRunnerBazelCommand
+	return ""
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {

@@ -274,6 +274,7 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 		res.Repos = append(res.Repos, &ghpb.GitRepository{
 			RepoUrl:                  row.RepoURL,
 			UseDefaultWorkflowConfig: row.UseDefaultWorkflowConfig,
+			UseCLIInWorkflows:        row.UseCLIInWorkflows,
 		})
 		return nil
 	})
@@ -877,10 +878,11 @@ func (a *GitHubApp) UpdateRepoSettings(ctx context.Context, req *ghpb.UpdateRepo
 	}
 	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_update_repo_settings").Raw(`
 		UPDATE "GitRepositories"
-		SET use_default_workflow_config = ?
+		SET use_default_workflow_config = ?,
+		    use_cli_in_workflows = ?
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, req.GetUseDefaultWorkflowConfig(), u.GetGroupID(), normalizedURL).Exec()
+	`, req.GetUseDefaultWorkflowConfig(), req.GetUseCLIInWorkflows(), u.GetGroupID(), normalizedURL).Exec()
 	if result.Error != nil {
 		return nil, status.InternalErrorf("failed to update repo settings: %s", result.Error)
 	}

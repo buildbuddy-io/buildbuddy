@@ -701,6 +701,12 @@ type GitRepository struct {
 	// running for a git repo when it is linked.
 	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
 
+	// UseCLIInWorkflows determines whether the BuildBuddy CLI (`bb`) should be
+	// used as the bazel command when running CI runner actions for this repo.
+	// If enabled, --bazel_command is set to `bb`. This can be overridden
+	// per-workflow via the use_cli_in_workflows field in buildbuddy.yaml.
+	UseCLIInWorkflows bool `gorm:"not null;default:1"`
+
 	// The ID of the BuildBuddy Github app this repository was authorized for.
 	// (i.e. either the read-only or the read-write app)
 	AppID int64
