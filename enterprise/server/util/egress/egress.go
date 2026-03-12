@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/stats"
 
 	_ "embed"
@@ -48,7 +49,7 @@ type statsHandler struct {
 
 // Context keys for storing peer information in context.
 type connDestinationKey struct{}
-type rpcMetricLabelsKey struct{}
+type metricKey struct{}
 
 type rpcMetricLabels struct {
 	groupID  string
@@ -98,19 +99,17 @@ func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) con
 func (*statsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	labels := rpcMetricLabels{
-		groupID:  unknownGroupID,
-		provider: otherProvider,
-		region:   unknownRegion,
-	}
+	groupID := unknownGroupID
+	provider := otherProvider
+	region := unknownRegion
 	if c, err := claims.ClaimsFromContext(ctx); err == nil && c.GetGroupID() != "" {
-		labels.groupID = c.GetGroupID()
+		groupID = c.GetGroupID()
 	}
 	if destination, ok := ctx.Value(connDestinationKey{}).(destination); ok {
-		labels.provider = destination.provider
-		labels.region = destination.region
+		provider = destination.provider
+		region = destination.region
 	}
-	return context.WithValue(ctx, rpcMetricLabelsKey{}, labels)
+	return context.WithValue(ctx, metricKey{}, metrics.GRPCEgressBytes.WithLabelValues(groupID, provider, region))
 }
 
 func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
@@ -124,15 +123,9 @@ func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 }
 
 func (h *statsHandler) record(ctx context.Context, wireLength int) {
-	labels := rpcMetricLabels{
-		groupID:  unknownGroupID,
-		provider: otherProvider,
-		region:   unknownRegion,
+	if m, ok := ctx.Value(metricKey{}).(prometheus.Counter); ok {
+		m.Add(float64(wireLength))
 	}
-	if v, ok := ctx.Value(rpcMetricLabelsKey{}).(rpcMetricLabels); ok {
-		labels = v
-	}
-	metrics.GRPCEgressBytes.WithLabelValues(labels.groupID, labels.provider, labels.region).Add(float64(wireLength))
 }
 
 func newClassifier() (*classifier, error) {
