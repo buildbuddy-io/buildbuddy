@@ -204,8 +204,10 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		classifier := newBenchmarkClassifier(b)
 
 		b.ReportAllocs()
+		i := 0
 		for b.Loop() {
-			classifier.classify(benchmarkTCPAddr(b.N))
+			classifier.classify(benchmarkTCPAddr(i))
+			i++
 		}
 	})
 }
@@ -219,21 +221,21 @@ func newBenchmarkClassifier(b *testing.B) *classifier {
 	return classifier
 }
 
+func benchmarkStatsHandler(b *testing.B) *statsHandler {
+	return &statsHandler{classifier: newBenchmarkClassifier(b)}
+}
+
 func BenchmarkStatsHandler(b *testing.B) {
-	handler, err := NewStatsHandler()
-	if err != nil {
-		b.Fatalf("NewStatsHandler() returned error: %v", err)
-	}
 	rpcInfo := &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"}
 	payload := &stats.OutPayload{WireLength: 123}
 	claimsVal := &claims.Claims{GroupID: "GR123"}
 	ctx := claims.AuthContext(context.Background(), claimsVal)
 
 	b.Run("cached_hit", func(b *testing.B) {
+		handler := benchmarkStatsHandler(b)
 		connInfo := &stats.ConnTagInfo{
 			RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
 		}
-		handler.(*statsHandler).classifier = newBenchmarkClassifier(b)
 
 		b.ReportAllocs()
 		for b.Loop() {
@@ -244,10 +246,12 @@ func BenchmarkStatsHandler(b *testing.B) {
 	})
 
 	b.Run("varying_ips", func(b *testing.B) {
-		handler.(*statsHandler).classifier = newBenchmarkClassifier(b)
+		handler := benchmarkStatsHandler(b)
 		b.ReportAllocs()
+		i := 0
 		for b.Loop() {
-			connInfo := &stats.ConnTagInfo{RemoteAddr: benchmarkTCPAddr(b.N)}
+			connInfo := &stats.ConnTagInfo{RemoteAddr: benchmarkTCPAddr(i)}
+			i++
 			ctx := handler.TagConn(ctx, connInfo)
 			ctx = handler.TagRPC(ctx, rpcInfo)
 			handler.HandleRPC(ctx, payload)
