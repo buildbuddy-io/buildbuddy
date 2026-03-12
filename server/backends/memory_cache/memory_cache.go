@@ -25,7 +25,7 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l            interfaces.LRU[[]byte]
+	l            lru.LRU[[]byte]
 	lock         *sync.RWMutex
 	atimeUpdater interfaces.DigestOperator
 }

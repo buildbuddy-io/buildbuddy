@@ -112,7 +112,7 @@ type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
 	lookasideMu          *sync.Mutex
-	lookaside            interfaces.LRU[lookasideCacheEntry]
+	lookaside            lru.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder

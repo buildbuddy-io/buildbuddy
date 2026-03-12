@@ -204,7 +204,7 @@ func claimsCacheKey(ctx context.Context) (string, error) {
 
 type RemoteAuthenticator struct {
 	authClient          authpb.AuthServiceClient
-	cache               interfaces.LRU[string]
+	cache               lru.LRU[string]
 	jwtExpirationBuffer time.Duration
 	mu                  sync.RWMutex // protects cache
 	claimsParser        *claims.ClaimsParser

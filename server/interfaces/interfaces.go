@@ -1352,38 +1352,6 @@ type XcodeLocator interface {
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
-// LRU implements a Least Recently Used cache.
-type LRU[V any] interface {
-	// Inserts a value into the LRU. A boolean is returned that indicates
-	// if the value was successfully added.
-	Add(key string, value V) bool
-
-	// Inserts a value into the back of the LRU. A boolean is returned that
-	// indicates if the value was successfully added.
-	PushBack(key string, value V) bool
-
-	// Gets a value from the LRU, returns a boolean indicating if the value
-	// was present.
-	Get(key string) (V, bool)
-
-	// Returns a boolean indicating if the value is present in the LRU.
-	Contains(key string) bool
-
-	// Removes a value from the LRU, releasing resources associated with
-	// that value. Returns a boolean indicating if the value was sucessfully
-	// removed.
-	Remove(key string) bool
-
-	// Returns the total "size" of the LRU.
-	Size() int64
-
-	// Returns the number of items in the LRU.
-	Len() int
-
-	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (V, bool)
-}
-
 // DistributedLock provides a way to serialize access to a resource, where the
 // accessors may be running on different nodes.
 //

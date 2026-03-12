@@ -1303,7 +1303,7 @@ type MmapLRU struct {
 	evictorGroup errgroup.Group
 
 	mu  sync.Mutex
-	lru *lru.LRU[*Mmap]
+	lru lru.LRU[*Mmap]
 }
 
 func NewMmapLRU() (*MmapLRU, error) {

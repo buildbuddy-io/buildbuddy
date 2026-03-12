@@ -209,7 +209,7 @@ type Resolver struct {
 	allowedPrivateIPs []*net.IPNet
 
 	mu                  sync.Mutex
-	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
+	imageTagToDigestLRU lru.LRU[tagToDigestEntry]
 	clock               clockwork.Clock
 }
 

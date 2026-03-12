@@ -52,7 +52,7 @@ type ipRuleCache interface {
 
 type memIpRuleCache struct {
 	mu  sync.Mutex
-	lru interfaces.LRU[*ipRuleCacheEntry]
+	lru lru.LRU[*ipRuleCacheEntry]
 }
 
 func (c *memIpRuleCache) Get(groupID string) (allowed []*net.IPNet, ok bool) {
