@@ -2,7 +2,6 @@ GCP,africa-south1,34.1.208.0/20
 GCP,africa-south1,34.35.0.0/16
 GCP,africa-south1,34.152.86.0/23
 GCP,africa-south1,34.177.50.0/23
-GCP,africa-south1,2600:1900:8000::/44
 GCP,asia-east1,34.80.0.0/15
 GCP,asia-east1,34.137.0.0/16
 GCP,asia-east1,35.185.128.0/19
@@ -29,7 +28,6 @@ GCP,asia-east1,104.199.244.0/22
 GCP,asia-east1,104.199.248.0/21
 GCP,asia-east1,107.167.176.0/20
 GCP,asia-east1,130.211.240.0/20
-GCP,asia-east1,2600:1900:4030::/44
 GCP,asia-east2,34.92.0.0/16
 GCP,asia-east2,34.96.128.0/17
 GCP,asia-east2,34.104.88.0/21
@@ -41,7 +39,6 @@ GCP,asia-east2,35.220.128.0/17
 GCP,asia-east2,35.241.64.0/18
 GCP,asia-east2,35.242.27.0/24
 GCP,asia-east2,35.243.8.0/21
-GCP,asia-east2,2600:1900:41a0::/44
 GCP,asia-northeast1,34.84.0.0/16
 GCP,asia-northeast1,34.85.0.0/17
 GCP,asia-northeast1,34.104.62.0/23
@@ -67,7 +64,6 @@ GCP,asia-northeast1,35.243.64.0/18
 GCP,asia-northeast1,104.198.80.0/20
 GCP,asia-northeast1,104.198.112.0/20
 GCP,asia-northeast1,136.110.64.0/18
-GCP,asia-northeast1,2600:1900:4050::/44
 GCP,asia-northeast2,34.97.0.0/16
 GCP,asia-northeast2,34.104.49.0/24
 GCP,asia-northeast2,34.127.177.0/24
@@ -77,7 +73,6 @@ GCP,asia-northeast2,35.217.128.0/17
 GCP,asia-northeast2,35.220.45.0/24
 GCP,asia-northeast2,35.242.45.0/24
 GCP,asia-northeast2,35.243.56.0/21
-GCP,asia-northeast2,2600:1900:41d0::/44
 GCP,asia-northeast3,8.228.128.0/18
 GCP,asia-northeast3,8.230.0.0/19
 GCP,asia-northeast3,34.0.96.0/19
@@ -102,7 +97,6 @@ GCP,asia-northeast3,34.152.96.0/24
 GCP,asia-northeast3,34.158.192.0/19
 GCP,asia-northeast3,34.177.64.0/24
 GCP,asia-northeast3,35.216.0.0/17
-GCP,asia-northeast3,2600:1901:8180::/44
 GCP,asia-south1,34.0.227.0/24
 GCP,asia-south1,34.14.128.0/18
 GCP,asia-south1,34.14.192.0/19
@@ -129,7 +123,6 @@ GCP,asia-south1,35.220.42.0/24
 GCP,asia-south1,35.234.208.0/20
 GCP,asia-south1,35.242.42.0/24
 GCP,asia-south1,35.244.0.0/18
-GCP,asia-south1,2600:1900:40a0::/44
 GCP,asia-south2,34.0.0.0/20
 GCP,asia-south2,34.4.24.0/22
 GCP,asia-south2,34.104.120.0/23
@@ -144,7 +137,6 @@ GCP,asia-south2,34.183.3.0/25
 GCP,asia-south2,34.183.28.0/24
 GCP,asia-south2,34.184.3.0/25
 GCP,asia-south2,34.184.23.0/24
-GCP,asia-south2,2600:1900:41b0::/44
 GCP,asia-southeast1,34.1.128.0/20
 GCP,asia-southeast1,34.1.192.0/20
 GCP,asia-southeast1,34.2.16.0/20
@@ -184,7 +176,6 @@ GCP,asia-southeast1,35.240.128.0/17
 GCP,asia-southeast1,35.242.24.0/23
 GCP,asia-southeast1,35.247.128.0/18
 GCP,asia-southeast1,136.110.0.0/18
-GCP,asia-southeast1,2600:1900:4080::/44
 GCP,asia-southeast2,34.34.216.0/21
 GCP,asia-southeast2,34.50.64.0/18
 GCP,asia-southeast2,34.101.18.0/24
@@ -199,12 +190,10 @@ GCP,asia-southeast2,34.153.44.0/24
 GCP,asia-southeast2,34.153.236.0/24
 GCP,asia-southeast2,34.157.254.0/24
 GCP,asia-southeast2,35.219.0.0/17
-GCP,asia-southeast2,2600:1901:8170::/44
 GCP,asia-southeast3,34.3.32.0/20
 GCP,asia-southeast3,34.15.128.0/17
 GCP,asia-southeast3,34.183.6.0/23
 GCP,asia-southeast3,34.184.6.0/23
-GCP,asia-southeast3,2600:1900:42e0::/44
 GCP,australia-southeast1,34.40.128.0/17
 GCP,australia-southeast1,34.87.192.0/18
 GCP,australia-southeast1,34.104.104.0/23
@@ -228,7 +217,6 @@ GCP,australia-southeast1,35.220.41.0/24
 GCP,australia-southeast1,35.234.224.0/20
 GCP,australia-southeast1,35.242.41.0/24
 GCP,australia-southeast1,35.244.64.0/18
-GCP,australia-southeast1,2600:1900:40b0::/44
 GCP,australia-southeast2,34.0.16.0/20
 GCP,australia-southeast2,34.1.176.0/20
 GCP,australia-southeast2,34.104.122.0/23
@@ -237,7 +225,6 @@ GCP,australia-southeast2,34.126.192.0/20
 GCP,australia-southeast2,34.129.0.0/16
 GCP,australia-southeast2,34.152.101.0/24
 GCP,australia-southeast2,34.177.69.0/24
-GCP,australia-southeast2,2600:1900:41c0::/44
 GCP,europe-central2,34.0.240.0/20
 GCP,europe-central2,34.4.64.0/20
 GCP,europe-central2,34.104.116.0/22
@@ -246,7 +233,6 @@ GCP,europe-central2,34.118.0.0/17
 GCP,europe-central2,34.124.52.0/22
 GCP,europe-central2,34.128.208.0/20
 GCP,europe-central2,34.158.224.0/20
-GCP,europe-central2,2600:1900:4140::/44
 GCP,europe-north1,34.88.0.0/16
 GCP,europe-north1,34.104.96.0/21
 GCP,europe-north1,34.124.32.0/21
@@ -255,12 +241,10 @@ GCP,europe-north1,35.217.0.0/18
 GCP,europe-north1,35.220.26.0/24
 GCP,europe-north1,35.228.0.0/16
 GCP,europe-north1,35.242.26.0/24
-GCP,europe-north1,2600:1900:4150::/44
 GCP,europe-north2,34.2.48.0/20
 GCP,europe-north2,34.51.128.0/17
 GCP,europe-north2,34.153.46.0/23
 GCP,europe-north2,34.153.238.0/23
-GCP,europe-north2,2600:1900:42a0::/44
 GCP,europe-southwest1,34.0.192.0/19
 GCP,europe-southwest1,34.152.103.0/24
 GCP,europe-southwest1,34.157.44.0/23
@@ -268,7 +252,6 @@ GCP,europe-southwest1,34.157.172.0/23
 GCP,europe-southwest1,34.164.0.0/16
 GCP,europe-southwest1,34.175.0.0/16
 GCP,europe-southwest1,34.177.71.0/24
-GCP,europe-southwest1,2600:1901:8100::/44
 GCP,europe-west1,8.34.208.0/23
 GCP,europe-west1,8.34.211.0/24
 GCP,europe-west1,8.34.220.0/22
@@ -313,12 +296,10 @@ GCP,europe-west1,146.148.8.0/21
 GCP,europe-west1,146.148.16.0/20
 GCP,europe-west1,146.148.112.0/20
 GCP,europe-west1,192.158.28.0/22
-GCP,europe-west1,2600:1900:4010::/44
 GCP,europe-west10,34.1.160.0/20
 GCP,europe-west10,34.32.0.0/17
 GCP,europe-west10,34.152.80.0/23
 GCP,europe-west10,34.177.36.0/23
-GCP,europe-west10,2600:1901:81f0::/44
 GCP,europe-west12,34.1.144.0/20
 GCP,europe-west12,34.17.0.0/16
 GCP,europe-west12,34.152.97.0/25
@@ -328,12 +309,10 @@ GCP,europe-west12,34.157.250.0/23
 GCP,europe-west12,34.177.65.0/25
 GCP,europe-west12,34.177.78.0/25
 GCP,europe-west12,34.183.3.128/25
-GCP,europe-west12,2600:1901:81b0::/44
 GCP,europe-west15,34.2.96.0/20
 GCP,europe-west15,34.15.0.0/17
 GCP,europe-west15,34.152.108.0/23
 GCP,europe-west15,34.177.76.0/23
-GCP,europe-west15,2600:1900:42c0::/44
 GCP,europe-west2,8.228.32.0/19
 GCP,europe-west2,34.4.48.0/20
 GCP,europe-west2,34.13.0.0/18
@@ -368,7 +347,6 @@ GCP,europe-west2,35.235.48.0/20
 GCP,europe-west2,35.242.20.0/22
 GCP,europe-west2,35.242.128.0/18
 GCP,europe-west2,35.246.0.0/17
-GCP,europe-west2,2600:1900:40c0::/44
 GCP,europe-west3,34.0.224.0/24
 GCP,europe-west3,34.0.226.0/24
 GCP,europe-west3,34.40.0.0/17
@@ -396,7 +374,6 @@ GCP,europe-west3,35.235.32.0/20
 GCP,europe-west3,35.242.18.0/23
 GCP,europe-west3,35.242.192.0/18
 GCP,europe-west3,35.246.128.0/17
-GCP,europe-west3,2600:1900:40d0::/44
 GCP,europe-west4,34.1.224.0/19
 GCP,europe-west4,34.3.80.0/20
 GCP,europe-west4,34.4.80.0/20
@@ -429,7 +406,6 @@ GCP,europe-west4,35.214.128.0/17
 GCP,europe-west4,35.220.16.0/23
 GCP,europe-west4,35.234.160.0/20
 GCP,europe-west4,35.242.16.0/23
-GCP,europe-west4,2600:1900:4060::/44
 GCP,europe-west6,34.65.0.0/16
 GCP,europe-west6,34.104.110.0/23
 GCP,europe-west6,34.124.46.0/23
@@ -438,7 +414,6 @@ GCP,europe-west6,35.216.128.0/17
 GCP,europe-west6,35.220.44.0/24
 GCP,europe-west6,35.235.216.0/21
 GCP,europe-west6,35.242.44.0/24
-GCP,europe-west6,2600:1900:4160::/44
 GCP,europe-west8,34.0.160.0/19
 GCP,europe-west8,34.153.38.0/24
 GCP,europe-west8,34.153.230.0/24
@@ -452,13 +427,11 @@ GCP,europe-west8,34.157.249.0/24
 GCP,europe-west8,34.183.0.0/24
 GCP,europe-west8,34.184.0.0/24
 GCP,europe-west8,35.219.224.0/19
-GCP,europe-west8,2600:1901:8110::/44
 GCP,europe-west9,34.1.0.0/20
 GCP,europe-west9,34.155.0.0/16
 GCP,europe-west9,34.157.12.0/22
 GCP,europe-west9,34.157.140.0/22
 GCP,europe-west9,34.163.0.0/16
-GCP,europe-west9,2600:1901:8120::/44
 GCP,global,8.228.224.0/20
 GCP,global,34.8.0.0/16
 GCP,global,34.13.72.0/21
@@ -496,12 +469,10 @@ GCP,global,130.211.8.0/21
 GCP,global,130.211.16.0/20
 GCP,global,130.211.32.0/20
 GCP,global,136.110.128.0/17
-GCP,global,2600:1901::/48
 GCP,me-central1,34.1.32.0/20
 GCP,me-central1,34.18.0.0/16
 GCP,me-central1,34.157.126.0/23
 GCP,me-central1,34.157.252.0/23
-GCP,me-central1,2600:1901:81c0::/44
 GCP,me-central2,8.228.192.0/19
 GCP,me-central2,8.230.64.0/19
 GCP,me-central2,34.1.48.0/20
@@ -513,7 +484,6 @@ GCP,me-central2,34.166.0.0/16
 GCP,me-central2,34.177.48.0/23
 GCP,me-central2,34.177.70.0/24
 GCP,me-central2,35.252.32.0/19
-GCP,me-central2,2600:1900:5400::/44
 GCP,me-west1,8.230.32.0/19
 GCP,me-west1,34.0.64.0/19
 GCP,me-west1,34.153.62.128/25
@@ -524,7 +494,6 @@ GCP,me-west1,34.165.0.0/16
 GCP,me-west1,34.183.20.128/25
 GCP,me-west1,34.184.3.128/25
 GCP,me-west1,35.252.0.0/19
-GCP,me-west1,2600:1901:8160::/44
 GCP,northamerica-northeast1,34.19.128.0/17
 GCP,northamerica-northeast1,34.20.0.0/17
 GCP,northamerica-northeast1,34.47.0.0/18
@@ -545,7 +514,6 @@ GCP,northamerica-northeast1,35.215.0.0/18
 GCP,northamerica-northeast1,35.220.43.0/24
 GCP,northamerica-northeast1,35.234.240.0/20
 GCP,northamerica-northeast1,35.242.43.0/24
-GCP,northamerica-northeast1,2600:1900:40e0::/44
 GCP,northamerica-northeast2,34.0.32.0/20
 GCP,northamerica-northeast2,34.104.114.0/23
 GCP,northamerica-northeast2,34.124.50.0/23
@@ -557,12 +525,10 @@ GCP,northamerica-northeast2,34.157.255.0/24
 GCP,northamerica-northeast2,34.177.65.128/25
 GCP,northamerica-northeast2,34.183.29.0/24
 GCP,northamerica-northeast2,34.184.30.0/24
-GCP,northamerica-northeast2,2600:1900:41e0::/44
 GCP,northamerica-south1,34.2.0.0/20
 GCP,northamerica-south1,34.51.0.0/17
 GCP,northamerica-south1,34.153.42.0/23
 GCP,northamerica-south1,34.153.234.0/23
-GCP,northamerica-south1,2600:1900:4290::/44
 GCP,southamerica-east1,34.39.128.0/17
 GCP,southamerica-east1,34.95.128.0/17
 GCP,southamerica-east1,34.104.80.0/21
@@ -576,7 +542,6 @@ GCP,southamerica-east1,35.220.40.0/24
 GCP,southamerica-east1,35.235.0.0/20
 GCP,southamerica-east1,35.242.40.0/24
 GCP,southamerica-east1,35.247.192.0/18
-GCP,southamerica-east1,2600:1900:40f0::/44
 GCP,southamerica-west1,34.0.48.0/20
 GCP,southamerica-west1,34.104.50.0/23
 GCP,southamerica-west1,34.127.178.0/23
@@ -589,7 +554,6 @@ GCP,southamerica-west1,34.176.0.0/16
 GCP,southamerica-west1,34.177.66.0/25
 GCP,southamerica-west1,34.183.1.0/24
 GCP,southamerica-west1,34.184.1.0/24
-GCP,southamerica-west1,2600:1901:4010::/44
 GCP,us-central1,8.34.210.0/24
 GCP,us-central1,8.34.212.0/22
 GCP,us-central1,8.34.216.0/22
@@ -688,7 +652,6 @@ GCP,us-central1,173.255.112.0/21
 GCP,us-central1,199.192.115.0/24
 GCP,us-central1,199.223.232.0/22
 GCP,us-central1,199.223.236.0/24
-GCP,us-central1,2600:1900:4000::/44
 GCP,us-central2,34.22.0.0/19
 GCP,us-central2,35.186.0.0/17
 GCP,us-central2,35.186.128.0/20
@@ -698,7 +661,6 @@ GCP,us-central2,35.242.46.0/24
 GCP,us-central2,107.167.160.0/20
 GCP,us-central2,108.59.88.0/21
 GCP,us-central2,173.255.120.0/21
-GCP,us-central2,2600:1900:4070::/44
 GCP,us-east1,34.3.76.0/22
 GCP,us-east1,34.4.16.0/22
 GCP,us-east1,34.23.0.0/16
@@ -742,7 +704,6 @@ GCP,us-east1,104.196.128.0/18
 GCP,us-east1,104.196.192.0/19
 GCP,us-east1,136.108.0.0/16
 GCP,us-east1,162.216.148.0/22
-GCP,us-east1,2600:1900:4020::/44
 GCP,us-east4,8.228.64.0/18
 GCP,us-east4,34.4.32.0/20
 GCP,us-east4,34.11.0.0/17
@@ -785,7 +746,6 @@ GCP,us-east4,35.242.60.0/22
 GCP,us-east4,35.243.40.0/21
 GCP,us-east4,35.245.0.0/16
 GCP,us-east4,136.107.0.0/16
-GCP,us-east4,2600:1900:4090::/44
 GCP,us-east5,34.1.16.0/20
 GCP,us-east5,34.4.102.0/23
 GCP,us-east5,34.127.160.0/20
@@ -796,14 +756,12 @@ GCP,us-east5,34.157.32.0/22
 GCP,us-east5,34.157.160.0/22
 GCP,us-east5,34.162.0.0/16
 GCP,us-east5,34.186.224.0/19
-GCP,us-east5,2600:1901:8130::/44
 GCP,us-east7,34.104.56.0/23
 GCP,us-east7,34.127.184.0/23
 GCP,us-east7,34.152.110.192/26
 GCP,us-east7,34.157.219.192/26
 GCP,us-east7,34.161.0.0/16
 GCP,us-east7,35.206.10.0/23
-GCP,us-east7,2600:1901:8150::/44
 GCP,us-south1,34.0.128.0/19
 GCP,us-south1,34.127.156.0/22
 GCP,us-south1,34.152.110.128/26
@@ -811,7 +769,6 @@ GCP,us-south1,34.157.46.0/23
 GCP,us-south1,34.157.174.0/23
 GCP,us-south1,34.157.219.128/26
 GCP,us-south1,34.174.0.0/16
-GCP,us-south1,2600:1901:8140::/44
 GCP,us-west1,8.229.0.0/16
 GCP,us-west1,34.3.96.0/20
 GCP,us-west1,34.11.128.0/17
@@ -851,7 +808,6 @@ GCP,us-west1,104.199.112.0/20
 GCP,us-west1,136.109.0.0/16
 GCP,us-west1,136.117.0.0/16
 GCP,us-west1,136.118.0.0/16
-GCP,us-west1,2600:1900:4040::/44
 GCP,us-west2,34.2.76.0/23
 GCP,us-west2,34.4.28.0/22
 GCP,us-west2,34.20.128.0/17
@@ -868,7 +824,6 @@ GCP,us-west2,35.235.64.0/18
 GCP,us-west2,35.236.0.0/17
 GCP,us-west2,35.242.47.0/24
 GCP,us-west2,35.243.0.0/21
-GCP,us-west2,2600:1900:4120::/44
 GCP,us-west3,34.22.32.0/19
 GCP,us-west3,34.104.52.0/24
 GCP,us-west3,34.106.0.0/16
@@ -878,7 +833,6 @@ GCP,us-west3,34.177.79.0/24
 GCP,us-west3,35.217.64.0/18
 GCP,us-west3,35.220.31.0/24
 GCP,us-west3,35.242.31.0/24
-GCP,us-west3,2600:1900:4170::/44
 GCP,us-west4,8.228.0.0/19
 GCP,us-west4,34.16.128.0/17
 GCP,us-west4,34.50.160.0/19
@@ -888,9 +842,7 @@ GCP,us-west4,34.124.8.0/22
 GCP,us-west4,34.125.0.0/16
 GCP,us-west4,34.186.0.0/19
 GCP,us-west4,35.219.128.0/18
-GCP,us-west4,2600:1900:4180::/44
 GCP,us-west8,34.2.32.0/20
 GCP,us-west8,34.37.0.0/16
 GCP,us-west8,34.128.46.0/23
 GCP,us-west8,34.128.62.0/23
-GCP,us-west8,2600:1900:4280::/44

@@ -62,6 +62,10 @@ func csvDir() string {
 	return filepath.Dir(filepath.Dir(src))
 }
 
+func isIPv6(cidr string) bool {
+	return strings.Contains(cidr, ":")
+}
+
 func writeCSV(path string, fn func(*csv.Writer) error) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -96,21 +100,12 @@ func writeAWS(w *csv.Writer) error {
 			IPPrefix string `json:"ip_prefix"`
 			Region   string `json:"region"`
 		} `json:"prefixes"`
-		IPv6Prefixes []struct {
-			IPv6Prefix string `json:"ipv6_prefix"`
-			Region     string `json:"region"`
-		} `json:"ipv6_prefixes"`
 	}
 	if err := fetchJSON("https://ip-ranges.amazonaws.com/ip-ranges.json", &ranges); err != nil {
 		return err
 	}
 	for _, p := range ranges.Prefixes {
 		if err := w.Write([]string{"AWS", p.Region, p.IPPrefix}); err != nil {
-			return err
-		}
-	}
-	for _, p := range ranges.IPv6Prefixes {
-		if err := w.Write([]string{"AWS", p.Region, p.IPv6Prefix}); err != nil {
 			return err
 		}
 	}
@@ -162,6 +157,9 @@ func writeAzure(w *csv.Writer) error {
 			continue
 		}
 		for _, prefix := range v.Properties.AddressPrefixes {
+			if isIPv6(prefix) {
+				continue
+			}
 			if err := w.Write([]string{"Azure", v.Properties.Region, prefix}); err != nil {
 				return err
 			}
@@ -176,7 +174,6 @@ func writeGCP(w *csv.Writer) error {
 	var ranges struct {
 		Prefixes []struct {
 			IPv4Prefix string `json:"ipv4Prefix"`
-			IPv6Prefix string `json:"ipv6Prefix"`
 			Scope      string `json:"scope"`
 		} `json:"prefixes"`
 	}
@@ -186,11 +183,6 @@ func writeGCP(w *csv.Writer) error {
 	for _, p := range ranges.Prefixes {
 		if p.IPv4Prefix != "" {
 			if err := w.Write([]string{"GCP", p.Scope, p.IPv4Prefix}); err != nil {
-				return err
-			}
-		}
-		if p.IPv6Prefix != "" {
-			if err := w.Write([]string{"GCP", p.Scope, p.IPv6Prefix}); err != nil {
 				return err
 			}
 		}
@@ -218,7 +210,7 @@ func writeGitHub(w *csv.Writer) error {
 			continue
 		}
 		for _, cidr := range cidrs {
-			if seen[cidr] {
+			if isIPv6(cidr) || seen[cidr] {
 				continue
 			}
 			seen[cidr] = true
@@ -261,6 +253,9 @@ func writeMacStadium(w *csv.Writer) error {
 			return fmt.Errorf("%s (%s): %w", a.asn, a.region, err)
 		}
 		for _, p := range result.Data.Prefixes {
+			if isIPv6(p.Prefix) {
+				continue
+			}
 			if err := w.Write([]string{"MacStadium", a.region, p.Prefix}); err != nil {
 				return err
 			}

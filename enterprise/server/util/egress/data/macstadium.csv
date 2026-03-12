@@ -25,7 +25,6 @@ MacStadium,atlanta,208.52.170.0/24
 MacStadium,atlanta,208.52.154.0/24
 MacStadium,atlanta,208.52.168.0/24
 MacStadium,atlanta,208.52.157.0/24
-MacStadium,atlanta,2607:6480::/35
 MacStadium,atlanta,208.52.180.0/24
 MacStadium,atlanta,208.78.111.0/24
 MacStadium,atlanta,208.78.104.0/24
@@ -43,7 +42,6 @@ MacStadium,atlanta,208.52.164.0/24
 MacStadium,atlanta,207.254.78.0/23
 MacStadium,atlanta,208.83.4.0/23
 MacStadium,atlanta,208.78.110.0/24
-MacStadium,las-vegas,2607:6480:4000::/35
 MacStadium,las-vegas,207.254.56.0/21
 MacStadium,las-vegas,207.254.64.0/22
 MacStadium,las-vegas,207.254.40.0/21
@@ -54,7 +52,6 @@ MacStadium,las-vegas,207.254.72.0/22
 MacStadium,las-vegas,207.254.120.0/21
 MacStadium,las-vegas,207.254.32.0/21
 MacStadium,dublin,207.254.112.0/22
-MacStadium,dublin,2607:6480:6000::/35
 MacStadium,dublin,208.83.0.0/24
 MacStadium,dublin,208.83.1.0/24
 MacStadium,dublin,207.254.68.0/22

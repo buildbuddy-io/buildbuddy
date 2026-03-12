@@ -75,13 +75,6 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			region:   "",
 		},
 		{
-			name:     "ipv6_gcp",
-			ip:       "2600:1900:8000::1",
-			groupID:  "GR901",
-			provider: "gcp",
-			region:   "africa-south1",
-		},
-		{
 			name:     "ipv4_mapped_ipv6",
 			ip:       "::ffff:3.4.12.4", // IPv4-mapped IPv6 should classify the same as the IPv4 address.
 			groupID:  "GR012",
