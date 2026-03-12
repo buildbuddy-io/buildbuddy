@@ -6,7 +6,7 @@ import (
 	"encoding/csv"
 	"net"
 	"net/netip"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -18,8 +18,6 @@ import (
 
 	_ "embed"
 )
-
-// TODO(iain): SJC / MacStadium / GitHub IPs
 
 const (
 	unknownGroupID = "unknown"
@@ -44,7 +42,7 @@ type classifier struct {
 	cache    *lru.LRU[destination]
 }
 
-type grpcStatsHandler struct {
+type statsHandler struct {
 	classifier *classifier
 }
 
@@ -62,36 +60,44 @@ var (
 	//go:embed aws/aws.csv
 	awsRangesCSV []byte
 
+	//go:embed azure/azure.csv
+	azureRangesCSV []byte
+
 	//go:embed gcp/gcp.csv
 	gcpRangesCSV []byte
 
-	classifierOnce   sync.Once
-	cachedClassifier *classifier
-	cachedErr        error
+	//go:embed github/github.csv
+	githubRangesCSV []byte
+
+	//go:embed macstadium/macstadium.csv
+	macstadiumRangesCSV []byte
+
+	metalRangesCSV []byte = []byte(`Metal,us-sjc,23.176.168.0/24
+Metal,us-sjc,216.226.68.0/22
+`)
+	classifierOnce = sync.OnceValues(newClassifier)
 )
 
 // NewStatsHandler returns a gRPC server stats handler that classifies response
 // bytes by destination cloud provider and region using the embedded IP ranges.
 func NewStatsHandler() (stats.Handler, error) {
-	classifierOnce.Do(func() {
-		cachedClassifier, cachedErr = newClassifier()
-	})
-	if cachedErr != nil {
-		return nil, cachedErr
+	classifier, err := classifierOnce()
+	if err != nil {
+		return nil, err
 	}
-	return &grpcStatsHandler{classifier: cachedClassifier}, nil
+	return &statsHandler{classifier: classifier}, nil
 }
 
-func (h *grpcStatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
+func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
 	if info == nil {
 		return ctx
 	}
 	return context.WithValue(ctx, connDestinationKey{}, h.classifier.classify(info.RemoteAddr))
 }
 
-func (*grpcStatsHandler) HandleConn(context.Context, stats.ConnStats) {}
+func (*statsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
-func (h *grpcStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	labels := rpcMetricLabels{
 		groupID:  unknownGroupID,
 		provider: otherProvider,
@@ -107,7 +113,7 @@ func (h *grpcStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) c
 	return context.WithValue(ctx, rpcMetricLabelsKey{}, labels)
 }
 
-func (h *grpcStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	switch st := s.(type) {
 	case *stats.OutPayload:
 		if st.IsClient() || st.WireLength <= 0 {
@@ -117,7 +123,7 @@ func (h *grpcStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	}
 }
 
-func (h *grpcStatsHandler) record(ctx context.Context, wireLength int) {
+func (h *statsHandler) record(ctx context.Context, wireLength int) {
 	labels := rpcMetricLabels{
 		groupID:  unknownGroupID,
 		provider: otherProvider,
@@ -130,17 +136,23 @@ func (h *grpcStatsHandler) record(ctx context.Context, wireLength int) {
 }
 
 func newClassifier() (*classifier, error) {
-	ranges, err := parseRangeEntries(awsRangesCSV)
-	if err != nil {
-		return nil, status.WrapError(err, "parse AWS egress ranges")
+	var ranges []ipRange
+	for name, csv := range map[string][]byte{
+		"AWS":        awsRangesCSV,
+		"Azure":      azureRangesCSV,
+		"GCP":        gcpRangesCSV,
+		"GitHub":     githubRangesCSV,
+		"MacStadium": macstadiumRangesCSV,
+		"Metal":      metalRangesCSV,
+	} {
+		entries, err := parseRangeEntries(csv)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "parse %s egress ranges", name)
+		}
+		ranges = append(ranges, entries...)
 	}
-	gcpRanges, err := parseRangeEntries(gcpRangesCSV)
-	if err != nil {
-		return nil, status.WrapError(err, "parse GCP egress ranges")
-	}
-	ranges = append(ranges, gcpRanges...)
-	sort.Slice(ranges, func(i, j int) bool {
-		return ranges[i].prefix.Bits() > ranges[j].prefix.Bits()
+	slices.SortFunc(ranges, func(a, b ipRange) int {
+		return b.prefix.Bits() - a.prefix.Bits()
 	})
 	cache, err := lru.NewLRU(&lru.Config[destination]{
 		MaxSize: cacheMaxSize,
@@ -161,24 +173,20 @@ func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
-	start := 0
 
-	entries := make([]ipRange, 0, len(records)-start)
-	for i, record := range records[start:] {
+	entries := make([]ipRange, 0, len(records))
+	for i, record := range records {
 		if len(record) != 3 {
-			return nil, status.InternalErrorf("invalid egress CSV record at row %d: got %d columns, want 3", i+start+1, len(record))
+			return nil, status.InternalErrorf("invalid egress CSV record at row %d: got %d columns, want 3", i+1, len(record))
 		}
 		provider := strings.ToLower(strings.TrimSpace(record[0]))
 		region := strings.TrimSpace(record[1])
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(record[2]))
 		if err != nil {
-			return nil, status.WrapErrorf(err, "parse prefix at row %d", i+start+1)
+			return nil, status.WrapErrorf(err, "parse prefix at row %d", i+1)
 		}
 		if provider == "" {
-			provider = otherProvider
-		}
-		if region == "" {
-			region = unknownRegion
+			provider = "empty provider"
 		}
 		entries = append(entries, ipRange{
 			prefix: prefix.Masked(),
@@ -198,11 +206,11 @@ func (c *classifier) classify(addr net.Addr) destination {
 	}
 	cacheKey := ip.String()
 	c.mu.Lock()
-	if value, ok := c.cache.Get(cacheKey); ok {
-		c.mu.Unlock()
+	value, ok := c.cache.Get(cacheKey)
+	c.mu.Unlock()
+	if ok {
 		return value
 	}
-	c.mu.Unlock()
 	for _, entry := range c.ipRanges {
 		if entry.prefix.Contains(ip) {
 			c.mu.Lock()
