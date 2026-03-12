@@ -407,7 +407,7 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	if readThrough.remoteRecvErr == io.EOF {
 		return nil
 	} else if readThrough.remoteRecvErr != nil {
-		log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
+		log.CtxInfof(ctx, "Error streaming from remote for read through: %v", readThrough.remoteRecvErr)
 		return readThrough.remoteRecvErr
 	}
 	// The local write returned but remoteRecvErr != EOF, which means the read
