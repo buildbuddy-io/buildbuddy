@@ -82,7 +82,7 @@ type ociFetcherServer struct {
 	acClient repb.ActionCacheClient
 
 	mu        sync.Mutex
-	pullerLRU *lru.LRU[*pullerLRUEntry]
+	pullerLRU lru.LRU[*pullerLRUEntry]
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;

@@ -78,7 +78,7 @@ type apiKeyGroupCacheEntry struct {
 type apiKeyGroupCache struct {
 	// Note that even though we base this off an LRU cache, every entry has a
 	// hard expiration time to force a refresh of the underlying data.
-	lru interfaces.LRU[*apiKeyGroupCacheEntry]
+	lru lru.LRU[*apiKeyGroupCacheEntry]
 	ttl time.Duration
 	mu  sync.Mutex
 }

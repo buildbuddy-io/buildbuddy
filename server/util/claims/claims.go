@@ -580,7 +580,7 @@ type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
-	lru interfaces.LRU[*Claims]
+	lru lru.LRU[*Claims]
 
 	keyProvider KeyProvider
 }

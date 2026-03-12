@@ -85,7 +85,7 @@ var (
 type fileCache struct {
 	rootDir     string
 	lock        sync.Mutex
-	l           *lru.LRU[*entry]
+	l           lru.LRU[*entry]
 	dirScanDone chan struct{}
 	// Directories that are marked for deletion and are waiting for the last
 	// user to unlock the directory. The key is the directory path.

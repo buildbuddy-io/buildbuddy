@@ -840,7 +840,7 @@ func ConfigureIsolation(ctx context.Context) error {
 
 type imageExistsCache struct {
 	mu  sync.Mutex
-	lru *lru.LRU[time.Time]
+	lru lru.LRU[time.Time]
 }
 
 func newImageExistsCache() (*imageExistsCache, error) {
