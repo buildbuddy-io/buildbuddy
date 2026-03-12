@@ -345,10 +345,8 @@ func (c *expiringLRU[V]) Get(key string) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	if c.clock.Now().Sub(entry.createdAt) > c.ttl {
-		if _, ok := c.inner.Get(key); ok {
-			c.inner.RemoveWithReason(key, TTLEviction)
-		}
+	if c.clock.Now().Sub(entry.createdAt) >= c.ttl {
+		c.inner.RemoveWithReason(key, TTLEviction)
 		var zero V
 		return zero, false
 	}
