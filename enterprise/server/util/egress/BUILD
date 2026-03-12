@@ -6,11 +6,11 @@ go_library(
     name = "egress",
     srcs = ["egress.go"],
     embedsrcs = [
-        "//enterprise/server/util/egress/aws:aws.csv",
-        "//enterprise/server/util/egress/azure:azure.csv",
-        "//enterprise/server/util/egress/gcp:gcp.csv",
-        "//enterprise/server/util/egress/github:github.csv",
-        "//enterprise/server/util/egress/macstadium:macstadium.csv",
+        "//enterprise/server/util/egress/data:aws.csv",
+        "//enterprise/server/util/egress/data:azure.csv",
+        "//enterprise/server/util/egress/data:gcp.csv",
+        "//enterprise/server/util/egress/data:github.csv",
+        "//enterprise/server/util/egress/data:macstadium.csv",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/egress",
     deps = [

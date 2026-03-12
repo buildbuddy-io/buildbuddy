@@ -58,19 +58,19 @@ type rpcMetricLabels struct {
 }
 
 var (
-	//go:embed aws/aws.csv
+	//go:embed data/aws.csv
 	awsRangesCSV []byte
 
-	//go:embed azure/azure.csv
+	//go:embed data/azure.csv
 	azureRangesCSV []byte
 
-	//go:embed gcp/gcp.csv
+	//go:embed data/gcp.csv
 	gcpRangesCSV []byte
 
-	//go:embed github/github.csv
+	//go:embed data/github.csv
 	githubRangesCSV []byte
 
-	//go:embed macstadium/macstadium.csv
+	//go:embed data/macstadium.csv
 	macstadiumRangesCSV []byte
 
 	metalRangesCSV []byte = []byte(`Metal,us-sjc,23.176.168.0/24
