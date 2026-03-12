@@ -533,9 +533,17 @@ export default class InvocationModel {
   }
 
   getPullRequestNumber(): number | undefined {
-    return this.buildMetadataMap.get("PULL_REQUEST_NUMBER")
-      ? Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"))
-      : undefined;
+    if (this.buildMetadataMap.get("PULL_REQUEST_NUMBER")) {
+      return Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"));
+    }
+
+    // If the build metadata is not set, get PR from GITHUB_REF (e.g. "refs/pull/123/merge")
+    const githubRef = this.clientEnvMap.get("GITHUB_REF") ?? "";
+    const match = githubRef.match(/^refs\/pull\/(\d+)\//);
+    if (match) {
+      return Number(match[1]);
+    }
+    return undefined;
   }
 
   getGithubUser() {
