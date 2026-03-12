@@ -40,7 +40,7 @@ type ipRange struct {
 type classifier struct {
 	ipRanges []ipRange
 	mu       sync.Mutex
-	cache    *lru.LRU[destination]
+	cache    lru.LRU[destination]
 }
 
 type statsHandler struct {
@@ -153,7 +153,7 @@ func newClassifier() (*classifier, error) {
 		})
 		ranges = append(ranges, entries...)
 	}
-	cache, err := lru.NewLRU(&lru.Config[destination]{
+	cache, err := lru.New(&lru.Config[destination]{
 		MaxSize: cacheMaxSize,
 		SizeFn:  func(destination) int64 { return 1 },
 	})
