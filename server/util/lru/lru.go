@@ -25,7 +25,7 @@ type LRU[V any] interface {
 	Contains(key string) bool
 
 	// Removes a value from the LRU, releasing resources associated with
-	// that value. Returns a boolean indicating if the value was sucessfully
+	// that value. Returns a boolean indicating if the value was successfully
 	// removed.
 	Remove(key string) bool
 
