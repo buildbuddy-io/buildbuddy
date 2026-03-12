@@ -35,6 +35,7 @@ jobs:
             --bes_backend=grpcs://proxy.metal.buildbuddy.dev \
             --bes_results_url=https://app.buildbuddy.dev/invocation/ \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BB_CHUNKING_TEST_DEV_API_KEY }} \
+            --build_metadata=PULL_REQUEST_NUMBER=${{ github.event.pull_request.number }} \
             --remote_upload_local_results \
             --announce_rc \
             //...
