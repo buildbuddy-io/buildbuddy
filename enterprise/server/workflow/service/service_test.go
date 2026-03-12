@@ -379,6 +379,37 @@ func TestListLegacyWorkflows(t *testing.T) {
 	}}, rsp.GetWorkflow(), protocmp.Transform()))
 }
 
+func TestGetWorkflowRepoToken_RepositoryWorkflow_RefreshesToken(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid, false)
+
+	workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	app := te.GetGitHubAppService().GetReadWriteGitHubApp()
+	fakeApp, ok := app.(*testgit.FakeGitHubApp)
+	require.True(t, ok)
+
+	fakeApp.Token = "token-1"
+	rsp, err := bbClient.GetWorkflowRepoToken(ctx, &wfpb.GetWorkflowRepoTokenRequest{
+		WorkflowId: workflowID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "token-1", rsp.GetAccessToken())
+
+	fakeApp.Token = "token-2"
+	rsp, err = bbClient.GetWorkflowRepoToken(ctx, &wfpb.GetWorkflowRepoTokenRequest{
+		WorkflowId: workflowID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "token-2", rsp.GetAccessToken())
+}
+
 func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)

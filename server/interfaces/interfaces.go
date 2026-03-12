@@ -651,6 +651,7 @@ type WorkflowService interface {
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
+	GetWorkflowRepoToken(ctx context.Context, req *wfpb.GetWorkflowRepoTokenRequest) (*wfpb.GetWorkflowRepoTokenResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	// HandleRepositoryEvent handles a webhook event corresponding to the given

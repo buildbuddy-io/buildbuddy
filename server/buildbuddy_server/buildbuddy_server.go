@@ -1761,6 +1761,12 @@ func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+func (s *BuildBuddyServer) GetWorkflowRepoToken(ctx context.Context, req *wfpb.GetWorkflowRepoTokenRequest) (*wfpb.GetWorkflowRepoTokenResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.GetWorkflowRepoToken(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
 
 func (s *BuildBuddyServer) GetWorkspace(ctx context.Context, req *wspb.GetWorkspaceRequest) (*wspb.GetWorkspaceResponse, error) {
 	if wss := s.env.GetWorkspaceService(); wss != nil {

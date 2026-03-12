@@ -241,6 +241,26 @@ message GetReposResponse {
   repeated Repo repo = 2;
 }
 
+message GetWorkflowRepoTokenRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // ID of the workflow associated with the run.
+  // Ex. "WF4576963743584254779"
+  string workflow_id = 2;
+}
+
+message GetWorkflowRepoTokenResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // Access token used for git operations.
+  string access_token = 2;
+
+  // Optional username paired with the access token.
+  string username = 3;
+}
+
 message InvalidateSnapshotRequest {
   context.RequestContext request_context = 1;
 

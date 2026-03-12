@@ -164,6 +164,8 @@ service BuildBuddyService {
   rpc ExecuteWorkflow(workflow.ExecuteWorkflowRequest)
       returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
+  rpc GetWorkflowRepoToken(workflow.GetWorkflowRepoTokenRequest)
+      returns (workflow.GetWorkflowRepoTokenResponse);
   rpc GetWorkflowHistory(workflow.GetWorkflowHistoryRequest)
       returns (workflow.GetWorkflowHistoryResponse);
   rpc InvalidateSnapshot(workflow.InvalidateSnapshotRequest)

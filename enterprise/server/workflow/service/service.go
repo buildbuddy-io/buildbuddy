@@ -507,6 +507,23 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
+func (ws *workflowService) GetWorkflowRepoToken(ctx context.Context, req *wfpb.GetWorkflowRepoTokenRequest) (*wfpb.GetWorkflowRepoTokenResponse, error) {
+	if req.GetWorkflowId() == "" {
+		return nil, status.InvalidArgumentError("Missing workflow_id")
+	}
+	wf, err := ws.getWorkflowByID(ctx, req.GetWorkflowId())
+	if err != nil {
+		return nil, err
+	}
+	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, wf.GroupID); err != nil {
+		return nil, err
+	}
+	return &wfpb.GetWorkflowRepoTokenResponse{
+		AccessToken: wf.AccessToken,
+		Username:    wf.Username,
+	}, nil
+}
+
 // getActions fetches the workflow config (buildbuddy.yaml) and returns the list of
 // actions matching the webhook event
 func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
