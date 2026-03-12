@@ -18,6 +18,7 @@ go_library(
         "//server/util/claims",
         "//server/util/lru",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//stats",
     ],
 )
