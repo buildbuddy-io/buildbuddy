@@ -1315,7 +1315,7 @@ func NewMmapLRU() (*MmapLRU, error) {
 		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
 	}
 	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
-	l, err := lru.NewLRU(&lru.Config[*Mmap]{
+	l, err := lru.New(&lru.Config[*Mmap]{
 		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
 		OnEvict: func(key string, m *Mmap, reason lru.EvictionReason) {
 			// Manual evictions are triggered by calling Unmap(), so there's

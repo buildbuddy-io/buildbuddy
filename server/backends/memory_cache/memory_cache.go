@@ -63,7 +63,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
+	l, err := lru.New[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}

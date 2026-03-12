@@ -96,8 +96,8 @@ type Entry[V any] struct {
 	value V
 }
 
-// NewLRU constructs an LRU based on the specified config.
-func NewLRU[V any](config *Config[V]) (LRU[V], error) {
+// New constructs an LRU based on the specified config.
+func New[V any](config *Config[V]) (LRU[V], error) {
 	if config.MaxSize <= 0 {
 		return nil, errors.New("must provide a positive size")
 	}
@@ -220,10 +220,6 @@ func (c *lru[V]) Len() int {
 
 func (c *lru[V]) Size() int64 {
 	return c.currentSize
-}
-
-func (c *lru[V]) MaxSize() int64 {
-	return c.maxSize
 }
 
 // removeOldest is just like RemoveOldest, but without any return values.

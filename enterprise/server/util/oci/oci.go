@@ -218,7 +218,7 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	imageTagToDigestLRU, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
+	imageTagToDigestLRU, err := lru.New[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
 		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
 		MaxSize: int64(resolveImageDigestLRUMaxEntries),
 	})

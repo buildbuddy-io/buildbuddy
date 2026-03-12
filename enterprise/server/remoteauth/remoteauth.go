@@ -61,7 +61,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
 	}
-	cache, err := lru.NewLRU(config)
+	cache, err := lru.New(config)
 	if err != nil {
 		return nil, err
 	}
