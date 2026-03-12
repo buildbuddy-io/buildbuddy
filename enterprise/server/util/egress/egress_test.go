@@ -13,7 +13,7 @@ import (
 )
 
 func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
-	handler, err := NewStatsHandler()
+	handler, err := NewServerHandler()
 	if err != nil {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			metrics.GRPCEgressBytes.Reset()
+			metrics.GRPCServerEgressBytes.Reset()
 
 			ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
 				RemoteAddr: &net.TCPAddr{IP: net.ParseIP(tc.ip), Port: 1985},
@@ -102,21 +102,46 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 123})
 
 			labels := prometheus.Labels{
-				metrics.GroupID:                        tc.groupID,
-				metrics.EgressDestinationProviderLabel: tc.provider,
-				metrics.EgressDestinationRegionLabel:   tc.region,
+				metrics.GroupID:                  tc.groupID,
+				metrics.DestinationProviderLabel: tc.provider,
+				metrics.DestinationRegionLabel:   tc.region,
 			}
-			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 123 {
+			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 123 {
 				t.Fatalf("metric value = %v, want 123", got)
 			}
 		})
 	}
 }
 
-func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
-	metrics.GRPCEgressBytes.Reset()
+func TestStatsHandler_RecordsIngressBySource(t *testing.T) {
+	metrics.GRPCServerIngressBytes.Reset()
 
-	handler, err := NewStatsHandler()
+	handler, err := NewServerHandler()
+	if err != nil {
+		t.Fatalf("NewStatsHandler() returned error: %v", err)
+	}
+
+	ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
+		RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
+	})
+	ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: "GR123"})
+	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	handler.HandleRPC(ctx, &stats.InPayload{WireLength: 456})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                  "GR123",
+		metrics.DestinationProviderLabel: "aws",
+		metrics.DestinationRegionLabel:   "eu-west-1",
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerIngressBytes, labels); got != 456 {
+		t.Fatalf("metric value = %v, want 456", got)
+	}
+}
+
+func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
+	metrics.GRPCServerEgressBytes.Reset()
+
+	handler, err := NewServerHandler()
 	if err != nil {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
@@ -125,19 +150,19 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 	handler.HandleRPC(ctx, &stats.OutPayload{Client: true, WireLength: 55})
 
 	labels := prometheus.Labels{
-		metrics.GroupID:                        unknownGroupID,
-		metrics.EgressDestinationProviderLabel: "other",
-		metrics.EgressDestinationRegionLabel:   "unknown",
+		metrics.GroupID:                  unknownGroupID,
+		metrics.DestinationProviderLabel: "other",
+		metrics.DestinationRegionLabel:   "unknown",
 	}
-	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 0 {
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 0 {
 		t.Fatalf("metric value = %v, want 0", got)
 	}
 }
 
 func TestStatsHandler_NilConnTagInfo(t *testing.T) {
-	metrics.GRPCEgressBytes.Reset()
+	metrics.GRPCServerEgressBytes.Reset()
 
-	handler, err := NewStatsHandler()
+	handler, err := NewServerHandler()
 	if err != nil {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
@@ -147,19 +172,19 @@ func TestStatsHandler_NilConnTagInfo(t *testing.T) {
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 50})
 
 	labels := prometheus.Labels{
-		metrics.GroupID:                        unknownGroupID,
-		metrics.EgressDestinationProviderLabel: "other",
-		metrics.EgressDestinationRegionLabel:   "unknown",
+		metrics.GroupID:                  unknownGroupID,
+		metrics.DestinationProviderLabel: "other",
+		metrics.DestinationRegionLabel:   "unknown",
 	}
-	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 50 {
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 50 {
 		t.Fatalf("metric value = %v, want 50", got)
 	}
 }
 
 func TestStatsHandler_NoClaims(t *testing.T) {
-	metrics.GRPCEgressBytes.Reset()
+	metrics.GRPCServerEgressBytes.Reset()
 
-	handler, err := NewStatsHandler()
+	handler, err := NewServerHandler()
 	if err != nil {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
@@ -172,11 +197,11 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 75})
 
 	labels := prometheus.Labels{
-		metrics.GroupID:                        unknownGroupID,
-		metrics.EgressDestinationProviderLabel: "aws",
-		metrics.EgressDestinationRegionLabel:   "eu-west-1",
+		metrics.GroupID:                  unknownGroupID,
+		metrics.DestinationProviderLabel: "aws",
+		metrics.DestinationRegionLabel:   "eu-west-1",
 	}
-	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 75 {
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 75 {
 		t.Fatalf("metric value = %v, want 75", got)
 	}
 }

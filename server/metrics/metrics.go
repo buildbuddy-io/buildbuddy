@@ -360,11 +360,11 @@ const (
 
 	// Destination cloud provider inferred from the remote IP range: `aws`,
 	// `gcp`, or `other`.
-	EgressDestinationProviderLabel = "provider"
+	DestinationProviderLabel = "provider"
 
 	// Destination region inferred from the remote IP range, or `unknown` if no
 	// known cloud range matches.
-	EgressDestinationRegionLabel = "region"
+	DestinationRegionLabel = "region"
 
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
@@ -3898,15 +3898,25 @@ var (
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
 	})
-	GRPCEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+	GRPCServerEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
-		Name:      "egress_bytes",
-		Help:      "The number of gRPC response bytes sent over the wire, broken down by gRPC method and destination provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
+		Name:      "server_egress_bytes",
+		Help:      "The number of gRPC server response bytes sent over the wire, broken down by gRPC method and destination provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
 	}, []string{
 		GroupID,
-		EgressDestinationProviderLabel,
-		EgressDestinationRegionLabel,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+	GRPCServerIngressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_ingress_bytes",
+		Help:      "The number of gRPC server request bytes received over the wire, broken down by source provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or request headers.",
+	}, []string{
+		GroupID,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
 	})
 )
 

@@ -49,12 +49,11 @@ type statsHandler struct {
 
 // Context keys for storing peer information in context.
 type connDestinationKey struct{}
-type metricKey struct{}
+type rpcCountersKey struct{}
 
-type rpcMetricLabels struct {
-	groupID  string
-	provider string
-	region   string
+type rpcCounters struct {
+	egress  prometheus.Counter
+	ingress prometheus.Counter
 }
 
 var (
@@ -79,15 +78,16 @@ Metal,us-sjc,216.226.68.0/22
 	classifierOnce = sync.OnceValues(newClassifier)
 )
 
-// NewStatsHandler returns a gRPC server stats handler that classifies response
+// NewServerHandler returns a gRPC server stats handler that classifies
 // bytes by destination cloud provider and region using the embedded IP ranges.
-func NewStatsHandler() (stats.Handler, error) {
+func NewServerHandler() (stats.Handler, error) {
 	classifier, err := classifierOnce()
 	if err != nil {
 		return nil, err
 	}
 	return &statsHandler{classifier: classifier}, nil
 }
+
 
 func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
 	if info == nil {
@@ -109,22 +109,26 @@ func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) conte
 		provider = destination.provider
 		region = destination.region
 	}
-	return context.WithValue(ctx, metricKey{}, metrics.GRPCEgressBytes.WithLabelValues(groupID, provider, region))
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{
+		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, provider, region),
+		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, provider, region),
+	})
 }
 
 func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
-	switch st := s.(type) {
-	case *stats.OutPayload:
-		if st.IsClient() || st.WireLength <= 0 {
-			return
-		}
-		h.record(ctx, st.WireLength)
+	c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
+	if !ok {
+		return
 	}
-}
-
-func (h *statsHandler) record(ctx context.Context, wireLength int) {
-	if m, ok := ctx.Value(metricKey{}).(prometheus.Counter); ok {
-		m.Add(float64(wireLength))
+	switch st := s.(type) {
+	case *stats.InPayload:
+		if !st.IsClient() && st.WireLength > 0 {
+			c.ingress.Add(float64(st.WireLength))
+		}
+	case *stats.OutPayload:
+		if !st.IsClient() && st.WireLength > 0 {
+			c.egress.Add(float64(st.WireLength))
+		}
 	}
 }
 
