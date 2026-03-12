@@ -244,7 +244,21 @@ func BenchmarkStatsHandler(b *testing.B) {
 			handler.HandleRPC(ctx, payload)
 		}
 	})
+	b.Run("cached_hit_multiple_payloads", func(b *testing.B) {
+		handler := benchmarkStatsHandler(b)
+		connInfo := &stats.ConnTagInfo{
+			RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
+		}
 
+		b.ReportAllocs()
+		for b.Loop() {
+			ctx := handler.TagConn(ctx, connInfo)
+			ctx = handler.TagRPC(ctx, rpcInfo)
+			for range 10 {
+				handler.HandleRPC(ctx, payload)
+			}
+		}
+	})
 	b.Run("varying_ips", func(b *testing.B) {
 		handler := benchmarkStatsHandler(b)
 		b.ReportAllocs()
