@@ -1115,7 +1115,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,
-		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx),
+		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		"--timeout=" + timeout.String(),
 		"--serialized_action=" + serializedAction,
@@ -1272,15 +1272,16 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 	return remote_execution_config.RemoteExecutionEnabled() && *workflowsCIRunnerDebug
 }
 
-func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context) string {
-	if !remote_execution_config.RemoteExecutionEnabled() {
-		return ""
+func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.Workflow, workflowAction *config.Action) string {
+	useCLI := false
+	if wf.GitRepository != nil {
+		useCLI = wf.GitRepository.UseCLIInRemoteRunners
 	}
-	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
-		if bazelCommandOverride != "" {
-			return bazelCommandOverride
-		}
+	if workflowAction.UseCLI != nil {
+		useCLI = *workflowAction.UseCLI
+	}
+	if useCLI {
+		return "bb"
 	}
 	return *workflowsCIRunnerBazelCommand
 }
