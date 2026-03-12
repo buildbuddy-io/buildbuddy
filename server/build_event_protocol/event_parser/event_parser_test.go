@@ -413,6 +413,99 @@ func TestTagMerging(t *testing.T) {
 	}
 }
 
+func TestEnvVarDiscovery(t *testing.T) {
+	tests := []struct {
+		name      string
+		envVars   map[string]string
+		repoUrl   string
+		branch    string
+		commitSha string
+		role      string
+	}{
+		{
+			name:    "GITHUB_REPOSITORY sets repo URL defaulting to github.com",
+			envVars: map[string]string{"GITHUB_REPOSITORY": "buildbuddy-io/buildbuddy"},
+			repoUrl: "https://github.com/buildbuddy-io/buildbuddy",
+		},
+		{
+			name:    "GITHUB_REF sets branch for heads ref",
+			envVars: map[string]string{"GITHUB_REF": "refs/heads/my-feature"},
+			branch:  "my-feature",
+		},
+		{
+			name:    "GITHUB_REF ignored for non-heads ref",
+			envVars: map[string]string{"GITHUB_REF": "refs/tags/v1.0"},
+		},
+		{
+			name:    "GITHUB_HEAD_REF sets branch",
+			envVars: map[string]string{"GITHUB_HEAD_REF": "pr-branch"},
+			branch:  "pr-branch",
+		},
+		{
+			name:      "GITHUB_SHA sets commit",
+			envVars:   map[string]string{"GITHUB_SHA": "abc123"},
+			commitSha: "abc123",
+		},
+		{
+			name:      "Multiple GitHub env vars",
+			envVars:   map[string]string{"GITHUB_REPOSITORY": "owner/repo", "GITHUB_SHA": "deadbeef", "GITHUB_HEAD_REF": "main"},
+			repoUrl:   "https://github.com/owner/repo",
+			commitSha: "deadbeef",
+			branch:    "main",
+		},
+		{
+			name:    "CI sets role",
+			envVars: map[string]string{"CI": "true"},
+			role:    "CI",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := make([]*command_line.Option, 0, len(tc.envVars))
+			for k, v := range tc.envVars {
+				options = append(options, &command_line.Option{
+					OptionName:  "client_env",
+					OptionValue: k + "=" + v,
+				})
+			}
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+			parser.ParseEvent(&build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+					StructuredCommandLine: &command_line.CommandLine{
+						CommandLineLabel: "canonical",
+						Sections: []*command_line.CommandLineSection{
+							{
+								SectionType: &command_line.CommandLineSection_OptionList{
+									OptionList: &command_line.OptionList{
+										Option: options,
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+
+			if tc.repoUrl != "" {
+				assert.Equal(t, tc.repoUrl, invocation.RepoUrl)
+			}
+			if tc.branch != "" {
+				assert.Equal(t, tc.branch, invocation.BranchName)
+			}
+			if tc.commitSha != "" {
+				assert.Equal(t, tc.commitSha, invocation.CommitSha)
+			}
+			if tc.role != "" {
+				assert.Equal(t, tc.role, invocation.Role)
+			}
+		})
+	}
+}
+
 func TestRemoteCacheOptions(t *testing.T) {
 	tests := []struct {
 		desc                              string
