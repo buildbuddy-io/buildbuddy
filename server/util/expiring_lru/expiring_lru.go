@@ -34,7 +34,6 @@ type Config[V any] struct {
 // - authdb.go
 // - oci.go
 // - podman.go
-// - distributed.go
 // - claims.go (will require updating expiration logic a bit)
 type LRU[V any] struct {
 	mu    sync.Mutex
