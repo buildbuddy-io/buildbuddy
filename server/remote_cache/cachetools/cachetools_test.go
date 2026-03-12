@@ -784,7 +784,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, 0 /*=avgChunkSizeBytes*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
@@ -806,7 +806,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, 0 /*=avgChunkSizeBytes*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1216,7 +1216,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	blobSize := int64(3 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), true /*=chunkingEnabled*/, chunking.AvgChunkSizeBytes() /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.AvgChunkSizeBytes())
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 

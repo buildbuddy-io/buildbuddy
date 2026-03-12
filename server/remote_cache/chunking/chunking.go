@@ -49,6 +49,18 @@ func AvgChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes
 }
 
+// FastCDCParams returns the FastCDC2020 parameters if chunking is configured.
+func FastCDCParams() *repb.FastCdc2020Params {
+	v := *avgChunkSizeBytes
+	if v <= 0 {
+		return nil
+	}
+	return &repb.FastCdc2020Params{
+		AvgChunkSizeBytes: uint64(v),
+		Seed:              0,
+	}
+}
+
 func MaxChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes * 4
 }
