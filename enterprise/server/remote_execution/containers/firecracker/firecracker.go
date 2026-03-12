@@ -1620,10 +1620,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.nopnp",
 		"i8042.dumbkbd",
 		"tsc=reliable",
-	}
-	if runtime.GOARCH != "amd64" {
-		// TODO(bduffany): update arm64 image and enable ipv6 on arm64 as well.
-		kernelArgs = append(kernelArgs, "ipv6.disable=1")
+		"ipv6.disable=1",
 	}
 	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
