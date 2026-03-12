@@ -75,6 +75,20 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			region:   "",
 		},
 		{
+			name:     "ipv6_gcp",
+			ip:       "2600:1900:8000::1",
+			groupID:  "GR901",
+			provider: "gcp",
+			region:   "africa-south1",
+		},
+		{
+			name:     "ipv4_mapped_ipv6",
+			ip:       "::ffff:3.4.12.4", // IPv4-mapped IPv6 should classify the same as the IPv4 address.
+			groupID:  "GR012",
+			provider: "aws",
+			region:   "eu-west-1",
+		},
+		{
 			name:     "other",
 			ip:       "203.0.113.10",
 			groupID:  "GR789",
@@ -124,6 +138,53 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 	}
 	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 0 {
 		t.Fatalf("metric value = %v, want 0", got)
+	}
+}
+
+func TestStatsHandler_NilConnTagInfo(t *testing.T) {
+	metrics.GRPCEgressBytes.Reset()
+
+	handler, err := NewStatsHandler()
+	if err != nil {
+		t.Fatalf("NewStatsHandler() returned error: %v", err)
+	}
+
+	ctx := handler.TagConn(context.Background(), nil)
+	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 50})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                        unknownGroupID,
+		metrics.EgressDestinationProviderLabel: "other",
+		metrics.EgressDestinationRegionLabel:   "unknown",
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 50 {
+		t.Fatalf("metric value = %v, want 50", got)
+	}
+}
+
+func TestStatsHandler_NoClaims(t *testing.T) {
+	metrics.GRPCEgressBytes.Reset()
+
+	handler, err := NewStatsHandler()
+	if err != nil {
+		t.Fatalf("NewStatsHandler() returned error: %v", err)
+	}
+
+	ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
+		RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
+	})
+	// No claims added to context.
+	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 75})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                        unknownGroupID,
+		metrics.EgressDestinationProviderLabel: "aws",
+		metrics.EgressDestinationRegionLabel:   "eu-west-1",
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCEgressBytes, labels); got != 75 {
+		t.Fatalf("metric value = %v, want 75", got)
 	}
 }
 
