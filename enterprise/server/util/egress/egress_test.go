@@ -195,8 +195,7 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		classifier.classify(addr)
 
 		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			classifier.classify(addr)
 		}
 	})
@@ -205,9 +204,8 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		classifier := newBenchmarkClassifier(b)
 
 		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			classifier.classify(benchmarkTCPAddr(i))
+		for b.Loop() {
+			classifier.classify(benchmarkTCPAddr(b.N))
 		}
 	})
 }
