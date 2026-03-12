@@ -1564,7 +1564,7 @@ type AuditLogger interface {
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
-type IPRulesService interface {
+type IPRulesEnforcer interface {
 	// Authorize checks whether the authenticated user in the context is allowed
 	// to access the group identified in the context.
 	Authorize(ctx context.Context) error
@@ -1579,6 +1579,13 @@ type IPRulesService interface {
 	// context.
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 
+	// Performs an explicit IP rule check for the given group ID with the
+	// option to force refresh rules from the backend and skip specific rules
+	// (for testing rule changes made by IPRulesService).
+	Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error
+}
+
+type IPRulesService interface {
 	GetRule(ctx context.Context, groupID string, ruleID string) (*tables.IPRule, error)
 
 	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)

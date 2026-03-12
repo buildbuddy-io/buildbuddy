@@ -127,6 +127,7 @@ type Env interface {
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	GetPromQuerier() interfaces.PromQuerier
 	GetAuditLogger() interfaces.AuditLogger
+	GetIPRulesEnforcer() interfaces.IPRulesEnforcer
 	GetIPRulesService() interfaces.IPRulesService
 	GetClientIdentityService() interfaces.ClientIdentityService
 	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator

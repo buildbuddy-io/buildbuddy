@@ -289,7 +289,7 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 
 func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if irs := env.GetIPRulesService(); irs != nil {
+		if irs := env.GetIPRulesEnforcer(); irs != nil {
 			if err := irs.AuthorizeHTTPRequest(r.Context(), r); err != nil {
 				http.Error(w, err.Error(), http.StatusForbidden)
 				return

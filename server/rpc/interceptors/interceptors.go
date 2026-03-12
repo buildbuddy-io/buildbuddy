@@ -211,7 +211,7 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 
 func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if irs := env.GetIPRulesService(); irs != nil {
+		if irs := env.GetIPRulesEnforcer(); irs != nil {
 			if err := irs.Authorize(ctx); err != nil {
 				return nil, err
 			}
@@ -222,7 +222,7 @@ func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercept
 
 func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if irs := env.GetIPRulesService(); irs != nil {
+		if irs := env.GetIPRulesEnforcer(); irs != nil {
 			if err := irs.Authorize(stream.Context()); err != nil {
 				return err
 			}
