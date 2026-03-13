@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/mem"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
+	_ "google.golang.org/grpc/xds"
 )
 
 const (
@@ -305,7 +306,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" && u.Scheme != "kube" {
+		if u.Scheme != "unix" && u.Scheme != "kube" && u.Scheme != "xds" {
 			target = u.Host
 		}
 	}
