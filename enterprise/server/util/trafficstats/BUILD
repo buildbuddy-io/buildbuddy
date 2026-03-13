@@ -16,9 +16,11 @@ go_library(
     deps = [
         "//server/metrics",
         "//server/util/claims",
+        "//server/util/clientip",
         "//server/util/lru",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//stats",
     ],
 )
@@ -31,7 +33,9 @@ go_test(
         "//server/metrics",
         "//server/testutil/testmetrics",
         "//server/util/claims",
+        "//server/util/clientip",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//stats",
     ],
 )

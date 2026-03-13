@@ -2,13 +2,16 @@ package trafficstats
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 )
 
@@ -94,8 +97,8 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics.GRPCServerEgressBytes.Reset()
 
-			ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
-				RemoteAddr: &net.TCPAddr{IP: net.ParseIP(tc.ip), Port: 1985},
+			ctx := peer.NewContext(context.Background(), &peer.Peer{
+				Addr: &net.TCPAddr{IP: net.ParseIP(tc.ip), Port: 1985},
 			})
 			ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: tc.groupID})
 			ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
@@ -121,9 +124,7 @@ func TestStatsHandler_RecordsIngressBySource(t *testing.T) {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
 
-	ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
-		RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
-	})
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
 	ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: "GR123"})
 	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.HandleRPC(ctx, &stats.InPayload{WireLength: 456})
@@ -159,7 +160,7 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 	}
 }
 
-func TestStatsHandler_NilConnTagInfo(t *testing.T) {
+func TestStatsHandler_NoPeerInfo(t *testing.T) {
 	metrics.GRPCServerEgressBytes.Reset()
 
 	handler, err := NewServerHandler()
@@ -167,8 +168,8 @@ func TestStatsHandler_NilConnTagInfo(t *testing.T) {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
 
-	ctx := handler.TagConn(context.Background(), nil)
-	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	// No peer info or clientip in context.
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 50})
 
 	labels := prometheus.Labels{
@@ -189,9 +190,7 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
 
-	ctx := handler.TagConn(context.Background(), &stats.ConnTagInfo{
-		RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
-	})
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
 	// No claims added to context.
 	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 75})
@@ -209,12 +208,11 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 func BenchmarkClassifierClassify(b *testing.B) {
 	b.Run("cached_hit", func(b *testing.B) {
 		classifier := newBenchmarkClassifier(b)
-		addr := &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985}
-		classifier.classify(addr)
+		classifier.classify("3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
-			classifier.classify(addr)
+			classifier.classify("3.4.12.4")
 		}
 	})
 
@@ -224,7 +222,7 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		b.ReportAllocs()
 		i := 0
 		for b.Loop() {
-			classifier.classify(benchmarkTCPAddr(i))
+			classifier.classify(benchmarkIP(i))
 			i++
 		}
 	})
@@ -251,29 +249,23 @@ func BenchmarkStatsHandler(b *testing.B) {
 
 	b.Run("cached_hit", func(b *testing.B) {
 		handler := benchmarkStatsHandler(b)
-		connInfo := &stats.ConnTagInfo{
-			RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
-		}
+		ctx := context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
-			ctx := handler.TagConn(ctx, connInfo)
-			ctx = handler.TagRPC(ctx, rpcInfo)
-			handler.HandleRPC(ctx, payload)
+			rpcCtx := handler.TagRPC(ctx, rpcInfo)
+			handler.HandleRPC(rpcCtx, payload)
 		}
 	})
 	b.Run("cached_hit_multiple_payloads", func(b *testing.B) {
 		handler := benchmarkStatsHandler(b)
-		connInfo := &stats.ConnTagInfo{
-			RemoteAddr: &net.TCPAddr{IP: net.ParseIP("3.4.12.4"), Port: 1985},
-		}
+		ctx := context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
-			ctx := handler.TagConn(ctx, connInfo)
-			ctx = handler.TagRPC(ctx, rpcInfo)
+			rpcCtx := handler.TagRPC(ctx, rpcInfo)
 			for range 10 {
-				handler.HandleRPC(ctx, payload)
+				handler.HandleRPC(rpcCtx, payload)
 			}
 		}
 	})
@@ -282,18 +274,15 @@ func BenchmarkStatsHandler(b *testing.B) {
 		b.ReportAllocs()
 		i := 0
 		for b.Loop() {
-			connInfo := &stats.ConnTagInfo{RemoteAddr: benchmarkTCPAddr(i)}
+			ctx := context.WithValue(ctx, clientip.ContextKey, benchmarkIP(i))
 			i++
-			ctx := handler.TagConn(ctx, connInfo)
-			ctx = handler.TagRPC(ctx, rpcInfo)
-			handler.HandleRPC(ctx, payload)
+			rpcCtx := handler.TagRPC(ctx, rpcInfo)
+			handler.HandleRPC(rpcCtx, payload)
 		}
 	})
 }
 
-func benchmarkTCPAddr(i int) *net.TCPAddr {
-	return &net.TCPAddr{
-		IP:   net.IPv4(100, 64, byte(i>>8), byte(i)),
-		Port: 1985,
-	}
+func benchmarkIP(i int) string {
+	return fmt.Sprintf("100.64.%d.%d", (i>>8)&0xff, i&0xff)
 }
+

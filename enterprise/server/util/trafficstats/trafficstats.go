@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	"net"
 	"net/netip"
 	"slices"
 	"strings"
@@ -12,9 +11,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
 	_ "embed"
@@ -39,7 +40,6 @@ type ipRange struct {
 
 type classifier struct {
 	ipRanges []ipRange
-	mu       sync.Mutex
 	cache    lru.LRU[destination]
 }
 
@@ -47,8 +47,6 @@ type statsHandler struct {
 	classifier *classifier
 }
 
-// Context keys for storing peer information in context.
-type connDestinationKey struct{}
 type rpcCountersKey struct{}
 
 type rpcCounters struct {
@@ -89,44 +87,42 @@ func NewServerHandler() (stats.Handler, error) {
 }
 
 func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
-	if info == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, connDestinationKey{}, h.classifier.classify(info.RemoteAddr))
+	return ctx
 }
 
 func (*statsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	groupID := unknownGroupID
-	provider := otherProvider
-	region := unknownRegion
 	if c, err := claims.ClaimsFromContext(ctx); err == nil && c.GetGroupID() != "" {
 		groupID = c.GetGroupID()
 	}
-	if destination, ok := ctx.Value(connDestinationKey{}).(destination); ok {
-		provider = destination.provider
-		region = destination.region
+	ip := clientip.Get(ctx)
+	if ip == "" {
+		if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+			ip = p.Addr.String()
+		}
 	}
+	dest := h.classifier.classify(ip)
 	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{
-		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, provider, region),
-		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, provider, region),
+		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, dest.provider, dest.region),
+		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, dest.provider, dest.region),
 	})
 }
 
 func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
-	c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
-	if !ok {
-		return
-	}
 	switch st := s.(type) {
 	case *stats.InPayload:
 		if !st.IsClient() && st.WireLength > 0 {
-			c.ingress.Add(float64(st.WireLength))
+			if c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters); ok {
+				c.ingress.Add(float64(st.WireLength))
+			}
 		}
 	case *stats.OutPayload:
 		if !st.IsClient() && st.WireLength > 0 {
-			c.egress.Add(float64(st.WireLength))
+			if c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters); ok {
+				c.egress.Add(float64(st.WireLength))
+			}
 		}
 	}
 }
@@ -154,8 +150,9 @@ func newClassifier() (*classifier, error) {
 		ranges = append(ranges, entries...)
 	}
 	cache, err := lru.New(&lru.Config[destination]{
-		MaxSize: cacheMaxSize,
-		SizeFn:  func(destination) int64 { return 1 },
+		MaxSize:    cacheMaxSize,
+		SizeFn:     func(destination) int64 { return 1 },
+		ThreadSafe: true,
 	})
 	if err != nil {
 		return nil, status.WrapError(err, "create egress classifier cache")
@@ -198,60 +195,29 @@ func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
 	return entries, nil
 }
 
-func (c *classifier) classify(addr net.Addr) destination {
-	ip, ok := addrFromNetAddr(addr)
-	if !ok {
-		return destination{provider: otherProvider, region: unknownRegion}
+func (c *classifier) classify(ipStr string) destination {
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		// Try host:port format.
+		if addrPort, err := netip.ParseAddrPort(ipStr); err == nil {
+			ip = addrPort.Addr()
+		} else {
+			return destination{provider: otherProvider, region: unknownRegion}
+		}
 	}
+	ip = ip.Unmap()
 	cacheKey := ip.String()
-	c.mu.Lock()
 	value, ok := c.cache.Get(cacheKey)
-	c.mu.Unlock()
 	if ok {
 		return value
 	}
 	for _, entry := range c.ipRanges {
 		if entry.prefix.Contains(ip) {
-			c.mu.Lock()
 			c.cache.Add(cacheKey, entry.destination)
-			c.mu.Unlock()
 			return entry.destination
 		}
 	}
 	unknown := destination{provider: otherProvider, region: unknownRegion}
-	c.mu.Lock()
 	c.cache.Add(cacheKey, unknown)
-	c.mu.Unlock()
 	return unknown
-}
-
-func addrFromNetAddr(addr net.Addr) (netip.Addr, bool) {
-	if addr == nil {
-		return netip.Addr{}, false
-	}
-	switch a := addr.(type) {
-	case *net.TCPAddr:
-		if ip, ok := netip.AddrFromSlice(a.IP); ok {
-			return ip.Unmap(), true
-		}
-	case *net.UDPAddr:
-		if ip, ok := netip.AddrFromSlice(a.IP); ok {
-			return ip.Unmap(), true
-		}
-	}
-	if addrPort, err := netip.ParseAddrPort(addr.String()); err == nil {
-		return addrPort.Addr().Unmap(), true
-	}
-	if ip, err := netip.ParseAddr(addr.String()); err == nil {
-		return ip.Unmap(), true
-	}
-	host, _, err := net.SplitHostPort(addr.String())
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	return ip.Unmap(), true
 }
