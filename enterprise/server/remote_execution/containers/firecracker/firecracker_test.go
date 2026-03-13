@@ -2472,31 +2472,41 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 		Arguments: []string{"sh", "-c", `
 			set -e
 
-			# IPv4 should be available with external networking.
-			if [ ! -r /proc/sys/net/ipv4/ip_forward ]; then
-				echo "missing /proc/sys/net/ipv4/ip_forward" >&2
-				exit 1
-			fi
-			if ! grep -Eq '^[[:space:]]*eth0:' /proc/net/dev; then
-				echo "expected eth0 device; got:" >&2
-				cat /proc/net/dev >&2
-				exit 1
-			fi
+			# Test ICMP, both ipv4 and ipv6
 
-			# IPv6 should also be enabled.
-			if grep -q 'ipv6.disable=1' /proc/cmdline; then
-				echo "kernel cmdline has ipv6.disable=1: $(cat /proc/cmdline)" >&2
-				exit 1
-			fi
-			if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" != "0" ] || [ "$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6)" != "0" ]; then
-				echo "IPv6 disable flags: all=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6) default=$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6)" >&2
-				exit 1
-			fi
-			if ! grep -q . /proc/net/if_inet6; then
-				echo "expected non-empty /proc/net/if_inet6" >&2
-				cat /proc/net/if_inet6 >&2 || true
-				exit 1
-			fi
+			ping -c1 127.0.0.1 >/dev/null
+			ping -c1 8.8.8.8 >/dev/null
+			ping6 -c1 ::1 >/dev/null
+
+			# Test TCP (using HTTP, via httpd), both ipv4 and ipv6
+
+			mkdir -p /tmp/http
+			printf 'hello\n' >/tmp/http/index.html
+			httpd -f -p 18080 -h /tmp/http >/tmp/http/httpd.log 2>&1 &
+			httpd_pid=$!
+			trap 'kill "$httpd_pid"' EXIT
+			check_http() {
+				url="$1"
+				out="$2"
+				ok=false
+				for _ in $(seq 50); do
+					if wget -q -O "$out" "$url"; then
+						ok=true
+						break
+					fi
+					sleep 0.1
+				done
+				if [ "$ok" != "true" ]; then
+					cat /tmp/http/httpd.log >&2 || true
+					exit 1
+				fi
+			}
+
+			check_http http://127.0.0.1:18080/ /tmp/http/out-v4
+			grep -qx 'hello' /tmp/http/out-v4
+
+			check_http http://[::1]:18080/ /tmp/http/out
+			grep -qx 'hello' /tmp/http/out
 			echo ipv4_ipv6_enabled
 		`},
 	}
@@ -2507,6 +2517,7 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+			Ipv6Enabled:       true,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
@@ -2514,7 +2525,6 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
