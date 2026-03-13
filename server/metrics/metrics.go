@@ -3664,6 +3664,15 @@ var (
 		StatusLabel,
 		CompressionType,
 	})
+	ByteStreamChunkedWriteUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_upload_size_bytes",
+		Buckets:   exponentialBucketRange(1024, 8*1024*1024, 2),
+		Help:      "Compressed upload size for remote chunk uploads during chunked writes.",
+	}, []string{
+		StatusLabel,
+	})
 	ByteStreamChunkedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
