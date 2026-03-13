@@ -292,4 +292,3 @@ func BenchmarkStatsHandler(b *testing.B) {
 func benchmarkIP(i int) string {
 	return fmt.Sprintf("100.64.%d.%d", (i>>8)&0xff, i&0xff)
 }
-
