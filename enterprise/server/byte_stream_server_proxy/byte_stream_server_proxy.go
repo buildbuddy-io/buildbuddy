@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
@@ -31,9 +33,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -56,7 +60,7 @@ type ByteStreamServerProxy struct {
 	efp                interfaces.ExperimentFlagProvider
 	localCache         interfaces.Cache
 	remoteCAS          repb.ContentAddressableStorageClient
-	compressBufPool    *bytebufferpool.VariableSizePool
+	bufPool            *bytebufferpool.VariableSizePool
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -89,7 +93,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		compressBufPool:    bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
 	}, nil
 }
 
@@ -407,7 +411,7 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	if readThrough.remoteRecvErr == io.EOF {
 		return nil
 	} else if readThrough.remoteRecvErr != nil {
-		log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
+		log.CtxInfof(ctx, "Error streaming from remote for read through: %v", readThrough.remoteRecvErr)
 		return readThrough.remoteRecvErr
 	}
 	// The local write returned but remoteRecvErr != EOF, which means the read
@@ -792,14 +796,20 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	digestFunction := rn.GetDigestFunction()
 	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
+	useBatchParallelUploads := s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.enable_batch_parallel_uploads", false)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Bool("batch_parallel_uploads", useBatchParallelUploads))
+	}
 
-	// Get a buffer from the pool for compression. We reuse this buffer across
-	// all chunk compressions to avoid allocating for each chunk.
-	compressBuf := s.compressBufPool.Get(chunking.MaxChunkSizeBytes())
-	defer s.compressBufPool.Put(compressBuf)
+	var uploader *chunkUploader
+	if useBatchParallelUploads {
+		uploader, err = newChunkUploader(ctx, s, instanceName, digestFunction)
+		if err != nil {
+			return writeChunkedResult{}, err
+		}
+	}
 
 	// chunkWriteFn is called on each new chunk once it's available through the chunker's pipe.
-	// We write chunks to local first, then use FindMissingBlobs + upload for remote.
 	// Chunks are stored and read compressed with ZSTD.
 	chunkWriteFn := func(chunkData []byte) error {
 		chunkCtx, chunkSpn := tracing.StartNamedSpan(ctx, "chunkWriteFn")
@@ -814,8 +824,9 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
 
+		poolBuf := s.bufPool.Get(int64(len(chunkData)))
 		_, compressSpn := tracing.StartNamedSpan(chunkCtx, "CompressZstd")
-		compressedData := compression.CompressZstd(compressBuf, chunkData)
+		compressedData := compression.CompressZstd(poolBuf, chunkData)
 		compressSpn.End()
 
 		if chunkSpn.IsRecording() {
@@ -833,7 +844,13 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 			data:         compressedData,
 		}
 		if err := s.local.Write(rawStream); err != nil {
+			s.bufPool.Put(poolBuf)
 			return status.InternalErrorf("writing chunk %s to local: %s", chunkRN.DownloadString(), err)
+		}
+		if uploader != nil {
+			uploader.addChunk(compressedData, poolBuf, chunkDigest)
+		} else {
+			s.bufPool.Put(poolBuf)
 		}
 		return nil
 	}
@@ -935,28 +952,39 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 
 	remoteStart := time.Now()
 
-	fmbCtx, fmbSpn := tracing.StartNamedSpan(ctx, "remote.FindMissingBlobs")
-	missingBlobs, err := s.remoteCAS.FindMissingBlobs(fmbCtx, manifest.ToFindMissingBlobsRequest())
-	fmbSpn.End()
-	if err != nil {
-		return writeChunkedResult{}, status.InternalErrorf("finding missing blobs on remote: %s", err)
-	}
-	missingDigests := missingBlobs.GetMissingBlobDigests()
-	missingSet := make(set.Set[string], len(missingDigests))
-	for _, d := range missingDigests {
-		missingSet.Add(d.GetHash())
-	}
-
-	// Deduped chunks are ones that already exist on remote.
-	for _, d := range chunkDigests {
-		if !missingSet.Contains(d.GetHash()) {
-			result.chunksDeduped++
-			result.chunkBytesDeduped += d.GetSizeBytes()
+	if uploader != nil {
+		_, flushSpn := tracing.StartNamedSpan(ctx, "flushChunkUploads")
+		if err := uploader.flush(); err != nil {
+			flushSpn.End()
+			return writeChunkedResult{}, status.WrapErrorf(err, "uploading missing chunks to remote")
 		}
-	}
-	if len(missingDigests) > 0 {
-		if err := s.uploadMissingChunks(ctx, missingDigests, instanceName, digestFunction); err != nil {
-			return writeChunkedResult{}, status.InternalErrorf("uploading missing chunks to remote: %s", err)
+		flushSpn.End()
+		result.chunksDeduped = int(uploader.dedupedChunks.Load())
+		result.chunkBytesDeduped = uploader.dedupedChunkBytes.Load()
+	} else {
+		fmbCtx, fmbSpn := tracing.StartNamedSpan(ctx, "remote.FindMissingBlobs")
+		missingBlobs, err := s.remoteCAS.FindMissingBlobs(fmbCtx, manifest.ToFindMissingBlobsRequest())
+		fmbSpn.End()
+		if err != nil {
+			return writeChunkedResult{}, status.WrapErrorf(err, "finding missing blobs on remote")
+		}
+		missingDigests := missingBlobs.GetMissingBlobDigests()
+		missingSet := make(map[string]struct{}, len(missingDigests))
+		for _, d := range missingDigests {
+			missingSet[d.GetHash()] = struct{}{}
+		}
+
+		// Deduped chunks are ones that already exist on remote.
+		for _, d := range chunkDigests {
+			if _, ok := missingSet[d.GetHash()]; !ok {
+				result.chunksDeduped++
+				result.chunkBytesDeduped += d.GetSizeBytes()
+			}
+		}
+		if len(missingDigests) > 0 {
+			if err := s.uploadMissingChunks(ctx, missingDigests, instanceName, digestFunction); err != nil {
+				return writeChunkedResult{}, status.WrapErrorf(err, "uploading missing chunks to remote")
+			}
 		}
 	}
 
@@ -964,7 +992,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	_, err = s.remoteCAS.SpliceBlob(spliceCtx, manifest.ToSpliceBlobRequest())
 	spliceSpn.End()
 	if err != nil {
-		return writeChunkedResult{}, status.InternalErrorf("splice blob on remote: %s", err)
+		return writeChunkedResult{}, status.WrapErrorf(err, "splice blob on remote")
 	}
 
 	result.remoteDuration = time.Since(remoteStart)
@@ -1002,7 +1030,237 @@ func (s *ByteStreamServerProxy) uploadChunk(ctx context.Context, rn *digest.CASR
 
 	_, _, err = cachetools.UploadFromReaderWithCompression(ctx, s.remote, rnCopy, reader, repb.Compressor_ZSTD)
 	if err != nil {
-		return status.InternalErrorf("uploading chunk %s to remote: %s", rn.DownloadString(), err)
+		return status.WrapErrorf(err, "uploading chunk %s to remote", rn.DownloadString())
+	}
+	return nil
+}
+
+type pendingChunk struct {
+	digest         *repb.Digest
+	compressedData []byte
+	poolBuf        []byte
+}
+
+type chunkUploader struct {
+	s              *ByteStreamServerProxy
+	instanceName   string
+	digestFunction repb.DigestFunction_Value
+
+	fmbG     *errgroup.Group
+	fmbCtx   context.Context
+	batchG   *errgroup.Group
+	batchCtx context.Context
+
+	pendingFMB []pendingChunk
+
+	mu                     sync.Mutex
+	seen                   map[digest.Key]int
+	pendingBatchUpload     []pendingChunk
+	pendingBatchUploadSize int64
+	dedupedChunks          atomic.Int64
+	dedupedChunkBytes      atomic.Int64
+}
+
+// newChunkUploader batches chunks into FMB groups of up to
+// chunkUploadConcurrency digests and upload requests of up to 2 MiB.
+// With one FMB group in flight and upload concurrency 8, it uses roughly
+// 50 MiB of compressed chunk data, plus overhead.
+func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceName string, digestFunction repb.DigestFunction_Value) (*chunkUploader, error) {
+	if *chunkUploadConcurrency <= 0 {
+		return nil, status.FailedPreconditionErrorf("cache_proxy.chunk_upload_concurrency must be > 0")
+	}
+	fmbG, fmbCtx := errgroup.WithContext(ctx)
+	fmbG.SetLimit(1)
+	batchG, batchCtx := errgroup.WithContext(ctx)
+	batchG.SetLimit(*chunkUploadConcurrency)
+	return &chunkUploader{
+		s:              s,
+		instanceName:   instanceName,
+		digestFunction: digestFunction,
+		fmbG:           fmbG,
+		fmbCtx:         fmbCtx,
+		batchG:         batchG,
+		batchCtx:       batchCtx,
+		seen:           make(map[digest.Key]int),
+	}, nil
+}
+
+// addChunk transfers ownership of poolBuf to the uploader. The uploader returns
+// it to the pool once the chunk is deduped or its upload completes.
+func (c *chunkUploader) addChunk(compressedData []byte, poolBuf []byte, d *repb.Digest) {
+	chunk := pendingChunk{
+		digest:         d,
+		compressedData: compressedData,
+		poolBuf:        poolBuf,
+	}
+	dk := digest.NewKey(d)
+
+	c.mu.Lock()
+	c.seen[dk]++
+	seenCount := c.seen[dk]
+	c.mu.Unlock()
+	if seenCount > 1 {
+		c.s.bufPool.Put(chunk.poolBuf)
+		return
+	}
+
+	c.pendingFMB = append(c.pendingFMB, chunk)
+	if len(c.pendingFMB) >= *chunkUploadConcurrency {
+		c.flushPendingFMB()
+	}
+}
+
+func (c *chunkUploader) flush() error {
+	c.flushPendingFMB()
+	fmbErr := c.fmbG.Wait()
+	if fmbErr == nil {
+		c.flushPendingBatchUpload()
+	} else {
+		c.mu.Lock()
+		for _, chunk := range c.pendingBatchUpload {
+			c.s.bufPool.Put(chunk.poolBuf)
+		}
+		c.pendingBatchUpload = nil
+		c.pendingBatchUploadSize = 0
+		c.mu.Unlock()
+	}
+	batchErr := c.batchG.Wait()
+	if fmbErr != nil {
+		return fmbErr
+	}
+	return batchErr
+}
+
+func (c *chunkUploader) flushPendingFMB() {
+	if len(c.pendingFMB) == 0 {
+		return
+	}
+	group := c.pendingFMB
+	c.pendingFMB = nil
+	c.fmbG.Go(func() error {
+		return c.processFMBGroup(group)
+	})
+}
+
+func (c *chunkUploader) processFMBGroup(group []pendingChunk) error {
+	_, fmbSpn := tracing.StartNamedSpan(c.fmbCtx, "remote.FindMissingBlobs")
+	digests := make([]*repb.Digest, 0, len(group))
+	for _, chunk := range group {
+		digests = append(digests, chunk.digest)
+	}
+	fmbResp, err := c.s.remoteCAS.FindMissingBlobs(c.fmbCtx, &repb.FindMissingBlobsRequest{
+		InstanceName:   c.instanceName,
+		BlobDigests:    digests,
+		DigestFunction: c.digestFunction,
+	})
+	fmbSpn.End()
+	if err != nil {
+		for _, chunk := range group {
+			c.s.bufPool.Put(chunk.poolBuf)
+		}
+		return err
+	}
+
+	missingSet := make(set.Set[string], len(fmbResp.GetMissingBlobDigests()))
+	for _, d := range fmbResp.GetMissingBlobDigests() {
+		missingSet.Add(d.GetHash())
+	}
+
+	for _, chunk := range group {
+		if missingSet.Contains(chunk.digest.GetHash()) {
+			c.queueUploadChunk(chunk)
+			continue
+		}
+		c.recordDedupedChunk(chunk.digest)
+		c.s.bufPool.Put(chunk.poolBuf)
+	}
+	return nil
+}
+
+func (c *chunkUploader) queueUploadChunk(chunk pendingChunk) {
+	chunkSize := int64(len(chunk.compressedData))
+	var batch []pendingChunk
+	c.mu.Lock()
+	if c.pendingBatchUploadSize+chunkSize > cachetools.BatchUploadLimitBytes && len(c.pendingBatchUpload) > 0 {
+		batch = c.pendingBatchUpload
+		c.pendingBatchUpload = nil
+		c.pendingBatchUploadSize = 0
+	}
+	c.pendingBatchUpload = append(c.pendingBatchUpload, chunk)
+	c.pendingBatchUploadSize += chunkSize
+	c.mu.Unlock()
+
+	if len(batch) > 0 {
+		c.batchG.Go(func() error {
+			return c.uploadBatch(batch)
+		})
+	}
+}
+
+func (c *chunkUploader) flushPendingBatchUpload() {
+	c.mu.Lock()
+	batch := c.pendingBatchUpload
+	c.pendingBatchUpload = nil
+	c.pendingBatchUploadSize = 0
+	c.mu.Unlock()
+	if len(batch) > 0 {
+		c.batchG.Go(func() error {
+			return c.uploadBatch(batch)
+		})
+	}
+}
+
+func (c *chunkUploader) uploadBatch(batch []pendingChunk) error {
+	defer func() {
+		for _, chunk := range batch {
+			c.s.bufPool.Put(chunk.poolBuf)
+		}
+	}()
+
+	req := &repb.BatchUpdateBlobsRequest{
+		InstanceName:   c.instanceName,
+		DigestFunction: c.digestFunction,
+	}
+	uploadSizeBytes := int64(0)
+	for _, chunk := range batch {
+		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+			Digest:     chunk.digest,
+			Data:       chunk.compressedData,
+			Compressor: repb.Compressor_ZSTD,
+		})
+		uploadSizeBytes += int64(len(chunk.compressedData))
+	}
+	err := c.s.sendBatchUpload(c.batchCtx, req)
+	metrics.ByteStreamChunkedWriteUploadSizeBytes.With(prometheus.Labels{
+		metrics.StatusLabel: status.MetricsLabel(err),
+	}).Observe(float64(uploadSizeBytes))
+	return err
+}
+
+func (c *chunkUploader) recordDedupedChunk(d *repb.Digest) {
+	dk := digest.NewKey(d)
+	c.mu.Lock()
+	count := c.seen[dk]
+	c.mu.Unlock()
+	if count == 0 {
+		count = 1
+	}
+	c.dedupedChunks.Add(int64(count))
+	c.dedupedChunkBytes.Add(int64(count) * d.GetSizeBytes())
+}
+
+func (s *ByteStreamServerProxy) sendBatchUpload(ctx context.Context, req *repb.BatchUpdateBlobsRequest) error {
+	_, uploadSpn := tracing.StartNamedSpan(ctx, "remote.BatchUpdateBlobs")
+	defer uploadSpn.End()
+
+	rsp, err := s.remoteCAS.BatchUpdateBlobs(ctx, req)
+	if err != nil {
+		return status.WrapErrorf(err, "batch uploading chunks to remote")
+	}
+	for _, r := range rsp.GetResponses() {
+		if c := r.GetStatus().GetCode(); c != 0 {
+			return gstatus.Errorf(codes.Code(c), "batch upload chunk %s: %s", r.GetDigest().GetHash(), r.GetStatus().GetMessage())
+		}
 	}
 	return nil
 }

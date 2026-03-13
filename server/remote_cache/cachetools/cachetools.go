@@ -122,7 +122,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(r.GetDigest())
+			return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
 		}
 		return err
 	}
@@ -157,6 +157,9 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			break
 		}
 		if err != nil {
+			if gstatus.Code(err) == gcodes.NotFound {
+				return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
+			}
 			return err
 		}
 		if _, err := w.Write(rsp.Data); err != nil {
@@ -179,7 +182,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 				return retry.NonRetryableError(err)
 			}
 			err := getBlob(ctx, bsClient, r, out)
-			if status.IsNotFoundError(err) {
+			if status.IsNotFoundError(err) || status.IsFailedPreconditionError(err) {
 				return retry.NonRetryableError(err)
 			}
 			return err

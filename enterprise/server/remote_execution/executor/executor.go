@@ -367,13 +367,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// here, we coerce NotFound to this special FailedPrecondition error so
 		// that bazel will reupload inputs in the rare cases where inputs are
 		// missing.
-		//
-		// At the time of writing (bazel 8.x), bazel does not actually care
-		// about the "subject" part of the spec, and will instead just reupload
-		// all inputs. So for now, we just return an empty digest in the subject
-		// field.
 		if status.IsNotFoundError(err) {
-			err = digest.MissingDigestError(&repb.Digest{Hash: digest.EmptySha256})
+			err = digest.MissingDigestErrorf(task.GetAction().GetInputRootDigest(), "%s", err)
 		}
 
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
