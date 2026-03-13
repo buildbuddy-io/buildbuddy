@@ -81,7 +81,9 @@ func retryOptions(name string) *retry.Options {
 	return opts
 }
 
-func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+// FindMissingBlobs issues a FindMissingBlobs RPC with retry behavior and the
+// standard CAS RPC timeout applied to each attempt.
+func FindMissingBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	return retry.Do(ctx, retryOptions("FindMissingBlobs"), func(ctx context.Context) (*repb.FindMissingBlobsResponse, error) {
 		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 		defer cancel()
@@ -428,7 +430,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		DigestFunction: r.GetDigestFunction(),
 	}
 	casClient := env.GetContentAddressableStorageClient()
-	missingRsp, err := findMissingBlobsWithRetries(ctx, casClient, manifest.ToFindMissingBlobsRequest())
+	missingRsp, err := FindMissingBlobs(ctx, casClient, manifest.ToFindMissingBlobsRequest())
 	if err != nil {
 		return nil, 0, status.WrapError(err, "find missing chunks")
 	}
