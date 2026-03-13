@@ -725,6 +725,7 @@ func run() error {
 	}
 	ws.rootDir = rootDir
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ROOT_DIR", rootDir)
+	os.Setenv(ci_runner_env.BuildBuddyRunIDEnvVarName, runID)
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
