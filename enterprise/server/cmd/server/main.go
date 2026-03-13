@@ -58,6 +58,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
@@ -68,11 +69,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+
+	"google.golang.org/grpc/stats"
 
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
@@ -338,5 +343,11 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	if err != nil {
+		log.Fatalf("Error creating traffic stats handler: %v", err)
+	}
+	libmain.StartAndRunServices(realEnv, grpc_server.GRPCServerConfig{
+		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+	}) // Returns after graceful shutdown
 }

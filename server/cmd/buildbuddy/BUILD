@@ -71,6 +71,7 @@ go_library(
         "//server/libmain",
         "//server/remote_cache/capabilities_server",
         "//server/telemetry",
+        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/version",
