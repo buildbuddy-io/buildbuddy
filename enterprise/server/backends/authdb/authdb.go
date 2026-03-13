@@ -69,12 +69,16 @@ var (
 // be authed. There's no need to go to the database for every single request as
 // this data rarely changes.
 func newAPIKeyGroupCache() (lru.LRU[interfaces.APIKeyGroup], error) {
-	return lru.New[interfaces.APIKeyGroup](&lru.Config[interfaces.APIKeyGroup]{
+	cache, err := lru.New[interfaces.APIKeyGroup](&lru.Config[interfaces.APIKeyGroup]{
 		MaxSize:    apiKeyGroupCacheSize,
 		SizeFn:     func(v interfaces.APIKeyGroup) int64 { return 1 },
 		TTL:        *apiKeyGroupCacheTTL,
 		ThreadSafe: true,
 	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %s", err)
+	}
+	return cache, nil
 }
 
 type AuthDB struct {
