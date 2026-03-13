@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -40,45 +39,16 @@ const (
 	cacheSize = 100_000
 )
 
-type ipRuleCacheEntry struct {
-	allowed      []*net.IPNet
-	expiresAfter time.Time
-}
-
 type ipRuleCache interface {
-	Add(groupID string, allowed []*net.IPNet)
+	Add(groupID string, allowed []*net.IPNet) bool
 	Get(groupID string) ([]*net.IPNet, bool)
-}
-
-type memIpRuleCache struct {
-	mu  sync.Mutex
-	lru lru.LRU[*ipRuleCacheEntry]
-}
-
-func (c *memIpRuleCache) Get(groupID string) (allowed []*net.IPNet, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.lru.Get(groupID)
-	if !ok {
-		return nil, ok
-	}
-	if time.Now().After(entry.expiresAfter) {
-		c.lru.Remove(groupID)
-		return nil, false
-	}
-	return entry.allowed, true
-}
-
-func (c *memIpRuleCache) Add(groupID string, allowed []*net.IPNet) {
-	c.mu.Lock()
-	c.lru.Add(groupID, &ipRuleCacheEntry{allowed: allowed, expiresAfter: time.Now().Add(*cacheTTL)})
-	c.mu.Unlock()
 }
 
 type noopIpRuleCache struct {
 }
 
-func (c *noopIpRuleCache) Add(groupID string, allowed []*net.IPNet) {
+func (c *noopIpRuleCache) Add(groupID string, allowed []*net.IPNet) bool {
+	return false
 }
 
 func (c *noopIpRuleCache) Get(groupID string) ([]*net.IPNet, bool) {
@@ -89,17 +59,12 @@ func newIpRuleCache() (ipRuleCache, error) {
 	if *cacheTTL == 0 {
 		return &noopIpRuleCache{}, nil
 	}
-	config := &lru.Config[*ipRuleCacheEntry]{
-		MaxSize: cacheSize,
-		SizeFn:  func(v *ipRuleCacheEntry) int64 { return int64(len(v.allowed)) },
-	}
-	l, err := lru.New[*ipRuleCacheEntry](config)
-	if err != nil {
-		return nil, err
-	}
-	return &memIpRuleCache{
-		lru: l,
-	}, nil
+	return lru.New(&lru.Config[[]*net.IPNet]{
+		TTL:        *cacheTTL,
+		MaxSize:    cacheSize,
+		SizeFn:     func(v []*net.IPNet) int64 { return int64(len(v)) },
+		ThreadSafe: true,
+	})
 }
 
 type Service struct {
