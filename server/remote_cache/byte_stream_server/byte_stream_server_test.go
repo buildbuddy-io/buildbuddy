@@ -28,7 +28,9 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	guuid "github.com/google/uuid"
@@ -638,4 +640,65 @@ func TestReadChunked(t *testing.T) {
 	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
 	require.NoError(t, err)
 	require.Equal(t, fullBlob, buf.Bytes())
+}
+
+func TestReadChunked_MissingManifest(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, te.GetCache().Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, te.GetCache().Set(ctx, chunk3RN, chunk3))
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
+
+	require.Error(t, err)
+	require.Equal(t, codes.FailedPrecondition, gstatus.Code(err),
+		"expected FailedPrecondition, got %s: %s", gstatus.Code(err), err)
+
+	st := gstatus.Convert(err)
+	expectedSubject := fmt.Sprintf("blobs/%s/%d", blobDigest.GetHash(), blobDigest.GetSizeBytes())
+	var found bool
+	for _, detail := range st.Details() {
+		if pf, ok := detail.(*errdetails.PreconditionFailure); ok {
+			for _, v := range pf.GetViolations() {
+				if v.GetType() == "MISSING" && v.GetSubject() == expectedSubject {
+					found = true
+				}
+			}
+		}
+	}
+	require.True(t, found, "expected MISSING violation with subject %q, got: %s", expectedSubject, err)
 }
