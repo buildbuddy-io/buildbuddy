@@ -247,8 +247,8 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func startGRPCServers(env *real_environment.RealEnv) error {
-	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
+func startGRPCServers(env *real_environment.RealEnv, config grpc_server.GRPCServerConfig) error {
+	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, config)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	grpc_server.EnableGRPCOverHTTP(env, b.GetServer())
 
 	if env.GetSSLService().IsEnabled() {
-		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, grpc_server.GRPCServerConfig{})
+		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, config)
 		if err != nil {
 			return err
 		}
@@ -399,7 +399,7 @@ func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	}
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
+func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.GRPCServerConfig) {
 	if *maxThreads > 0 {
 		debug.SetMaxThreads(*maxThreads)
 	}
@@ -427,7 +427,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := startGRPCServers(env); err != nil {
+	if err := startGRPCServers(env, grpcConfig); err != nil {
 		log.Fatalf("%v", err)
 	}
 

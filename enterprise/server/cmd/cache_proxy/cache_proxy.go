@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -57,6 +58,7 @@ import (
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
+	"google.golang.org/grpc/stats"
 )
 
 var (
@@ -202,6 +204,10 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
+	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	if err != nil {
+		return status.WrapError(err, "failed to create traffic stats handler")
+	}
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
@@ -210,6 +216,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
+		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
 	}
 
 	// Start and register internal servers first because the external proxy

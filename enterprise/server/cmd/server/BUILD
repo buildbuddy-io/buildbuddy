@@ -74,6 +74,7 @@ go_library(
         "//enterprise/server/usage_service",
         "//enterprise/server/util/dsingleflight",
         "//enterprise/server/util/redisutil",
+        "//enterprise/server/util/trafficstats",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
@@ -86,10 +87,12 @@ go_library(
         "//server/remote_cache/capabilities_server",
         "//server/telemetry",
         "//server/util/clickhouse",
+        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
+        "@org_golang_google_grpc//stats",
     ],
 )
 
