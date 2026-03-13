@@ -558,6 +558,15 @@ export default class InvocationModel {
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
   }
 
+  // https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+  getGithubActionsUrl() {
+    if (this.getGithubRepo() && this.clientEnvMap.get("GITHUB_RUN_ID")) {
+      return `${this.getGithubRepo()}/actions/runs/${this.clientEnvMap.get("GITHUB_RUN_ID")}`;
+    }
+
+    return undefined;
+  }
+
   getGithubRepo(): string {
     return this.invocation.repoUrl;
   }
