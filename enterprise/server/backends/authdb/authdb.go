@@ -76,7 +76,7 @@ func newAPIKeyGroupCache() (lru.LRU[interfaces.APIKeyGroup], error) {
 		ThreadSafe: true,
 	})
 	if err != nil {
-		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %s", err)
+		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
 	return cache, nil
 }
