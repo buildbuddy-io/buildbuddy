@@ -15,6 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -27,17 +30,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/jonboulle/clockwork"
-
-	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -198,19 +196,11 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
-type tagToDigestEntry struct {
-	nameWithDigest string
-	expiration     time.Time
-}
-
 type Resolver struct {
 	env environment.Env
 
-	allowedPrivateIPs []*net.IPNet
-
-	mu                  sync.Mutex
-	imageTagToDigestLRU lru.LRU[tagToDigestEntry]
-	clock               clockwork.Clock
+	allowedPrivateIPs   []*net.IPNet
+	imageTagToDigestLRU lru.LRU[string]
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
@@ -218,9 +208,12 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	imageTagToDigestLRU, err := lru.New[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
-		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
-		MaxSize: int64(resolveImageDigestLRUMaxEntries),
+	imageTagToDigestLRU, err := lru.New[string](&lru.Config[string]{
+		SizeFn:     func(_ string) int64 { return 1 },
+		MaxSize:    int64(resolveImageDigestLRUMaxEntries),
+		TTL:        resolveImageDigestLRUDuration,
+		Clock:      env.GetClock(),
+		ThreadSafe: true,
 	})
 	if err != nil {
 		return nil, err
@@ -229,7 +222,6 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
-		clock:               env.GetClock(),
 	}, nil
 }
 
@@ -276,17 +268,8 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 
-	r.mu.Lock()
-	entry, ok := r.imageTagToDigestLRU.Get(tagRef.String())
-	r.mu.Unlock()
-	if ok {
-		if entry.expiration.After(r.clock.Now()) {
-			return entry.nameWithDigest, nil
-		}
-		// The entry has expired. Evict it!
-		r.mu.Lock()
-		r.imageTagToDigestLRU.Remove(tagRef.String())
-		r.mu.Unlock()
+	if nameWithDigest, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+		return nameWithDigest, nil
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
@@ -298,13 +281,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
-	entryToAdd := tagToDigestEntry{
-		nameWithDigest: imageNameWithDigest,
-		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
-	}
-	r.mu.Lock()
-	r.imageTagToDigestLRU.Add(tagRef.String(), entryToAdd)
-	r.mu.Unlock()
+	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
 	return imageNameWithDigest, nil
 }
 
