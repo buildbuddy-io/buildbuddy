@@ -127,6 +127,8 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	// Start and register internal servers first because the external proxy
+	// services rely on the internal servers.
 	if err := startInternalGRPCServers(env); err != nil {
 		log.Fatalf("Could not start internal GRPC server: %s", err)
 	}
@@ -219,12 +221,6 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
 	}
 
-	// Start and register internal servers first because the external proxy
-	// services rely on the internal servers.
-	if err := registerInternalServices(env); err != nil {
-		return err
-	}
-
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
 	if err != nil {
 		return err
@@ -260,10 +256,13 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 	channelzservice.RegisterChannelzServiceToServer(b.GetServer())
+	env.SetInternalGRPCServer(b.GetServer())
+	if err := registerInternalServices(env); err != nil {
+		return err
+	}
 	if err = b.Start(); err != nil {
 		return err
 	}
-	env.SetInternalGRPCServer(b.GetServer())
 	return nil
 }
 
