@@ -364,7 +364,7 @@ const (
 
 	// Destination region inferred from the remote IP range, or `unknown` if no
 	// known cloud range matches.
-	DestinationRegionLabel = "region"
+	DestinationRegionLabel = "remote_region"
 
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
