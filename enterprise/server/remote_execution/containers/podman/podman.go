@@ -117,7 +117,7 @@ type Provider struct {
 	podmanVersion    *semver.Version
 	cgroupPaths      *cgroup.Paths
 	buildRoot        string
-	imageExistsCache *imageExistsCache
+	imageExistsCache lru.LRU[struct{}]
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
@@ -130,7 +130,12 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", podmanVersion)
 	}
 
-	imageExistsCache, err := newImageExistsCache()
+	imageExistsCache, err := lru.New(&lru.Config[struct{}]{
+		TTL:        imageExistsCacheTTL,
+		MaxSize:    imageExistsCacheSize,
+		SizeFn:     func(struct{}) int64 { return 1 },
+		ThreadSafe: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +247,7 @@ type PodmanOptions struct {
 type podmanCommandContainer struct {
 	env              environment.Env
 	podmanVersion    *semver.Version
-	imageExistsCache *imageExistsCache
+	imageExistsCache lru.LRU[struct{}]
 	cgroupPaths      *cgroup.Paths
 
 	image       string
@@ -519,7 +524,7 @@ func (c *podmanCommandContainer) Signal(ctx context.Context, sig syscall.Signal)
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	if c.imageExistsCache.Exists(c.image) {
+	if c.imageExistsCache.Contains(c.image) {
 		return true, nil
 	}
 
@@ -537,7 +542,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, nil
 	}
 
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return true, nil
 }
 
@@ -645,7 +650,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 
 	// Since we just pulled the image, we can skip the next call to 'podman
 	// image exists'.
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return nil
 }
 
@@ -836,39 +841,4 @@ func ConfigureIsolation(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-type imageExistsCache struct {
-	mu  sync.Mutex
-	lru lru.LRU[time.Time]
-}
-
-func newImageExistsCache() (*imageExistsCache, error) {
-	l, err := lru.New(&lru.Config[time.Time]{
-		MaxSize: imageExistsCacheSize,
-		SizeFn:  func(time.Time) int64 { return 1 },
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &imageExistsCache{lru: l}, nil
-}
-
-func (c *imageExistsCache) Exists(image string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t, ok := c.lru.Get(image)
-	return ok && time.Since(t) < imageExistsCacheTTL
-}
-
-func (c *imageExistsCache) Add(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Add(image, time.Now())
-}
-
-func (c *imageExistsCache) Remove(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Remove(image)
 }
