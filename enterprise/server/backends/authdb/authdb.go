@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -65,53 +64,22 @@ var (
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
-type apiKeyGroupCacheEntry struct {
-	data         interfaces.APIKeyGroup
-	expiresAfter time.Time
-}
-
-// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel
-// invocation can generate large bursts of RPCs, each of which needs to be
-// authed.
-// There's no need to go to the database for every single request as this data
-// rarely changes.
-type apiKeyGroupCache struct {
-	// Note that even though we base this off an LRU cache, every entry has a
-	// hard expiration time to force a refresh of the underlying data.
-	lru lru.LRU[*apiKeyGroupCacheEntry]
-	ttl time.Duration
-	mu  sync.Mutex
-}
-
-func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
-	config := &lru.Config[*apiKeyGroupCacheEntry]{
-		MaxSize: apiKeyGroupCacheSize,
-		SizeFn:  func(v *apiKeyGroupCacheEntry) int64 { return 1 },
-	}
-	lru, err := lru.New[*apiKeyGroupCacheEntry](config)
+// newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
+// Bazel invocation can generate large bursts of RPCs, each of which needs to
+// be authed. There's no need to go to the database for every single request as
+// this data rarely changes.
+func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup], error) {
+	cache, err := lru.New[interfaces.APIKeyGroup](&lru.Config[interfaces.APIKeyGroup]{
+		MaxSize:    apiKeyGroupCacheSize,
+		SizeFn:     func(v interfaces.APIKeyGroup) int64 { return 1 },
+		TTL:        *apiKeyGroupCacheTTL,
+		ThreadSafe: true,
+		Clock:      clock,
+	})
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
-	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
-}
-
-func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
-	c.mu.Lock()
-	entry, ok := c.lru.Get(apiKey)
-	c.mu.Unlock()
-	if !ok {
-		return nil, ok
-	}
-	if time.Now().After(entry.expiresAfter) {
-		return nil, false
-	}
-	return entry.data, true
-}
-
-func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
-	c.mu.Lock()
-	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
-	c.mu.Unlock()
+	return cache, nil
 }
 
 type AuthDB struct {
@@ -119,7 +87,7 @@ type AuthDB struct {
 	h     interfaces.DBHandle
 	clock clockwork.Clock
 
-	apiKeyGroupCache *apiKeyGroupCache
+	apiKeyGroupCache lru.LRU[interfaces.APIKeyGroup]
 	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
 
 	// Nil if API key encryption is not enabled.
@@ -132,8 +100,8 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 		h:     h,
 		clock: env.GetClock(),
 	}
-	if *apiKeyGroupCacheTTL != 0 {
-		akgCache, err := newAPIKeyGroupCache()
+	if *apiKeyGroupCacheTTL > 0 {
+		akgCache, err := newAPIKeyGroupCache(adb.clock)
 		if err != nil {
 			return nil, err
 		}
