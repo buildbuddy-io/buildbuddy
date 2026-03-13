@@ -32,9 +32,6 @@ type LRU[V any] interface {
 	// removed.
 	Remove(key string) bool
 
-	// Removes the value from the LRU for the provided EvictionReason.
-	RemoveWithReason(key string, reason EvictionReason) bool
-
 	// Returns the total "size" of the LRU.
 	Size() int64
 
@@ -128,7 +125,7 @@ type lru[V any] struct {
 type expiringLRU[V any] struct {
 	ttl   time.Duration
 	clock clockwork.Clock
-	inner LRU[*expiringEntry[V]]
+	inner *lru[*expiringEntry[V]]
 }
 
 // A thread-safe wrapper around an LRU.
@@ -157,15 +154,6 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
 	var c LRU[V]
-	c = &lru[V]{
-		currentSize:   0,
-		maxSize:       config.MaxSize,
-		evictList:     list.New(),
-		items:         make(map[string]*list.Element),
-		onEvict:       config.OnEvict,
-		sizeFn:        config.SizeFn,
-		updateInPlace: config.UpdateInPlace,
-	}
 	if config.TTL > 0 {
 		clock := config.Clock
 		if clock == nil {
@@ -189,6 +177,16 @@ func New[V any](config *Config[V]) (LRU[V], error) {
 				},
 				updateInPlace: config.UpdateInPlace,
 			},
+		}
+	} else {
+		c = &lru[V]{
+			currentSize:   0,
+			maxSize:       config.MaxSize,
+			evictList:     list.New(),
+			items:         make(map[string]*list.Element),
+			onEvict:       config.OnEvict,
+			sizeFn:        config.SizeFn,
+			updateInPlace: config.UpdateInPlace,
 		}
 	}
 	if config.ThreadSafe {
@@ -272,10 +270,10 @@ func (c *lru[V]) Contains(key string) bool {
 }
 
 func (c *lru[V]) Remove(key string) (present bool) {
-	return c.RemoveWithReason(key, ManualEviction)
+	return c.removeWithReason(key, ManualEviction)
 }
 
-func (c *lru[V]) RemoveWithReason(key string, reason EvictionReason) bool {
+func (c *lru[V]) removeWithReason(key string, reason EvictionReason) bool {
 	if ent, ok := c.items[key]; ok {
 		c.removeElement(ent, reason)
 		return true
@@ -346,7 +344,7 @@ func (c *expiringLRU[V]) Get(key string) (V, bool) {
 		return zero, false
 	}
 	if c.clock.Now().Sub(entry.createdAt) >= c.ttl {
-		c.inner.RemoveWithReason(key, TTLEviction)
+		c.inner.removeWithReason(key, TTLEviction)
 		var zero V
 		return zero, false
 	}
@@ -360,10 +358,6 @@ func (c *expiringLRU[V]) Contains(key string) bool {
 
 func (c *expiringLRU[V]) Remove(key string) bool {
 	return c.inner.Remove(key)
-}
-
-func (c *expiringLRU[V]) RemoveWithReason(key string, reason EvictionReason) bool {
-	return c.inner.RemoveWithReason(key, reason)
 }
 
 func (c *expiringLRU[V]) RemoveOldest() (V, bool) {
@@ -418,12 +412,6 @@ func (c *threadSafeLRU[V]) Remove(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Remove(key)
-}
-
-func (c *threadSafeLRU[V]) RemoveWithReason(key string, reason EvictionReason) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.inner.RemoveWithReason(key, reason)
 }
 
 func (c *threadSafeLRU[V]) RemoveOldest() (V, bool) {
