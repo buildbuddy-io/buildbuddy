@@ -667,7 +667,7 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	if len(appIDs) > 1 {
 		msg := fmt.Sprintf("unexpected multiple github app IDs installed for group %s", in.GroupID)
 		alert.UnexpectedEvent(msg)
-		return status.InternalErrorf("%s", msg)
+		return status.InternalError(msg)
 	}
 	for alreadyInstalledAppID := range appIDs {
 		if alreadyInstalledAppID != in.AppID {
