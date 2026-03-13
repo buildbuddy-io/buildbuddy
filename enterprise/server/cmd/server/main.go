@@ -38,7 +38,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -288,7 +289,10 @@ func main() {
 	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := iprules.Register(realEnv); err != nil {
+	if err := ip_rules_enforcer.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {

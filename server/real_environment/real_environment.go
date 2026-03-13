@@ -125,6 +125,7 @@ type RealEnv struct {
 	singleFlightDeduper                  interfaces.SingleFlightDeduper
 	promQuerier                          interfaces.PromQuerier
 	auditLog                             interfaces.AuditLogger
+	ipRulesEnforcer                      interfaces.IPRulesEnforcer
 	ipRulesService                       interfaces.IPRulesService
 	serverIdentityService                interfaces.ClientIdentityService
 	imageCacheAuthenticator              interfaces.ImageCacheAuthenticator
@@ -757,12 +758,20 @@ func (r *RealEnv) SetAuditLogger(l interfaces.AuditLogger) {
 	r.auditLog = l
 }
 
+func (r *RealEnv) GetIPRulesEnforcer() interfaces.IPRulesEnforcer {
+	return r.ipRulesEnforcer
+}
+
+func (r *RealEnv) SetIPRulesEnforcer(e interfaces.IPRulesEnforcer) {
+	r.ipRulesEnforcer = e
+}
+
 func (r *RealEnv) GetIPRulesService() interfaces.IPRulesService {
 	return r.ipRulesService
 }
 
-func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
-	r.ipRulesService = e
+func (r *RealEnv) SetIPRulesService(s interfaces.IPRulesService) {
+	r.ipRulesService = s
 }
 
 func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {

@@ -401,7 +401,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
-		if irs := s.env.GetIPRulesService(); irs != nil {
+		if irs := s.env.GetIPRulesEnforcer(); irs != nil {
 			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
 			if status.IsPermissionDeniedError(err) {
 				selectedGroupAccess = uspb.SelectedGroup_DENIED_BY_IP_RULES
