@@ -99,7 +99,7 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 		h:     h,
 		clock: env.GetClock(),
 	}
-	if *apiKeyGroupCacheTTL != 0 {
+	if *apiKeyGroupCacheTTL > 0 {
 		akgCache, err := newAPIKeyGroupCache()
 		if err != nil {
 			return nil, err
