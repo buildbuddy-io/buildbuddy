@@ -3,6 +3,7 @@ package iprules_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
@@ -66,6 +67,15 @@ func TestUnauthenticated(t *testing.T) {
 	// Invalid credentials (or any other error) should skip IP rule enforcement.
 	ctx = authutil.AuthContextWithError(ctx, status.UnauthenticatedError("Invalid API Key"))
 	err = irs.Authorize(ctx)
+	require.NoError(t, err)
+}
+
+func TestNew_WithCache(t *testing.T) {
+	env := getEnv(t)
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", time.Minute)
+
+	_, err := iprules.New(env)
 	require.NoError(t, err)
 }
 
