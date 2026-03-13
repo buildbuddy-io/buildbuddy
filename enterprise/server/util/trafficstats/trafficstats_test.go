@@ -85,6 +85,13 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			region:   "eu-west-1",
 		},
 		{
+			name:     "private",
+			ip:       "10.0.1.5",
+			groupID:  "GR901",
+			provider: "internal",
+			region:   "",
+		},
+		{
 			name:     "other",
 			ip:       "203.0.113.10",
 			groupID:  "GR789",

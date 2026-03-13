@@ -206,6 +206,9 @@ func (c *classifier) classify(ipStr string) destination {
 		}
 	}
 	ip = ip.Unmap()
+	if ip.IsPrivate() {
+		return destination{provider: "internal", region: ""}
+	}
 	cacheKey := ip.String()
 	value, ok := c.cache.Get(cacheKey)
 	if ok {
