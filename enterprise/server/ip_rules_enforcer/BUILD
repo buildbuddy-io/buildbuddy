@@ -30,6 +30,7 @@ go_test(
         ":ip_rules_enforcer",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:server_notification_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
@@ -41,5 +42,6 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )

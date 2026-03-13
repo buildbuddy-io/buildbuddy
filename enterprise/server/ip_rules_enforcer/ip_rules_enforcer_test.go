@@ -21,6 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+
+	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 func newIPRulesEnforcer(t *testing.T, env environment.Env) *ip_rules_enforcer.Enforcer {
@@ -102,6 +105,24 @@ func contextWithClientIdentity(t *testing.T, ctx context.Context, service interf
 	ctx, err = service.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 	return ctx
+}
+
+type fakeServerNotificationService struct {
+	ch chan proto.Message
+}
+
+func newFakeServerNotificationService() *fakeServerNotificationService {
+	return &fakeServerNotificationService{
+		ch: make(chan proto.Message, 10),
+	}
+}
+
+func (f *fakeServerNotificationService) Subscribe(msgType proto.Message) <-chan proto.Message {
+	return f.ch
+}
+
+func (f *fakeServerNotificationService) Publish(ctx context.Context, msg proto.Message) error {
+	return nil
 }
 
 func TestNoOpEnforcer(t *testing.T) {
@@ -240,4 +261,44 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 	err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func TestRefresherStopsOnShutdown(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", time.Hour)
+
+	env := getEnv(t)
+	sns := newFakeServerNotificationService()
+	env.SetServerNotificationService(sns)
+
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	_, _, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	ctx1 := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	require.NoError(t, irs.Check(ctx1, groupID, false /*=skipCache*/, "" /*=skipRuleID*/))
+
+	insertRule(t, env, groupID, "4.5.6.7/32", "rule2")
+	ctx2 := context.WithValue(context.Background(), clientip.ContextKey, "4.5.6.7")
+	err = irs.Check(ctx2, groupID, false /*=skipCache*/, "" /*=skipRuleID*/)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	sns.ch <- &snpb.InvalidateIPRulesCache{GroupId: groupID}
+	require.Eventually(t, func() bool {
+		return irs.Check(ctx2, groupID, false /*=skipCache*/, "" /*=skipRuleID*/) == nil
+	}, time.Second, 10*time.Millisecond)
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+
+	insertRule(t, env, groupID, "8.9.10.11/32", "rule3")
+	sns.ch <- &snpb.InvalidateIPRulesCache{GroupId: groupID}
+
+	ctx3 := context.WithValue(context.Background(), clientip.ContextKey, "8.9.10.11")
+	err = irs.Check(ctx3, groupID, false /*=skipCache*/, "" /*=skipRuleID*/)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }
