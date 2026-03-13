@@ -58,8 +58,9 @@ func Register(env *real_environment.RealEnv) error {
 
 func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
-		MaxSize: jwtCacheSize,
-		SizeFn:  func(v string) int64 { return 1 },
+		MaxSize:    jwtCacheSize,
+		SizeFn:     func(v string) int64 { return 1 },
+		ThreadSafe: true,
 	}
 	cache, err := lru.New(config)
 	if err != nil {
@@ -206,7 +207,6 @@ type RemoteAuthenticator struct {
 	authClient          authpb.AuthServiceClient
 	cache               lru.LRU[string]
 	jwtExpirationBuffer time.Duration
-	mu                  sync.RWMutex // protects cache
 	claimsParser        *claims.ClaimsParser
 	env                 environment.Env
 	keyProvider         *keyProvider
@@ -263,16 +263,12 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	}
 
 	// Try to use a locally-cached JWT, if available and valid.
-	a.mu.RLock()
 	jwt, found := a.cache.Get(key)
-	a.mu.RUnlock()
 	if found {
 		if c, err := a.jwtIsValid(ctx, jwt); err == nil {
 			return authContext(ctx, jwt, c)
 		}
-		a.mu.Lock()
 		a.cache.Remove(key)
-		a.mu.Unlock()
 	}
 
 	// Otherwise, fetch a JWT from the remote auth service.
@@ -281,9 +277,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		log.Debugf("Error remotely authenticating: %s", err)
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	a.mu.Lock()
 	a.cache.Add(key, jwt)
-	a.mu.Unlock()
 	c, err = a.jwtIsValid(ctx, jwt)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
