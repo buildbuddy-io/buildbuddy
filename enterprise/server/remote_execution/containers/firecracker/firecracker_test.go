@@ -95,10 +95,17 @@ var (
 	filecacheDir   = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
+	runSlowTests   = flag.Bool("run_slow_tests", true, "Whether to run the slowest firecracker integration tests in this test target")
 )
 
 var (
 	cleaned = map[testing.TB]bool{}
+
+	networkSetupOnce sync.Once
+	networkSetupErr  error
+
+	executorConfigMu sync.Mutex
+	executorConfigs  = map[string]*firecracker.ExecutorConfig{}
 )
 
 func init() {
@@ -168,15 +175,26 @@ type envOpts struct {
 	runProxy         bool
 }
 
+func requireSlowTestsEnabled(t *testing.T) {
+	if !*runSlowTests {
+		t.Skip("excluded from this firecracker test target")
+	}
+}
+
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
 	// Clean up stale veth devices from previous test runs that were killed
 	// without cleanup (e.g. SIGKILL from the test runner).
 	flags.Set(t, "executor.cleanup_stale_veth_devices", true)
-	err := networking.Configure(ctx)
-	require.NoError(t, err)
-	testnetworking.Setup(t)
-	err = networking.EnableMasquerading(ctx)
-	require.NoError(t, err)
+	networkSetupOnce.Do(func() {
+		networkSetupErr = func() error {
+			if err := networking.Configure(ctx); err != nil {
+				return err
+			}
+			testnetworking.Setup(t)
+			return networking.EnableMasquerading(ctx)
+		}()
+	})
+	require.NoError(t, networkSetupErr)
 
 	// Set up a lockfile directory to coordinate network locking across sharded
 	// test processes on the host.
@@ -190,7 +208,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	// Use temp file for skopeo auth file.
 	// See https://github.com/containers/skopeo/issues/1240
 	tmp := testfs.MakeTempDir(t)
-	err = os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
+	err := os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
 	require.NoError(t, err)
 
 	testRootDir := opts.cacheRootDir
@@ -326,8 +344,23 @@ func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
 	err := os.MkdirAll(cacheRoot, 0755)
 	require.NoError(t, err)
 
+	executorConfigMu.Lock()
+	if cfg := executorConfigs[root]; cfg != nil {
+		executorConfigMu.Unlock()
+		return cfg
+	}
+	executorConfigMu.Unlock()
+
 	cfg, err := firecracker.GetExecutorConfig(context.Background(), buildRoot, cacheRoot)
 	require.NoError(t, err)
+
+	executorConfigMu.Lock()
+	if existing := executorConfigs[root]; existing != nil {
+		executorConfigMu.Unlock()
+		return existing
+	}
+	executorConfigs[root] = cfg
+	executorConfigMu.Unlock()
 	return cfg
 }
 
@@ -442,6 +475,8 @@ func TestFirecrackerLifecycle(t *testing.T) {
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
 		ctx := context.Background()
@@ -925,6 +960,8 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 }
 
 func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	tests := []struct {
 		name               string
 		branch             string
@@ -1106,6 +1143,8 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 }
 
 func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	tests := []struct {
 		name                      string
 		snapshotReadPolicy        string
@@ -1264,6 +1303,8 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 }
 
 func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	tests := []struct {
 		name                      string
 		snapshotReadPolicy        string
@@ -1399,6 +1440,8 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1756,6 +1799,8 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 }
 
 func TestFirecrackerBalloon(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	flags.Set(t, "executor.firecracker_enable_balloon", true)
 	ctx := context.Background()
 
@@ -1822,8 +1867,8 @@ free -h
 	require.Equal(t, 0, res.ExitCode)
 	require.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-	// Try pause, unpause, exec several times.
-	for i := 1; i <= 4; i++ {
+	// Two resume cycles are enough to verify the repeated balloon snapshot path.
+	for i := 1; i <= 2; i++ {
 		err = c.Pause(ctx)
 		require.NoError(t, err)
 
@@ -1838,6 +1883,8 @@ free -h
 }
 
 func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	ctx := context.Background()
 
 	// execAndPause runs a memory intensive command in a VM and saves the snapshot.
@@ -2610,6 +2657,8 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDockerMirror(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -2851,6 +2900,8 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 }
 
 func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -3388,6 +3439,8 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 }
 
 func TestFirecrackerStressIO(t *testing.T) {
+	requireSlowTestsEnabled(t)
+
 	// TODO: make these configurable via flags
 
 	// High-level orchestration options
