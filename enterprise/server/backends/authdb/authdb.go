@@ -68,12 +68,13 @@ var (
 // Bazel invocation can generate large bursts of RPCs, each of which needs to
 // be authed. There's no need to go to the database for every single request as
 // this data rarely changes.
-func newAPIKeyGroupCache() (lru.LRU[interfaces.APIKeyGroup], error) {
+func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup], error) {
 	cache, err := lru.New[interfaces.APIKeyGroup](&lru.Config[interfaces.APIKeyGroup]{
 		MaxSize:    apiKeyGroupCacheSize,
 		SizeFn:     func(v interfaces.APIKeyGroup) int64 { return 1 },
 		TTL:        *apiKeyGroupCacheTTL,
 		ThreadSafe: true,
+		Clock:      clock,
 	})
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
@@ -100,7 +101,7 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 		clock: env.GetClock(),
 	}
 	if *apiKeyGroupCacheTTL > 0 {
-		akgCache, err := newAPIKeyGroupCache()
+		akgCache, err := newAPIKeyGroupCache(adb.clock)
 		if err != nil {
 			return nil, err
 		}
