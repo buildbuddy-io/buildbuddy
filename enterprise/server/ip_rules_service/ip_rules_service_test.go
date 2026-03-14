@@ -22,14 +22,14 @@ import (
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
-type checkCall struct {
-	groupID    string
-	skipCache  bool
-	skipRuleID string
+type operations struct {
+	groupID      string
+	invalidation bool
+	skipRuleID   string
 }
 
 type fakeIPRulesEnforcer struct {
-	checkCalls []checkCall
+	checkCalls []operations
 	checkErr   error
 }
 
@@ -45,10 +45,16 @@ func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.
 	return nil
 }
 
-func (f *fakeIPRulesEnforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
-	f.checkCalls = append(f.checkCalls, checkCall{
+func (f *fakeIPRulesEnforcer) InvalidateCachedRules(ctx context.Context, groupID string) {
+	f.checkCalls = append(f.checkCalls, operations{
+		groupID:      groupID,
+		invalidation: true,
+	})
+}
+
+func (f *fakeIPRulesEnforcer) Check(ctx context.Context, groupID string, skipRuleID string) error {
+	f.checkCalls = append(f.checkCalls, operations{
 		groupID:    groupID,
-		skipCache:  skipCache,
 		skipRuleID: skipRuleID,
 	})
 	return f.checkErr
@@ -262,7 +268,10 @@ func TestSetAndGetIPRuleConfig(t *testing.T) {
 		EnforceIpRules: true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []checkCall{{groupID: groupID, skipCache: true, skipRuleID: ""}}, enforcer.checkCalls)
+	require.Equal(t, []operations{
+		{groupID: groupID, invalidation: true},
+		{groupID: groupID, skipRuleID: ""},
+	}, enforcer.checkCalls)
 
 	cfgRsp, err = svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -275,7 +284,7 @@ func TestSetAndGetIPRuleConfig(t *testing.T) {
 		EnforceIpRules: false,
 	})
 	require.NoError(t, err)
-	require.Len(t, enforcer.checkCalls, 1)
+	require.Len(t, enforcer.checkCalls, 2)
 
 	cfgRsp, err = svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -296,7 +305,10 @@ func TestSetIPRuleConfigRejectsLockout(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 	require.Contains(t, err.Error(), "9.8.7.6")
-	require.Equal(t, []checkCall{{groupID: groupID, skipCache: true, skipRuleID: ""}}, enforcer.checkCalls)
+	require.Equal(t, []operations{
+		{groupID: groupID, invalidation: true},
+		{groupID: groupID, skipRuleID: ""},
+	}, enforcer.checkCalls)
 
 	cfgRsp, err := svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -330,11 +342,13 @@ func TestDeleteRuleRejectsLockout(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 	require.Contains(t, err.Error(), "1.2.3.4")
-	require.Equal(t, []checkCall{{
-		groupID:    groupID,
-		skipCache:  true,
-		skipRuleID: addRsp.GetRule().GetIpRuleId(),
-	}}, enforcer.checkCalls)
+	require.Equal(t, []operations{
+		{groupID: groupID, invalidation: true},
+		{
+			groupID:    groupID,
+			skipRuleID: addRsp.GetRule().GetIpRuleId(),
+		},
+	}, enforcer.checkCalls)
 
 	_, err = svc.GetRule(authCtx, groupID, addRsp.GetRule().GetIpRuleId())
 	require.NoError(t, err)

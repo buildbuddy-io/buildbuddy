@@ -137,7 +137,7 @@ func TestNoOpEnforcer(t *testing.T) {
 	require.NoError(t, enforcer.Authorize(context.Background()))
 	require.NoError(t, enforcer.AuthorizeGroup(context.Background(), "G1"))
 	require.NoError(t, enforcer.AuthorizeHTTPRequest(context.Background(), httptest.NewRequest("GET", "/rpc/BuildBuddyService/GetUser", nil)))
-	require.NoError(t, enforcer.Check(context.Background(), "G1", true, ""))
+	require.NoError(t, enforcer.Check(context.Background(), "G1", ""))
 }
 
 func TestAuthorizeAndAuthorizeGroup_EnforcementNotEnabled(t *testing.T) {
@@ -211,10 +211,10 @@ func TestCheckSkipRuleID(t *testing.T) {
 	ruleID := insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
 	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
 
-	err := irs.Check(ctx, groupID, true /* skipCache */, "" /* skipRuleID */)
+	err := irs.Check(ctx, groupID, "" /* skipRuleID */)
 	require.NoError(t, err)
 
-	err = irs.Check(ctx, groupID, true /* skipCache */, ruleID)
+	err = irs.Check(ctx, groupID, ruleID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 }
@@ -278,17 +278,17 @@ func TestRefresherStopsOnShutdown(t *testing.T) {
 
 	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
 	ctx1 := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
-	require.NoError(t, irs.Check(ctx1, groupID, false /*=skipCache*/, "" /*=skipRuleID*/))
+	require.NoError(t, irs.Check(ctx1, groupID, "" /*=skipRuleID*/))
 
 	insertRule(t, env, groupID, "4.5.6.7/32", "rule2")
 	ctx2 := context.WithValue(context.Background(), clientip.ContextKey, "4.5.6.7")
-	err = irs.Check(ctx2, groupID, false /*=skipCache*/, "" /*=skipRuleID*/)
+	err = irs.Check(ctx2, groupID, "" /*=skipRuleID*/)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 
 	sns.ch <- &snpb.InvalidateIPRulesCache{GroupId: groupID}
 	require.Eventually(t, func() bool {
-		return irs.Check(ctx2, groupID, false /*=skipCache*/, "" /*=skipRuleID*/) == nil
+		return irs.Check(ctx2, groupID, "" /*=skipRuleID*/) == nil
 	}, time.Second, 10*time.Millisecond)
 
 	env.GetHealthChecker().Shutdown()
@@ -298,7 +298,7 @@ func TestRefresherStopsOnShutdown(t *testing.T) {
 	sns.ch <- &snpb.InvalidateIPRulesCache{GroupId: groupID}
 
 	ctx3 := context.WithValue(context.Background(), clientip.ContextKey, "8.9.10.11")
-	err = irs.Check(ctx3, groupID, false /*=skipCache*/, "" /*=skipRuleID*/)
+	err = irs.Check(ctx3, groupID, "" /*=skipRuleID*/)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 }
