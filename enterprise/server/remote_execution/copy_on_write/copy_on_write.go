@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -754,7 +755,8 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 	c.usageLock.Lock()
 	defer c.usageLock.Unlock()
 
-	logStr := fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name)
+	var logStr strings.Builder
+	logStr.WriteString(fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name))
 	for op, summary := range c.chunkOperationToUsageSummary {
 		if summary.totalCount > 0 {
 			metrics.COWSnapshotChunkOperationTotalDurationUsec.With(prometheus.Labels{
@@ -762,12 +764,12 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 				metrics.EventName: op,
 				metrics.Stage:     stage,
 			}).Observe(float64(summary.totalDuration.Microseconds()))
-			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
+			logStr.WriteString(fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount))
 		}
 	}
 	c.chunkOperationToUsageSummary = make(map[string]usageSummary, 0)
 
-	log.CtxDebug(c.ctx, logStr)
+	log.CtxDebug(c.ctx, logStr.String())
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,

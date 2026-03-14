@@ -761,12 +761,12 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
+	var expectedOutput strings.Builder
 	for _, dir := range dirs {
-		expectedOutput += "777 " + dir + "\n"
+		expectedOutput.WriteString("777 " + dir + "\n")
 	}
 
-	require.Equal(t, expectedOutput, res.Stdout)
+	require.Equal(t, expectedOutput.String(), res.Stdout)
 }
 
 func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
@@ -804,12 +804,12 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
+	var expectedOutput strings.Builder
 	for _, dir := range dirs {
-		expectedOutput += "777 " + dir + "\n"
+		expectedOutput.WriteString("777 " + dir + "\n")
 	}
 
-	require.Equal(t, expectedOutput, res.Stdout)
+	require.Equal(t, expectedOutput.String(), res.Stdout)
 }
 
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {

@@ -324,11 +324,11 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
-	buf := ""
+	var buf strings.Builder
 	for _, p := range c.partitions {
-		buf += p.Statusz(ctx)
+		buf.WriteString(p.Statusz(ctx))
 	}
-	return buf
+	return buf.String()
 }
 
 func (c *DiskCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {

@@ -276,8 +276,8 @@ func validateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestF
 
 	// Walk the tree path segment by segment starting from root.
 	current := tree.GetRoot()
-	segments := strings.Split(workingDir, "/")
-	for _, seg := range segments {
+	segments := strings.SplitSeq(workingDir, "/")
+	for seg := range segments {
 		found := false
 		for _, dirNode := range current.GetDirectories() {
 			if dirNode.GetName() == seg {

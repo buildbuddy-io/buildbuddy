@@ -346,8 +346,8 @@ func (el *Element) FirstSelectedOption() *Element {
 
 // HasClass returns whether an element has the given class name.
 func HasClass(el *Element, class string) bool {
-	classes := strings.Split(el.GetAttribute("class"), " ")
-	for _, c := range classes {
+	classes := strings.SplitSeq(el.GetAttribute("class"), " ")
+	for c := range classes {
 		if c == class {
 			return true
 		}
@@ -483,10 +483,10 @@ func GetBazelBuildFlags(wt *WebTester, appBaseURL string, opts ...SetupPageOptio
 			line = parts[0]
 		}
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "build ") {
-			buildFlags = append(buildFlags, strings.TrimPrefix(line, "build "))
-		} else if strings.HasPrefix(line, "common ") {
-			buildFlags = append(buildFlags, strings.TrimPrefix(line, "common "))
+		if after, ok := strings.CutPrefix(line, "build "); ok {
+			buildFlags = append(buildFlags, after)
+		} else if after, ok := strings.CutPrefix(line, "common "); ok {
+			buildFlags = append(buildFlags, after)
 		}
 	}
 	return buildFlags

@@ -168,7 +168,7 @@ func determineRemote() (*gitRemote, error) {
 	}
 
 	remotes := make([]*gitRemote, 0)
-	for _, s := range strings.Split(remotesStr, "\n") {
+	for s := range strings.SplitSeq(remotesStr, "\n") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -547,7 +547,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	binaryFilesToExclude := make([]string, 0)
 	binaryFiles := make([]string, 0)
 	if modifiedFiles != "" {
-		for _, mf := range strings.Split(modifiedFiles, "\n") {
+		for mf := range strings.SplitSeq(modifiedFiles, "\n") {
 			isBinary, err := isBinaryFile(mf)
 			if err != nil {
 				return nil, status.WrapError(err, "check binary file")
@@ -591,7 +591,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	}
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
-		for _, uf := range strings.Split(untrackedFiles, "\n") {
+		for uf := range strings.SplitSeq(untrackedFiles, "\n") {
 			if strings.HasPrefix(uf, BuildBuddyArtifactDir+"/") {
 				continue
 			}
@@ -618,7 +618,7 @@ func splitLogBuffer(buf []byte) []string {
 	var lines []string
 
 	termWidth := getTermWidth()
-	for _, line := range strings.Split(string(buf), "\n") {
+	for line := range strings.SplitSeq(string(buf), "\n") {
 		for len(line) > termWidth {
 			lines = append(lines, line[0:termWidth])
 			line = line[termWidth:]

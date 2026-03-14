@@ -758,18 +758,19 @@ func (s *Store) getLastUsedIDsInMetaRangeForDebug() (map[string]uint64, error) {
 }
 
 func (s *Store) Statusz(ctx context.Context) string {
-	buf := "<pre>"
-	buf += s.liveness.String() + "\n"
+	var buf strings.Builder
+	buf.WriteString("<pre>")
+	buf.WriteString(s.liveness.String() + "\n")
 
 	su := s.Usage()
-	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
+	buf.WriteString(fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
 		su.GetLeaseCount(),
 		su.GetReadQps(),
 		su.GetRaftProposeQps(),
 		su.GetTotalBytesUsed()/1e6,
-	)
+	))
 
 	replicas := make([]*replica.Replica, 0)
 	s.replicas.Range(func(key, value any) bool {
@@ -785,7 +786,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		replicaName := fmt.Sprintf("  Shard: %5d   Replica: %5d", r.RangeID(), r.ReplicaID())
 		ru, err := r.Usage()
 		if err != nil {
-			buf += fmt.Sprintf("%s error: %s\n", replicaName, err)
+			buf.WriteString(fmt.Sprintf("%s error: %s\n", replicaName, err))
 			continue
 		}
 		haveLease := 0
@@ -803,7 +804,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 			numRemoving = len(rd.GetRemoved())
 		}
 
-		buf += fmt.Sprintf("%36s | Leader: %6d | HaveLease: %4d | QPS (R): %5d | (W): %5d | # Staging: %4d | # Removing: %4d | %s\n",
+		buf.WriteString(fmt.Sprintf("%36s | Leader: %6d | HaveLease: %4d | QPS (R): %5d | (W): %5d | # Staging: %4d | # Removing: %4d | %s\n",
 			replicaName,
 			isLeader,
 			haveLease,
@@ -812,32 +813,32 @@ func (s *Store) Statusz(ctx context.Context) string {
 			numStaging,
 			numRemoving,
 			s.replicaInitStatusWaiter.InitStatus(r.RangeID(), r.ReplicaID()),
-		)
+		))
 	}
-	buf += s.usages.Statusz(ctx)
-	buf += "Partitions from meta range:\n"
+	buf.WriteString(s.usages.Statusz(ctx))
+	buf.WriteString("Partitions from meta range:\n")
 	partitions, err := s.sender.FetchPartitionDescriptors(ctx)
 	if err != nil {
-		buf += fmt.Sprintf("failed to fetch partition descriptors error: %s\n", err)
+		buf.WriteString(fmt.Sprintf("failed to fetch partition descriptors error: %s\n", err))
 	} else {
 		for _, p := range partitions {
-			buf += fmt.Sprintf("\t%s: %s\n", p.GetId(), p.GetState())
+			buf.WriteString(fmt.Sprintf("\t%s: %s\n", p.GetId(), p.GetState()))
 		}
 	}
-	buf += "System Keys\n"
+	buf.WriteString("System Keys\n")
 	sysKeys, err := s.getLastUsedIDsInMetaRangeForDebug()
 	if err != nil {
-		buf += fmt.Sprintf("failed to fetch system keys: %s\n", err)
+		buf.WriteString(fmt.Sprintf("failed to fetch system keys: %s\n", err))
 	} else if len(sysKeys) == 0 {
-		buf += "no system keys found\n"
+		buf.WriteString("no system keys found\n")
 	} else {
 		for key, value := range sysKeys {
-			buf += fmt.Sprintf("\t%q: %d\n", key, value)
+			buf.WriteString(fmt.Sprintf("\t%q: %d\n", key, value))
 		}
 	}
-	buf += "</pre>"
+	buf.WriteString("</pre>")
 
-	return buf
+	return buf.String()
 }
 
 func (s *Store) handleEvents(ctx context.Context) {

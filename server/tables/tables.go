@@ -333,8 +333,8 @@ func (u *User) ToProto() *uspb.DisplayUser {
 	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
 	// Parse username from subscriber ID (for known providers).
 	username := ""
-	if strings.HasPrefix(u.SubID, "https://github.com/") {
-		username = strings.TrimPrefix(u.SubID, "https://github.com/")
+	if after, ok := strings.CutPrefix(u.SubID, "https://github.com/"); ok {
+		username = after
 	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{

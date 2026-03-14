@@ -1581,12 +1581,13 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 }
 
 func printCommandLine(out io.Writer, command string, args ...string) error {
-	cmdLine := command
+	var cmdLine strings.Builder
+	cmdLine.WriteString(command)
 	for _, arg := range args {
-		cmdLine += " " + toShellToken(arg)
+		cmdLine.WriteString(" " + toShellToken(arg))
 	}
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
-	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine.String()))
 	return nil
 }
 

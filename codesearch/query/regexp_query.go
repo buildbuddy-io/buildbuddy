@@ -251,7 +251,7 @@ func (rm regionMatch) Line() int {
 
 func (rm regionMatch) CustomSnippet(linesBefore, linesAfter int) string {
 	lineNumber := rm.region.lineNumber
-	snippetText := ""
+	var snippetText strings.Builder
 
 	firstLine := max(lineNumber-linesBefore, 1)
 	lastLine := lineNumber + linesAfter
@@ -262,9 +262,9 @@ func (rm regionMatch) CustomSnippet(linesBefore, linesAfter int) string {
 			// Skip blank lines before the matched line.
 			continue
 		}
-		snippetText += makeLine(buf, n)
+		snippetText.WriteString(makeLine(buf, n))
 	}
-	return snippetText
+	return snippetText.String()
 }
 
 func (rm regionMatch) String() string {

@@ -302,7 +302,7 @@ func (f *StringSliceFlag) Set(values string) error {
 	if values == "" {
 		return nil
 	}
-	for _, val := range strings.Split(values, ",") {
+	for val := range strings.SplitSeq(values, ",") {
 		*f = append(*f, val)
 	}
 	return nil

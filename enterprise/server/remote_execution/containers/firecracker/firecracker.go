@@ -2955,7 +2955,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			}
 		}
 
-		var chunkSrcLog string
+		var chunkSrcLog strings.Builder
 		for chunkSrc, count := range chunkSourceCounter {
 			sourceLabel := snaputil.ChunkSourceLabel(chunkSrc)
 			bytesRead := bytesReadPerSource[chunkSrc]
@@ -2967,7 +2967,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 				metrics.FileName:    name,
 				metrics.ChunkSource: sourceLabel,
 			}).Add(float64(bytesReadPerSource[chunkSrc]))
-			chunkSrcLog += fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel)
+			chunkSrcLog.WriteString(fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel))
 		}
 
 		metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
@@ -2977,7 +2977,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			metrics.FileName: name,
 		}).Add(float64(dirtyBytes))
 
-		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog)
+		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
 	}
 	return nil
 }
@@ -3255,8 +3255,8 @@ func parseFatalInitError(tail string) error {
 	}
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(tail, "\n")
+	for line := range lines {
 		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
 			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
 		}
@@ -3271,13 +3271,13 @@ func (c *FirecrackerContainer) parseOOMError(logTail string) error {
 		return nil
 	}
 	lines := strings.Split(logTail, "\n")
-	oomLines := ""
+	var oomLines strings.Builder
 	for _, line := range lines {
 		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
-			oomLines += line + "\n"
+			oomLines.WriteString(line + "\n")
 		}
 	}
-	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.
@@ -3448,8 +3448,8 @@ func getRandomNUMANode() (int, error) {
 	// Parse file contents
 	// Example: "0-1,3" is parsed as []int{0, 1, 3}
 	var nodes []int
-	nodeRanges := strings.Split(s, ",")
-	for _, r := range nodeRanges {
+	nodeRanges := strings.SplitSeq(s, ",")
+	for r := range nodeRanges {
 		startStr, endStr, _ := strings.Cut(r, "-")
 		start, err := strconv.Atoi(startStr)
 		if err != nil {

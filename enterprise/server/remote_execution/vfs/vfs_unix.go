@@ -371,11 +371,11 @@ func (vfs *VFS) logStats() {
 				opNames = append(opNames, op)
 			}
 			slices.Sort(opNames)
-			s := ""
+			var s strings.Builder
 			for _, k := range opNames {
-				s += fmt.Sprintf("%s:%d ", k, stats[k])
+				s.WriteString(fmt.Sprintf("%s:%d ", k, stats[k]))
 			}
-			log.CtxDebugf(vfs.rpcCtx, "%s %s", p, s)
+			log.CtxDebugf(vfs.rpcCtx, "%s %s", p, s.String())
 		}
 	}
 }
@@ -1328,8 +1328,8 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	}
 
 	reqTarget := target
-	if strings.HasPrefix(target, n.vfs.mountDir) {
-		reqTarget = strings.TrimPrefix(target, n.vfs.mountDir)
+	if after, ok := strings.CutPrefix(target, n.vfs.mountDir); ok {
+		reqTarget = after
 	}
 
 	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: reqTarget})

@@ -472,8 +472,8 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	for _, repoURLKey := range knownGitRepoURLKeys {
 		// assignmentPrefix is a string like "REPO_URL=" or "GIT_URL="
 		assignmentPrefix := repoURLKey + envVarSeparator
-		if strings.HasPrefix(option.OptionValue, assignmentPrefix) {
-			envVarValue := strings.TrimPrefix(option.OptionValue, assignmentPrefix)
+		if after, ok := strings.CutPrefix(option.OptionValue, assignmentPrefix); ok {
+			envVarValue := after
 			strippedValue := gitutil.StripRepoURLCredentials(envVarValue)
 			option.OptionValue = assignmentPrefix + strippedValue
 			option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + option.OptionValue
@@ -508,11 +508,11 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 //     "Q8s-=2")
 //   - The leading dashes are not required and will be omitted if not provided.
 func splitCombinedForm(cf string) (string, string) {
-	i := strings.Index(cf, "=")
-	if i < 0 {
+	before, after, ok := strings.Cut(cf, "=")
+	if !ok {
 		return cf, ""
 	}
-	return cf[:i], cf[i+1:]
+	return before, after
 }
 
 func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) error {
@@ -654,8 +654,8 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 // and returns a slice of the comma-separated values specified in the value of
 // ALLOW_ENV -- in this example, it would return {"A", "B", "C"}.
 func parseAllowedEnv(optionsDescription string) []string {
-	options := strings.Split(optionsDescription, " ")
-	for _, option := range options {
+	options := strings.SplitSeq(optionsDescription, " ")
+	for option := range options {
 		if !strings.HasPrefix(option, buildMetadataOptionPrefix) {
 			continue
 		}

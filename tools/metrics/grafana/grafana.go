@@ -240,8 +240,8 @@ func exportNormalizedDashboard(md DashboardMetadata) (fileName string, _ error) 
 		// the file name does not have to match the dashboard title, and so we
 		// can rename dashboards without changing the file name.
 		tag := t.(string)
-		if strings.HasPrefix(tag, "file:") {
-			fileName = strings.TrimPrefix(tag, "file:")
+		if after, ok := strings.CutPrefix(tag, "file:"); ok {
+			fileName = after
 			break
 		}
 	}
