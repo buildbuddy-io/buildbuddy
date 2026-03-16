@@ -40,7 +40,7 @@ func TestStoreStatusStateMachine(t *testing.T) {
 	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
 
 	repls := []*rfpb.ReplicaDescriptor{
-		{Nhid: proto.String(nhid)},
+		{Nhid: new(nhid)},
 	}
 
 	// Node joins and is alive -> suspect
@@ -96,7 +96,7 @@ func TestMissingUsageTag(t *testing.T) {
 	nhid := "node-1"
 
 	repls := []*rfpb.ReplicaDescriptor{
-		{Nhid: proto.String(nhid)},
+		{Nhid: new(nhid)},
 	}
 
 	// Node joins and is alive, but no usage tag -> unknown

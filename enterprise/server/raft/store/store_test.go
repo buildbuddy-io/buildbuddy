@@ -414,9 +414,9 @@ func TestStartMissingShard(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{RangeId: 3, ReplicaId: 1, Nhid: proto.String(s1.NHID())},
-			{RangeId: 3, ReplicaId: 2, Nhid: proto.String(s2.NHID())},
-			{RangeId: 3, ReplicaId: 3, Nhid: proto.String(s3.NHID())},
+			{RangeId: 3, ReplicaId: 1, Nhid: new(s1.NHID())},
+			{RangeId: 3, ReplicaId: 2, Nhid: new(s2.NHID())},
+			{RangeId: 3, ReplicaId: 3, Nhid: new(s3.NHID())},
 		},
 		Generation: 1,
 	}
@@ -679,7 +679,7 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
@@ -751,7 +751,7 @@ func TestAddReplica_NonVoterNotStarted(t *testing.T) {
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
@@ -823,7 +823,7 @@ func TestAddReplica_NonVoterStarted(t *testing.T) {
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
@@ -900,7 +900,7 @@ func TestAddReplica_Voter(t *testing.T) {
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
@@ -1234,7 +1234,7 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
@@ -1325,7 +1325,7 @@ func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
 	newRD.Staging = append(newRD.Staging, &rfpb.ReplicaDescriptor{
 		RangeId:   2,
 		ReplicaId: 3,
-		Nhid:      proto.String(s3.NHID()),
+		Nhid:      new(s3.NHID()),
 	})
 	newRD.Generation++
 

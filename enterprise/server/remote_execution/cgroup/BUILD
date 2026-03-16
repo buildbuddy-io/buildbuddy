@@ -30,7 +30,6 @@ go_test(
         "//enterprise/server/remote_execution/block_io",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
-        "//server/util/proto",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",

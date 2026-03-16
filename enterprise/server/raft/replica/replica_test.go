@@ -697,7 +697,7 @@ func TestReplicaFetchRanges(t *testing.T) {
 			RangeId:    1,
 			Generation: 1,
 			Replicas: []*rfpb.ReplicaDescriptor{
-				{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+				{RangeId: 1, ReplicaId: 1, Nhid: new("nhid-1")},
 			},
 		},
 		{
@@ -706,8 +706,8 @@ func TestReplicaFetchRanges(t *testing.T) {
 			RangeId:    2,
 			Generation: 1,
 			Replicas: []*rfpb.ReplicaDescriptor{
-				{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-				{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+				{RangeId: 2, ReplicaId: 1, Nhid: new("nhid-1")},
+				{RangeId: 2, ReplicaId: 2, Nhid: new("nhid-2")},
 			},
 		},
 		{
@@ -716,7 +716,7 @@ func TestReplicaFetchRanges(t *testing.T) {
 			RangeId:    3,
 			Generation: 1,
 			Replicas: []*rfpb.ReplicaDescriptor{
-				{RangeId: 3, ReplicaId: 1, Nhid: proto.String("nhid-2")},
+				{RangeId: 3, ReplicaId: 1, Nhid: new("nhid-2")},
 			},
 		},
 		{
@@ -725,7 +725,7 @@ func TestReplicaFetchRanges(t *testing.T) {
 			RangeId:    4,
 			Generation: 1,
 			Replicas: []*rfpb.ReplicaDescriptor{
-				{RangeId: 4, ReplicaId: 1, Nhid: proto.String("nhid-3")},
+				{RangeId: 4, ReplicaId: 1, Nhid: new("nhid-3")},
 			},
 		},
 	}
@@ -1899,8 +1899,8 @@ func TestDeleteSessions(t *testing.T) {
 		session.RspData = nil
 		got = append(got, session)
 	}
-	session2.EntryIndex = proto.Uint64(3)
-	session3.EntryIndex = proto.Uint64(4)
+	session2.EntryIndex = new(uint64(3))
+	session3.EntryIndex = new(uint64(4))
 	require.ElementsMatch(t, got, []*rfpb.Session{session2, session3})
 }
 

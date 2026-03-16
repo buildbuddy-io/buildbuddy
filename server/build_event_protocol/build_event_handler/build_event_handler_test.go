@@ -1587,10 +1587,10 @@ func TestBuildStatusReporting(t *testing.T) {
 					OwnerRepo: "testowner/testrepo",
 					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
 					RepoStatus: &github.GithubStatusPayload{
-						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
-						State:       pointer("pending"),
-						Description: pointer("Running..."),
-						Context:     pointer("bazel build //..."),
+						TargetURL:   new("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       new("pending"),
+						Description: new("Running..."),
+						Context:     new("bazel build //..."),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1612,10 +1612,10 @@ func TestBuildStatusReporting(t *testing.T) {
 					OwnerRepo: "testowner/testrepo",
 					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
 					RepoStatus: &github.GithubStatusPayload{
-						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
-						State:       pointer("success"),
-						Description: pointer("Success"),
-						Context:     pointer("bazel build //..."),
+						TargetURL:   new("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       new("success"),
+						Description: new("Success"),
+						Context:     new("bazel build //..."),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1869,10 +1869,10 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 					OwnerRepo: "testowner/testrepo",
 					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
 					RepoStatus: &github.GithubStatusPayload{
-						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
-						State:       pointer("pending"),
-						Description: pointer("Running..."),
-						Context:     pointer("bazel build //..."),
+						TargetURL:   new("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       new("pending"),
+						Description: new("Running..."),
+						Context:     new("bazel build //..."),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1894,10 +1894,10 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 					OwnerRepo: "testowner/testrepo",
 					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
 					RepoStatus: &github.GithubStatusPayload{
-						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
-						State:       pointer("success"),
-						Description: pointer("Success"),
-						Context:     pointer("bazel build //..."),
+						TargetURL:   new("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       new("success"),
+						Description: new("Success"),
+						Context:     new("bazel build //..."),
 					},
 				},
 			}, client.ConsumeStatuses())
@@ -1984,8 +1984,4 @@ func TestTruncateStringSlice(t *testing.T) {
 			assert.Equal(t, test.Truncated, truncated, "truncated should be %t", test.Truncated)
 		})
 	}
-}
-
-func pointer[T any](value T) *T {
-	return &value
 }
