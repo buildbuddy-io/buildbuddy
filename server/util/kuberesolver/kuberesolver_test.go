@@ -237,12 +237,12 @@ func TestResolveNonExistentPod(t *testing.T) {
 	require.NoError(t, err)
 	defer r.Close()
 
-	// Should get an error reported since pod doesn't exist.
+	// Should get an empty address list since pod doesn't exist.
 	select {
-	case err := <-cc.errors:
-		require.Contains(t, err.Error(), "not found")
+	case state := <-cc.states:
+		require.Empty(t, state.Addresses)
 	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for error")
+		require.FailNow(t, "timed out waiting for state update")
 	}
 }
 
