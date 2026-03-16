@@ -1,8 +1,8 @@
 package github
 
 import (
-	"bytes"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
 	xxhash "github.com/cespare/xxhash/v2"
@@ -169,11 +168,8 @@ func validateFile(content []byte) error {
 	shortBuf := detectionBuffer(content)
 
 	// Check the mimetype and skip if not valid for indexing.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err != nil {
-		return fmt.Errorf("failed to detect mimetype: %w", err)
-	}
-	if skipMime.MatchString(mtype.String()) {
+	mtype := http.DetectContentType(shortBuf)
+	if skipMime.MatchString(mtype) {
 		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
 	}
 
