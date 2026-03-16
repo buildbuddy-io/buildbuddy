@@ -589,6 +589,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
 		EnableVfs:         args.Props.EnableVFS,
+		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1620,7 +1621,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.nopnp",
 		"i8042.dumbkbd",
 		"tsc=reliable",
-		"ipv6.disable=1",
+	}
+	if !vmConfig.GetIpv6Enabled() {
+		kernelArgs = append(kernelArgs, "ipv6.disable=1")
 	}
 	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)

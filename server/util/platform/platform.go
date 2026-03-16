@@ -145,6 +145,10 @@ const (
 	// will have "external" network access (for backwards compatibility).
 	networkPropertyName = "network"
 
+	// NetworkEnableIPv6PropertyName specifies whether Firecracker guests should
+	// boot with IPv6 enabled.
+	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -241,6 +245,7 @@ type Properties struct {
 	DockerNetwork             string
 	ExecrootPath              string
 	Network                   string
+	NetworkEnableIPv6         bool
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -517,6 +522,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
 		Network:                   stringProp(m, networkPropertyName, ""),
+		NetworkEnableIPv6:         boolProp(m, NetworkEnableIPv6PropertyName, false),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
