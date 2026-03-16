@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -9,10 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -117,6 +121,47 @@ func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
+func getCommand(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) *repb.Command {
+	instanceName := executeRequest.GetInstanceName()
+	actionResourceName := digest.NewCASResourceName(executeRequest.GetActionDigest(), instanceName, executeRequest.GetDigestFunction())
+	action := &repb.Action{}
+	err := cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), actionResourceName, action)
+	require.NoError(t, err)
+
+	commandResourceName := digest.NewCASResourceName(action.GetCommandDigest(), instanceName, executeRequest.GetDigestFunction())
+	command := &repb.Command{}
+	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), commandResourceName, command)
+	require.NoError(t, err)
+	return command
+}
+
+func createGitRepo(t *testing.T, te *testenv.TestEnv, ctx context.Context, repoURL string, useCLIInRemoteRunners bool) {
+	u, err := te.GetAuthenticator().AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	err = te.GetDBHandle().NewQuery(ctx, "create_git_repo_for_test").Create(&tables.GitRepository{
+		RepoURL:                  repoURL,
+		GroupID:                  u.GetGroupID(),
+		UserID:                   u.GetUserID(),
+		Perms:                    perms.GROUP_READ | perms.GROUP_WRITE,
+		UseCLIInRemoteRunners:    useCLIInRemoteRunners,
+		UseDefaultWorkflowConfig: false,
+	})
+	require.NoError(t, err)
+
+	// In `Create`, GORM omits fields that are set to false. Because `use_cli_in_remote_runners`
+	// defaults to true, that field is set to true when the value is omitted.
+	// We must explicitly set it to false if requested.
+	if !useCLIInRemoteRunners {
+		err = te.GetDBHandle().NewQuery(ctx, "disable_cli_for_repo_for_test").Raw(`
+			UPDATE "GitRepositories"
+			SET use_cli_in_remote_runners = ?
+			WHERE group_id = ?
+			AND repo_url = ?
+		`, false, u.GetGroupID(), repoURL).Exec().Error
+		require.NoError(t, err)
+	}
+}
+
 func TestRun_WithoutRepoURL(t *testing.T) {
 	te, ctx := getEnv(t)
 
@@ -137,9 +182,11 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 
 	r, err := New(te)
 	require.NoError(t, err)
+	repoURL := "https://github.com/fake/sample"
+	createGitRepo(t, te, ctx, repoURL, false)
 
 	_, err = r.Run(ctx, &rnpb.RunRequest{
-		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
+		GitRepo:       &gitpb.GitRepo{RepoUrl: repoURL},
 		RepoState:     &gitpb.RepoState{Branch: "test"},
 		RemoteHeaders: []string{"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb"},
 		Steps:         []*rnpb.Step{{Run: "test-val"}},
@@ -161,5 +208,33 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	// Check that credential-related overrides were not overwritten
 	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
 		require.Contains(t, appliedEnvOverrides, expectedCredential)
+	}
+}
+
+func TestBazelUseCLI(t *testing.T) {
+	for _, useCLI := range []bool{true, false} {
+		te, ctx := getEnv(t)
+
+		repoURL := fmt.Sprintf("https://github.com/fake/%v", useCLI)
+		createGitRepo(t, te, ctx, repoURL, useCLI)
+
+		r, err := New(te)
+		require.NoError(t, err)
+		_, err = r.Run(ctx, &rnpb.RunRequest{
+			GitRepo:   &gitpb.GitRepo{RepoUrl: repoURL},
+			RepoState: &gitpb.RepoState{Branch: "main"},
+			Steps:     []*rnpb.Step{{Run: "bazel version"}},
+		})
+		require.NoError(t, err)
+
+		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+		require.Equal(t, 1, len(execClient.executeRequests))
+		command := getCommand(t, ctx, te, execClient.executeRequests[0].Payload)
+
+		if useCLI {
+			require.Contains(t, command.GetArguments(), "--bazel_command=bb")
+		} else {
+			require.NotContains(t, command.GetArguments(), "--bazel_command=bb")
+		}
 	}
 }
