@@ -1,7 +1,6 @@
 package typescript
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"log"
@@ -17,9 +16,6 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/repo"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
 	"github.com/bazelbuild/bazel-gazelle/rule"
-
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/typescript/tsx"
 )
 
 const (
@@ -37,19 +33,22 @@ const (
 	disableMode         = "disable"
 )
 
+// staticImportPattern matches ES module import statements and extracts the
+// module specifier. It handles:
+//   - import 'module'
+//   - import x from 'module'
+//   - import {x} from 'module'
+//   - import * as x from 'module'
+//   - import type {x} from 'module'
+//   - import x, {y} from 'module'
+var staticImportPattern = regexp.MustCompile("(?m)^import\\s+(?:(?:type\\s+)?(?:\\{[^}]*\\}|\\*\\s+as\\s+\\w+|\\w+)(?:\\s*,\\s*(?:\\{[^}]*\\}|\\*\\s+as\\s+\\w+))*\\s+from\\s+)?[\"'`]([^\"'`]+)[\"'`]")
 var dynamicImportPattern = regexp.MustCompile("(?ms)import\\s*\\(\\s*(['\"`]([^'\"`]+)['\"`])\\s*\\)")
 var tslibPattern = regexp.MustCompile(`(async|await|\.\.\.|import \* as)`)
 
-type TS struct {
-	parser *sitter.Parser
-}
+type TS struct{}
 
 func NewLanguage() language.Language {
-	parser := sitter.NewParser()
-	parser.SetLanguage(tsx.GetLanguage())
-	return &TS{
-		parser: parser,
-	}
+	return &TS{}
 }
 
 func (*TS) Name() string {
@@ -124,18 +123,13 @@ func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 			log.Fatalf("Error reading %s: %v", filePath, err)
 		}
 		ruleImports := make([]string, 0)
-		tree, _ := t.parser.ParseCtx(context.Background(), nil, data)
-		for i := 0; i < int(tree.RootNode().ChildCount()); i++ {
-			child := tree.RootNode().Child(i)
-			if child.Type() == "import_statement" {
-				if child.NamedChild(1) == nil {
-					continue
-				}
-				ruleImports = append(ruleImports, child.NamedChild(1).Child(1).Content(data))
-			}
+
+		// Extract static imports using regex (replaces tree-sitter parser).
+		for _, match := range staticImportPattern.FindAllSubmatch(data, -1) {
+			ruleImports = append(ruleImports, string(match[1]))
 		}
 
-		// TODO(siggisim): See if we can grab dynamic imports and tslib usage using treesitter in an efficient way.
+		// Extract dynamic imports: import('module')
 		for _, match := range dynamicImportPattern.FindAllSubmatch(data, -1) {
 			ruleImports = append(ruleImports, string(match[2]))
 		}

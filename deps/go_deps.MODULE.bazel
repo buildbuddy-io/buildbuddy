@@ -252,7 +252,6 @@ use_repo(
     "com_github_shirou_gopsutil_v3",
     "com_github_shurcool_githubv4",
     "com_github_sirupsen_logrus",
-    "com_github_smacker_go_tree_sitter",
     "com_github_stretchr_testify",
     "com_github_tebeka_selenium",
     "com_github_throttled_throttled_v2",
