@@ -18,7 +18,6 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -156,8 +155,6 @@ const (
 	vmLogTailBufSize = 1024 * 12 // 12 KB
 	// File name of the VM logs in CommandResult.AuxiliaryLogs
 	vmLogTailFileName = "vm_log_tail.txt"
-	// Log prefix used by goinit when logging fatal errors.
-	fatalInitLogPrefix = "die: "
 
 	// VBD mount path suffix, which is appended to the drive ID.
 	// Example:
@@ -239,36 +236,8 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 
-	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
-
-// Derives the desired Firecracker NetworkMode from the provided network and
-// init-dockerd platform properties enum.
-func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
-	if network == "external" || network == "" {
-		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
-	}
-	if network == "off" {
-		if initDockerd {
-			return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
-		}
-		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
-	}
-	return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
-}
-
-// networkingEnabled returns true if the VM has any networking capability.
-func networkingEnabled(mode fcpb.NetworkMode) bool {
-	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
-	return mode != fcpb.NetworkMode_NETWORK_MODE_OFF
-}
-
-// externalNetworkingEnabled returns true if the VM can access external networks.
-func externalNetworkingEnabled(mode fcpb.NetworkMode) bool {
-	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
-	return mode == fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED || mode == fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
-}
 
 func init() {
 	// Configure firecracker request timeout (default: 500ms).
@@ -548,7 +517,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 	}
 
-	dns, err := parseDNSOverrides()
+	var dnsEntries []DNSOverride
+	for _, o := range *dnsOverrides {
+		dnsEntries = append(dnsEntries, DNSOverride{HostnameToOverride: o.HostnameToOverride, RedirectToHostname: o.RedirectToHostname})
+	}
+	dns, err := parseDNSOverrides(dnsEntries)
 	if err != nil {
 		return nil, err
 	}
@@ -611,27 +584,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, err
 	}
 	return c, nil
-}
-
-// parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
-func parseDNSOverrides() (string, error) {
-	if len(*dnsOverrides) == 0 {
-		return "", nil
-	}
-	for _, o := range *dnsOverrides {
-		if o.HostnameToOverride == "" {
-			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
-		}
-		// Ensure hostnames end with '.' so they are not resolved as relative names.
-		if !strings.HasSuffix(o.HostnameToOverride, ".") {
-			return "", status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
-		}
-	}
-	marshalledOverrides, err := json.Marshal(*dnsOverrides)
-	if err != nil {
-		return "", status.WrapError(err, "marshall dns overrides")
-	}
-	return string(marshalledOverrides), nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -791,7 +743,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand())) || *forceRemoteSnapshotting)
+	c.supportsRemoteSnapshots = computeSupportsRemoteSnapshots(task, *snaputil.EnableRemoteSnapshotSharing, *forceRemoteSnapshotting)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
@@ -994,19 +946,6 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	return eg.Wait()
 }
 
-// alignToMultiple aligns the value n to a multiple of `multiple`
-// It will round up if necessary
-func alignToMultiple(n int64, multiple int64) int64 {
-	remainder := n % multiple
-
-	// If remainder is zero, n is already aligned
-	if remainder == 0 {
-		return n
-	}
-	// Otherwise, adjust n to the next multiple of size
-	return n + multiple - remainder
-}
-
 func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 	return c.snapshotKeySet.CloneVT()
 }
@@ -1151,44 +1090,29 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 }
 
 func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) bool {
-	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
-		return false
-	}
-
-	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
-		return true
-	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
-		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
-	}
-
-	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable,
-	return !c.hasRemoteSnapshot(ctx, c.loader)
+	return computeShouldSaveRemoteSnapshot(snapshotPlannerInput{
+		task:                    c.task,
+		supportsRemoteSnapshots: c.supportsRemoteSnapshots,
+		recyclingEnabled:        c.recyclingEnabled,
+		isLikelyDefaultSnapshot: c.isLikelyDefaultSnapshot(),
+		existence: snapshotExistence{
+			remoteForPrimary: c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey()),
+			remoteForAny:     c.hasRemoteSnapshot(ctx, c.loader),
+		},
+	})
 }
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
-	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
-		return false
-	}
-	// For RBE actions, we don't save another snapshot if one already exists.
-	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
-		return false
-	}
-
-	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
-	// as it should be a good proxy for the user's intent on snapshot behavior.
-	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
-		return true
-	}
-	// By default (applies if save policy is unset or invalid) or if
-	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
-	// doesn't already exist.
-	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+	return computeShouldSaveLocalSnapshot(snapshotPlannerInput{
+		task:                        c.task,
+		localSnapshotSharingEnabled: *snaputil.EnableLocalSnapshotSharing,
+		recyclingEnabled:            c.recyclingEnabled,
+		createFromSnapshot:          c.createFromSnapshot,
+		isLikelyDefaultSnapshot:     c.isLikelyDefaultSnapshot(),
+		existence: snapshotExistence{
+			localForPrimary: c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey()),
+		},
+	})
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -1608,54 +1532,7 @@ func (c *FirecrackerContainer) getChroot() string {
 }
 
 func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
-	kernelArgs := []string{
-		"ro",
-		"console=ttyS0",
-		"reboot=k",
-		"panic=1",
-		"pci=off",
-		"nomodules=1",
-		"random.trust_cpu=on",
-		"i8042.noaux",
-		"i8042.nomux",
-		"i8042.nopnp",
-		"i8042.dumbkbd",
-		"tsc=reliable",
-	}
-	if !vmConfig.GetIpv6Enabled() {
-		kernelArgs = append(kernelArgs, "ipv6.disable=1")
-	}
-	if networkingEnabled(vmConfig.NetworkMode) {
-		kernelArgs = append(kernelArgs, machineIPBootArgs)
-	}
-
-	if *initOnAllocAndFree {
-		kernelArgs = append(kernelArgs, "init_on_alloc=1", "init_on_free=1")
-	}
-
-	var initArgs []string
-	if vmConfig.DebugMode {
-		initArgs = append(initArgs, "-debug_mode")
-	}
-	if vmConfig.EnableLogging {
-		initArgs = append(initArgs, "-enable_logging")
-	}
-	if networkingEnabled(vmConfig.NetworkMode) {
-		initArgs = append(initArgs, "-set_default_route")
-	}
-	if vmConfig.InitDockerd {
-		initArgs = append(initArgs, "-init_dockerd")
-	}
-	if vmConfig.EnableDockerdTcp {
-		initArgs = append(initArgs, "-enable_dockerd_tcp")
-	}
-	if snaputil.IsChunkedSnapshotSharingEnabled() {
-		initArgs = append(initArgs, "-enable_rootfs")
-	}
-	if vmConfig.EnableVfs {
-		initArgs = append(initArgs, "-enable_vfs")
-	}
-	return strings.Join(append(initArgs, kernelArgs...), " ")
+	return computeBootArgs(vmConfig, snaputil.IsChunkedSnapshotSharingEnabled(), *initOnAllocAndFree)
 }
 
 // getConfig returns the firecracker config for the current container and given
@@ -2167,7 +2044,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
 	if c.vmConfig.InitDockerd {
-		dockerDaemonConfig, err := getDockerDaemonConfig()
+		dockerDaemonConfig, err := getDockerDaemonConfig(*firecrackerVMDockerMirrors, *firecrackerVMDockerInsecureRegistries)
 		if err != nil {
 			return status.UnavailableErrorf("get Docker daemon config: %s", err)
 		}
@@ -2201,21 +2078,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	}
 	c.machine = m
 	return nil
-}
-
-func getDockerDaemonConfig() ([]byte, error) {
-	config := map[string][]string{}
-	if len(*firecrackerVMDockerMirrors) > 0 {
-		config["registry-mirrors"] = *firecrackerVMDockerMirrors
-	}
-	if len(*firecrackerVMDockerInsecureRegistries) > 0 {
-		config["insecure-registries"] = *firecrackerVMDockerInsecureRegistries
-	}
-	configJSON, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return configJSON, nil
 }
 
 func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
@@ -2466,12 +2328,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			if !status.IsDeadlineExceededError(result.Error) && !status.IsCanceledError(result.Error) {
 				log.CtxWarningf(ctx, "Execution error occurred: %s. VM logs: %s", result.Error, string(c.vmLog.Tail()))
 			}
-		} else if err := c.parseOOMError(logTail); err != nil {
+		} else if err := parseOOMError(logTail); err != nil {
 			// TODO(bduffany): maybe fail the whole command if we see an OOM
 			// in the kernel logs, and the command failed?
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
-		if err := c.parseSegFault(logTail, result); err != nil {
+		if err := parseSegFault(logTail, result.Stderr); err != nil {
 			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
 		}
 		// Slow hrtimer interrupts can happen during periods of high contention
@@ -3106,32 +2968,29 @@ type snapshotDetails struct {
 }
 
 func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
-	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
-	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
+	input := snapshotPlannerInput{
+		task:                        c.task,
+		supportsRemoteSnapshots:     c.supportsRemoteSnapshots,
+		localSnapshotSharingEnabled: *snaputil.EnableLocalSnapshotSharing,
+		recyclingEnabled:            c.recyclingEnabled,
+		createFromSnapshot:          c.createFromSnapshot,
+		recycled:                    c.recycled,
+		isLikelyDefaultSnapshot:     c.isLikelyDefaultSnapshot(),
+		existence: snapshotExistence{
+			remoteForPrimary: c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey()),
+			remoteForAny:     c.hasRemoteSnapshot(ctx, c.loader),
+			localForPrimary:  c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey()),
+		},
+	}
+	plan := computeSnapshotPlan(input)
 
-	if c.supportsRemoteSnapshots && !saveRemoteSnapshot {
+	if c.supportsRemoteSnapshots && !plan.saveRemoteSnapshot {
 		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
-	if !saveLocalSnapshot {
+	if !plan.saveLocalSnapshot {
 		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
-
-	if c.recycled {
-		return &snapshotDetails{
-			snapshotType:        diffSnapshotType,
-			memSnapshotName:     diffMemSnapshotName,
-			vmStateSnapshotName: vmStateSnapshotName,
-			saveRemoteSnapshot:  saveRemoteSnapshot,
-			saveLocalSnapshot:   saveLocalSnapshot,
-		}
-	}
-	return &snapshotDetails{
-		snapshotType:        fullSnapshotType,
-		memSnapshotName:     fullMemSnapshotName,
-		vmStateSnapshotName: vmStateSnapshotName,
-		saveRemoteSnapshot:  saveRemoteSnapshot,
-		saveLocalSnapshot:   saveLocalSnapshot,
-	}
+	return plan
 }
 
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
@@ -3249,48 +3108,6 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 	return &repb.UsageStats{}, nil
 }
 
-// parseFatalInitError looks for a fatal error logged by the init binary, and
-// returns an InternalError with the fatal error message if one is found;
-// otherwise it returns nil.
-func parseFatalInitError(tail string) error {
-	if !strings.Contains(tail, fatalInitLogPrefix) {
-		return nil
-	}
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.SplitSeq(tail, "\n")
-	for line := range lines {
-		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
-			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
-		}
-	}
-	return nil
-}
-
-// parseOOMError looks for oom-kill entries in the kernel logs and returns an
-// error if found.
-func (c *FirecrackerContainer) parseOOMError(logTail string) error {
-	if !strings.Contains(logTail, "oom-kill:") {
-		return nil
-	}
-	lines := strings.Split(logTail, "\n")
-	var oomLines strings.Builder
-	for _, line := range lines {
-		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
-			oomLines.WriteString(line + "\n")
-		}
-	}
-	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
-}
-
-// parseSegFault looks for segfaults in the kernel logs and returns an error if found.
-func (c *FirecrackerContainer) parseSegFault(logTail string, cmdResult *interfaces.CommandResult) error {
-	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
-		return nil
-	}
-	return status.UnavailableErrorf("process hit a segfault:\n%s", logTail)
-}
-
 func (c *FirecrackerContainer) observeStageDuration(taskStage string, d time.Duration) {
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage: taskStage,
@@ -3309,11 +3126,7 @@ func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 }
 
 func (c *FirecrackerContainer) isBalloonEnabled() bool {
-	// The balloon is intended to reduce memory snapshot size. If recycling is not
-	// enabled and we don't plan to generate a snapshot, don't enable it.
-	// Also disable the balloon for firecracker actions with local-only-snapshot-sharing
-	// (i.e. not workflows), as there seems to be negative performance implications.
-	return *snaputil.EnableBalloon && c.recyclingEnabled && c.supportsRemoteSnapshots
+	return isBalloonEnabled(*snaputil.EnableBalloon, c.recyclingEnabled, c.supportsRemoteSnapshots)
 }
 
 // machineHasBalloon returns whether a balloon was initialized in a machine.
@@ -3477,58 +3290,19 @@ func getRandomNUMANode() (int, error) {
 	return nodes[rand.IntN(len(nodes))], nil
 }
 
-func combineHostAndGuestStats(host, guest *repb.UsageStats) *repb.UsageStats {
-	stats := host.CloneVT()
-	// The guest exports some disk usage stats which we can't easily track on
-	// the host without introspection into the ext4 metadata blocks - just
-	// continue to get these from the guest for now.
-	stats.PeakFileSystemUsage = guest.GetPeakFileSystemUsage()
-	// Host memory usage stats might be confusing to the user, because the
-	// firecracker process might hold some extra memory that isn't visible to
-	// the guest. Use guest stats for memory usage too, for now.
-	stats.MemoryBytes = guest.GetMemoryBytes()
-	stats.PeakMemoryBytes = guest.GetPeakMemoryBytes()
-	return stats
-}
-
 // Returns the paths relative to the workspace root that should be copied back
 // to the action workspace directory after execution has completed.
 //
 // For performance reasons, we only extract the action's declared outputs,
 // unless the action is running with preserve-workspace=true.
 func workspacePathsToExtract(task *repb.ExecutionTask) []string {
-	if platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
-		return []string{"/"}
-	}
-
-	// Special files
-	// TODO: declare this list as a constant somewhere?
-	paths := []string{
-		".BUILDBUDDY_DO_NOT_RECYCLE",
-		".BUILDBUDDY_INVALIDATE_SNAPSHOT",
-	}
-
-	// Declared paths
-	paths = append(paths, task.GetCommand().GetOutputDirectories()...)
-	paths = append(paths, task.GetCommand().GetOutputFiles()...)
-	paths = append(paths, task.GetCommand().GetOutputPaths()...)
-
-	return paths
+	return computeWorkspacePathsToExtract(task)
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	return c.executorConfig.GuestKernelImagePath6_1 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+	return computeShouldUpgradeGuestKernel(c.task, c.executorConfig.GuestKernelImagePath6_1)
 }
 
 func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
-	policy := platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName)
-	switch policy {
-	case "":
-		// By default, prefer local snapshots.
-		return platform.ReadLocalSnapshotFirst, nil
-	case platform.ReadLocalSnapshotOnly, platform.ReadLocalSnapshotFirst, platform.AlwaysReadNewestSnapshot:
-		return policy, nil
-	default:
-		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)
-	}
+	return computeSnapshotReadPolicy(task)
 }

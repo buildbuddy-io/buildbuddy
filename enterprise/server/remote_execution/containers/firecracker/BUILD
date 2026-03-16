@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "containeropts.go",
         "firecracker.go",
+        "planner.go",
     ],
     data = select({
         "//platforms/configs:linux_x86_64": [
@@ -107,6 +108,17 @@ genrule(
     """,
     target_compatible_with = [
         "@platforms//os:linux",
+    ],
+)
+
+go_test(
+    name = "firecracker_unit_test",
+    srcs = ["planner_test.go"],
+    embed = [":firecracker"],
+    deps = [
+        "//proto:firecracker_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/util/platform",
     ],
 )
 
