@@ -1277,8 +1277,8 @@ func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.
 	if wf.GitRepository != nil {
 		useCLI = wf.GitRepository.UseCLIInRemoteRunners
 	}
-	if workflowAction.UseCLI != nil {
-		useCLI = *workflowAction.UseCLI
+	if workflowAction.BazelUseCLI != nil {
+		useCLI = *workflowAction.BazelUseCLI
 	}
 	if useCLI {
 		return "bb"
