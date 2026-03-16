@@ -436,7 +436,13 @@ func (b *kubeResolverBuilder) Build(target resolver.Target, cc resolver.ClientCo
 
 	cancel, err := b.manager.WatchPodIP(endpoint, func(addr string, watchErr error) {
 		if watchErr != nil {
-			r.cc.ReportError(watchErr)
+			// Report an empty address list. At least for the "pickfirst"
+			// balancer it causes the existing connection to be closed
+			// whereas calling ReportError causes it to keep using the old
+			// address list. In the case where a pod is removed/restarted,
+			// we wanted to close the connection since we know the IP is
+			// no longer valid.
+			_ = r.cc.UpdateState(resolver.State{})
 			return
 		}
 		r.updateState(addr)
