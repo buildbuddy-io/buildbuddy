@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1586,13 +1587,19 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
-	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
+	actionBytes, err := s.cache.Get(ctx, actionResourceName.ToProto())
+	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			err = digest.MissingDigestError(actionResourceName.GetDigest())
 		}
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
 		return nil, err
+	}
+
+	action := &repb.Action{}
+	if err := proto.Unmarshal(actionBytes, action); err != nil {
+		log.CtxWarningf(ctx, "Error fetching action: unmarshal: %s; bytes=%s", err, debugUserInputBytes(actionBytes))
+		return nil, fmt.Errorf("unmarshal action: %w", err)
 	}
 	return action, nil
 }
@@ -1812,4 +1819,17 @@ func (s *ExecutionServer) getInProgressExecutionIDsForInvocation(ctx context.Con
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	return ids, nil
+}
+
+// Returns a debug representation of user-provided bytes suitable for logging.
+// The given bytes are middle-truncated if they are too long. The returned
+// string is guaranteed to be ASCII but is not guaranteed to follow any specific
+// format.
+func debugUserInputBytes(b []byte) string {
+	const maxLength = 128
+	if len(b) <= maxLength {
+		return strconv.QuoteToASCII(string(b))
+	}
+	n := maxLength / 2
+	return strconv.QuoteToASCII(string(b[:n]) + "..." + strconv.QuoteToASCII(string(b[len(b)-n:])))
 }
