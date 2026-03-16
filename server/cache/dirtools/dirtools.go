@@ -321,7 +321,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 				req.BlobDigests = append(req.BlobDigests, f.digest)
 			}
 			var presentBytes int64
-			resp, err := cas.FindMissingBlobs(ctx, req)
+			resp, err := cachetools.FindMissingBlobs(ctx, cas, req)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to find missing output blobs: %s", err)
 			} else {
