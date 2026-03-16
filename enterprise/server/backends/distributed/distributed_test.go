@@ -700,6 +700,45 @@ func TestBackfill(t *testing.T) {
 	}
 }
 
+func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:            2,
+		Nodes:                        []string{peer1, peer2},
+		DisableLocalLookup:           true,
+		EnableLocalCompressionLookup: true,
+	}
+
+	sourceCache := &testcompression.CompressionCache{Cache: newMemoryCache(t, singleCacheSizeBytes)}
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, sourceCache)
+
+	destCache := &testcompression.CompressionCache{Cache: newMemoryCache(t, singleCacheSizeBytes)}
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, destCache)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+
+	// Note: the value `200` here is intentionally greater than
+	// cache.pebble.min_bytes_auto_zstd_compression
+	rn, buf := testdigest.RandomCASResourceBuf(t, 200)
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor())
+	require.NoError(t, sourceCache.Set(ctx, rn, buf))
+
+	require.NoError(t, dc1.copyFile(ctx, rn, peer1, peer2))
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor(), "copyFile should not mutate the caller's resource name")
+
+	got, err := destCache.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
 func TestContainsMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
