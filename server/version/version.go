@@ -3,6 +3,7 @@ package version
 import (
 	_ "embed"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -16,22 +17,21 @@ const (
 
 // The text files are populated by the populate_* genrules
 //
-//go:embed commit.txt
-var commitSha string
-
 //go:embed version.txt
 var versionTag string
 
 func init() {
-	metrics.Version.With(prometheus.Labels{
-		metrics.VersionLabel: Tag(),
-		metrics.CommitLabel:  Commit(),
-	}).Set(1)
+	labels := prometheus.Labels{
+		metrics.VersionLabel: MetricVersion(),
+		metrics.CommitLabel:  MetricCommit(),
+	}
+	metrics.Version.With(labels).Set(1)
+	metrics.BuildInfo.With(labels).Set(1)
 }
 
 func Print(name string) {
-	appVersion := fmt.Sprintf("%s %s", name, Tag())
-	if commitHash := Commit(); commitHash != unknownValue {
+	appVersion := fmt.Sprintf("%s %s", name, MetricVersion())
+	if commitHash := MetricCommit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)
 	}
 	log.Infof("%s compiled with %s", appVersion, GoVersion())
@@ -49,8 +49,29 @@ func GoVersion() string {
 }
 
 func Commit() string {
-	if commitSha != "" && commitSha != "{STABLE_COMMIT_SHA}" {
-		return commitSha
+	return getenvOrUnknown("BUILD_COMMIT_SHA", "COMMIT_SHA")
+}
+
+func MetricVersion() string {
+	return getenvOrDefault(Tag(), "BUILD_VERSION", "VERSION")
+}
+
+func MetricCommit() string {
+	return getenvOrDefault(Commit(), "BUILD_COMMIT_SHA", "COMMIT_SHA")
+}
+
+func getenvOrDefault(fallback string, keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	if fallback != "" {
+		return fallback
 	}
 	return unknownValue
+}
+
+func getenvOrUnknown(keys ...string) string {
+	return getenvOrDefault(unknownValue, keys...)
 }

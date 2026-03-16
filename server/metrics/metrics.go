@@ -2516,6 +2516,15 @@ var (
 		CommitLabel,
 	})
 
+	BuildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Name:      "build_info",
+		Help:      "Build metadata for the running instance. Always reports a value of 1.",
+	}, []string{
+		VersionLabel,
+		CommitLabel,
+	})
+
 	UnexpectedEvent = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Name:      "unexpected_event",

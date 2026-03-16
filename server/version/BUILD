@@ -14,26 +14,11 @@ genrule(
     stamp = 1,
 )
 
-genrule(
-    name = "populate_commit",
-    outs = ["commit.txt"],
-    cmd_bash = select({
-        "//:fastbuild": "touch $@",
-        "//conditions:default": """
-            commit=$$(grep ^STABLE_COMMIT_SHA bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2); \
-            if [ -z "$$commit" ]; then commit=dev; fi; \
-            printf '%s' $$commit > $@;
-        """,
-    }),
-    stamp = 1,
-)
-
 go_library(
     name = "version",
     srcs = ["version.go"],
     embedsrcs = [
         "version.txt",
-        "commit.txt",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/version",
     visibility = ["//visibility:public"],
