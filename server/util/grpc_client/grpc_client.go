@@ -244,11 +244,7 @@ func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.Strea
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	poolSize := *poolSize
-	if strings.HasPrefix(target, "xds:") {
-		poolSize = 2
-	}
-	return DialSimpleWithPoolSize(target, poolSize, extraOptions...)
+	return DialSimpleWithPoolSize(target, fixedPoolSize(target), extraOptions...)
 }
 
 // DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
@@ -324,11 +320,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	poolSize := *poolSize
-	if strings.HasPrefix(target, "xds:") {
-		poolSize = 2
-	}
-	return DialInternalWithPoolSize(env, target, poolSize, extraOptions...)
+	return DialInternalWithPoolSize(env, target, fixedPoolSize(target), extraOptions...)
 }
 
 // DialInternalWithPoolSize is similar to DialInternal, but with a specified
@@ -349,6 +341,17 @@ func DialInternalWithoutPooling(env environment.Env, target string, extraOptions
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
 	return DialSimpleWithoutPooling(target, opts...)
+}
+
+func fixedPoolSize(target string) int {
+	if strings.HasPrefix(target, "xds:") {
+		// With xDS, gRPC creates multiple connections to the same target under
+		// the hood and load balances between them, so can reduce our pool size.
+		// Also, there's no proxy in between us and the server, so we don't have
+		// to worry about hitting max concurrent stream limits on the proxy.
+		return 2
+	}
+	return *poolSize
 }
 
 func normalizeTarget(target string) string {
