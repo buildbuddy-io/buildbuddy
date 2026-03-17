@@ -28,9 +28,6 @@ func Get(ctx context.Context) string {
 // client IP in the context. Returns the original context unchanged if the
 // auth.trust_xforwardedfor_header flag is disabled or the header is empty.
 func SetFromXForwardedForHeader(ctx context.Context, header string) (context.Context, bool) {
-	if !*trustXForwardedForHeader {
-		return ctx, false
-	}
 	ip, ok := FromHeader(header)
 	if !ok {
 		return ctx, false
@@ -38,11 +35,12 @@ func SetFromXForwardedForHeader(ctx context.Context, header string) (context.Con
 	return context.WithValue(ctx, ContextKey, ip), true
 }
 
-// FromHeader extracts the client IP from an X-Forwarded-For. It doesn't check
-// the trustXForwardedForHeader flag, only used it in cases where you're ok
-// with a spoofed IP.
+// FromHeader extracts the client IP from an X-Forwarded-For. It's useful in
+// cases where we want the IP before interceptors call
+// SetFromXForwardedForHeader. Returns an empty string if the
+// auth.trust_xforwardedfor_header flag is disabled or the header is empty.
 func FromHeader(header string) (string, bool) {
-	if header == "" {
+	if !*trustXForwardedForHeader || header == "" {
 		return "", false
 	}
 	ips := strings.Split(header, ",")

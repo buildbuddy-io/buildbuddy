@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -16,6 +17,7 @@ import (
 )
 
 func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
+	flags.Set(t, "auth.trust_xforwardedfor_header", "true")
 	handler, err := NewServerHandler()
 	if err != nil {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
@@ -131,6 +133,7 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 }
 
 func TestStatsHandler_RecordsIngressBySource(t *testing.T) {
+	flags.Set(t, "auth.trust_xforwardedfor_header", "true")
 	metrics.GRPCServerIngressBytes.Reset()
 
 	handler, err := NewServerHandler()
@@ -154,6 +157,7 @@ func TestStatsHandler_RecordsIngressBySource(t *testing.T) {
 }
 
 func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
+	flags.Set(t, "auth.trust_xforwardedfor_header", "true")
 	metrics.GRPCServerEgressBytes.Reset()
 
 	handler, err := NewServerHandler()
@@ -175,6 +179,7 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 }
 
 func TestStatsHandler_NoPeerInfo(t *testing.T) {
+	flags.Set(t, "auth.trust_xforwardedfor_header", "true")
 	metrics.GRPCServerEgressBytes.Reset()
 
 	handler, err := NewServerHandler()
@@ -197,6 +202,7 @@ func TestStatsHandler_NoPeerInfo(t *testing.T) {
 }
 
 func TestStatsHandler_NoClaims(t *testing.T) {
+	flags.Set(t, "auth.trust_xforwardedfor_header", "true")
 	metrics.GRPCServerEgressBytes.Reset()
 
 	handler, err := NewServerHandler()
@@ -220,6 +226,7 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 }
 
 func BenchmarkClassifierClassify(b *testing.B) {
+	flags.Set(b, "auth.trust_xforwardedfor_header", "true")
 	b.Run("cached_hit", func(b *testing.B) {
 		classifier := newBenchmarkClassifier(b)
 		classifier.classify("3.4.12.4")
