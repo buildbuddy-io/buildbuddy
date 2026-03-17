@@ -8,7 +8,7 @@ single_version_override(
     patches = [
         "//buildpatches/bazel_dep:gazelle.patch",
     ],
-    version = "0.47.0",
+    version = "0.46.0",
 )
 
 bazel_dep(name = "googleapis")
@@ -26,17 +26,6 @@ bazel_dep(name = "rules_nodejs")
 single_version_override(
     module_name = "rules_nodejs",
     version = "6.7.3",
-)
-
-bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
-# Carry bazel-contrib/rules_go#4564 until it lands in a release we can consume.
-single_version_override(
-    module_name = "rules_go",
-    patch_strip = 1,
-    patches = [
-        "//buildpatches/bazel_dep:rules_go_4564.patch",
-    ],
-    version = "0.60.0",
 )
 
 bazel_dep(name = "rules_webtesting")
@@ -88,6 +77,7 @@ bazel_dep(name = "bazel_worker_api", version = "0.0.10")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "redis", version = "5.0.4")
 bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
