@@ -411,6 +411,8 @@ func TestFixDiff(t *testing.T) {
 	require.NotEmpty(t, string(stdout))
 }
 
+// Exercises bb fix end-to-end on TSX input, including package.json-based npm
+// deps and a React.lazy dynamic import that should become a local dep.
 func TestFixDiffTSX(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{

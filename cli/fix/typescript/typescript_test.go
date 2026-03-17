@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Covers the mixed TSX import forms used by the parser, including type-only,
+// namespace, dynamic, and tslib-triggering syntax.
 func TestGenerateRules_ReadsTSXImports(t *testing.T) {
 	repoRoot := t.TempDir()
 	src := `import React from "react";
@@ -48,6 +50,7 @@ export async function Widget() {
 	}}, normalizeImports(result.Imports))
 }
 
+// Verifies that rule generation ignores non-TypeScript files in the directory.
 func TestGenerateRules_OnlyProcessesTSAndTSXFiles(t *testing.T) {
 	repoRoot := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "widget.ts"), []byte(`import {x} from "./x"`), 0o644))
@@ -65,6 +68,7 @@ func TestGenerateRules_OnlyProcessesTSAndTSXFiles(t *testing.T) {
 	require.Equal(t, [][]string{{"./x"}}, normalizeImports(result.Imports))
 }
 
+// Verifies that the ts extension directive can disable rule generation entirely.
 func TestGenerateRules_DisabledModeSkipsGeneration(t *testing.T) {
 	repoRoot := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "widget.tsx"), []byte(`import {x} from "./x"`), 0o644))
@@ -83,6 +87,7 @@ func TestGenerateRules_DisabledModeSkipsGeneration(t *testing.T) {
 	require.Empty(t, result.Imports)
 }
 
+// Mirrors the repo's React.lazy(() => import(...)) pattern to pin dynamic import extraction.
 func TestGenerateRules_ReadsReactLazyDynamicImports(t *testing.T) {
 	repoRoot := t.TempDir()
 	src := `import React from "react";
@@ -111,6 +116,7 @@ const CodeReviewComponent = React.lazy(() => import("../review/review"));
 	}}, normalizeImports(result.Imports))
 }
 
+// Covers dependency resolution for relative imports, npm imports, and inferred @types packages.
 func TestResolve_MapsRelativeAndNPMImports(t *testing.T) {
 	cfg := newTSConfig("/repo")
 	cfg.Exts[languageName] = tsConfig{
@@ -142,6 +148,7 @@ func TestResolve_MapsRelativeAndNPMImports(t *testing.T) {
 	}, r.AttrStrings(depsAttribute))
 }
 
+// Verifies that disabled mode leaves generated rules without deps.
 func TestResolve_DisabledModeSkipsDeps(t *testing.T) {
 	cfg := newTSConfig("/repo")
 	cfg.Exts[languageName] = tsConfig{Mode: disableMode}
@@ -159,6 +166,7 @@ func TestResolve_DisabledModeSkipsDeps(t *testing.T) {
 	require.Nil(t, r.Attr(depsAttribute))
 }
 
+// Verifies that package.json and ts directives are both folded into Gazelle config.
 func TestConfigure_LoadsPackageJSONAndDirective(t *testing.T) {
 	repoRoot := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, packageFileName), []byte(`{
