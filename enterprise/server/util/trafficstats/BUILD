@@ -35,6 +35,7 @@ go_test(
         "//server/metrics",
         "//server/testutil/testmetrics",
         "//server/util/claims",
+        "//server/util/testing/flags",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
