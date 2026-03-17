@@ -244,7 +244,11 @@ func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.Strea
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	return DialSimpleWithPoolSize(target, *poolSize, extraOptions...)
+	poolSize := *poolSize
+	if strings.HasPrefix(target, "xds:") {
+		poolSize = 2
+	}
+	return DialSimpleWithPoolSize(target, poolSize, extraOptions...)
 }
 
 // DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
@@ -320,7 +324,11 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	return DialInternalWithPoolSize(env, target, *poolSize, extraOptions...)
+	poolSize := *poolSize
+	if strings.HasPrefix(target, "xds:") {
+		poolSize = 2
+	}
+	return DialInternalWithPoolSize(env, target, poolSize, extraOptions...)
 }
 
 // DialInternalWithPoolSize is similar to DialInternal, but with a specified
