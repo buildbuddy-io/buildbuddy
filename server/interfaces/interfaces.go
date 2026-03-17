@@ -1579,10 +1579,12 @@ type IPRulesEnforcer interface {
 	// context.
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 
-	// Performs an explicit IP rule check for the given group ID with the
-	// option to force refresh rules from the backend and skip specific rules
-	// (for testing rule changes made by IPRulesService).
-	Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error
+	// Invalidates all cached IP rules for the specified group ID.
+	InvalidateCache(ctx context.Context, groupID string)
+
+	// Performs an explicit IP rule check for the given group ID, skipping the
+	// rule with the provided ID, if specified.
+	Check(ctx context.Context, groupID string, skipRuleID string) error
 }
 
 type IPRulesService interface {

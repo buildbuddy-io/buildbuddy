@@ -36,6 +36,7 @@ const (
 
 type ipRuleCache interface {
 	Add(groupID string, allowed []*net.IPNet) bool
+	Remove(groupID string) bool
 	Get(groupID string) ([]*net.IPNet, bool)
 }
 
@@ -43,6 +44,10 @@ type noopIpRuleCache struct {
 }
 
 func (c *noopIpRuleCache) Add(groupID string, allowed []*net.IPNet) bool {
+	return false
+}
+
+func (c *noopIpRuleCache) Remove(groupID string) bool {
 	return false
 }
 
@@ -64,8 +69,9 @@ func newIpRuleCache() (ipRuleCache, error) {
 
 // An abstraction for retrieving IP rules from a source of truth.
 type ipRulesProvider interface {
-	// TODO(iain): get rid of skipCache and skipRuleID.
-	get(ctx context.Context, groupID string, skipCache bool, skipRuleID string) ([]*net.IPNet, error)
+	// TODO(iain): get rid of skipRuleID.
+	get(ctx context.Context, groupID string, skipRuleID string) ([]*net.IPNet, error)
+	invalidate(ctx context.Context, groupID string)
 	startRefresher(env environment.Env) error
 }
 
@@ -127,9 +133,9 @@ func (p *dbIPRulesProvider) refreshRules(ctx context.Context, groupID string) er
 	return nil
 }
 
-func (p *dbIPRulesProvider) get(ctx context.Context, groupID string, skipCache bool, skipRuleID string) ([]*net.IPNet, error) {
+func (p *dbIPRulesProvider) get(ctx context.Context, groupID string, skipRuleID string) ([]*net.IPNet, error) {
 	allowed, ok := p.cache.Get(groupID)
-	if !ok || skipCache {
+	if !ok {
 		pr, err := p.loadParsedRulesFromDB(ctx, groupID, skipRuleID)
 		if err != nil {
 			return nil, err
@@ -141,6 +147,10 @@ func (p *dbIPRulesProvider) get(ctx context.Context, groupID string, skipCache b
 		allowed = pr
 	}
 	return allowed, nil
+}
+
+func (p *dbIPRulesProvider) invalidate(ctx context.Context, groupID string) {
+	p.cache.Remove(groupID)
 }
 
 // TODO(iain): halt goroutine on server exit.
@@ -183,7 +193,10 @@ func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request
 	return nil
 }
 
-func (n *NoOpEnforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
+func (n *NoOpEnforcer) InvalidateCache(ctx context.Context, groupID string) {
+}
+
+func (n *NoOpEnforcer) Check(ctx context.Context, groupID string, skipRuleID string) error {
 	return nil
 }
 
@@ -215,7 +228,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
+func (s *Enforcer) Check(ctx context.Context, groupID string, skipRuleID string) error {
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
@@ -223,7 +236,7 @@ func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, sk
 		return status.FailedPreconditionErrorf("client IP %q is not valid", rawClientIP)
 	}
 
-	allowed, err := s.rulesProvider.get(ctx, groupID, skipCache, skipRuleID)
+	allowed, err := s.rulesProvider.get(ctx, groupID, skipRuleID)
 	if err != nil {
 		return err
 	}
@@ -239,7 +252,7 @@ func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, sk
 
 func (s *Enforcer) authorize(ctx context.Context, groupID string) error {
 	start := time.Now()
-	err := s.Check(ctx, groupID, false /*=skipCache*/, "" /*skipRuleID*/)
+	err := s.Check(ctx, groupID, "" /*skipRuleID*/)
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
@@ -329,4 +342,8 @@ func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) er
 	}
 
 	return nil
+}
+
+func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
+	s.rulesProvider.invalidate(ctx, groupID)
 }
