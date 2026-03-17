@@ -411,6 +411,45 @@ func TestFixDiff(t *testing.T) {
 	require.NotEmpty(t, string(stdout))
 }
 
+func TestFixDiffTSX(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"MODULE.bazel": `module(name = "cli_test")`,
+		"app/package.json": `{
+  "dependencies": {
+    "react": "18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.2.0"
+  }
+}`,
+		"app/widget.tsx": `import React from "react";
+
+const LazyComponent = React.lazy(() => import("./lazy"));
+
+export function Widget() {
+  return <LazyComponent />;
+}
+`,
+		"app/lazy.tsx": `export function LazyComponent() {
+  return <div />;
+}
+`,
+	})
+	cmd := testcli.Command(t, ws, "fix", "--diff")
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.Error(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+
+	diff := string(stdout)
+	require.Contains(t, diff, "+++ app/BUILD.bazel")
+	require.Contains(t, diff, `ts_project(`)
+	require.Contains(t, diff, `name = "widget"`)
+	require.Contains(t, diff, `srcs = ["widget.tsx"]`)
+	require.Contains(t, diff, `"//:node_modules/@types/react"`)
+	require.Contains(t, diff, `"//:node_modules/react"`)
+	require.Contains(t, diff, `"//app:lazy"`)
+}
+
 func TestCLIDoesNotRestartBazelServer(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
