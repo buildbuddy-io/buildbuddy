@@ -8,13 +8,16 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
@@ -39,8 +42,9 @@ type ipRange struct {
 }
 
 type classifier struct {
-	ipRanges []ipRange
-	cache    lru.LRU[destination]
+	ipRanges          []ipRange
+	cache             lru.LRU[destination]
+	occasionallLogger log.Logger
 }
 
 type statsHandler struct {
@@ -97,7 +101,13 @@ func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) conte
 	if c, err := claims.ClaimsFromContext(ctx); err == nil && c.GetGroupID() != "" {
 		groupID = c.GetGroupID()
 	}
-	ip := clientip.Get(ctx)
+	var ip string
+	// Can't use the value from clientip.Get() because gRPC stats handlers run
+	// before interceptors where client IP is typically set in the context.
+	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
+	if len(hdrs) > 0 {
+		ip, _ = clientip.FromHeader(hdrs[0])
+	}
 	if ip == "" {
 		if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
 			ip = p.Addr.String()
@@ -157,7 +167,7 @@ func newClassifier() (*classifier, error) {
 	if err != nil {
 		return nil, status.WrapError(err, "create egress classifier cache")
 	}
-	return &classifier{ipRanges: ranges, cache: cache}, nil
+	return &classifier{ipRanges: ranges, cache: cache, occasionallLogger: log.NamedSubLogger("trafficstats").EveryDuration(time.Minute)}, nil
 }
 
 func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
@@ -220,6 +230,7 @@ func (c *classifier) classify(ipStr string) destination {
 			return entry.destination
 		}
 	}
+	c.occasionallLogger.Infof("traffic classifier didn't find IP: %s", ip)
 	unknown := destination{provider: otherProvider, region: unknownRegion}
 	c.cache.Add(cacheKey, unknown)
 	return unknown

@@ -9,8 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 )
@@ -131,7 +131,7 @@ func TestStatsHandler_RecordsIngressBySource(t *testing.T) {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
 
-	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+	ctx := ctxWithXForwardedFor(context.Background(), "3.4.12.4")
 	ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: "GR123"})
 	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.HandleRPC(ctx, &stats.InPayload{WireLength: 456})
@@ -197,7 +197,7 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 		t.Fatalf("NewStatsHandler() returned error: %v", err)
 	}
 
-	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+	ctx := ctxWithXForwardedFor(context.Background(), "3.4.12.4")
 	// No claims added to context.
 	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 75})
@@ -256,7 +256,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 
 	b.Run("cached_hit", func(b *testing.B) {
 		handler := benchmarkStatsHandler(b)
-		ctx := context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
+		ctx := ctxWithXForwardedFor(ctx, "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
@@ -266,7 +266,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 	})
 	b.Run("cached_hit_multiple_payloads", func(b *testing.B) {
 		handler := benchmarkStatsHandler(b)
-		ctx := context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
+		ctx := ctxWithXForwardedFor(ctx, "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
@@ -281,7 +281,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 		b.ReportAllocs()
 		i := 0
 		for b.Loop() {
-			ctx := context.WithValue(ctx, clientip.ContextKey, benchmarkIP(i))
+			ctx := ctxWithXForwardedFor(ctx, benchmarkIP(i))
 			i++
 			rpcCtx := handler.TagRPC(ctx, rpcInfo)
 			handler.HandleRPC(rpcCtx, payload)
@@ -291,4 +291,8 @@ func BenchmarkStatsHandler(b *testing.B) {
 
 func benchmarkIP(i int) string {
 	return fmt.Sprintf("100.64.%d.%d", (i>>8)&0xff, i&0xff)
+}
+
+func ctxWithXForwardedFor(ctx context.Context, ip string) context.Context {
+	return metadata.NewIncomingContext(ctx, metadata.Pairs("X-Forwarded-For", ip))
 }
