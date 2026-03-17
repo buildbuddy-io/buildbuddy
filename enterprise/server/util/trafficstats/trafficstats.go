@@ -216,6 +216,9 @@ func (c *classifier) classify(ipStr string) destination {
 		}
 	}
 	ip = ip.Unmap()
+	if ip.IsLoopback() {
+		return destination{provider: "loopback", region: ""}
+	}
 	if ip.IsPrivate() {
 		return destination{provider: "internal", region: ""}
 	}

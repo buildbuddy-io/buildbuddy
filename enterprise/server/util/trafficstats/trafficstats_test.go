@@ -85,6 +85,13 @@ func TestStatsHandler_RecordsEgressByDestination(t *testing.T) {
 			region:   "eu-west-1",
 		},
 		{
+			name:     "loopback",
+			ip:       "127.0.0.1",
+			groupID:  "GR902",
+			provider: "loopback",
+			region:   "",
+		},
+		{
 			name:     "private",
 			ip:       "10.0.1.5",
 			groupID:  "GR901",
