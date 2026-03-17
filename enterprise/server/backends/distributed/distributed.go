@@ -921,6 +921,7 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 		// If the file is large enough and we support ZSTD, then the source will
 		// have it compressed, and we want to store it compressed. 100 is the
 		// default value of --cache.pebble.min_bytes_auto_zstd_compression.
+		rn = rn.CloneVT()
 		rn.Compressor = repb.Compressor_ZSTD
 	}
 	// Don't use [Cache.remoteReader] here, because we don't want to check the
