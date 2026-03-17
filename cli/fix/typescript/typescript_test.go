@@ -83,6 +83,34 @@ func TestGenerateRules_DisabledModeSkipsGeneration(t *testing.T) {
 	require.Empty(t, result.Imports)
 }
 
+func TestGenerateRules_ReadsReactLazyDynamicImports(t *testing.T) {
+	repoRoot := t.TempDir()
+	src := `import React from "react";
+
+const SettingsThemeTransition = React.lazy(() => import("../settings/settings_theme_transition"));
+const CodeComponent = React.lazy(() => import("../code/code"));
+const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
+const CodeReviewComponent = React.lazy(() => import("../review/review"));
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "root.tsx"), []byte(src), 0o644))
+
+	ts := NewLanguage().(*TS)
+	result := ts.GenerateRules(language.GenerateArgs{
+		Config:       newTSConfig(repoRoot),
+		Dir:          repoRoot,
+		RegularFiles: []string{"root.tsx"},
+	})
+
+	require.Len(t, result.Gen, 1)
+	require.Equal(t, [][]string{{
+		"react",
+		"../settings/settings_theme_transition",
+		"../code/code",
+		"../code/code_v2",
+		"../review/review",
+	}}, normalizeImports(result.Imports))
+}
+
 func TestResolve_MapsRelativeAndNPMImports(t *testing.T) {
 	cfg := newTSConfig("/repo")
 	cfg.Exts[languageName] = tsConfig{
