@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -261,19 +262,9 @@ func TestRefresherStopsOnShutdown(t *testing.T) {
 		ch: make(chan proto.Message),
 	})
 
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	_ = newIPRulesEnforcer(t, env)
 
 	env.GetHealthChecker().Shutdown()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		env.GetHealthChecker().WaitForGracefulShutdown()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for graceful shutdown")
-	}
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }
