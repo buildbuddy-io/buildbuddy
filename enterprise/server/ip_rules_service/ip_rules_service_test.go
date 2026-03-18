@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -121,7 +122,7 @@ func contextWithClientIdentity(t *testing.T, ctx context.Context, service interf
 	}, time.Minute)
 	require.NoError(t, err)
 
-	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-buildbuddy-client-identity", headerValue))
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	ctx, err = service.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 	return ctx
