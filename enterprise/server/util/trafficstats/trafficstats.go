@@ -1,3 +1,19 @@
+// Package trafficstats classifies gRPC traffic by cloud provider and region
+// using embedded IP range data, and records per-RPC byte counts as Prometheus
+// metrics labeled with the caller's group ID, cloud provider, and region.
+//
+// It requires both a [stats.Handler] and post-auth interceptors because gRPC
+// stats handlers and interceptors operate on separate context chains. The
+// stats handler's [stats.Handler.TagRPC] creates the context used by
+// [stats.Handler.HandleRPC], but interceptors modify a different copy of
+// the context, so values set by interceptors (like authenticated claims and
+// client IP) are not visible in HandleRPC.
+//
+// To bridge this gap, TagRPC stores a pointer to a mutable [rpcCounters]
+// struct in the context. The interceptors, which must run after auth
+// has populated claims and client IP, look up that same pointer and initialize
+// its Prometheus counters with the correct labels. HandleRPC then increments
+// the counters that were populated by the interceptor.
 package trafficstats
 
 import (
@@ -17,7 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
@@ -47,7 +63,7 @@ type classifier struct {
 	occasionallLogger log.Logger
 }
 
-type statsHandler struct {
+type StatsHandler struct {
 	classifier *classifier
 }
 
@@ -80,61 +96,90 @@ Metal,us-sjc,216.226.68.0/22
 	classifierOnce = sync.OnceValues(newClassifier)
 )
 
-// NewServerHandler returns a gRPC server stats handler that classifies
-// bytes by destination cloud provider and region using the embedded IP ranges.
-func NewServerHandler() (stats.Handler, error) {
+// NewServerHandler returns the gRPC stats.Handler for traffic classification.
+// It's UnaryInterceptor and StreamInterceptor methods must be installed in the
+// gRPC server after the auth and clientip interceptors, so that it can access
+// the claims and client IP for traffic classification.
+func NewServerHandler() (*StatsHandler, error) {
 	classifier, err := classifierOnce()
 	if err != nil {
 		return nil, err
 	}
-	return &statsHandler{classifier: classifier}, nil
+	return &StatsHandler{classifier: classifier}, nil
 }
 
-func (h *statsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
+func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
 	return ctx
 }
 
-func (*statsHandler) HandleConn(context.Context, stats.ConnStats) {}
+func (*StatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
-func (h *statsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{})
+}
+
+func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	switch st := s.(type) {
+	case *stats.InPayload:
+		if !st.IsClient() && st.WireLength > 0 {
+			c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
+			if !ok {
+				return
+			}
+			if c.ingress == nil {
+				log.CtxWarning(ctx, "StatsHandler: ingress counter is nil. Maybe you forgot to install the interceptors?")
+				return
+			}
+			c.ingress.Add(float64(st.WireLength))
+		}
+	case *stats.OutPayload:
+		if !st.IsClient() && st.WireLength > 0 {
+			c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
+			if !ok {
+				return
+			}
+			if c.egress == nil {
+				log.CtxWarning(ctx, "StatsHandler: egress counter is nil. Maybe you forgot to install the interceptors?")
+				return
+			}
+			c.egress.Add(float64(st.WireLength))
+		}
+	}
+}
+
+// UnaryInterceptor populates the rpcCounters with metric labels derived
+// from claims and client IP, which are available after auth interceptors.
+func (h *StatsHandler) UnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	h.initCounters(ctx)
+	return handler(ctx, req)
+}
+
+// StreamInterceptor populates the rpcCounters with metric labels derived
+// from claims and client IP, which are available after auth interceptors.
+func (h *StatsHandler) StreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	h.initCounters(ss.Context())
+	return handler(srv, ss)
+}
+
+func (h *StatsHandler) initCounters(ctx context.Context) {
+	c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
+	if !ok {
+		log.CtxWarning(ctx, "StatsHandler: rpcCounters not found. Maybe you forgot to install the StatsHandler?")
+		return
+	}
 	groupID := unknownGroupID
-	if c, err := claims.ClaimsFromContext(ctx); err == nil && c.GetGroupID() != "" {
-		groupID = c.GetGroupID()
+	if cl, err := claims.ClaimsFromContext(ctx); err == nil && cl.GetGroupID() != "" {
+		groupID = cl.GetGroupID()
 	}
-	var ip string
-	// Can't use the value from clientip.Get() because gRPC stats handlers run
-	// before interceptors where client IP is typically set in the context.
-	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
-	if len(hdrs) > 0 {
-		ip, _ = clientip.FromHeader(hdrs[0])
-	}
+	ip := clientip.Get(ctx)
 	if ip == "" {
 		if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
 			ip = p.Addr.String()
 		}
 	}
 	dest := h.classifier.classify(ip)
-	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{
-		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, dest.provider, dest.region),
-		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, dest.provider, dest.region),
-	})
-}
-
-func (h *statsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
-	switch st := s.(type) {
-	case *stats.InPayload:
-		if !st.IsClient() && st.WireLength > 0 {
-			if c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters); ok {
-				c.ingress.Add(float64(st.WireLength))
-			}
-		}
-	case *stats.OutPayload:
-		if !st.IsClient() && st.WireLength > 0 {
-			if c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters); ok {
-				c.egress.Add(float64(st.WireLength))
-			}
-		}
-	}
+	c.egress = metrics.GRPCServerEgressBytes.WithLabelValues(groupID, dest.provider, dest.region)
+	c.ingress = metrics.GRPCServerIngressBytes.WithLabelValues(groupID, dest.provider, dest.region)
 }
 
 func newClassifier() (*classifier, error) {
