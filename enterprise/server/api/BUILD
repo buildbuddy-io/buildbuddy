@@ -7,6 +7,7 @@ go_library(
     srcs = ["api_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/api",
     deps = [
+        "//enterprise/server/auditlog",
         "//enterprise/server/backends/prom",
         "//enterprise/server/hostedrunner",
         "//proto:build_event_stream_go_proto",
@@ -29,6 +30,8 @@ go_library(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/capabilities",
+        "//server/util/claims",
+        "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/flag",
         "//server/util/log",
@@ -43,10 +46,14 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so the ClickHouse-backed audit-log test can keep separate runner properties.
+# gazelle:go_test file
+
 go_test(
     name = "api_test",
     size = "small",
-    srcs = ["api_server_test.go"],
+    srcs = ["api_test.go"],
     data = glob(["testdata/**"]),
     embed = [":api"],
     deps = [
@@ -84,5 +91,32 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
+
+go_test(
+    name = "auditlog_test",
+    size = "small",
+    srcs = ["auditlog_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":api"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "clickhouse25.3",
+    },
+    tags = ["docker"],
+    deps = [
+        "//enterprise/server/auditlog",
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:auditlog_go_proto",
+        "//proto:capability_go_proto",
+        "//proto:group_go_proto",
+        "//proto/api/v1:api_v1_go_proto",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
