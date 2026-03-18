@@ -77,7 +77,7 @@ message SetRulesConfigResponse {
 
 // This RPC exists in the BuildBuddyService, but it is subject to client-facing
 // auth constraints on that path. Rather than risk modifying/disabling those to
-// allow the Cache Proxy to fetch rules, this simple service exists for that 
+// allow the Cache Proxy to fetch rules, this simple service exists for that
 // use case.
 service IPRulesService {
   rpc GetIPRules(GetRulesRequest)
