@@ -17,11 +17,24 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
+
+type fakeServerNotificationService struct {
+	ch chan proto.Message
+}
+
+func (f *fakeServerNotificationService) Subscribe(msgType proto.Message) <-chan proto.Message {
+	return f.ch
+}
+
+func (f *fakeServerNotificationService) Publish(ctx context.Context, msg proto.Message) error {
+	return nil
+}
 
 func newIPRulesEnforcer(t *testing.T, env environment.Env) *ip_rules_enforcer.Enforcer {
 	t.Helper()
@@ -240,4 +253,27 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 	err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func TestRefresherStopsOnShutdown(t *testing.T) {
+	env := getEnv(t)
+	env.SetServerNotificationService(&fakeServerNotificationService{
+		ch: make(chan proto.Message),
+	})
+
+	_ = newIPRulesEnforcer(t, env)
+
+	env.GetHealthChecker().Shutdown()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		env.GetHealthChecker().WaitForGracefulShutdown()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for graceful shutdown")
+	}
 }
