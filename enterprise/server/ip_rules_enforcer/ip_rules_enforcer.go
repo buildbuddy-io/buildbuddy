@@ -168,10 +168,10 @@ func (p *dbIPRulesProvider) startRefresher(env environment.Env) error {
 	done := make(chan struct{})
 	var shutdownOnce sync.Once
 	sub := sns.Subscribe(&snpb.InvalidateIPRulesCache{})
-	go p.runRefresher(env.GetServerContext(), sub, stop, done)
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return p.shutdownRefresher(ctx, stop, done, &shutdownOnce)
 	})
+	go p.runRefresher(env.GetServerContext(), sub, stop, done)
 	return nil
 }
 
