@@ -321,7 +321,7 @@ func TestGetIPRules_NoClientsPermitted_RPCRejected(t *testing.T) {
 	svc, env, authCtx, groupID := setupService(t, nil, nil)
 	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "foo")
 
-	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "cache-proxy")
+	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "foo")
 	_, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 	})
