@@ -116,7 +116,7 @@ func TestNoOpEnforcer(t *testing.T) {
 	require.NoError(t, enforcer.Authorize(context.Background()))
 	require.NoError(t, enforcer.AuthorizeGroup(context.Background(), "G1"))
 	require.NoError(t, enforcer.AuthorizeHTTPRequest(context.Background(), httptest.NewRequest("GET", "/rpc/BuildBuddyService/GetUser", nil)))
-	require.NoError(t, enforcer.Check(context.Background(), "G1", true, ""))
+	require.NoError(t, enforcer.Check(context.Background(), "G1", ""))
 }
 
 func TestAuthorizeAndAuthorizeGroup_EnforcementNotEnabled(t *testing.T) {
@@ -190,10 +190,10 @@ func TestCheckSkipRuleID(t *testing.T) {
 	ruleID := insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
 	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
 
-	err := irs.Check(ctx, groupID, true /* skipCache */, "" /* skipRuleID */)
+	err := irs.Check(ctx, groupID, "" /* skipRuleID */)
 	require.NoError(t, err)
 
-	err = irs.Check(ctx, groupID, true /* skipCache */, ruleID)
+	err = irs.Check(ctx, groupID, ruleID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 }

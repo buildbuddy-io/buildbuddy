@@ -107,7 +107,9 @@ func (s *Service) SetIPRuleConfig(ctx context.Context, req *irpb.SetRulesConfigR
 	}
 
 	if req.GetEnforceIpRules() {
-		err := s.enforcer.Check(ctx, req.GetRequestContext().GetGroupId(), true /*=skipCache*/, "" /*=skipRuleID*/)
+		groupID := req.GetRequestContext().GetGroupId()
+		s.enforcer.InvalidateCache(ctx, groupID)
+		err := s.enforcer.Check(ctx, groupID, "" /*=skipRuleID*/)
 		if err != nil {
 			if status.IsPermissionDeniedError(err) {
 				return nil, status.InvalidArgumentErrorf("Enabling IP rule enforcement would block your IP (%s) from accessing the organization.", clientip.Get(ctx))
@@ -235,9 +237,10 @@ func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (
 		return nil, err
 	}
 	if g.EnforceIPRules {
-		// Check if deleting the rule would lock out the client calling this
-		// API.
-		err := s.enforcer.Check(ctx, req.GetRequestContext().GetGroupId(), true /*=skipCache*/, req.GetIpRuleId())
+		// Check if deleting the rule would block the client calling this API.
+		groupID := req.GetRequestContext().GetGroupId()
+		s.enforcer.InvalidateCache(ctx, groupID)
+		err := s.enforcer.Check(ctx, groupID, req.GetIpRuleId())
 		if err != nil {
 			if status.IsPermissionDeniedError(err) {
 				return nil, status.InvalidArgumentErrorf("Deleting this rule would block your IP (%s) from accessing the organization.", clientip.Get(ctx))
