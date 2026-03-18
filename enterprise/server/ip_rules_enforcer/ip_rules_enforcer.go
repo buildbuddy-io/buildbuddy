@@ -156,20 +156,13 @@ func (p *dbIPRulesProvider) invalidate(ctx context.Context, groupID string) {
 }
 
 func (p *dbIPRulesProvider) startRefresher(env environment.Env) error {
-	_, err := p.startRefresherWithDone(env)
-	return err
-}
-
-// startRefresherWithDone starts the background refresher and returns a channel
-// that is closed when the refresher goroutine exits.
-func (p *dbIPRulesProvider) startRefresherWithDone(env environment.Env) (<-chan struct{}, error) {
 	sns := env.GetServerNotificationService()
 	if sns == nil {
-		return nil, nil
+		return nil
 	}
 	hc := env.GetHealthChecker()
 	if hc == nil {
-		return nil, status.FailedPreconditionError("Missing health checker")
+		return status.FailedPreconditionError("Missing health checker")
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -179,7 +172,7 @@ func (p *dbIPRulesProvider) startRefresherWithDone(env environment.Env) (<-chan 
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return p.shutdownRefresher(ctx, stop, done, &shutdownOnce)
 	})
-	return done, nil
+	return nil
 }
 
 // runRefresher listens for cache invalidation messages and refreshes the IP
