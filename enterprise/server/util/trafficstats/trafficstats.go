@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -127,7 +128,7 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 				return
 			}
 			if c.ingress == nil {
-				log.CtxWarning(ctx, "StatsHandler: ingress counter is nil. Maybe you forgot to install the interceptors?")
+				alert.CtxUnexpectedEvent(ctx, "trafficstats_nil_ingress", "Maybe you forgot to install the interceptors?")
 				return
 			}
 			c.ingress.Add(float64(st.WireLength))
@@ -139,7 +140,7 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 				return
 			}
 			if c.egress == nil {
-				log.CtxWarning(ctx, "StatsHandler: egress counter is nil. Maybe you forgot to install the interceptors?")
+				alert.CtxUnexpectedEvent(ctx, "trafficstats_nil_egress", "Maybe you forgot to install the interceptors?")
 				return
 			}
 			c.egress.Add(float64(st.WireLength))
