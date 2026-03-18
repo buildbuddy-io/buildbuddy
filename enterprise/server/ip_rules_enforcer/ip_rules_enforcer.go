@@ -17,18 +17,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 var (
-	enableIPRules = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
-	cacheTTL      = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	enableIPRules           = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
+	cacheTTL                = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	remoteIPRulesTarget     = flag.String("auth.ip_rules.remote.target", "", "The gRPC target of the backend storing IP rules.")
+	remoteIPRulesRPCTimeout = flag.Duration("auth.ip_rules.remote.rpc_timeout", 15*time.Second, "Timeout for remote IP rules RPCs.")
 )
 
 const (
@@ -47,24 +52,24 @@ type ipRuleCache interface {
 	Get(groupID string) ([]ipRule, bool)
 }
 
-type noopIpRuleCache struct {
+type noopIPRuleCache struct {
 }
 
-func (c *noopIpRuleCache) Add(groupID string, allowed []ipRule) bool {
+func (c *noopIPRuleCache) Add(groupID string, allowed []ipRule) bool {
 	return false
 }
 
-func (c *noopIpRuleCache) Remove(groupID string) bool {
+func (c *noopIPRuleCache) Remove(groupID string) bool {
 	return false
 }
 
-func (c *noopIpRuleCache) Get(groupID string) ([]ipRule, bool) {
+func (c *noopIPRuleCache) Get(groupID string) ([]ipRule, bool) {
 	return nil, false
 }
 
-func newIpRuleCache() (ipRuleCache, error) {
+func newIPRuleCache() (ipRuleCache, error) {
 	if *cacheTTL == 0 {
-		return &noopIpRuleCache{}, nil
+		return &noopIPRuleCache{}, nil
 	}
 	return lru.New(&lru.Config[[]ipRule]{
 		TTL:        *cacheTTL,
@@ -88,7 +93,7 @@ type dbIPRulesProvider struct {
 }
 
 func newDBIPRulesProvider(env environment.Env) (*dbIPRulesProvider, error) {
-	cache, err := newIpRuleCache()
+	cache, err := newIPRuleCache()
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +224,66 @@ func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan str
 	}
 }
 
+// TODO(iain): add caching and singleflight requests.
+type remoteIPRulesProvider struct {
+	client irpb.IPRulesServiceClient
+}
+
+func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
+	conn, err := grpc_client.DialInternal(env, target)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to dial remote IP rules backend %q: %v", target, err)
+	}
+	if hc := env.GetHealthChecker(); hc != nil {
+		hc.RegisterShutdownFunction(func(ctx context.Context) error {
+			return conn.Close()
+		})
+	}
+	return &remoteIPRulesProvider{
+		client: irpb.NewIPRulesServiceClient(conn),
+	}, nil
+}
+
+func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
+	ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
+	defer cancel()
+	rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: groupID,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]ipRule, 0, len(rsp.GetIpRules()))
+	for _, r := range rsp.GetIpRules() {
+		_, ipNet, err := net.ParseCIDR(r.GetCidr())
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "unparsable CIDR rule", "rule %q", r.GetCidr())
+			continue
+		}
+		allowed = append(allowed, ipRule{
+			id:      r.GetIpRuleId(),
+			allowed: ipNet,
+		})
+	}
+	return allowed, nil
+}
+
+func (p *remoteIPRulesProvider) invalidate(ctx context.Context, groupID string) {}
+
+func (p *remoteIPRulesProvider) startRefresher(env environment.Env) error {
+	return nil
+}
+
+func newIPRulesProvider(env environment.Env) (ipRulesProvider, error) {
+	if *remoteIPRulesTarget == "" {
+		return newDBIPRulesProvider(env)
+	}
+	return newRemoteIPRulesProvider(env, *remoteIPRulesTarget)
+
+}
+
 type Enforcer struct {
 	env           environment.Env
 	rulesProvider ipRulesProvider
@@ -246,7 +311,7 @@ func (n *NoOpEnforcer) Check(ctx context.Context, groupID, skipRuleID string) er
 }
 
 func New(env environment.Env) (*Enforcer, error) {
-	rulesProvider, err := newDBIPRulesProvider(env)
+	rulesProvider, err := newIPRulesProvider(env)
 	if err != nil {
 		return nil, err
 	}
