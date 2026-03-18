@@ -80,6 +80,5 @@ message SetRulesConfigResponse {
 // allow the Cache Proxy to fetch rules, this simple service exists for that
 // use case.
 service IPRulesService {
-  rpc GetIPRules(GetRulesRequest)
-      returns (GetRulesResponse);
+  rpc GetIPRules(GetRulesRequest) returns (GetRulesResponse);
 }
