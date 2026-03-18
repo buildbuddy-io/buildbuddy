@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -19,11 +20,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -32,6 +35,7 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	guuid "github.com/google/uuid"
 	dbcl "github.com/lni/dragonboat/v4/client"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -378,4 +382,64 @@ func (tr *TestingReplica) DB() pebble.IPebbleDB {
 		db.Close()
 	})
 	return db
+}
+
+// MetadataKey generates a pebble key for a FileRecord, matching the
+// key format used by the metadata server.
+func MetadataKey(t testing.TB, fr *sgpb.FileRecord) []byte {
+	fs := filestore.New()
+	pebbleKey, err := fs.PebbleKey(fr)
+	require.NoError(t, err)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	return keyBytes
+}
+
+// WriteRecord writes a single file record to the store using the same
+// format as the metadata server. Returns the FileRecord for later
+// reads.
+func WriteRecord(ctx context.Context, t testing.TB, ts *TestingStore, groupID string, sizeBytes int64) *sgpb.FileRecord {
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
+	fr := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   r.GetCacheType(),
+			PartitionId: groupID,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+
+	fs := filestore.New()
+	key := MetadataKey(t, fr)
+
+	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
+	require.NoError(t, err)
+
+	writeCloser := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
+	bytesWritten, err := writeCloser.Write(buf)
+	require.NoError(t, err)
+
+	now := time.Now()
+	md := &sgpb.FileMetadata{
+		FileRecord:      fr,
+		StorageMetadata: writeCloser.Metadata(),
+		StoredSizeBytes: int64(bytesWritten),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   key,
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := ts.Sender().SyncPropose(ctx, key, writeReq)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+
+	return fr
 }
