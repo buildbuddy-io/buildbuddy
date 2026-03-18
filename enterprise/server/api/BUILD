@@ -46,10 +46,14 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so the ClickHouse-backed audit-log test can keep separate runner properties.
+# gazelle:go_test file
+
 go_test(
     name = "api_test",
     size = "small",
-    srcs = ["api_server_test.go"],
+    srcs = ["api_test.go"],
     data = glob(["testdata/**"]),
     embed = [":api"],
     deps = [
@@ -94,6 +98,7 @@ go_test(
     name = "auditlog_test",
     size = "small",
     srcs = ["auditlog_test.go"],
+    data = glob(["testdata/**"]),
     embed = [":api"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
