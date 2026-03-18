@@ -148,6 +148,118 @@ func TestGoldenSet(t *testing.T) {
 	assert.Equal(t, []string{"a", "c", "d", "b"}, ch.GetAllReplicas("3"))
 }
 
+func TestReplicaOverlapOnMembershipChange(t *testing.T) {
+	// When the set of items changes, we expect that at least one of the first
+	// N replicas overlaps with probability:
+	//   P(overlap) = 1 - C(d, N) / C(m, N)
+	// where d = |new_size - old_size| and m = max(new_size, old_size).
+	// See https://en.wikipedia.org/wiki/Hypergeometric_distribution
+	// With N = 1, this reduces to P(overlap) = 1 - d/m, which is just the
+	// probability that the new item is not chosen as the replica for a key.
+	//
+	// Examples:
+	//   3->4, N=1: P = 1 - C(1,1)/C(4,1) = 1 - 1/4       = 75%
+	//   3->6, N=1: P = 1 - C(3,1)/C(6,1) = 1 - 3/6       = 50%
+	//   3->4, N=2: P = 1 - C(1,2)/C(4,2) = 1 - 0/6       = 100%
+	//   3->6, N=2: P = 1 - C(3,2)/C(6,2) = 1 - 3/15      = 80%
+	//   3->6, N=3: P = 1 - C(3,3)/C(6,3) = 1 - 1/20      = 95%
+	//  6->10, N=3: P = 1 - C(4,3)/C(10,3) = 1 - 4/120    = 96.7%
+
+	numKeys := 10_000
+	keys := make([]string, numKeys)
+	for i := range keys {
+		s, err := random.RandomString(16)
+		require.NoError(t, err)
+		keys[i] = s
+	}
+
+	maxItems := 10
+	items := make([]string, maxItems)
+	for i := range items {
+		s, err := random.RandomString(8)
+		require.NoError(t, err)
+		items[i] = s
+	}
+
+	type transition struct {
+		from, to int
+	}
+	transitions := []transition{
+		{3, 4}, {3, 5}, {3, 6}, {6, 10},
+	}
+	// Add inverses.
+	for _, tr := range slices.Clone(transitions) {
+		transitions = append(transitions, transition{tr.to, tr.from})
+	}
+
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10_000)
+	for _, tr := range transitions {
+		t.Run(fmt.Sprintf("%d_to_%d", tr.from, tr.to), func(t *testing.T) {
+			ch.Set(slices.Clone(items[:tr.from])...)
+
+			// Save all replicas for each key (not just first N — we
+			// filter to first N in the inner loop over N).
+			type replicaList = []string
+			baselines := make([]replicaList, numKeys)
+			for i, k := range keys {
+				baselines[i] = ch.GetAllReplicas(k)
+			}
+
+			ch.Set(slices.Clone(items[:tr.to])...)
+
+			newReplicas := make([]replicaList, numKeys)
+			for i, k := range keys {
+				newReplicas[i] = ch.GetAllReplicas(k)
+			}
+			m := max(tr.from, tr.to)
+			d := m - min(tr.from, tr.to)
+
+			for _, n := range []int{1, 2, 3} {
+				t.Run(fmt.Sprintf("N=%d", n), func(t *testing.T) {
+					if n > tr.from || n > tr.to {
+						t.Skip("N exceeds item count")
+					}
+					overlap := 0
+					for i := range keys {
+						if hasOverlap(baselines[i][:n], newReplicas[i][:n]) {
+							overlap++
+						}
+					}
+					expected := 1.0
+					if d >= n {
+						expected = 1.0 - float64(choose(d, n))/float64(choose(m, n))
+					}
+					actual := float64(overlap) / float64(numKeys)
+					assert.InDelta(t, expected, actual, 0.03,
+						"expected overlap %.3f, got %.3f (%d/%d keys)",
+						expected, actual, overlap, numKeys)
+				})
+			}
+		})
+	}
+}
+
+func hasOverlap(a, b []string) bool {
+	return slices.ContainsFunc(a, func(v string) bool {
+		return slices.Contains(b, v)
+	})
+}
+
+// choose returns the binomial coefficient C(n, k).
+func choose(n, k int) int {
+	if k > n || k < 0 {
+		return 0
+	}
+	if k == 0 || k == n {
+		return 1
+	}
+	result := 1
+	for i := 0; i < k; i++ {
+		result = result * (n - i) / (i + 1)
+	}
+	return result
+}
+
 func BenchmarkGetAllReplicas(b *testing.B) {
 	for _, test := range []struct {
 		Name         string
