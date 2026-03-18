@@ -21,6 +21,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/ioutil",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
