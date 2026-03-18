@@ -166,10 +166,11 @@ func (p *dbIPRulesProvider) startRefresher(env environment.Env) error {
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	var shutdownOnce sync.Once
+	closeStop := sync.OnceFunc(func() { close(stop) })
 	sub := sns.Subscribe(&snpb.InvalidateIPRulesCache{})
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
-		return p.shutdownRefresher(ctx, stop, done, &shutdownOnce)
+		closeStop()
+		return p.waitForShutdown(ctx, done)
 	})
 	go p.runRefresher(env.GetServerContext(), sub, stop, done)
 	return nil
@@ -204,13 +205,11 @@ func (p *dbIPRulesProvider) handleRefresherMessage(ctx context.Context, msg prot
 	}
 }
 
-// The notification service does not expose an unsubscribe API, so shutdown is a
-// two-step handshake: signal the refresher to stop waiting on the subscription
-// channel, then wait for the goroutine to confirm it has exited.
-func (p *dbIPRulesProvider) shutdownRefresher(ctx context.Context, stop chan struct{}, done <-chan struct{}, shutdownOnce *sync.Once) error {
-	shutdownOnce.Do(func() {
-		close(stop)
-	})
+// The notification service does not expose an unsubscribe API, so the shutdown
+// callback first signals the refresher to stop waiting on the subscription
+// channel, then calls this helper to wait for the goroutine to confirm it has
+// exited.
+func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan struct{}) error {
 	select {
 	case <-done:
 		return nil
