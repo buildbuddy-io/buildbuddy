@@ -258,6 +258,8 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 func TestRefresherStopsOnShutdown(t *testing.T) {
 	env := getEnv(t)
+
+	// Install a noop server notification service to ensure the refresher runs.
 	env.SetServerNotificationService(&fakeServerNotificationService{
 		ch: make(chan proto.Message),
 	})
