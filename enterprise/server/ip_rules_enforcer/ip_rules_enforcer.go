@@ -146,6 +146,7 @@ func (p *dbIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, 
 		if err != nil {
 			return nil, err
 		}
+		p.cache.Add(groupID, pr)
 		allowed = pr
 	}
 	return allowed, nil
