@@ -33,7 +33,8 @@ var (
 )
 
 const (
-	writeTestTargetStatusesTimeout = 15 * time.Second
+	writeTestTargetStatusesTimeout     = 15 * time.Second
+	testTargetStatusOLAPFlushBatchSize = 1000
 )
 
 type targetClosure func(event *build_event_stream.BuildEvent)
@@ -163,13 +164,20 @@ type TargetTracker struct {
 	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
 	errGroup              *errgroup.Group
+
+	statusPermissions                  *perms.UserGroupPerm
+	pendingTestTargetStatusesForOLAPDB []*schema.TestTargetStatus
+	enqueuedTargetStatusIDsForOLAPDB   map[string]struct{}
+	disableOLAPStatusBatching          bool
+	olapStatusBatchingInitialized      bool
 }
 
 func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Accumulator) *TargetTracker {
 	return &TargetTracker{
-		env:                   env,
-		buildEventAccumulator: buildEventAccumulator,
-		targets:               make(map[string]*target, 0),
+		env:                              env,
+		buildEventAccumulator:            buildEventAccumulator,
+		targets:                          make(map[string]*target, 0),
+		enqueuedTargetStatusIDsForOLAPDB: make(map[string]struct{}, 0),
 	}
 }
 
@@ -198,6 +206,16 @@ func isTest(t *target) bool {
 		return true
 	}
 	return strings.HasSuffix(strings.ToLower(t.ruleType), "test")
+}
+
+func isReadyToFlushStatusToOLAPDB(t *target) bool {
+	if !isTest(t) {
+		return false
+	}
+	if t.overallStatus == build_event_stream.TestStatus_NO_STATUS {
+		return false
+	}
+	return t.state == targetStateSummary || t.state == targetStateAborted || (t.state == targetStateCompleted && !t.buildSuccess)
 }
 
 func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
@@ -317,7 +335,6 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 	ctx, cancel := background.ExtendContextForFinalization(ctx, writeTestTargetStatusesTimeout)
 	defer cancel()
 
-	entries := make([]*schema.TestTargetStatus, 0)
 	invocation := t.buildEventAccumulator.Invocation()
 	if invocation == nil {
 		return status.InternalError("failed to write test target statuses: no invocation from build accumulator")
@@ -341,47 +358,16 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		log.CtxInfo(ctx, "skip writing test target status because invocationStartTime is unavailable")
 	}
 
-	invocationUUID := strings.Replace(t.invocationID(), "-", "", -1)
-
-	for _, target := range t.targets {
-		if !isTest(target) {
-			continue
-		}
-
-		if target.overallStatus == build_event_stream.TestStatus_NO_STATUS {
-			continue
-		}
-		testStartTimeUsec := int64(0)
-		if !target.firstStartTime.IsZero() {
-			testStartTimeUsec = target.firstStartTime.UnixMicro()
-		}
-
-		entries = append(entries, &schema.TestTargetStatus{
-			GroupID:                 permissions.GroupID,
-			RepoURL:                 repoURL,
-			CommitSHA:               commitSHA,
-			Label:                   target.label,
-			InvocationStartTimeUsec: invocationStartTime.UnixMicro(),
-
-			RuleType:       target.ruleType,
-			UserID:         permissions.UserID,
-			InvocationUUID: invocationUUID,
-			TargetType:     int32(target.targetType),
-			TestSize:       int32(target.testSize),
-			Status:         int32(target.overallStatus),
-			Cached:         target.cached,
-			StartTimeUsec:  testStartTimeUsec,
-			DurationUsec:   target.totalDuration.Microseconds(),
-			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
-			Role:           t.buildEventAccumulator.Invocation().GetRole(),
-			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
-		})
+	// Queue up any statuses that have not yet been flushed incrementally.
+	t.enqueueAllReadyTestTargetStatusesForOLAPDB(permissions)
+	queuedCount := len(t.pendingTestTargetStatusesForOLAPDB)
+	if err := t.flushPendingTestTargetStatusesToOLAPDB(ctx, true); err != nil {
+		return err
 	}
-	err := t.env.GetOLAPDBHandle().FlushTestTargetStatuses(ctx, entries)
-	if err == nil {
-		log.CtxInfof(ctx, "successfully wrote %d test target statuses", len(entries))
+	if queuedCount > 0 {
+		log.CtxInfof(ctx, "successfully wrote %d test target statuses", queuedCount)
 	}
-	return err
+	return nil
 }
 
 func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
@@ -408,6 +394,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	case *build_event_stream.BuildEvent_Aborted:
 		t.handleEvent(event)
 	}
+	t.maybeWriteTestTargetStatusesToOLAPDBInBatches(ctx, event)
 
 	if event.GetLastMessage() {
 		t.handleLastEvent(ctx)
@@ -456,6 +443,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context) {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
 		return
 	}
+	t.statusPermissions = permissions
 	eg, gctx := errgroup.WithContext(ctx)
 	t.errGroup = eg
 	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
@@ -475,10 +463,15 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context) {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
 		return
 	}
-	permissions, err := t.permissionsFromContext(ctx)
-	if err != nil {
-		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
-		return
+	permissions := t.statusPermissions
+	if permissions == nil {
+		var err error
+		permissions, err = t.permissionsFromContext(ctx)
+		if err != nil {
+			log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
+			return
+		}
+		t.statusPermissions = permissions
 	}
 	if t.errGroup == nil {
 		log.CtxWarningf(ctx, "Not tracking target statuses for %q because targets were not reported", t.invocationID())
@@ -495,6 +488,123 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context) {
 	if err := t.writeTestTargetStatusesToOLAPDB(ctx, permissions); err != nil {
 		log.CtxErrorf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
 	}
+}
+
+func (t *TargetTracker) maybeWriteTestTargetStatusesToOLAPDBInBatches(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if !t.WriteToOLAPDBEnabled() || t.disableOLAPStatusBatching {
+		return
+	}
+	if !t.buildEventAccumulator.MetadataIsLoaded() {
+		return
+	}
+	invocation := t.buildEventAccumulator.Invocation()
+	if invocation == nil {
+		t.disableOLAPStatusBatching = true
+		return
+	}
+	if !isTestCommand(invocation.GetCommand()) || invocation.GetRole() != "CI" || t.buildEventAccumulator.DisableTargetTracking() {
+		t.disableOLAPStatusBatching = true
+		return
+	}
+	// Wait for workspace status processing (which starts target tracking work).
+	if t.errGroup == nil {
+		return
+	}
+	if t.statusPermissions == nil {
+		permissions, err := t.permissionsFromContext(ctx)
+		if err != nil {
+			t.disableOLAPStatusBatching = true
+			return
+		}
+		t.statusPermissions = permissions
+	}
+	if t.statusPermissions.GroupID == "" || invocation.GetRepoUrl() == "" || invocation.GetCommitSha() == "" {
+		t.disableOLAPStatusBatching = true
+		return
+	}
+
+	// If metadata became available after some targets were already finalized,
+	// make sure those are still picked up.
+	if !t.olapStatusBatchingInitialized {
+		t.enqueueAllReadyTestTargetStatusesForOLAPDB(t.statusPermissions)
+		t.olapStatusBatchingInitialized = true
+	}
+
+	if event.GetId() != nil {
+		if targetID := getTargetIdWithAspectFromEventId(event.GetId()); targetID != "" {
+			t.enqueueReadyTestTargetStatusForOLAPDB(targetID, t.statusPermissions)
+		}
+	}
+	if err := t.flushPendingTestTargetStatusesToOLAPDB(ctx, false); err != nil {
+		log.CtxWarningf(ctx, "Error writing batched %q target statuses: %s", t.invocationID(), err.Error())
+	}
+}
+
+func (t *TargetTracker) enqueueAllReadyTestTargetStatusesForOLAPDB(permissions *perms.UserGroupPerm) {
+	for targetID := range t.targets {
+		t.enqueueReadyTestTargetStatusForOLAPDB(targetID, permissions)
+	}
+}
+
+func (t *TargetTracker) enqueueReadyTestTargetStatusForOLAPDB(targetID string, permissions *perms.UserGroupPerm) {
+	if _, ok := t.enqueuedTargetStatusIDsForOLAPDB[targetID]; ok {
+		return
+	}
+	target, ok := t.targets[targetID]
+	if !ok || !isReadyToFlushStatusToOLAPDB(target) {
+		return
+	}
+	entry := t.targetStatusRowForOLAPDB(target, permissions)
+	if entry == nil {
+		return
+	}
+	t.pendingTestTargetStatusesForOLAPDB = append(t.pendingTestTargetStatusesForOLAPDB, entry)
+	t.enqueuedTargetStatusIDsForOLAPDB[targetID] = struct{}{}
+}
+
+func (t *TargetTracker) targetStatusRowForOLAPDB(target *target, permissions *perms.UserGroupPerm) *schema.TestTargetStatus {
+	invocation := t.buildEventAccumulator.Invocation()
+	if invocation == nil {
+		return nil
+	}
+	testStartTimeUsec := int64(0)
+	if !target.firstStartTime.IsZero() {
+		testStartTimeUsec = target.firstStartTime.UnixMicro()
+	}
+	return &schema.TestTargetStatus{
+		GroupID:                 permissions.GroupID,
+		RepoURL:                 invocation.GetRepoUrl(),
+		CommitSHA:               invocation.GetCommitSha(),
+		Label:                   target.label,
+		InvocationStartTimeUsec: t.buildEventAccumulator.StartTime().UnixMicro(),
+		RuleType:                target.ruleType,
+		UserID:                  permissions.UserID,
+		InvocationUUID:          strings.Replace(t.invocationID(), "-", "", -1),
+		TargetType:              int32(target.targetType),
+		TestSize:                int32(target.testSize),
+		Status:                  int32(target.overallStatus),
+		Cached:                  target.cached,
+		StartTimeUsec:           testStartTimeUsec,
+		DurationUsec:            target.totalDuration.Microseconds(),
+		BranchName:              invocation.GetBranchName(),
+		Role:                    invocation.GetRole(),
+		Command:                 invocation.GetCommand(),
+	}
+}
+
+func (t *TargetTracker) flushPendingTestTargetStatusesToOLAPDB(ctx context.Context, flushAll bool) error {
+	for len(t.pendingTestTargetStatusesForOLAPDB) >= testTargetStatusOLAPFlushBatchSize || (flushAll && len(t.pendingTestTargetStatusesForOLAPDB) > 0) {
+		flushSize := testTargetStatusOLAPFlushBatchSize
+		if len(t.pendingTestTargetStatusesForOLAPDB) < flushSize {
+			flushSize = len(t.pendingTestTargetStatusesForOLAPDB)
+		}
+		batch := t.pendingTestTargetStatusesForOLAPDB[:flushSize]
+		if err := t.env.GetOLAPDBHandle().FlushTestTargetStatuses(ctx, batch); err != nil {
+			return err
+		}
+		t.pendingTestTargetStatusesForOLAPDB = t.pendingTestTargetStatusesForOLAPDB[flushSize:]
+	}
+	return nil
 }
 
 func isTestCommand(command string) bool {

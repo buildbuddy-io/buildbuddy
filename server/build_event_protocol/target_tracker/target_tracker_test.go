@@ -2,6 +2,8 @@ package target_tracker_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -90,6 +94,46 @@ type fakeAccumulator struct {
 	repoURL      string
 	invocationID string
 	commitSHA    string
+}
+
+type recordingOLAPDBHandle struct {
+	*testolapdb.Handle
+
+	mu              sync.Mutex
+	flushBatchSizes []int
+	flushedRows     []*schema.TestTargetStatus
+}
+
+func newRecordingOLAPDBHandle() *recordingOLAPDBHandle {
+	return &recordingOLAPDBHandle{
+		Handle:          testolapdb.NewHandle(),
+		flushBatchSizes: make([]int, 0),
+		flushedRows:     make([]*schema.TestTargetStatus, 0),
+	}
+}
+
+func (h *recordingOLAPDBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.flushBatchSizes = append(h.flushBatchSizes, len(entries))
+	h.flushedRows = append(h.flushedRows, entries...)
+	return nil
+}
+
+func (h *recordingOLAPDBHandle) FlushBatchSizes() []int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sizes := make([]int, len(h.flushBatchSizes))
+	copy(sizes, h.flushBatchSizes)
+	return sizes
+}
+
+func (h *recordingOLAPDBHandle) FlushedRows() []*schema.TestTargetStatus {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rows := make([]*schema.TestTargetStatus, len(h.flushedRows))
+	copy(rows, h.flushedRows)
+	return rows
 }
 
 func (a *fakeAccumulator) Invocation() *inpb.Invocation {
@@ -474,6 +518,83 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 	} else {
 		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, expected)
 	}
+}
+
+func TestTrackTargetsForEvents_OLAPWritesStatusesInBatchesAfterMetadata(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(ta)
+	flags.Set(t, "app.enable_target_tracking", true)
+	flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", true)
+
+	olapHandle := newRecordingOLAPDBHandle()
+	te.SetOLAPDBHandle(olapHandle)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	accumulator := newFakeAccumulator(t, testUUID.String())
+	tracker := target_tracker.NewTargetTracker(te, accumulator)
+
+	const targetCount = 2500
+	targetLabels := make([]string, 0, targetCount)
+	targetChildren := make([]*build_event_stream.BuildEventId, 0, targetCount)
+	for i := 0; i < targetCount; i++ {
+		label := fmt.Sprintf("//server:batched_test_%d", i)
+		targetLabels = append(targetLabels, label)
+		targetChildren = append(targetChildren, targetConfiguredId(label))
+	}
+
+	tracker.TrackTargetsForEvent(ctx, &build_event_stream.BuildEvent{
+		Children: targetChildren,
+		Payload:  &build_event_stream.BuildEvent_Expanded{},
+	})
+	for _, label := range targetLabels {
+		tracker.TrackTargetsForEvent(ctx, &build_event_stream.BuildEvent{
+			Id: targetConfiguredId(label),
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{
+					TargetKind: "go_test rule",
+					TestSize:   build_event_stream.TestSize_SMALL,
+				},
+			},
+		})
+	}
+	tracker.TrackTargetsForEvent(ctx, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{},
+	})
+
+	for i, label := range targetLabels {
+		tracker.TrackTargetsForEvent(ctx, &build_event_stream.BuildEvent{
+			Id: targetCompletedId(label),
+			Payload: &build_event_stream.BuildEvent_Aborted{
+				Aborted: &build_event_stream.Aborted{},
+			},
+		})
+		if i == 999 {
+			assert.Equal(t, []int{1000}, olapHandle.FlushBatchSizes())
+		}
+		if i == 1999 {
+			assert.Equal(t, []int{1000, 1000}, olapHandle.FlushBatchSizes())
+		}
+	}
+	assert.Equal(t, []int{1000, 1000}, olapHandle.FlushBatchSizes(), "remainder should flush on last event")
+
+	tracker.TrackTargetsForEvent(ctx, &build_event_stream.BuildEvent{
+		LastMessage: true,
+	})
+
+	assert.Equal(t, []int{1000, 1000, 500}, olapHandle.FlushBatchSizes())
+	rows := olapHandle.FlushedRows()
+	require.Len(t, rows, targetCount)
+	seenLabels := make(map[string]struct{}, targetCount)
+	for _, row := range rows {
+		seenLabels[row.Label] = struct{}{}
+		assert.Equal(t, int32(build_event_stream.TestStatus_FAILED_TO_BUILD), row.Status)
+	}
+	assert.Len(t, seenLabels, targetCount)
 }
 
 func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
