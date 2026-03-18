@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -153,25 +155,67 @@ func (p *dbIPRulesProvider) invalidate(ctx context.Context, groupID string) {
 	p.cache.Remove(groupID)
 }
 
-// TODO(iain): halt goroutine on server exit.
 func (p *dbIPRulesProvider) startRefresher(env environment.Env) error {
 	sns := env.GetServerNotificationService()
 	if sns == nil {
 		return nil
 	}
-	go func() {
-		for msg := range sns.Subscribe(&snpb.InvalidateIPRulesCache{}) {
-			ic, ok := msg.(*snpb.InvalidateIPRulesCache)
-			if !ok {
-				alert.UnexpectedEvent("iprules_invalid_proto_type", "received proto type %T", msg)
-				continue
-			}
-			if err := p.refreshRules(env.GetServerContext(), ic.GetGroupId()); err != nil {
-				log.Warningf("could not refresh IP rules for group %q: %s", ic.GetGroupId(), err)
-			}
-		}
-	}()
+	hc := env.GetHealthChecker()
+	if hc == nil {
+		return status.FailedPreconditionError("Missing health checker")
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	closeStop := sync.OnceFunc(func() { close(stop) })
+	sub := sns.Subscribe(&snpb.InvalidateIPRulesCache{})
+	hc.RegisterShutdownFunction(func(ctx context.Context) error {
+		closeStop()
+		return p.waitForShutdown(ctx, done)
+	})
+	go p.runRefresher(env.GetServerContext(), sub, stop, done)
 	return nil
+}
+
+// runRefresher listens for cache invalidation messages and refreshes the IP
+// rules cache accordingly. It closes the done channel when it exits, and can be
+// stopped by another goroutine via the stop channel.
+func (p *dbIPRulesProvider) runRefresher(ctx context.Context, sub <-chan proto.Message, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	for {
+		select {
+		case <-stop:
+			return
+		case msg, ok := <-sub:
+			if !ok {
+				return
+			}
+			p.handleRefresherMessage(ctx, msg)
+		}
+	}
+}
+
+func (p *dbIPRulesProvider) handleRefresherMessage(ctx context.Context, msg proto.Message) {
+	ic, ok := msg.(*snpb.InvalidateIPRulesCache)
+	if !ok {
+		alert.UnexpectedEvent("iprules_invalid_proto_type", "received proto type %T", msg)
+		return
+	}
+	if err := p.refreshRules(ctx, ic.GetGroupId()); err != nil {
+		log.Warningf("could not refresh IP rules for group %q: %s", ic.GetGroupId(), err)
+	}
+}
+
+// The notification service does not expose an unsubscribe API, so the shutdown
+// callback first signals the refresher to stop waiting on the subscription
+// channel, then calls this helper to wait for the goroutine to confirm it has
+// exited.
+func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 type Enforcer struct {

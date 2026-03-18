@@ -17,11 +17,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc/metadata"
 )
+
+type fakeServerNotificationService struct {
+	ch chan proto.Message
+}
+
+func (f *fakeServerNotificationService) Subscribe(msgType proto.Message) <-chan proto.Message {
+	return f.ch
+}
+
+func (f *fakeServerNotificationService) Publish(ctx context.Context, msg proto.Message) error {
+	return nil
+}
 
 func newIPRulesEnforcer(t *testing.T, env environment.Env) *ip_rules_enforcer.Enforcer {
 	t.Helper()
@@ -240,4 +254,20 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 	err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func TestRefresherStopsOnShutdown(t *testing.T) {
+	env := getEnv(t)
+
+	// Install a noop server notification service to ensure the refresher runs.
+	env.SetServerNotificationService(&fakeServerNotificationService{
+		ch: make(chan proto.Message),
+	})
+
+	// The env starts some goroutines that aren't cleaned up. Ignore them.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	_ = newIPRulesEnforcer(t, env)
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }
