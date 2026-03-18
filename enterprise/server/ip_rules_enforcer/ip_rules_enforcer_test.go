@@ -262,6 +262,7 @@ func TestRefresherStopsOnShutdown(t *testing.T) {
 		ch: make(chan proto.Message),
 	})
 
+	// The env starts some goroutines that aren't cleaned up. Ignore them.
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	_ = newIPRulesEnforcer(t, env)
 
