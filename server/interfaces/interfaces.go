@@ -1592,6 +1592,7 @@ type IPRulesService interface {
 
 	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)
 	SetIPRuleConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error)
+	GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error)
 	UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error)
