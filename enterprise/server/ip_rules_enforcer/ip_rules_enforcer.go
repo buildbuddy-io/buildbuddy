@@ -310,46 +310,40 @@ func (p *remoteIPRulesProvider) startRefresher(env environment.Env) error {
 	if hc == nil {
 		return status.FailedPreconditionError("Missing health checker")
 	}
-	stop := make(chan struct{})
+	ctx, cancel := context.WithCancel(env.GetServerContext())
 	done := make(chan struct{})
-	closeStop := sync.OnceFunc(func() { close(stop) })
-	hc.RegisterShutdownFunction(func(ctx context.Context) error {
-		closeStop()
+	hc.RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		cancel()
 		select {
 		case <-done:
 			return nil
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-shutdownCtx.Done():
+			return shutdownCtx.Err()
 		}
 	})
-	go p.runRefresher(env.GetServerContext(), stop, done)
+	go p.runRefresher(ctx, done)
 	return nil
 }
 
-func (p *remoteIPRulesProvider) runRefresher(ctx context.Context, stop <-chan struct{}, done chan<- struct{}) {
+func (p *remoteIPRulesProvider) runRefresher(ctx context.Context, done chan<- struct{}) {
 	defer close(done)
 	ticker := p.clock.NewTicker(*cacheTTL / 2)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			p.refreshAll(ctx, stop)
+			p.refreshAll(ctx)
 		}
 	}
 }
 
-func (p *remoteIPRulesProvider) refreshAll(ctx context.Context, stop <-chan struct{}) {
+func (p *remoteIPRulesProvider) refreshAll(ctx context.Context) {
 	for _, groupID := range p.cache.Keys() {
-
-		// Allow stopping mid-refresh.
-		select {
-		case <-stop:
+		if ctx.Err() != nil {
 			return
-		default:
 		}
-
 		if err := p.refresh(ctx, groupID); err != nil {
 			log.Warningf("could not refresh IP rules for group %q: %s", groupID, err)
 		}
