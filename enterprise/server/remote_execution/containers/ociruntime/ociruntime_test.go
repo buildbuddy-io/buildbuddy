@@ -1004,7 +1004,6 @@ func TestDevices(t *testing.T) {
 }
 
 func TestSignal(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := busyboxImage(t)
