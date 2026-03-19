@@ -135,10 +135,12 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 			if tc.useClientIP {
 				ctx = context.WithValue(ctx, clientip.ContextKey, tc.ip)
 			}
-			// Simulate the post-auth interceptor populating counters.
+			// Simulate the post-auth interceptor populating dimensions.
 			handler.initCounters(ctx)
 			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 100})
 			handler.HandleRPC(ctx, &stats.InPayload{WireLength: 200})
+			// Metrics are exported on End.
+			handler.HandleRPC(ctx, &stats.End{})
 
 			labels := prometheus.Labels{
 				metrics.GroupID:                  tc.groupID,
@@ -164,6 +166,7 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/ClientPayload"})
 	handler.initCounters(ctx)
 	handler.HandleRPC(ctx, &stats.OutPayload{Client: true, WireLength: 55})
+	handler.HandleRPC(ctx, &stats.End{})
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
@@ -184,6 +187,7 @@ func TestStatsHandler_NoPeerInfo(t *testing.T) {
 	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
 	handler.initCounters(ctx)
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 50})
+	handler.HandleRPC(ctx, &stats.End{})
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
@@ -205,6 +209,7 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 	ctx = context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
 	handler.initCounters(ctx)
 	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 75})
+	handler.HandleRPC(ctx, &stats.End{})
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
@@ -260,6 +265,7 @@ func benchmarkIP(i int) string {
 func BenchmarkStatsHandler(b *testing.B) {
 	rpcInfo := &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"}
 	payload := &stats.OutPayload{WireLength: 123}
+	end := &stats.End{}
 	claimsVal := &claims.Claims{GroupID: "GR123"}
 	ctx := claims.AuthContext(context.Background(), claimsVal)
 
@@ -272,6 +278,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 			rpcCtx := handler.TagRPC(ctx, rpcInfo)
 			handler.initCounters(rpcCtx)
 			handler.HandleRPC(rpcCtx, payload)
+			handler.HandleRPC(rpcCtx, end)
 		}
 	})
 	b.Run("cached_hit_multiple_payloads", func(b *testing.B) {
@@ -285,6 +292,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 			for range 10 {
 				handler.HandleRPC(rpcCtx, payload)
 			}
+			handler.HandleRPC(rpcCtx, end)
 		}
 	})
 	b.Run("varying_ips", func(b *testing.B) {
@@ -297,6 +305,7 @@ func BenchmarkStatsHandler(b *testing.B) {
 			rpcCtx := handler.TagRPC(ctx, rpcInfo)
 			handler.initCounters(rpcCtx)
 			handler.HandleRPC(rpcCtx, payload)
+			handler.HandleRPC(rpcCtx, end)
 		}
 	})
 }
