@@ -74,6 +74,9 @@ const (
 type accessTimeUpdate struct {
 	key         []byte
 	gcsMetadata *sgpb.StorageMetadata_GCSMetadata
+	// done is used in tests to signal that all previously queued atime
+	// updates have been flushed.
+	done chan struct{}
 }
 
 type Server struct {
@@ -475,6 +478,11 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 	for {
 		select {
 		case accessTimeUpdate := <-rc.accesses:
+			if accessTimeUpdate.done != nil {
+				flush()
+				close(accessTimeUpdate.done)
+				continue
+			}
 			key := accessTimeUpdate.key
 			err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
 			metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
@@ -812,6 +820,11 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 }
 
 func (rc *Server) TestingWaitForGC(ctx context.Context) error {
+	// Flush pending atime updates before running GC so that the eviction
+	// sampler sees up-to-date access times.
+	done := make(chan struct{})
+	rc.accesses <- &accessTimeUpdate{done: done}
+	<-done
 	return rc.store.TestingWaitForGC(ctx)
 }
 
