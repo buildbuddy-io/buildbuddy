@@ -389,10 +389,11 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 
 	keys := generateTestKeys(t, numKeys)
 
-	// Seed data using writeRecord pattern so the range has enough
-	// data for pebble's EstimateDiskUsage to trigger splits.
-	// Each record is ~1000 bytes; 20 records = ~20KB > 8KB target.
+	// Seed data so the range has enough data for pebble's
+	// EstimateDiskUsage to trigger splits. Sleep to let the
+	// cluster fully initialize (gossip, shard readiness).
 	leaseHolder := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	time.Sleep(10 * time.Second)
 	for i := 0; i < 20; i++ {
 		testutil.WriteRecord(ctx, t, leaseHolder, "default", 1000)
 	}
