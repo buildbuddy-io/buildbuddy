@@ -5,11 +5,11 @@ version: 1
 sources:
   # trixie is the codename for debian 13
   - channel: trixie main
-    url: https://snapshot.debian.org/archive/debian/20260206T143559Z
+    url: https://snapshot.debian.org/archive/debian/20260318T142916Z
   - channel: trixie-updates main
-    url: https://snapshot.debian.org/archive/debian/20260206T143559Z
+    url: https://snapshot.debian.org/archive/debian/20260318T142916Z
   - channel: trixie-security main
-    url: https://snapshot.debian.org/archive/debian-security/20260206T143559Z
+    url: https://snapshot.debian.org/archive/debian-security/20260318T142916Z
 
 archs:
   - "amd64"
