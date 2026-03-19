@@ -36,7 +36,6 @@ go_test(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/resources",
-        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
