@@ -15,6 +15,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats",
     deps = [
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/claims",
         "//server/util/clientip",
         "//server/util/log",
