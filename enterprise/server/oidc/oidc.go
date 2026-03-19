@@ -39,6 +39,8 @@ var (
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
 	additionalScopes     = flag.Slice("auth.oauth_scopes", []string{}, "The list of any additional OAuth scopes needed by the application.")
+
+	legacyAuthorizationHeaderLog = log.NamedSubLogger("legacy-authorization-header").EveryDuration(1 * time.Minute)
 )
 
 type OauthProvider struct {
@@ -582,9 +584,22 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	}
 
 	if authHeader := r.Header.Get(authorizationHeader); authHeader != "" {
-		apiKey := strings.TrimPrefix(authHeader, authScheme+" ")
-		apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+		headerFormat := "Authorization: <api-key>"
+		apiKey, ok := strings.CutPrefix(authHeader, authScheme+" ")
+		if ok {
+			headerFormat = "Authorization: x-buildbuddy-api-key <api-key>"
+		}
+		apiKey, ok = strings.CutPrefix(apiKey, "Bearer ")
+		if ok {
+			headerFormat = "Authorization: Bearer <api-key>"
+		}
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
+		if err != nil {
+			return claims, nil, err
+		}
+
+		legacyAuthorizationHeaderLog.CtxInfof(r.Context(), "Request is using legacy auth header format %q", headerFormat)
+
 		return claims, nil, err
 	}
 
