@@ -24,7 +24,7 @@ runs:
       with:
         # Use the input path
         path: ${{ inputs.repo-cache-dir }}
-        key: repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: repo-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Save Go Mod Cache
       uses: actions/cache/save@v4
@@ -32,7 +32,7 @@ runs:
       with:
         # Use the input path
         path: ${{ inputs.go-mod-cache-dir }}
-        key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: go-mod-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Save Yarn Cache
       uses: actions/cache/save@v4
@@ -41,4 +41,4 @@ runs:
         # Use the input path
         path: ${{ inputs.yarn-cache-dir }}
         # Ensure hashFiles matches the restore key hashFiles for consistency
-        key: yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: yarn-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
