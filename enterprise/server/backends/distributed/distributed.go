@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -47,6 +49,7 @@ var (
 	redisTarget                  = flag.String("cache.distributed_cache.redis_target", "", "Redis target for used for discovering distributed cache replicas. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	enableKubernetesDiscovery    = flag.Bool("cache.distributed_cache.kubernetes_discovery", false, "If true, use the Kubernetes API to discover peer cache nodes by finding pods owned by the same controller (Deployment or StatefulSet). The pod must have RBAC permissions to get/list/watch pods and get replicasets/statefulsets.")
 	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
 	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 100, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
@@ -120,6 +123,7 @@ type Cache struct {
 	consistentHash       *consistent_hash.ConsistentHash
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
+	kubeDiscoveryChannel *kubediscovery.Channel
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
@@ -268,6 +272,24 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if len(opts.NewNodes) > 0 {
 			extraCHash.Set(opts.NewNodes...)
 		}
+	} else if *enableKubernetesDiscovery {
+		chash.Set(opts.ListenAddr)
+		_, portStr, err := net.SplitHostPort(opts.ListenAddr)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", opts.ListenAddr, err)
+		}
+		kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
+			Port: portStr,
+			UpdateFn: func(peers ...string) {
+				if err := chash.Set(peers...); err != nil {
+					log.Errorf("Error setting peers in consistent hash: %s", err)
+				}
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kubernetes discovery channel: %w", err)
+		}
+		dc.kubeDiscoveryChannel = kubeChannel
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{
@@ -313,6 +335,12 @@ func (c *Cache) Check(ctx context.Context) error {
 		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.opts.ReplicationFactor)
 	}
 
+	if c.kubeDiscoveryChannel != nil {
+		// If we're using kubediscovery, c.consistentHash.GetItems() will only
+		// include pods that are ready, and we already check that there are at
+		// least ClusterSize of these.
+		return nil
+	}
 	// Next check that we're participating in the network:
 	// basically, that enough configured peers have *ever* contacted us.
 	// TODO(tylerw): Should we have some recency threshold here?
@@ -632,6 +660,9 @@ func (c *Cache) StartListening() {
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
+	if c.kubeDiscoveryChannel != nil {
+		c.kubeDiscoveryChannel.StartAdvertising()
+	}
 	if err := c.distributedProxy.StartListening(); err != nil {
 		log.Warningf("Unable to start cacheproxy: %s", err)
 	}
@@ -649,6 +680,9 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
+	}
+	if c.kubeDiscoveryChannel != nil {
+		c.kubeDiscoveryChannel.StopAdvertising()
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true
