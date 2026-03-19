@@ -66,10 +66,6 @@ common --execution_log_compact_file=%workspace%/bazel_compact_exec_log.binpb.zst
 # Disable https://github.com/aspect-build/tools_telemetry.
 common --repo_env=DO_NOT_TRACK=1
 
-# Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
-# https://github.com/bazelbuild/bazel/discussions/22658
-common --experimental_output_paths=strip
-
 #############################
 # TESTING/DEVELOPMENT FLAGS #
 #############################
@@ -138,6 +134,12 @@ common --enable_platform_specific_config=true
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
 common:macos --enable_runfiles
+
+# Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
+# Requires a sandboxed execution strategy and is thus not enabled on Windows.
+# https://github.com/bazelbuild/bazel/discussions/22658
+common:linux --experimental_output_paths=strip
+common:macos --experimental_output_paths=strip
 
 # Use C++17 standard for all C++ compilation
 common:linux --host_cxxopt=-std=c++17
