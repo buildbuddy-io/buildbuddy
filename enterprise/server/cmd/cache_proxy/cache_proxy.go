@@ -218,7 +218,9 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
-		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficStatsHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficStatsHandler.StreamInterceptor},
+		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
