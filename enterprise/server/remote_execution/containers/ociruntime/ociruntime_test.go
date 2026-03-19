@@ -911,6 +911,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
+	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6878
 	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
