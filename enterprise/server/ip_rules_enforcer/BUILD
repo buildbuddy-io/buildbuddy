@@ -23,6 +23,7 @@ go_library(
         "//server/util/lru",
         "//server/util/proto",
         "//server/util/status",
+        "//third_party/singleflight",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
     ],

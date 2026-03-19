@@ -31,8 +31,9 @@ import (
 )
 
 type fakeIPRulesService struct {
-	mu  sync.Mutex
-	rsp *irpb.GetRulesResponse
+	mu       sync.Mutex
+	rsp      *irpb.GetRulesResponse
+	rpcCount int
 }
 
 func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
@@ -44,7 +45,14 @@ func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
 func (s *fakeIPRulesService) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.rpcCount++
 	return s.rsp, nil
+}
+
+func (s *fakeIPRulesService) getRPCCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rpcCount
 }
 
 func startRemoteIPRulesServer(t *testing.T, svc *fakeIPRulesService) string {
@@ -368,6 +376,35 @@ func TestRemoteIPRulesCached(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 	err = irs.Check(deniedCtx, "GR1", "")
 	require.NoError(t, err)
+}
+
+func TestRemoteIPRulesDeduped(t *testing.T) {
+	env := getEnv(t)
+	iprs := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+	}
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, iprs))
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	allowedCtx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+
+	// Lock the fakeIPRulesService mutex to prevent RPCs from returning
+	iprs.mu.Lock()
+
+	// Issue several parallel checks to ensure there's only one outgoing RPC.
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Go(func() { require.NoError(t, irs.Check(allowedCtx, "GR1", "")) })
+	}
+	iprs.mu.Unlock()
+	wg.Wait()
+
+	require.Equal(t, 1, iprs.getRPCCount())
 }
 
 func TestRemoteIPRulesBackgroundRefresh(t *testing.T) {
