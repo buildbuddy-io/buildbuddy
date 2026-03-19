@@ -192,9 +192,7 @@ func generateTestKeys(t *testing.T, numKeys int) []*testKey {
 	return keys
 }
 
-// writeFileRecord writes a value to the given key using the same
-// pattern as writeRecord in store_test.go. The value is embedded in a
-// FileMetadata proto.
+// writeFileRecord writes a value to the given key.
 func writeFileRecord(ctx context.Context, store *testutil.TestingStore, tk *testKey, value string) error {
 	fs := filestore.New()
 	valBytes := []byte(value)
