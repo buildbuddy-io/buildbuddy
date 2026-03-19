@@ -232,6 +232,51 @@ func TestExpiringLRU_AddResetsTTL(t *testing.T) {
 	})
 }
 
+func TestKeys(t *testing.T) {
+	testConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		cfg := *config
+		cfg.MaxSize = 100
+		cfg.SizeFn = func(value int) int64 { return int64(value) }
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		require.Empty(t, l.Keys())
+
+		l.Add("a", 1)
+		l.Add("b", 1)
+		l.Add("c", 1)
+		require.Equal(t, []string{"c", "b", "a"}, l.Keys())
+
+		// Accessing "a" moves it to the front.
+		l.Get("a")
+		require.Equal(t, []string{"a", "c", "b"}, l.Keys())
+
+		l.Remove("c")
+		require.Equal(t, []string{"a", "b"}, l.Keys())
+	})
+}
+
+func TestExpiringLRU_KeysExcludesExpired(t *testing.T) {
+	testExpiringConfigs(t, func(t *testing.T, config *lru.Config[int]) {
+		cfg := *config
+		l, err := lru.New[int](&cfg)
+		require.NoError(t, err)
+
+		l.Add("a", 1)
+		config.Clock.(clockwork.FakeClock).Advance(3 * time.Second)
+		l.Add("b", 2)
+
+		// "a" and "b" are both alive.
+		require.Equal(t, []string{"b", "a"}, l.Keys())
+
+		// Advance past "a"'s TTL but not "b"'s.
+		config.Clock.(clockwork.FakeClock).Advance(3 * time.Second)
+
+		// "a" is expired; Keys() should not include it.
+		require.Equal(t, []string{"b"}, l.Keys())
+	})
+}
+
 func TestThreadSafeLRU_ConcurrentAccess(t *testing.T) {
 	l, err := lru.New[int](&lru.Config[int]{
 		MaxSize:    10,
