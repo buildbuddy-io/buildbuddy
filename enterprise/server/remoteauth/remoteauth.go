@@ -69,7 +69,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	if err != nil {
 		return nil, err
 	}
-	hs256Cache, err := lru.NewLRU(config)
+	hs256Cache, err := lru.New(config)
 	if err != nil {
 		return nil, err
 	}
@@ -212,12 +212,11 @@ func claimsCacheKey(ctx context.Context) (string, error) {
 }
 
 type RemoteAuthenticator struct {
-	authClient          authpb.AuthServiceClient
-	cache               lru.LRU[string]
+	authClient authpb.AuthServiceClient
+	cache      lru.LRU[string]
 	// LRU cache mapping HS256-signed JWTs to ES256-signed JWTs, to avoid
 	// having to remotely auth every HS256-signed JWT provided.
-	hs256Cache interfaces.LRU[string]
-	hs256Mu    sync.RWMutex // protects hs256Cache
+	hs256Cache          lru.LRU[string]
 	jwtExpirationBuffer time.Duration
 	claimsParser        *claims.ClaimsParser
 	env                 environment.Env
@@ -379,22 +378,16 @@ func (a *RemoteAuthenticator) shouldReauthenticateHS256JWT(ctx context.Context, 
 }
 
 func (a *RemoteAuthenticator) reauthenticateHS256JWT(ctx context.Context, jwt string) context.Context {
-	a.hs256Mu.RLock()
 	cachedJWT, found := a.hs256Cache.Get(jwt)
-	a.hs256Mu.RUnlock()
 	if found {
 		if c, err := a.jwtIsValid(ctx, cachedJWT); err == nil {
 			return authContext(ctx, cachedJWT, c)
 		}
-		a.hs256Mu.Lock()
 		a.hs256Cache.Remove(jwt)
-		a.hs256Mu.Unlock()
 	}
 	remoteJWT, c, err := a.authenticateAndValidate(ctx)
 	if err == nil {
-		a.hs256Mu.Lock()
 		a.hs256Cache.Add(jwt, remoteJWT)
-		a.hs256Mu.Unlock()
 		return authContext(ctx, remoteJWT, c)
 	}
 	log.Debugf("Error remotely authenticating with incoming JWT: %v", err)
