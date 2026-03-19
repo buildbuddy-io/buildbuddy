@@ -21,7 +21,6 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
-        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//stats",
