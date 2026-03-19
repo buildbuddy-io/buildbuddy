@@ -83,6 +83,11 @@ type Options struct {
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
 	ReadThroughLocalCache        bool
+
+	// KubeDiscoveryChannel is an optional pre-configured kubediscovery
+	// channel. If set, this channel is used for peer discovery instead of
+	// creating one from in-cluster config. This is useful for testing.
+	KubeDiscoveryChannel *kubediscovery.Channel
 }
 
 type hintedHandoffOrder struct {
@@ -272,24 +277,27 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if len(opts.NewNodes) > 0 {
 			extraCHash.Set(opts.NewNodes...)
 		}
-	} else if *enableKubernetesDiscovery {
-		chash.Set(opts.ListenAddr)
-		_, portStr, err := net.SplitHostPort(opts.ListenAddr)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", opts.ListenAddr, err)
+	} else if opts.KubeDiscoveryChannel != nil || *enableKubernetesDiscovery {
+		if opts.KubeDiscoveryChannel != nil {
+			dc.kubeDiscoveryChannel = opts.KubeDiscoveryChannel
+		} else {
+			_, portStr, err := net.SplitHostPort(opts.ListenAddr)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", opts.ListenAddr, err)
+			}
+			kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
+				Port: portStr,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to create kubernetes discovery channel: %w", err)
+			}
+			dc.kubeDiscoveryChannel = kubeChannel
 		}
-		kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
-			Port: portStr,
-			UpdateFn: func(peers ...string) {
-				if err := chash.Set(peers...); err != nil {
-					log.Errorf("Error setting peers in consistent hash: %s", err)
-				}
-			},
+		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers ...string) {
+			if err := chash.Set(peers...); err != nil {
+				log.Errorf("Error setting peers in consistent hash: %s", err)
+			}
 		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kubernetes discovery channel: %w", err)
-		}
-		dc.kubeDiscoveryChannel = kubeChannel
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{

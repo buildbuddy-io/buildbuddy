@@ -470,12 +470,12 @@ func TestLabelSelectorString(t *testing.T) {
 			want: "app=cache",
 		},
 		{
-			name: "multiple labels sorted",
+			name: "only app label used",
 			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
-				"app":     "cache",
-				"version": "v1",
+				"app":               "cache",
+				"pod-template-hash": "abc123",
 			}},
-			want: "app=cache,version=v1",
+			want: "app=cache",
 		},
 	}
 	for _, tc := range tests {

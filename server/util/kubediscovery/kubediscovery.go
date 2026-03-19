@@ -108,6 +108,12 @@ func NewChannel(config *Config) (*Channel, error) {
 	}, nil
 }
 
+// SetUpdateFn replaces the peer update callback. This must be called
+// before StartAdvertising.
+func (c *Channel) SetUpdateFn(fn PeersUpdateFn) {
+	c.updateFn = fn
+}
+
 // StartAdvertising begins watching for peer pods. The name matches the
 // heartbeat.Channel interface for consistency.
 func (c *Channel) StartAdvertising() {
@@ -296,10 +302,9 @@ func (c *Channel) podAddr(pod *corev1.Pod) string {
 		return ""
 	}
 	for _, cond := range pod.Status.Conditions {
-		switch cond.Type {
-		case corev1.PodReady, corev1.PodInitialized, corev1.ContainersReady:
-			// We can't wait for the PodReady condition alone, since that
-			// relies on health checks, which can depend on having enough peers.
+		// We can't wait for the PodReady condition alone, since that
+		// relies on health checks, which can depend on having enough peers.
+		if cond.Type == corev1.PodReady || cond.Type == corev1.PodInitialized || cond.Type == corev1.ContainersReady {
 			if cond.Status == corev1.ConditionTrue {
 				return net.JoinHostPort(pod.Status.PodIP, c.port)
 			}

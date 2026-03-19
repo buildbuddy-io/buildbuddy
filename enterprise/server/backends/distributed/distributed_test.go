@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -33,6 +34,11 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 var (
@@ -2700,4 +2706,203 @@ func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperat
 		}
 	}
 	return nil
+}
+
+func fakeKubePod(name, namespace, ip string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "cache"},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "ReplicaSet",
+					Name:       "cache-rs",
+					Controller: func() *bool { b := true; return &b }(),
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			PodIP: ip,
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+}
+
+func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
+	return &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cache-rs",
+			Namespace: namespace,
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "cache"},
+			},
+		},
+	}
+}
+
+func TestKubeDiscoveryReadWrite(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// All 3 nodes listen on the same port but different loopback IPs,
+	// matching how kubediscovery constructs addresses (podIP:port).
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+	peer3 := fmt.Sprintf("127.0.0.3:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		fakeKubePod("cache-2", ns, "127.0.0.3"),
+		fakeKubeReplicaSet(ns),
+	)
+
+	portStr := fmt.Sprintf("%d", port)
+	makeKubeChannel := func(podName string) *kubediscovery.Channel {
+		ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
+			Port:      portStr,
+			Namespace: ns,
+			PodName:   podName,
+			Client:    fakeClient,
+		})
+		require.NoError(t, err)
+		return ch
+	}
+
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubeDiscoveryChannel = makeKubeChannel("cache-0")
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubeDiscoveryChannel = makeKubeChannel("cache-1")
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	config3.KubeDiscoveryChannel = makeKubeChannel("cache-2")
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	// Wait for kubediscovery to populate the hash ring.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 3 &&
+			len(dc2.consistentHash.GetItems()) == 3 &&
+			len(dc3.consistentHash.GetItems()) == 3
+	}, 5*time.Second, 50*time.Millisecond, "timed out waiting for peer discovery")
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
+
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err := distributedCaches[i%3].Set(ctx, rn, buf)
+		require.NoError(t, err)
+
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+		}
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+}
+
+func TestKubeDiscoveryPodJoins(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubeReplicaSet(ns),
+	)
+
+	portStr := fmt.Sprintf("%d", port)
+	makeKubeChannel := func(podName string) *kubediscovery.Channel {
+		ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
+			Port:      portStr,
+			Namespace: ns,
+			PodName:   podName,
+			Client:    fakeClient,
+		})
+		require.NoError(t, err)
+		return ch
+	}
+
+	baseConfig := Options{
+		ReplicationFactor:  1,
+		DisableLocalLookup: true,
+	}
+
+	// Start with one node.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubeDiscoveryChannel = makeKubeChannel("cache-0")
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	waitForReady(t, peer1)
+
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 1
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// Write some data via dc1.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc1.Set(ctx, rn, buf))
+
+	// Add a second pod to the fake K8s cluster and start a second cache.
+	_, err := fakeClient.CoreV1().Pods(ns).Create(
+		context.Background(),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		metav1.CreateOptions{},
+	)
+	require.NoError(t, err)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubeDiscoveryChannel = makeKubeChannel("cache-1")
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	waitForReady(t, peer2)
+
+	// dc1 should discover the new peer.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc1 should discover 2 peers")
+
+	// dc2 should also have both peers.
+	require.Eventually(t, func() bool {
+		return len(dc2.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
 }
