@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -233,9 +234,11 @@ func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan str
 
 // TODO(iain): add singleflight requests.
 type remoteIPRulesProvider struct {
-	client irpb.IPRulesServiceClient
-	cache  ipRuleCache
-	clock  clockwork.Clock
+	client                irpb.IPRulesServiceClient
+	cache                 ipRuleCache
+	clock                 clockwork.Clock
+	serverCtx             context.Context
+	clientIdentityService interfaces.ClientIdentityService
 }
 
 func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
@@ -253,13 +256,25 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 		return nil, err
 	}
 	return &remoteIPRulesProvider{
-		client: irpb.NewIPRulesServiceClient(conn),
-		cache:  cache,
-		clock:  env.GetClock(),
+		client:                irpb.NewIPRulesServiceClient(conn),
+		cache:                 cache,
+		clock:                 env.GetClock(),
+		serverCtx:             env.GetServerContext(),
+		clientIdentityService: env.GetClientIdentityService(),
 	}, nil
 }
 
-func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
+func (p *remoteIPRulesProvider) fetch(groupID string) ([]ipRule, error) {
+	// Set this server's client identity in the context.
+	ctx := clientidentity.ClearIdentity(p.serverCtx)
+	if p.clientIdentityService != nil {
+		var err error
+		ctx, err = p.clientIdentityService.AddIdentityToContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 	defer cancel()
 	rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -290,7 +305,7 @@ func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRu
 	if ok {
 		return allowed, nil
 	}
-	allowed, err := p.fetch(ctx, groupID)
+	allowed, err := p.fetch(groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +366,7 @@ func (p *remoteIPRulesProvider) refreshAll(ctx context.Context) {
 }
 
 func (p *remoteIPRulesProvider) refresh(ctx context.Context, groupID string) error {
-	rules, err := p.fetch(ctx, groupID)
+	rules, err := p.fetch(groupID)
 	if err != nil {
 		return err
 	}

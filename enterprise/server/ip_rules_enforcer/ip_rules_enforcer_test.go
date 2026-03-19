@@ -31,8 +31,11 @@ import (
 )
 
 type fakeIPRulesService struct {
-	mu  sync.Mutex
-	rsp *irpb.GetRulesResponse
+	mu            sync.Mutex
+	rsp           *irpb.GetRulesResponse
+	rpcCount      int
+	cis           interfaces.ClientIdentityService
+	allowedClient string
 }
 
 func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
@@ -44,7 +47,38 @@ func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
 func (s *fakeIPRulesService) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.checkIdentity(ctx); err != nil {
+		return nil, err
+	}
+	s.rpcCount++
 	return s.rsp, nil
+}
+
+func (s *fakeIPRulesService) getRPCCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rpcCount
+}
+
+func (s *fakeIPRulesService) checkIdentity(ctx context.Context) error {
+	if s.cis == nil {
+		return nil
+	}
+	ctx, err := s.cis.ValidateIncomingIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	id, err := s.cis.IdentityFromContext(ctx)
+	if err != nil {
+		if s.allowedClient == "" {
+			return nil
+		}
+		return status.PermissionDeniedError("client identity required")
+	}
+	if id.Client == s.allowedClient {
+		return nil
+	}
+	return status.PermissionDeniedErrorf("client %q is not allowed", id.Client)
 }
 
 func startRemoteIPRulesServer(t *testing.T, svc *fakeIPRulesService) string {
@@ -418,6 +452,129 @@ func TestRemoteIPRulesBackgroundRefresh(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return irs.Check(newCtx, "GR1", "") == nil
 	}, 5*time.Second, 10*time.Millisecond)
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func TestRemoteFetch_ValidClientIdentity(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, "foo")
+
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", 0)
+	svc := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+		cis:           env.GetClientIdentityService(),
+		allowedClient: "foo",
+	}
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, svc))
+
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	// The server requires "foo" identity and the enforcer presents it,
+	// so the check should succeed.
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	err = irs.Check(ctx, "GR1", "")
+	require.NoError(t, err)
+
+	// A non-matching IP should still be denied by IP rules, proving the
+	// identity check passed and the IP rules response was used.
+	ctx = context.WithValue(context.Background(), clientip.ContextKey, "8.8.8.8")
+	err = irs.Check(ctx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestRemoteFetch_InvalidClientIdentity(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, "foo")
+
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", 0)
+	svc := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+		cis:           env.GetClientIdentityService(),
+		allowedClient: "bar",
+	}
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, svc))
+
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	// The server requires "bar" identity and the enforcer presents "foo",
+	// so the check should fail due to invalid client identity.
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	err = irs.Check(ctx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Same thing for a different IP.
+	ctx = context.WithValue(context.Background(), clientip.ContextKey, "8.8.8.8")
+	err = irs.Check(ctx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestRemoteBackgroundRefresh_ClientIdentityPresented(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, "foo")
+
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+
+	svc := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+		cis:           env.GetClientIdentityService(),
+		allowedClient: "foo",
+	}
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.cache_ttl", 5*time.Minute)
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, svc))
+
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	// Initial fetch populates the cache.
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	err = irs.Check(ctx, "GR1", "")
+	require.NoError(t, err)
+	require.Equal(t, 1, svc.getRPCCount())
+
+	// Update the rules on the backend.
+	svc.setResponse(&irpb.GetRulesResponse{
+		IpRules: []*irpb.IPRule{
+			{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			{IpRuleId: "rule-2", Cidr: "8.8.8.0/24"},
+		},
+	})
+
+	// Trigger a background refresh.
+	fakeClock.BlockUntil(1)
+	fakeClock.Advance(3 * time.Minute)
+
+	// Wait for the background refresh RPC — if the client identity were
+	// missing, the server would reject it and the refresh would fail.
+	require.Eventually(t, func() bool {
+		return svc.getRPCCount() >= 2
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// The refreshed rules should now allow 8.8.8.8.
+	ctx = context.WithValue(context.Background(), clientip.ContextKey, "8.8.8.8")
+	err = irs.Check(ctx, "GR1", "")
+	require.NoError(t, err)
 
 	env.GetHealthChecker().Shutdown()
 	env.GetHealthChecker().WaitForGracefulShutdown()

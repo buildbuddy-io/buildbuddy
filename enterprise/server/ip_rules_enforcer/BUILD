@@ -7,6 +7,7 @@ go_library(
     srcs = ["ip_rules_enforcer.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer",
     deps = [
+        "//enterprise/server/clientidentity",
         "//proto:context_go_proto",
         "//proto:iprules_go_proto",
         "//proto:server_notification_go_proto",
