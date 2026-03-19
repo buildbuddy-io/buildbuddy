@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -50,6 +51,7 @@ type ipRuleCache interface {
 	Add(groupID string, allowed []ipRule) bool
 	Remove(groupID string) bool
 	Get(groupID string) ([]ipRule, bool)
+	Keys() []string
 }
 
 type noopIPRuleCache struct {
@@ -67,8 +69,12 @@ func (c *noopIPRuleCache) Get(groupID string) ([]ipRule, bool) {
 	return nil, false
 }
 
-func newIPRuleCache() (ipRuleCache, error) {
-	if *cacheTTL == 0 {
+func (c *noopIPRuleCache) Keys() []string {
+	return nil
+}
+
+func newIPRuleCache(clock clockwork.Clock) (ipRuleCache, error) {
+	if *cacheTTL <= 0 {
 		return &noopIPRuleCache{}, nil
 	}
 	return lru.New(&lru.Config[[]ipRule]{
@@ -76,6 +82,7 @@ func newIPRuleCache() (ipRuleCache, error) {
 		MaxSize:    cacheSize,
 		SizeFn:     func(v []ipRule) int64 { return int64(len(v)) },
 		ThreadSafe: true,
+		Clock:      clock,
 	})
 }
 
@@ -93,7 +100,7 @@ type dbIPRulesProvider struct {
 }
 
 func newDBIPRulesProvider(env environment.Env) (*dbIPRulesProvider, error) {
-	cache, err := newIPRuleCache()
+	cache, err := newIPRuleCache(env.GetClock())
 	if err != nil {
 		return nil, err
 	}
@@ -224,9 +231,11 @@ func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan str
 	}
 }
 
-// TODO(iain): add caching and singleflight requests.
+// TODO(iain): add singleflight requests.
 type remoteIPRulesProvider struct {
 	client irpb.IPRulesServiceClient
+	cache  ipRuleCache
+	clock  clockwork.Clock
 }
 
 func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
@@ -239,12 +248,18 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 			return conn.Close()
 		})
 	}
+	cache, err := newIPRuleCache(env.GetClock())
+	if err != nil {
+		return nil, err
+	}
 	return &remoteIPRulesProvider{
 		client: irpb.NewIPRulesServiceClient(conn),
+		cache:  cache,
+		clock:  env.GetClock(),
 	}, nil
 }
 
-func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
+func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
 	ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 	defer cancel()
 	rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -270,9 +285,78 @@ func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRu
 	return allowed, nil
 }
 
-func (p *remoteIPRulesProvider) invalidate(ctx context.Context, groupID string) {}
+func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
+	allowed, ok := p.cache.Get(groupID)
+	if ok {
+		return allowed, nil
+	}
+	allowed, err := p.fetch(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	p.cache.Add(groupID, allowed)
+	return allowed, nil
+}
+
+func (p *remoteIPRulesProvider) invalidate(ctx context.Context, groupID string) {
+	p.cache.Remove(groupID)
+}
 
 func (p *remoteIPRulesProvider) startRefresher(env environment.Env) error {
+	if *cacheTTL <= 0 {
+		return nil
+	}
+	hc := env.GetHealthChecker()
+	if hc == nil {
+		return status.FailedPreconditionError("Missing health checker")
+	}
+	ctx, cancel := context.WithCancel(env.GetServerContext())
+	done := make(chan struct{})
+	hc.RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		cancel()
+		select {
+		case <-done:
+			return nil
+		case <-shutdownCtx.Done():
+			return shutdownCtx.Err()
+		}
+	})
+	go p.runRefresher(ctx, done)
+	return nil
+}
+
+func (p *remoteIPRulesProvider) runRefresher(ctx context.Context, done chan<- struct{}) {
+	defer close(done)
+	ticker := p.clock.NewTicker(*cacheTTL / 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			p.refreshAll(ctx)
+		}
+	}
+}
+
+func (p *remoteIPRulesProvider) refreshAll(ctx context.Context) {
+	for _, groupID := range p.cache.Keys() {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := p.refresh(ctx, groupID); err != nil {
+			log.Warningf("could not refresh IP rules for group %q: %s", groupID, err)
+		}
+	}
+}
+
+func (p *remoteIPRulesProvider) refresh(ctx context.Context, groupID string) error {
+	rules, err := p.fetch(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	p.cache.Add(groupID, rules)
+	log.CtxInfof(ctx, "refreshed IP rules for group %s", groupID)
 	return nil
 }
 
