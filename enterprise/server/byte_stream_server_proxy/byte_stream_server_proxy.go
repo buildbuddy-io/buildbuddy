@@ -273,24 +273,33 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	for _, chunkDigest := range splitResp.GetChunkDigests() {
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(rn.GetCompressor())
-		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
-			if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
-				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
-					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-				}).Inc()
-				return m, err
-			}
-			m.chunksRemote++
-		} else if err != nil {
+		framesBefore := stream.frames
+		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream)
+		if localErr == nil {
+			m.chunksLocal++
+			continue
+		}
+
+		// Fallback to remote for any local read issue unless the stream is corrupted.
+		if stream.frames != framesBefore {
 			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
+				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error_partial",
+				metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
+			}).Inc()
+			return m, localErr
+		}
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
+		}).Inc()
+		if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
+			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+				metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
 				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 			}).Inc()
 			return m, err
-		} else {
-			m.chunksLocal++
 		}
+		m.chunksRemote++
 	}
 	return m, nil
 }
