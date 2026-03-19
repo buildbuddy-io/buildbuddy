@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -469,8 +468,6 @@ func TestFindMissingMetadata(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
-
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
@@ -542,6 +539,7 @@ func TestLRU(t *testing.T) {
 		}
 		clock.Advance(5 * time.Minute)
 	}
+	rc1.TestingFlush()
 
 	// Write more data
 	for i := 0; i < quartile; i++ {

@@ -74,6 +74,12 @@ const (
 type accessTimeUpdate struct {
 	key         []byte
 	gcsMetadata *sgpb.StorageMetadata_GCSMetadata
+
+	// forceFlushForTesting is set only for test-only flush sentinels. When the
+	// worker sees one, it flushes any pending batched atime writes and closes
+	// forceFlushForTesting to acknowledge that all previously queued updates
+	// have been processed.
+	forceFlushForTesting chan struct{}
 }
 
 type Server struct {
@@ -472,32 +478,58 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		timer.Reset(atimeFlushPeriod)
 	}
 
+	processUpdate := func(accessTimeUpdate *accessTimeUpdate) {
+		if accessTimeUpdate.forceFlushForTesting != nil {
+			// A flush sentinel lets tests wait until all previously queued atime
+			// updates have been proposed before continuing.
+			flush()
+			close(accessTimeUpdate.forceFlushForTesting)
+			return
+		}
+
+		key := accessTimeUpdate.key
+		err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
+		metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+		if err != nil {
+			log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+			// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
+			return
+		}
+		keys = append(keys, &sender.KeyMeta{
+			Key:  key,
+			Meta: rc.clock.Now().UnixMicro(),
+		})
+		if len(keys) >= atimeWriteBatchSize {
+			flush()
+		}
+	}
+
+	drainPendingUpdates := func() {
+		for {
+			select {
+			case accessTimeUpdate := <-rc.accesses:
+				processUpdate(accessTimeUpdate)
+			default:
+				// Once the channel is empty, flush any partially filled batches
+				// so shutdown does not lose recently queued accesses.
+				flush()
+				return
+			}
+		}
+	}
+
 	for {
 		select {
 		case accessTimeUpdate := <-rc.accesses:
-			key := accessTimeUpdate.key
-			err := rc.maybeUpdateGCSAtime(ctx, accessTimeUpdate.gcsMetadata)
-			metrics.RaftAtimeUpdateGCSCount.With(prometheus.Labels{
-				metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
-			}).Inc()
-			if err != nil {
-				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
-				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
-				continue
-			}
-			keys = append(keys, &sender.KeyMeta{
-				Key:  key,
-				Meta: rc.clock.Now().UnixMicro(),
-			})
-			if len(keys) >= atimeWriteBatchSize {
-				flush()
-			}
+			processUpdate(accessTimeUpdate)
 		case <-timer.C:
 			flush()
 		case <-quitChan:
-			// Drain any updates in the queue before exiting.
+			// Drain any updates already queued before exiting.
 			log.Infof("drain updates in queue")
-			flush()
+			drainPendingUpdates()
 			return nil
 		}
 	}
@@ -816,5 +848,10 @@ func (rc *Server) TestingWaitForGC(ctx context.Context) error {
 }
 
 func (rc *Server) TestingFlush() {
+	// Route the flush through the atime worker so callers wait for both the
+	// worker queue and the underlying Pebble writes to settle.
+	done := make(chan struct{})
+	rc.accesses <- &accessTimeUpdate{forceFlushForTesting: done}
+	<-done
 	rc.store.TestingFlush()
 }
