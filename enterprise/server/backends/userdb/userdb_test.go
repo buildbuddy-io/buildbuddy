@@ -1491,6 +1491,30 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	require.Empty(t, keys)
 }
 
+func TestGetUser_OrgAPIKeyReturnsNotFound(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	key := getOrgAPIKey(t, ctx1, env, gr1.GroupID)
+
+	keyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+
+	user, err := udb.GetUser(keyCtx)
+	require.Nil(t, user)
+	require.Truef(
+		t, status.IsNotFoundError(err),
+		"expected NotFound authenticating with an org-level key; got: %v",
+		err,
+	)
+	require.Contains(t, err.Error(), "user not found")
+}
+
 func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 

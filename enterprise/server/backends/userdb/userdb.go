@@ -64,6 +64,8 @@ var (
 	defaultAPIKeyCapabilities = []cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 	}
+
+	errUserNotFound = status.NotFoundError("user not found")
 )
 
 type MemberRole struct {
@@ -984,7 +986,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 			return user, nil
 		}
 	}
-	return nil, status.NotFoundError("user not found")
+	return nil, errUserNotFound
 }
 
 func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
@@ -1011,7 +1013,7 @@ func processUserGroupMemberships(rq interfaces.DBRawQuery, groupRoles map[string
 	}
 
 	if len(ugj) == 0 {
-		return nil, status.NotFoundError("user not found")
+		return nil, errUserNotFound
 	}
 
 	user := &ugj[0].User
@@ -1058,6 +1060,9 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	}
 	if u.IsImpersonating() {
 		return d.GetImpersonatedUser(ctx)
+	}
+	if u.GetUserID() == "" {
+		return nil, errUserNotFound
 	}
 	return d.getUserByUserID(ctx, d.h, u.GetUserID())
 }
