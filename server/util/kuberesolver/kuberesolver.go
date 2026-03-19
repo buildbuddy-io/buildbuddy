@@ -306,7 +306,7 @@ func (pw *podWatcher) processWatchEvents(ctx context.Context, watcher watch.Inte
 				}
 				pw.notifySubscribers(podResolution{pod: pod})
 			case watch.Deleted:
-				log.Warningf("Pod %s/%s was deleted", pw.namespace, pw.podName)
+				log.Infof("Pod %s/%s was deleted", pw.namespace, pw.podName)
 				pw.notifySubscribers(podResolution{err: fmt.Errorf("pod %s/%s was deleted", pw.namespace, pw.podName)})
 			case watch.Bookmark:
 				// No-op: bookmark events are informational.

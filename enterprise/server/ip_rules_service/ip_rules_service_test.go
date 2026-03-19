@@ -5,16 +5,21 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -22,15 +27,16 @@ import (
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
-type checkCall struct {
-	groupID    string
-	skipCache  bool
-	skipRuleID string
+type call struct {
+	groupID      string
+	invalidation bool
+	check        bool
+	skipRuleID   string
 }
 
 type fakeIPRulesEnforcer struct {
-	checkCalls []checkCall
-	checkErr   error
+	calls    []call
+	checkErr error
 }
 
 func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) error {
@@ -45,10 +51,17 @@ func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.
 	return nil
 }
 
-func (f *fakeIPRulesEnforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
-	f.checkCalls = append(f.checkCalls, checkCall{
+func (f *fakeIPRulesEnforcer) InvalidateCache(ctx context.Context, groupID string) {
+	f.calls = append(f.calls, call{
+		groupID:      groupID,
+		invalidation: true,
+	})
+}
+
+func (f *fakeIPRulesEnforcer) Check(ctx context.Context, groupID string, skipRuleID string) error {
+	f.calls = append(f.calls, call{
 		groupID:    groupID,
-		skipCache:  skipCache,
+		check:      true,
 		skipRuleID: skipRuleID,
 	})
 	return f.checkErr
@@ -98,6 +111,21 @@ func setupService(t *testing.T, enforcer *fakeIPRulesEnforcer, sns *fakeServerNo
 	service, err := ip_rules_service.New(env)
 	require.NoError(t, err)
 	return service, env, authCtx, groupID
+}
+
+func contextWithClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService, client string) context.Context {
+	t.Helper()
+
+	headerValue, err := service.IdentityHeader(&interfaces.ClientIdentity{
+		Client: client,
+		Origin: "test",
+	}, time.Minute)
+	require.NoError(t, err)
+
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx, err = service.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	return ctx
 }
 
 func setGroupEnforcement(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
@@ -262,7 +290,10 @@ func TestSetAndGetIPRuleConfig(t *testing.T) {
 		EnforceIpRules: true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []checkCall{{groupID: groupID, skipCache: true, skipRuleID: ""}}, enforcer.checkCalls)
+	require.Equal(t, []call{
+		{groupID: groupID, invalidation: true},
+		{groupID: groupID, check: true},
+	}, enforcer.calls)
 
 	cfgRsp, err = svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -275,13 +306,62 @@ func TestSetAndGetIPRuleConfig(t *testing.T) {
 		EnforceIpRules: false,
 	})
 	require.NoError(t, err)
-	require.Len(t, enforcer.checkCalls, 1)
+	require.Len(t, enforcer.calls, 2)
 
 	cfgRsp, err = svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 	})
 	require.NoError(t, err)
 	require.False(t, cfgRsp.GetEnforceIpRules())
+}
+
+func TestGetIPRules_NoClientsPermitted_RPCRejected(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{})
+
+	svc, env, authCtx, groupID := setupService(t, nil, nil)
+	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "foo")
+
+	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "foo")
+	_, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetIPRules_TwoClientsPermitted_AllowedAndRejected(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{"foo", "bar"})
+
+	svc, env, authCtx, groupID := setupService(t, nil, nil)
+	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "baz")
+
+	_, err := svc.AddRule(authCtx, &irpb.AddRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Rule: &irpb.IPRule{
+			Cidr:        "1.2.3.4",
+			Description: "allowed rule",
+		},
+	})
+	require.NoError(t, err)
+
+	for _, client := range []string{"foo", "bar"} {
+		t.Run(client, func(t *testing.T) {
+			ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), client)
+			rsp, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			})
+			require.NoError(t, err)
+			require.Len(t, rsp.GetIpRules(), 1)
+			require.Equal(t, "1.2.3.4/32", rsp.GetIpRules()[0].GetCidr())
+		})
+	}
+
+	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "qux")
+	_, err = svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
 }
 
 func TestSetIPRuleConfigRejectsLockout(t *testing.T) {
@@ -296,7 +376,10 @@ func TestSetIPRuleConfigRejectsLockout(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 	require.Contains(t, err.Error(), "9.8.7.6")
-	require.Equal(t, []checkCall{{groupID: groupID, skipCache: true, skipRuleID: ""}}, enforcer.checkCalls)
+	require.Equal(t, []call{
+		{groupID: groupID, invalidation: true},
+		{groupID: groupID, check: true},
+	}, enforcer.calls)
 
 	cfgRsp, err := svc.GetIPRuleConfig(authCtx, &irpb.GetRulesConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -330,11 +413,16 @@ func TestDeleteRuleRejectsLockout(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 	require.Contains(t, err.Error(), "1.2.3.4")
-	require.Equal(t, []checkCall{{
-		groupID:    groupID,
-		skipCache:  true,
-		skipRuleID: addRsp.GetRule().GetIpRuleId(),
-	}}, enforcer.checkCalls)
+	require.Equal(t, []call{
+		{
+			groupID:      groupID,
+			invalidation: true,
+		},
+		{
+			groupID:    groupID,
+			check:      true,
+			skipRuleID: addRsp.GetRule().GetIpRuleId(),
+		}}, enforcer.calls)
 
 	_, err = svc.GetRule(authCtx, groupID, addRsp.GetRule().GetIpRuleId())
 	require.NoError(t, err)

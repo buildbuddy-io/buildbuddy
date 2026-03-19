@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -16,17 +17,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 var (
-	enableIPRules = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
-	cacheTTL      = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	enableIPRules           = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
+	cacheTTL                = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	remoteIPRulesTarget     = flag.String("auth.ip_rules.remote.target", "", "The gRPC target of the backend storing IP rules.")
+	remoteIPRulesRPCTimeout = flag.Duration("auth.ip_rules.remote.rpc_timeout", 15*time.Second, "Timeout for remote IP rules RPCs.")
 )
 
 const (
@@ -34,38 +41,252 @@ const (
 	cacheSize = 100_000
 )
 
+type ipRule struct {
+	id      string
+	allowed *net.IPNet
+}
+
 type ipRuleCache interface {
-	Add(groupID string, allowed []*net.IPNet) bool
-	Get(groupID string) ([]*net.IPNet, bool)
+	Add(groupID string, allowed []ipRule) bool
+	Remove(groupID string) bool
+	Get(groupID string) ([]ipRule, bool)
 }
 
-type noopIpRuleCache struct {
+type noopIPRuleCache struct {
 }
 
-func (c *noopIpRuleCache) Add(groupID string, allowed []*net.IPNet) bool {
+func (c *noopIPRuleCache) Add(groupID string, allowed []ipRule) bool {
 	return false
 }
 
-func (c *noopIpRuleCache) Get(groupID string) ([]*net.IPNet, bool) {
+func (c *noopIPRuleCache) Remove(groupID string) bool {
+	return false
+}
+
+func (c *noopIPRuleCache) Get(groupID string) ([]ipRule, bool) {
 	return nil, false
 }
 
-func newIpRuleCache() (ipRuleCache, error) {
+func newIPRuleCache() (ipRuleCache, error) {
 	if *cacheTTL == 0 {
-		return &noopIpRuleCache{}, nil
+		return &noopIPRuleCache{}, nil
 	}
-	return lru.New(&lru.Config[[]*net.IPNet]{
+	return lru.New(&lru.Config[[]ipRule]{
 		TTL:        *cacheTTL,
 		MaxSize:    cacheSize,
-		SizeFn:     func(v []*net.IPNet) int64 { return int64(len(v)) },
+		SizeFn:     func(v []ipRule) int64 { return int64(len(v)) },
 		ThreadSafe: true,
 	})
 }
 
-type Enforcer struct {
-	env environment.Env
+// An abstraction for retrieving IP rules from a source of truth.
+type ipRulesProvider interface {
+	get(ctx context.Context, groupID string) ([]ipRule, error)
+	invalidate(ctx context.Context, groupID string)
+	startRefresher(env environment.Env) error
+}
 
+// An implementation of ipRulesProvider that retrieves IP rules from a database.
+type dbIPRulesProvider struct {
+	db    interfaces.DBHandle
 	cache ipRuleCache
+}
+
+func newDBIPRulesProvider(env environment.Env) (*dbIPRulesProvider, error) {
+	cache, err := newIPRuleCache()
+	if err != nil {
+		return nil, err
+	}
+	return &dbIPRulesProvider{
+		db:    env.GetDBHandle(),
+		cache: cache,
+	}, nil
+}
+
+func (p *dbIPRulesProvider) loadRulesFromDB(ctx context.Context, groupID string) ([]*tables.IPRule, error) {
+	rq := p.db.NewQuery(ctx, "iprules_load_rules").Raw(
+		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID)
+	rules, err := db.ScanAll(rq, &tables.IPRule{})
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func (p *dbIPRulesProvider) loadParsedRulesFromDB(ctx context.Context, groupID string) ([]ipRule, error) {
+	rs, err := p.loadRulesFromDB(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	var allowed []ipRule
+	for _, r := range rs {
+		_, ipNet, err := net.ParseCIDR(r.CIDR)
+		if err != nil {
+			alert.UnexpectedEvent("unparsable CIDR rule", "rule %q", r.CIDR)
+			continue
+		}
+		allowed = append(allowed, ipRule{
+			id:      r.IPRuleID,
+			allowed: ipNet,
+		})
+	}
+	return allowed, nil
+}
+
+func (p *dbIPRulesProvider) refreshRules(ctx context.Context, groupID string) error {
+	pr, err := p.loadParsedRulesFromDB(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	p.cache.Add(groupID, pr)
+	log.CtxInfof(ctx, "refreshed IP rules for group %s", groupID)
+	return nil
+}
+
+func (p *dbIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
+	allowed, ok := p.cache.Get(groupID)
+	if !ok {
+		pr, err := p.loadParsedRulesFromDB(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+		p.cache.Add(groupID, pr)
+		allowed = pr
+	}
+	return allowed, nil
+}
+
+func (p *dbIPRulesProvider) invalidate(ctx context.Context, groupID string) {
+	p.cache.Remove(groupID)
+}
+
+func (p *dbIPRulesProvider) startRefresher(env environment.Env) error {
+	sns := env.GetServerNotificationService()
+	if sns == nil {
+		return nil
+	}
+	hc := env.GetHealthChecker()
+	if hc == nil {
+		return status.FailedPreconditionError("Missing health checker")
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	closeStop := sync.OnceFunc(func() { close(stop) })
+	sub := sns.Subscribe(&snpb.InvalidateIPRulesCache{})
+	hc.RegisterShutdownFunction(func(ctx context.Context) error {
+		closeStop()
+		return p.waitForShutdown(ctx, done)
+	})
+	go p.runRefresher(env.GetServerContext(), sub, stop, done)
+	return nil
+}
+
+// runRefresher listens for cache invalidation messages and refreshes the IP
+// rules cache accordingly. It closes the done channel when it exits, and can be
+// stopped by another goroutine via the stop channel.
+func (p *dbIPRulesProvider) runRefresher(ctx context.Context, sub <-chan proto.Message, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	for {
+		select {
+		case <-stop:
+			return
+		case msg, ok := <-sub:
+			if !ok {
+				return
+			}
+			p.handleRefresherMessage(ctx, msg)
+		}
+	}
+}
+
+func (p *dbIPRulesProvider) handleRefresherMessage(ctx context.Context, msg proto.Message) {
+	ic, ok := msg.(*snpb.InvalidateIPRulesCache)
+	if !ok {
+		alert.UnexpectedEvent("iprules_invalid_proto_type", "received proto type %T", msg)
+		return
+	}
+	if err := p.refreshRules(ctx, ic.GetGroupId()); err != nil {
+		log.Warningf("could not refresh IP rules for group %q: %s", ic.GetGroupId(), err)
+	}
+}
+
+// The notification service does not expose an unsubscribe API, so the shutdown
+// callback first signals the refresher to stop waiting on the subscription
+// channel, then calls this helper to wait for the goroutine to confirm it has
+// exited.
+func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// TODO(iain): add caching and singleflight requests.
+type remoteIPRulesProvider struct {
+	client irpb.IPRulesServiceClient
+}
+
+func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
+	conn, err := grpc_client.DialInternal(env, target)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to dial remote IP rules backend %q: %v", target, err)
+	}
+	if hc := env.GetHealthChecker(); hc != nil {
+		hc.RegisterShutdownFunction(func(ctx context.Context) error {
+			return conn.Close()
+		})
+	}
+	return &remoteIPRulesProvider{
+		client: irpb.NewIPRulesServiceClient(conn),
+	}, nil
+}
+
+func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
+	ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
+	defer cancel()
+	rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: groupID,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]ipRule, 0, len(rsp.GetIpRules()))
+	for _, r := range rsp.GetIpRules() {
+		_, ipNet, err := net.ParseCIDR(r.GetCidr())
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "unparsable CIDR rule", "rule %q", r.GetCidr())
+			continue
+		}
+		allowed = append(allowed, ipRule{
+			id:      r.GetIpRuleId(),
+			allowed: ipNet,
+		})
+	}
+	return allowed, nil
+}
+
+func (p *remoteIPRulesProvider) invalidate(ctx context.Context, groupID string) {}
+
+func (p *remoteIPRulesProvider) startRefresher(env environment.Env) error {
+	return nil
+}
+
+func newIPRulesProvider(env environment.Env) (ipRulesProvider, error) {
+	if *remoteIPRulesTarget == "" {
+		return newDBIPRulesProvider(env)
+	}
+	return newRemoteIPRulesProvider(env, *remoteIPRulesTarget)
+
+}
+
+type Enforcer struct {
+	env           environment.Env
+	rulesProvider ipRulesProvider
 }
 
 type NoOpEnforcer struct{}
@@ -82,35 +303,26 @@ func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request
 	return nil
 }
 
-func (n *NoOpEnforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
+func (n *NoOpEnforcer) InvalidateCache(ctx context.Context, groupID string) {
+}
+
+func (n *NoOpEnforcer) Check(ctx context.Context, groupID, skipRuleID string) error {
 	return nil
 }
 
 func New(env environment.Env) (*Enforcer, error) {
-	cache, err := newIpRuleCache()
+	rulesProvider, err := newIPRulesProvider(env)
 	if err != nil {
 		return nil, err
 	}
 
-	svc := &Enforcer{
-		env:   env,
-		cache: cache,
+	if err := rulesProvider.startRefresher(env); err != nil {
+		return nil, err
 	}
-	if sns := env.GetServerNotificationService(); sns != nil {
-		go func() {
-			for msg := range sns.Subscribe(&snpb.InvalidateIPRulesCache{}) {
-				ic, ok := msg.(*snpb.InvalidateIPRulesCache)
-				if !ok {
-					alert.UnexpectedEvent("iprules_invalid_proto_type", "received proto type %T", msg)
-					continue
-				}
-				if err := svc.refreshRules(env.GetServerContext(), ic.GetGroupId()); err != nil {
-					log.Warningf("could not refresh IP rules for group %q: %s", ic.GetGroupId(), err)
-				}
-			}
-		}()
-	}
-	return svc, nil
+	return &Enforcer{
+		env:           env,
+		rulesProvider: rulesProvider,
+	}, nil
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -126,48 +338,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func (s *Enforcer) loadRulesFromDB(ctx context.Context, groupID string) ([]*tables.IPRule, error) {
-	rq := s.env.GetDBHandle().NewQuery(ctx, "iprules_load_rules").Raw(
-		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID)
-	rules, err := db.ScanAll(rq, &tables.IPRule{})
-	if err != nil {
-		return nil, err
-	}
-	return rules, nil
-}
-
-func (s *Enforcer) loadParsedRulesFromDB(ctx context.Context, groupID string, skipRuleID string) ([]*net.IPNet, error) {
-	rs, err := s.loadRulesFromDB(ctx, groupID)
-	if err != nil {
-		return nil, err
-	}
-
-	var allowed []*net.IPNet
-	for _, r := range rs {
-		if r.IPRuleID == skipRuleID {
-			continue
-		}
-		_, ipNet, err := net.ParseCIDR(r.CIDR)
-		if err != nil {
-			alert.UnexpectedEvent("unparsable CIDR rule", "rule %q", r.CIDR)
-			continue
-		}
-		allowed = append(allowed, ipNet)
-	}
-	return allowed, nil
-}
-
-func (s *Enforcer) refreshRules(ctx context.Context, groupID string) error {
-	pr, err := s.loadParsedRulesFromDB(ctx, groupID, "" /*=skipRuleId*/)
-	if err != nil {
-		return err
-	}
-	s.cache.Add(groupID, pr)
-	log.CtxInfof(ctx, "refreshed IP rules for group %s", groupID)
-	return nil
-}
-
-func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
+func (s *Enforcer) Check(ctx context.Context, groupID, skipRuleID string) error {
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
@@ -175,21 +346,16 @@ func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, sk
 		return status.FailedPreconditionErrorf("client IP %q is not valid", rawClientIP)
 	}
 
-	allowed, ok := s.cache.Get(groupID)
-	if !ok || skipCache {
-		pr, err := s.loadParsedRulesFromDB(ctx, groupID, skipRuleID)
-		if err != nil {
-			return err
-		}
-		// if skipRuleID is set, the retrieved rule list may be incomplete.
-		if skipRuleID == "" {
-			s.cache.Add(groupID, pr)
-		}
-		allowed = pr
+	rules, err := s.rulesProvider.get(ctx, groupID)
+	if err != nil {
+		return err
 	}
 
-	for _, a := range allowed {
-		if a.Contains(clientIP) {
+	for _, rule := range rules {
+		if rule.id == skipRuleID {
+			continue
+		}
+		if rule.allowed.Contains(clientIP) {
 			return nil
 		}
 	}
@@ -199,7 +365,7 @@ func (s *Enforcer) Check(ctx context.Context, groupID string, skipCache bool, sk
 
 func (s *Enforcer) authorize(ctx context.Context, groupID string) error {
 	start := time.Now()
-	err := s.Check(ctx, groupID, false /*=skipCache*/, "" /*skipRuleID*/)
+	err := s.Check(ctx, groupID, "" /*=skipRuleID*/)
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
@@ -289,4 +455,8 @@ func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) er
 	}
 
 	return nil
+}
+
+func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
+	s.rulesProvider.invalidate(ctx, groupID)
 }

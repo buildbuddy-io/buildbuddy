@@ -40,6 +40,9 @@ type LRU[V any] interface {
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
 	RemoveOldest() (V, bool)
+
+	// Returns all keys in the LRU, ordered from most recently used to least.
+	Keys() []string
 }
 
 // EvictionReason describes the reason for an entry being evicted from LRU.
@@ -299,6 +302,14 @@ func (c *lru[V]) Size() int64 {
 	return c.currentSize
 }
 
+func (c *lru[V]) Keys() []string {
+	keys := make([]string, 0, c.evictList.Len())
+	for e := c.evictList.Front(); e != nil; e = e.Next() {
+		keys = append(keys, e.Value.(*Entry[V]).key)
+	}
+	return keys
+}
+
 func (c *lru[V]) removeOldest() {
 	ent := c.evictList.Back()
 	if ent != nil {
@@ -377,6 +388,19 @@ func (c *expiringLRU[V]) Size() int64 {
 	return c.inner.Size()
 }
 
+func (c *expiringLRU[V]) Keys() []string {
+	now := c.clock.Now()
+	var keys []string
+	for e := c.inner.evictList.Front(); e != nil; e = e.Next() {
+		ent := e.Value.(*Entry[*expiringEntry[V]])
+		// Don't return expired keys.
+		if now.Sub(ent.value.createdAt) < c.ttl {
+			keys = append(keys, ent.key)
+		}
+	}
+	return keys
+}
+
 func (c *expiringLRU[V]) wrapValue(value V) *expiringEntry[V] {
 	return &expiringEntry[V]{
 		value:     value,
@@ -430,4 +454,10 @@ func (c *threadSafeLRU[V]) Size() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inner.Size()
+}
+
+func (c *threadSafeLRU[V]) Keys() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inner.Keys()
 }

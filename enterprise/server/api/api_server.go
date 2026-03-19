@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -22,6 +25,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -52,6 +57,12 @@ var (
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
 	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
+)
+
+const (
+	minAuditLogPageSize     = 1
+	defaultAuditLogPageSize = 100
+	maxAuditLogPageSize     = 1_000
 )
 
 type APIServer struct {
@@ -385,6 +396,153 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 		},
 		NextPageToken: resp.GetNextChunkId(),
 	}, nil
+}
+
+func (s *APIServer) GetAuditLog(ctx context.Context, req *apipb.GetAuditLogRequest) (*apipb.GetAuditLogResponse, error) {
+	selector := req.GetSelector()
+	if selector == nil {
+		selector = &apipb.AuditLogSelector{}
+	}
+	pageToken, err := parseAuditLogPageToken(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	startTime := selector.GetStartTime()
+	if startTime == nil {
+		startTime = timestamppb.New(time.Unix(0, 0))
+	}
+	if err := startTime.CheckValid(); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid start_time: %s", err)
+	}
+
+	endTime := selector.GetEndTime()
+	if endTime == nil {
+		endTime = timestamppb.Now()
+	}
+	if err := endTime.CheckValid(); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid end_time: %s", err)
+	}
+	if startTime.AsTime().After(endTime.AsTime()) {
+		return nil, status.InvalidArgumentErrorf("start_time must not be after end_time")
+	}
+	startUsec := startTime.AsTime().UnixMicro()
+	endUsec := endTime.AsTime().UnixMicro()
+	if pageToken != nil {
+		if selector.GetEndTime() != nil && endUsec != pageToken.EndTimeUsec {
+			return nil, status.InvalidArgumentError("page_token does not match selector.end_time")
+		}
+		endUsec = pageToken.EndTimeUsec
+	}
+	if startUsec > endUsec {
+		return nil, status.InvalidArgumentErrorf("start_time must not be after end_time")
+	}
+
+	if s.env.GetAuditLogger() == nil || s.env.GetOLAPDBHandle() == nil {
+		return nil, status.UnimplementedError("Audit logger not configured")
+	}
+
+	// Check whether the user is authenticated. No need for the returned user
+	// here, because user filters will be applied before returning entries.
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userCaps, err := capabilities.ForAuthenticatedUser(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(userCaps, cappb.Capability_ORG_ADMIN) && !slices.Contains(userCaps, cappb.Capability_AUDIT_LOG_READ) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
+	}
+	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+
+	pageSize := req.GetPageSize()
+	if pageSize < minAuditLogPageSize {
+		pageSize = defaultAuditLogPageSize
+	}
+	pageSize = min(pageSize, maxAuditLogPageSize)
+
+	q := query_builder.NewQuery(`SELECT * FROM AuditLogs`)
+	q.AddWhereClause("group_id = ?", user.GetGroupID())
+	q.AddWhereClause("event_time_usec >= ?", startUsec)
+	q.AddWhereClause("event_time_usec < ?", endUsec)
+	if pageToken != nil {
+		q.AddWhereClause("(event_time_usec, audit_log_id) > (?, ?)", pageToken.EventTimeUsec, pageToken.AuditLogID)
+	}
+	// Match AuditLogs sort key to keep keyset pagination index-friendly.
+	q.SetOrderBy("group_id, event_time_usec, audit_log_id", true)
+	// Request one extra row as lookahead so we can determine whether a next
+	// page exists without issuing an additional query.
+	q.SetLimit(int64(pageSize + 1))
+	queryStr, args := q.Build()
+
+	rq := s.env.GetOLAPDBHandle().NewQuery(ctx, "api_server_get_audit_logs").Raw(queryStr, args...)
+	rsp := &apipb.GetAuditLogResponse{}
+	var lastReturnedToken auditLogPageToken
+	err = db.ScanEach(rq, func(ctx context.Context, row *schema.AuditLog) error {
+		if len(rsp.Entry) == int(pageSize) {
+			nextPageToken, err := encodeAuditLogPageToken(lastReturnedToken)
+			if err != nil {
+				return err
+			}
+			rsp.NextPageToken = nextPageToken
+			return nil
+		}
+
+		entry, err := auditlog.EntryFromDBRow(row)
+		if err != nil {
+			return err
+		}
+		if !isServerAdmin {
+			auditlog.FilterEntry(entry, row.AuthUserEmail)
+		}
+
+		rsp.Entry = append(rsp.Entry, entry)
+		lastReturnedToken = auditLogPageToken{
+			EndTimeUsec:   endUsec,
+			EventTimeUsec: row.EventTimeUsec,
+			AuditLogID:    row.AuditLogID,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return rsp, nil
+}
+
+type auditLogPageToken struct {
+	EndTimeUsec   int64  `json:"end_time_usec"`
+	EventTimeUsec int64  `json:"event_time_usec"`
+	AuditLogID    string `json:"audit_log_id"`
+}
+
+func encodeAuditLogPageToken(token auditLogPageToken) (string, error) {
+	data, err := json.Marshal(token)
+	if err != nil {
+		return "", status.InternalErrorf("failed to encode page_token: %s", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func parseAuditLogPageToken(pageToken string) (*auditLogPageToken, error) {
+	if pageToken == "" {
+		return nil, nil
+	}
+	data, err := base64.RawURLEncoding.DecodeString(pageToken)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	token := &auditLogPageToken{}
+	if err := json.Unmarshal(data, token); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	if token.AuditLogID == "" {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	return token, nil
 }
 
 type getFileWriter struct {

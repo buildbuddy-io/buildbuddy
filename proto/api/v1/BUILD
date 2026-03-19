@@ -38,6 +38,7 @@ proto_library(
     srcs = [
         "action.proto",
         "api_key.proto",
+        "audit_log.proto",
         "file.proto",
         "invocation.proto",
         "log.proto",
@@ -49,6 +50,7 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_proto",
+        "//proto:auditlog_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
@@ -66,6 +68,7 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
+        "//proto:auditlog_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
