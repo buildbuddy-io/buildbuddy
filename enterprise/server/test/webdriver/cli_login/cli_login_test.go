@@ -25,7 +25,6 @@ import (
 )
 
 func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
@@ -99,7 +98,6 @@ func TestCLILoginWebFlow_MultipleOrgs_ChooseOrgWithoutPersonalKeysEnabled(t *tes
 }
 
 func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
