@@ -23,6 +23,7 @@ go_library(
         "//server/util/lru",
         "//server/util/proto",
         "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )
@@ -42,9 +43,9 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/clientip",
-        "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",

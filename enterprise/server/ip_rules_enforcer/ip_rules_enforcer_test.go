@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,9 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
@@ -29,27 +30,24 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 )
 
-type fakeServerNotificationService struct {
-	ch chan proto.Message
-}
-
-func (f *fakeServerNotificationService) Subscribe(msgType proto.Message) <-chan proto.Message {
-	return f.ch
-}
-
-func (f *fakeServerNotificationService) Publish(ctx context.Context, msg proto.Message) error {
-	return nil
-}
-
 type fakeIPRulesService struct {
+	mu  sync.Mutex
 	rsp *irpb.GetRulesResponse
 }
 
+func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rsp = rsp
+}
+
 func (s *fakeIPRulesService) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.rsp, nil
 }
 
-func startRemoteIPRulesServer(t *testing.T, env environment.Env, svc *fakeIPRulesService) string {
+func startRemoteIPRulesServer(t *testing.T, svc *fakeIPRulesService) string {
 	t.Helper()
 
 	server := grpc.NewServer()
@@ -84,6 +82,12 @@ func getEnv(t *testing.T) *testenv.TestEnv {
 
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env)
+	hc := env.GetHealthChecker()
+	require.NotNil(t, hc)
+	t.Cleanup(func() {
+		hc.Shutdown()
+		hc.WaitForGracefulShutdown()
+	})
 	return env
 }
 
@@ -298,7 +302,7 @@ func TestRemoteIPRulesEnforced(t *testing.T) {
 			},
 		},
 	}
-	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, env, svc))
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, svc))
 
 	irs, err := ip_rules_enforcer.New(env)
 	require.NoError(t, err)
@@ -320,13 +324,107 @@ func TestRemoteIPRulesEnforced(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 }
 
+func TestRemoteIPRulesCached(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.cache_ttl", 5*time.Minute)
+
+	env := getEnv(t)
+	iprs := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+	}
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, iprs))
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	allowedCtx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	deniedCtx := context.WithValue(context.Background(), clientip.ContextKey, "8.8.8.8")
+
+	// Initial check: 1.2.3.4 is allowed, 8.8.8.8 is denied.
+	err = irs.Check(allowedCtx, "GR1", "")
+	require.NoError(t, err)
+	err = irs.Check(deniedCtx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Update the remote to only allow 8.8.8.0/24 (removing 1.2.3.0/24).
+	iprs.setResponse(&irpb.GetRulesResponse{
+		IpRules: []*irpb.IPRule{
+			{IpRuleId: "rule-2", Cidr: "8.8.8.0/24"},
+		},
+	})
+
+	// Cached result: 1.2.3.4 is still allowed, 8.8.8.8 is still denied.
+	err = irs.Check(allowedCtx, "GR1", "")
+	require.NoError(t, err)
+	err = irs.Check(deniedCtx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// After invalidation, the new rules are fetched.
+	irs.InvalidateCache(context.Background(), "GR1")
+
+	err = irs.Check(allowedCtx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+	err = irs.Check(deniedCtx, "GR1", "")
+	require.NoError(t, err)
+}
+
+func TestRemoteIPRulesBackgroundRefresh(t *testing.T) {
+	env := getEnv(t)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+
+	iprs := &fakeIPRulesService{}
+	iprs.setResponse(&irpb.GetRulesResponse{
+		IpRules: []*irpb.IPRule{
+			{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+		},
+	})
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, iprs))
+	flags.Set(t, "auth.ip_rules.cache_ttl", 5*time.Minute)
+
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	allowedCtx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	newCtx := context.WithValue(context.Background(), clientip.ContextKey, "8.8.8.8")
+
+	// Initial check populates the cache.
+	err = irs.Check(allowedCtx, "GR1", "")
+	require.NoError(t, err)
+
+	// Add a new rule to the backend.
+	iprs.setResponse(&irpb.GetRulesResponse{
+		IpRules: []*irpb.IPRule{
+			{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			{IpRuleId: "rule-2", Cidr: "8.8.8.0/24"},
+		},
+	})
+
+	// The new rule should not be enforced yet (still cached).
+	err = irs.Check(newCtx, "GR1", "")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Wait for the ticker to be registered, then advance past the refresh
+	// interval (cacheTTL/2) to trigger the background refresh.
+	fakeClock.BlockUntil(1)
+	fakeClock.Advance(3 * time.Minute)
+
+	// The refresh happens asynchronously; wait briefly for the RPC to complete.
+	require.Eventually(t, func() bool {
+		return irs.Check(newCtx, "GR1", "") == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
 func TestRefresherStopsOnShutdown(t *testing.T) {
 	env := getEnv(t)
-
-	// Install a noop server notification service to ensure the refresher runs.
-	env.SetServerNotificationService(&fakeServerNotificationService{
-		ch: make(chan proto.Message),
-	})
 
 	// The env starts some goroutines that aren't cleaned up. Ignore them.
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
