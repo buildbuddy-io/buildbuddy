@@ -230,6 +230,8 @@ common:target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_
 common:target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:target-linux-x86-exec-multiarch --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:target-linux-x86-exec-multiarch --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
 
