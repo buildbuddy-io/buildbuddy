@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -234,11 +235,11 @@ func (p *dbIPRulesProvider) waitForShutdown(ctx context.Context, done <-chan str
 	}
 }
 
-// TODO(iain): add singleflight requests.
 type remoteIPRulesProvider struct {
 	client irpb.IPRulesServiceClient
 	cache  ipRuleCache
 	clock  clockwork.Clock
+	sf     singleflight.Group[string, []ipRule]
 }
 
 func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
@@ -263,29 +264,32 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 }
 
 func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
-	ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
-	defer cancel()
-	rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
-		RequestContext: &ctxpb.RequestContext{
-			GroupId: groupID,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	allowed := make([]ipRule, 0, len(rsp.GetIpRules()))
-	for _, r := range rsp.GetIpRules() {
-		_, ipNet, err := net.ParseCIDR(r.GetCidr())
-		if err != nil {
-			alert.CtxUnexpectedEvent(ctx, "unparsable CIDR rule", "rule %q", r.GetCidr())
-			continue
-		}
-		allowed = append(allowed, ipRule{
-			id:      r.GetIpRuleId(),
-			allowed: ipNet,
+	v, _, err := p.sf.Do(ctx, groupID, func(ctx context.Context) ([]ipRule, error) {
+		ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
+		defer cancel()
+		rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
+			RequestContext: &ctxpb.RequestContext{
+				GroupId: groupID,
+			},
 		})
-	}
-	return allowed, nil
+		if err != nil {
+			return nil, err
+		}
+		allowed := make([]ipRule, 0, len(rsp.GetIpRules()))
+		for _, r := range rsp.GetIpRules() {
+			_, ipNet, err := net.ParseCIDR(r.GetCidr())
+			if err != nil {
+				alert.CtxUnexpectedEvent(ctx, "unparsable CIDR rule", "rule %q", r.GetCidr())
+				continue
+			}
+			allowed = append(allowed, ipRule{
+				id:      r.GetIpRuleId(),
+				allowed: ipNet,
+			})
+		}
+		return allowed, nil
+	})
+	return v, err
 }
 
 func (p *remoteIPRulesProvider) get(ctx context.Context, groupID string) ([]ipRule, error) {
@@ -359,7 +363,7 @@ func (p *remoteIPRulesProvider) refresh(ctx context.Context, groupID string) err
 		return err
 	}
 	p.cache.Add(groupID, rules)
-	log.CtxInfof(ctx, "refreshed IP rules for group %s", groupID)
+	log.CtxDebugf(ctx, "refreshed IP rules for group %s", groupID)
 	return nil
 }
 
