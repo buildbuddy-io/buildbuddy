@@ -20,9 +20,32 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
+	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+func enableIPRules(t *testing.T, client bbspb.BuildBuddyServiceClient, ctx context.Context, groupID, clientIP string) {
+	t.Helper()
+
+	ctx = metadata.AppendToOutgoingContext(ctx, "X-Forwarded-For", clientIP)
+
+	_, err := client.AddIPRule(ctx, &iprpb.AddRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Rule: &iprpb.IPRule{
+			Cidr:        clientIP + "/32",
+			Description: "allow forwarded client IP",
+		},
+	})
+	require.NoError(t, err)
+	_, err = client.SetIPRulesConfig(ctx, &iprpb.SetRulesConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		EnforceIpRules: true,
+	})
+	require.NoError(t, err)
+}
 
 func enableEncryption(t *testing.T, rbe *rbetest.Env, userID string) {
 	ctx := rbe.WithUserID(t.Context(), userID)
@@ -139,4 +162,38 @@ func TestFindMissing_Encryption(t *testing.T) {
 	resp, err := cas.FindMissingBlobs(ctx, &req)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(resp.MissingBlobDigests))
+}
+
+func TestIPRules(t *testing.T) {
+	// TODO(http://go/b/6797): enable this test.
+	t.Skip()
+
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	flags.Set(t, "app.client_identity.key", "key")
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{"cache-proxy"})
+
+	rbe := rbetest.NewRBETestEnv(t)
+	backend := rbe.AddBuildBuddyServer()
+
+	flags.Set(t, "auth.ip_rules.remote.target", backend.GRPCAddress())
+
+	const clientIP = "1.2.3.4"
+
+	backendConn, err := grpc_client.DialSimple(backend.GRPCAddress())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backendConn.Close()) })
+
+	enableIPRules(t, bbspb.NewBuildBuddyServiceClient(backendConn), rbe.WithUserID(t.Context(), rbe.UserID1), rbe.GroupID1, clientIP)
+
+	cas := rbe.AddCacheProxy().GetContentAddressableStorageClient()
+	ctx := metadata.AppendToOutgoingContext(t.Context(),
+		authutil.APIKeyHeader, rbe.APIKey1,
+		"X-Forwarded-For", clientIP,
+	)
+	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+	})
+	require.NoError(t, err, "FindMissingBlobs via cache proxy should succeed for allowed client IP %q", clientIP)
 }
