@@ -145,6 +145,31 @@ func TestCloseAndRecv(t *testing.T) {
 	close(closeRecvChTimeout)
 }
 
+func TestCloseAndRecv_SuccessDoesNotLeakSenderGoroutine(t *testing.T) {
+	const iterations = 100
+	baseline := runtime.NumGoroutine()
+
+	for i := 0; i < iterations; i++ {
+		ctx := context.Background()
+		cause := fmt.Errorf("test-cause")
+		s := &stream[*tspb.Timestamp]{
+			ch:          make(chan message[*tspb.Timestamp], 1),
+			closeRecvCh: make(chan message[*tspb.Timestamp], 1),
+		}
+		sender := rpcutil.NewSender(ctx, s)
+
+		require.NoError(t, sender.SendWithTimeoutCause(tspb.Now(), hugeTimeout, cause))
+		s.closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
+		_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
+		require.NoError(t, err)
+	}
+
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		return runtime.NumGoroutine() <= baseline+5
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
 	const iterations = 100
 	baseline := runtime.NumGoroutine()

@@ -89,6 +89,7 @@ type Sender[S proto.Message, R proto.Message] struct {
 	stream   SendStream[S, R]
 	sendChan chan S
 	errChan  chan error
+	closeFn  func()
 }
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
@@ -110,21 +111,29 @@ func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause 
 	select {
 	case err := <-s.errChan:
 		if err != nil {
-			close(s.sendChan)
-			s.sendChan = nil
+			s.Close()
 		}
 		return err
 	case <-ctx.Done():
-		close(s.sendChan)
-		s.sendChan = nil
+		s.Close()
 		return context.Cause(ctx)
 	}
+}
+
+// Close stops the helper goroutine that forwards Send calls to the stream.
+func (s *Sender[S, R]) Close() {
+	if s.sendChan == nil {
+		return
+	}
+	s.closeFn()
+	s.sendChan = nil
 }
 
 // CloseAndRecvWithTimeoutCause calls CloseAndRecv on the underlying stream,
 // waiting a maximum of timeout. If timeout is reached, the given cause is
 // returned as the error.
 func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
+	s.Close()
 	ch := make(chan StreamMsg[R], 1)
 	go func() {
 		rsp, err := s.stream.CloseAndRecv()
@@ -154,6 +163,9 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
 	sendChan := make(chan S, 1)
 	errChan := make(chan error, 1)
+	closeOnce := sync.OnceFunc(func() {
+		close(sendChan)
+	})
 	go func() {
 		for {
 			select {
@@ -175,7 +187,7 @@ func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream Sen
 			}
 		}
 	}()
-	return Sender[S, R]{ctx, stream, sendChan, errChan}
+	return Sender[S, R]{ctx: ctx, stream: stream, sendChan: sendChan, errChan: errChan, closeFn: closeOnce}
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.

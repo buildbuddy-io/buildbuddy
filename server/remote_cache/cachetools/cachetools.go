@@ -1404,6 +1404,7 @@ func (uw *UploadWriter) Commit() error {
 		}
 		return err
 	}
+	uw.sender.Close()
 	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
 		return err
@@ -1419,6 +1420,7 @@ func (uw *UploadWriter) Close() error {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot close again")
 	}
 	uw.closed = true
+	uw.sender.Close()
 	uploadBufPool.Put(uw.buf)
 	if uw.useZstd {
 		uploadBufPool.Put(uw.cbuf)
