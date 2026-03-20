@@ -314,10 +314,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
-	} else if readerCompression == repb.Compressor_ZSTD && rnCompression == repb.Compressor_IDENTITY {
-		// Upload as compressed instead of decompressing.
-		r = digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-		r.SetCompressor(repb.Compressor_ZSTD)
+	} else if readerCompression != rnCompression {
+		return nil, 0, status.InvalidArgumentErrorf("reader compression %s does not match resource name compression %s; decompression is not supported", readerCompression, rnCompression)
 	}
 	// If readerCompression == rnCompression, no transformation is needed.
 	defer rc.Close()
@@ -493,10 +491,11 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 }
 
 // UploadFromReaderWithCompression uploads data to the CAS, specifying the
-// compression format of the data in the reader. If the reader format differs
-// from the target compression in the resource name, the data will be compressed
-// or decompressed as needed. If both formats are the same, no transformation
-// is applied. Only IDENTITY and ZSTD formats are supported.
+// compression format of the data in the reader. If the reader is uncompressed
+// and the resource name specifies ZSTD, the data will be compressed on the fly.
+// If both formats are the same, no transformation is applied. Decompression
+// (compressed reader to uncompressed resource name) is not supported and will
+// return an error.
 // If the input Reader is also a Seeker, UploadFromReaderWithCompression will retry
 // the upload until success.
 func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {

@@ -1186,6 +1186,7 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 		name              string
 		readerCompression repb.Compressor_Value
 		targetCompression repb.Compressor_Value
+		wantErr           bool
 	}{
 		{
 			name:              "IDENTITY reader to IDENTITY target",
@@ -1201,6 +1202,7 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 			name:              "ZSTD reader to IDENTITY target",
 			readerCompression: repb.Compressor_ZSTD,
 			targetCompression: repb.Compressor_IDENTITY,
+			wantErr:           true,
 		},
 		{
 			name:              "ZSTD reader to ZSTD target",
@@ -1231,6 +1233,10 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 
 			d, uploadedBytes, err := cachetools.UploadFromReaderWithCompression(
 				ctx, te.GetByteStreamClient(), uploadRN, bytes.NewReader(readerData), tc.readerCompression)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.NotNil(t, d)
 			require.Greater(t, uploadedBytes, int64(0))
