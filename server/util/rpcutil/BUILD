@@ -14,6 +14,8 @@ go_library(
         "@io_opentelemetry_go_otel_metric//:metric",
         "@io_opentelemetry_go_otel_metric//noop",
         "@io_opentelemetry_go_otel_sdk_metric//:metric",
+        "@org_golang_google_grpc//experimental",
+        "@org_golang_google_grpc//mem",
     ],
 )
 
