@@ -202,12 +202,6 @@ func labelSelectorString(sel *metav1.LabelSelector) string {
 		return ""
 	}
 	return "app=" + sel.MatchLabels["app"]
-	// parts := make([]string, 0, len(sel.MatchLabels))
-	// for k, v := range sel.MatchLabels {
-	// 	parts = append(parts, k+"="+v)
-	// }
-	// sort.Strings(parts)
-	// return strings.Join(parts, ",")
 }
 
 // listAndWatch lists all matching pods then watches for changes.
@@ -304,7 +298,7 @@ func (c *Channel) podAddr(pod *corev1.Pod) string {
 	for _, cond := range pod.Status.Conditions {
 		// We can't wait for the PodReady condition alone, since that
 		// relies on health checks, which can depend on having enough peers.
-		if cond.Type == corev1.PodReady || cond.Type == corev1.PodInitialized || cond.Type == corev1.ContainersReady {
+		if cond.Type == corev1.PodReady || cond.Type == corev1.ContainersReady {
 			if cond.Status == corev1.ConditionTrue {
 				return net.JoinHostPort(pod.Status.PodIP, c.port)
 			}
