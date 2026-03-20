@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -406,22 +407,12 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	client := fake.NewClientset(pod0, rs)
 
 	// Intercept the first watch to return a 410 Gone error.
-	var watchCalls sync.Map
-	var watchCount int32
+	var watchCount atomic.Int32
 	client.PrependWatchReactor("pods", func(action k8stesting.Action) (bool, watch.Interface, error) {
-		n := int32(0)
-		watchCalls.Range(func(_, _ any) bool { n++; return true })
-		key := action.GetVerb()
-		watchCalls.Store(key+string(rune(n)), true)
-
-		mu := sync.Mutex{}
-		mu.Lock()
-		watchCount++
-		count := watchCount
-		mu.Unlock()
-
-		if count == 1 {
-			fw := watch.NewFake()
+		if watchCount.Add(1) == 1 {
+			// Use RaceFreeFake to avoid a race between Error()
+			// (in the goroutine) and Stop() (called by listAndWatch).
+			fw := watch.NewRaceFreeFake()
 			go func() {
 				fw.Error(&metav1.Status{
 					Status:  metav1.StatusFailure,
