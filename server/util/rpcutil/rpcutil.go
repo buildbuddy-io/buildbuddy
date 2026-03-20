@@ -121,6 +121,8 @@ type Sender[S proto.Message, R proto.Message] struct {
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
 // acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
+//
+// Must not be called after CloseAndRecvWithTimeoutCause.
 func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
 	if s.sendChan == nil {
 		return status.UnavailableError("Send channel closed")
@@ -147,6 +149,10 @@ func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause 
 // waiting a maximum of timeout. If timeout is reached, the given cause is
 // returned as the error.
 func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
+	if s.sendChan != nil {
+		close(s.sendChan)
+		s.sendChan = nil
+	}
 	ch := make(chan StreamMsg[R], 1)
 	go func() {
 		rsp, err := s.stream.CloseAndRecv()
