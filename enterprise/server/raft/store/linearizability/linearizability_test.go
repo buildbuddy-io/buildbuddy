@@ -458,28 +458,34 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	checkLinearizability(t, elog, "/tmp/linearizability-splits.html")
 }
 
-// TestLinearizabilityUnderNodeFailure verifies linearizability while a
-// node is killed mid-operation.
-func TestLinearizabilityUnderNodeFailure(t *testing.T) {
+// TestLinearizabilityUnderUpReplication verifies linearizability while
+// a node is killed and the driver up-replicates to restore the
+// replica count. Uses 4 nodes: shard starts on s1-s3, s2 is killed,
+// and the driver adds a replica on s4.
+func TestLinearizabilityUnderUpReplication(t *testing.T) {
+	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", true)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
 	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShard(t, ctx, stores...)
+	// Start shard on s1-s3 only. s4 is available via gossip for
+	// up-replication after s2 is killed.
+	initialStores := []*testutil.TestingStore{s1, s2, s3}
+	allStores := []*testutil.TestingStore{s1, s2, s3, s4}
+	sf.StartShard(t, ctx, initialStores...)
 
-	testutil.WaitForRangeLease(t, ctx, stores, 1)
-	testutil.WaitForRangeLease(t, ctx, stores, 2)
+	testutil.WaitForRangeLease(t, ctx, initialStores, 1)
+	testutil.WaitForRangeLease(t, ctx, initialStores, 2)
 
 	const numKeys = 10
 	const numWorkers = 5
@@ -496,64 +502,27 @@ func TestLinearizabilityUnderNodeFailure(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Kill node 2 after 10s.
+	// Kill s2 after 10s. The driver will detect under-replication
+	// (2/3 replicas alive) and add a replica on s4.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		killNemesis(workerCtx, stores, &storesMu, 10*time.Second, 2)
+		killNemesis(workerCtx, allStores, &storesMu, 10*time.Second, 2)
 	}()
 
-	// Start workers.
+	// Start workers on all 4 stores. Workers on s2 will start
+	// getting errors after the kill; workers on s4 will get errors
+	// until it receives a replica.
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			rng := rand.New(rand.NewSource(int64(id) + time.Now().UnixNano()))
-			for {
-				select {
-				case <-workerCtx.Done():
-					return
-				default:
-				}
-
-				storesMu.RLock()
-				store := stores[rng.Intn(len(stores))]
-				storesMu.RUnlock()
-
-				tk := keys[rng.Intn(len(keys))]
-
-				opCtx, cancel := context.WithTimeout(workerCtx, opTimeout)
-
-				if rng.Float64() < 0.5 {
-					val := fmt.Sprintf("v%d", writeCount.Add(1))
-					inp := opInput{op: opWrite, key: tk.name, value: val}
-					eventID := elog.logCall(id, inp)
-
-					err := writeFileRecord(opCtx, store, tk, val)
-					cancel()
-					if err != nil {
-						elog.logReturn(id, eventID, opOutput{err: err.Error()})
-					} else {
-						elog.logReturn(id, eventID, opOutput{})
-					}
-				} else {
-					inp := opInput{op: opRead, key: tk.name}
-					eventID := elog.logCall(id, inp)
-
-					val, err := readFileRecord(opCtx, store, tk)
-					cancel()
-					if err != nil {
-						elog.logReturn(id, eventID, opOutput{err: err.Error()})
-					} else {
-						elog.logReturn(id, eventID, opOutput{value: val})
-					}
-				}
-			}
+			worker(workerCtx, id, allStores, keys, elog, &writeCount)
 		}(i)
 	}
 
 	wg.Wait()
 
 	log.Infof("Collected %d events (%d writes)", len(elog.getEvents()), writeCount.Load())
-	checkLinearizability(t, elog, "/tmp/linearizability-node-failure.html")
+	checkLinearizability(t, elog, "/tmp/linearizability-up-replication.html")
 }
