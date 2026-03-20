@@ -240,7 +240,7 @@ func (o *insertOpts) apply(opts ...InsertOpt) {
 
 // WithAsyncBusyTimeout sets the async insert busy timeout range.
 // Higher values buffer more rows per part, reducing part creation rate.
-func WithAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
+func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
 	return func(o *insertOpts) {
 		o.asyncBusyTimeoutMinMs = minMs
 		o.asyncBusyTimeoutMaxMs = maxMs
@@ -271,7 +271,7 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 				"wait_for_async_insert": 1,
 
 				"async_insert_deduplicate":         1,
-				"wait_for_async_insert_timeout":    30,              // In seconds. Default is 120.
+				"wait_for_async_insert_timeout":    30, // In seconds. Default is 120.
 				"async_insert_busy_timeout_min_ms": o.asyncBusyTimeoutMinMs,
 				"async_insert_busy_timeout_max_ms": o.asyncBusyTimeoutMaxMs,
 			}),
@@ -441,7 +441,7 @@ func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schem
 	if num == 0 {
 		return nil
 	}
-	if err := h.insertWithRetrier(ctx, (&schema.TestTargetStatus{}).TableName(), num, &entries); err != nil {
+	if err := h.insertWithRetrier(ctx, (&schema.TestTargetStatus{}).TableName(), num, &entries, withAsyncBusyTimeout(2000, 5000)); err != nil {
 		return status.UnavailableErrorf("failed to insert %d test target statuses for invocation (invocation_uuid = %q), err: %s", num, entries[0].InvocationUUID, err)
 	}
 	return nil
