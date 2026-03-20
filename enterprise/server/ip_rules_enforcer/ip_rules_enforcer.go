@@ -2,7 +2,6 @@ package ip_rules_enforcer
 
 import (
 	"context"
-	"flag"
 	"net"
 	"net/http"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
@@ -34,6 +35,7 @@ import (
 var (
 	enableIPRules           = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
 	cacheTTL                = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	permittedClients        = flag.Slice("auth.ip_rules.permitted_clients", []string{}, "Clients (identified by clientidentity) that are permitted to bypass IP rules for internal RPCs.")
 	remoteIPRulesTarget     = flag.String("auth.ip_rules.remote.target", "", "The gRPC target of the backend storing IP rules.")
 	remoteIPRulesRPCTimeout = flag.Duration("auth.ip_rules.remote.rpc_timeout", 15*time.Second, "Timeout for remote IP rules RPCs.")
 )
@@ -41,7 +43,30 @@ var (
 const (
 	// The number of IP rules (net.IPNet instances) that we will store in memory.
 	cacheSize = 100_000
+
+	ipRulesCheckBypassHeaderName  = "x-buildbuddy-ip-rules-check-bypass"
+	ipRulesCheckBypassHeaderValue = "true"
 )
+
+func hasIPRulesCheckBypass(ctx context.Context) bool {
+	for _, value := range metadata.ValueFromIncomingContext(ctx, ipRulesCheckBypassHeaderName) {
+		if value == ipRulesCheckBypassHeaderValue {
+			return true
+		}
+	}
+	return false
+}
+
+func withIPRulesCheckBypass(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+	} else {
+		md = metadata.MD{}
+	}
+	md.Set(ipRulesCheckBypassHeaderName, ipRulesCheckBypassHeaderValue)
+	return metadata.NewOutgoingContext(ctx, md)
+}
 
 type ipRule struct {
 	id      string
@@ -265,6 +290,7 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 
 func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
 	v, _, err := p.sf.Do(ctx, groupID, func(ctx context.Context) ([]ipRule, error) {
+		ctx = withIPRulesCheckBypass(ctx)
 		ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 		defer cancel()
 		rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -380,18 +406,41 @@ type Enforcer struct {
 	rulesProvider ipRulesProvider
 }
 
-type NoOpEnforcer struct{}
-
-func (n *NoOpEnforcer) Authorize(ctx context.Context) error {
-	return nil
+func isPermittedClient(ctx context.Context, env environment.Env) error {
+	identityService := env.GetClientIdentityService()
+	if identityService == nil {
+		return status.InternalError("Client Identity Service is required for IPRulesService")
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil {
+		return status.InvalidArgumentError("Client Identity is required")
+	}
+	for _, client := range *permittedClients {
+		if identity.Client == client {
+			return nil
+		}
+	}
+	return status.InvalidArgumentErrorf("Client %s may not access IPRulesService", identity.Client)
 }
 
-func (n *NoOpEnforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
-	return nil
+type NoOpEnforcer struct {
+	env environment.Env
 }
 
-func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
-	return nil
+func (n *NoOpEnforcer) AuthorizeGetIPRules(ctx context.Context) error {
+	return isPermittedClient(ctx, n.env)
+}
+
+func (n *NoOpEnforcer) Authorize(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+
+func (n *NoOpEnforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
+	return ctx, nil
+}
+
+func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	return ctx, nil
 }
 
 func (n *NoOpEnforcer) InvalidateCache(ctx context.Context, groupID string) {
@@ -417,7 +466,7 @@ func New(env environment.Env) (*Enforcer, error) {
 }
 
 func Register(env *real_environment.RealEnv) error {
-	var enforcer interfaces.IPRulesEnforcer = &NoOpEnforcer{}
+	var enforcer interfaces.IPRulesEnforcer = &NoOpEnforcer{env: env}
 	if *enableIPRules {
 		realEnforcer, err := New(env)
 		if err != nil {
@@ -454,50 +503,64 @@ func (s *Enforcer) Check(ctx context.Context, groupID, skipRuleID string) error 
 	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
 }
 
-func (s *Enforcer) authorize(ctx context.Context, groupID string) error {
+func (s *Enforcer) AuthorizeGetIPRules(ctx context.Context) error {
+	return isPermittedClient(ctx, s.env)
+}
+
+func (s *Enforcer) hasValidCheckBypass(ctx context.Context) bool {
+	return isPermittedClient(ctx, s.env) == nil && hasIPRulesCheckBypass(ctx)
+}
+
+func (s *Enforcer) authorize(ctx context.Context, groupID string) (context.Context, error) {
+	var err error
 	start := time.Now()
-	err := s.Check(ctx, groupID, "" /*=skipRuleID*/)
+	if !s.hasValidCheckBypass(ctx) {
+		err = s.Check(ctx, groupID, "" /*=skipRuleID*/)
+	}
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
-	return err
+	if err != nil {
+		return ctx, err
+	}
+	return withIPRulesCheckBypass(ctx), nil
 }
 
-func (s *Enforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
+func (s *Enforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 	// Server admins in impersonation mode can bypass IP rules.
 	if u.IsImpersonating() {
-		return nil
+		return ctx, nil
 	}
 
 	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 	if !g.EnforceIPRules {
-		return nil
+		return ctx, nil
 	}
 
 	return s.authorize(ctx, groupID)
 }
 
-func (s *Enforcer) Authorize(ctx context.Context) error {
+func (s *Enforcer) Authorize(ctx context.Context) (context.Context, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		// If auth failed we don't need to (and can't) apply IP rules.
-		return nil
+		return ctx, nil
 	}
 
 	// Server admins in impersonation mode can bypass IP rules.
 	if u.IsImpersonating() {
-		return nil
+		return ctx, nil
 	}
 
 	if !u.GetEnforceIPRules() {
-		return nil
+		return ctx, nil
 	}
 
 	if cis := s.env.GetClientIdentityService(); cis != nil {
@@ -506,10 +569,10 @@ func (s *Enforcer) Authorize(ctx context.Context) error {
 		if err == nil && (si.Client == interfaces.ClientIdentityExecutor ||
 			si.Client == interfaces.ClientIdentityApp ||
 			si.Client == interfaces.ClientIdentityWorkflow) {
-			return nil
+			return ctx, nil
 		}
 		if err != nil && !status.IsNotFoundError(err) {
-			return err
+			return ctx, err
 		}
 	}
 
@@ -525,27 +588,28 @@ func (s *Enforcer) Authorize(ctx context.Context) error {
 	return s.authorize(ctx, groupID)
 }
 
-func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
+func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
 	// GetUser is used by the frontend to know what the user is allowed to
 	// do, including whether or not they are allowed access by IP rules.
 	if r.URL.Path == "/rpc/BuildBuddyService/GetUser" {
-		return nil
+		return ctx, nil
 	}
 
 	// GetGroup is used to lookup group metadata for impersonation.
 	if r.URL.Path == "/rpc/BuildBuddyService/GetGroup" {
-		return nil
+		return ctx, nil
 	}
 
 	// All other APIs are subject to IP access checks.
 	if strings.HasPrefix(r.URL.Path, "/rpc/") || strings.HasPrefix(r.URL.Path, "/api/") {
-		err := s.Authorize(ctx)
+		newCtx, err := s.Authorize(ctx)
 		if err != nil {
-			return err
+			return ctx, err
 		}
+		return newCtx, nil
 	}
 
-	return nil
+	return ctx, nil
 }
 
 func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {

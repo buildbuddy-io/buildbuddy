@@ -30,10 +30,16 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 )
 
+const (
+	ipRulesCheckBypassHeaderName  = "x-buildbuddy-ip-rules-check-bypass"
+	ipRulesCheckBypassHeaderValue = "true"
+)
+
 type fakeIPRulesService struct {
-	mu       sync.Mutex
-	rsp      *irpb.GetRulesResponse
-	rpcCount int
+	mu             sync.Mutex
+	rsp            *irpb.GetRulesResponse
+	rpcCount       int
+	lastIncomingMD metadata.MD
 }
 
 func (s *fakeIPRulesService) setResponse(rsp *irpb.GetRulesResponse) {
@@ -46,6 +52,10 @@ func (s *fakeIPRulesService) GetIPRules(ctx context.Context, req *irpb.GetRulesR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rpcCount++
+	s.lastIncomingMD, _ = metadata.FromIncomingContext(ctx)
+	if s.lastIncomingMD != nil {
+		s.lastIncomingMD = s.lastIncomingMD.Copy()
+	}
 	return s.rsp, nil
 }
 
@@ -53,6 +63,15 @@ func (s *fakeIPRulesService) getRPCCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.rpcCount
+}
+
+func (s *fakeIPRulesService) getLastIncomingMD() metadata.MD {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastIncomingMD == nil {
+		return nil
+	}
+	return s.lastIncomingMD.Copy()
 }
 
 func startRemoteIPRulesServer(t *testing.T, svc *fakeIPRulesService) string {
@@ -161,6 +180,39 @@ func contextWithClientIdentity(t *testing.T, ctx context.Context, service interf
 	return ctx
 }
 
+func contextWithNamedClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService, client string) context.Context {
+	t.Helper()
+
+	headerValue, err := service.IdentityHeader(&interfaces.ClientIdentity{
+		Client: client,
+		Origin: "test",
+	}, time.Minute)
+	require.NoError(t, err)
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx, err = service.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	return ctx
+}
+
+func contextWithIncomingBypassBit(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		md = md.Copy()
+	} else {
+		md = metadata.MD{}
+	}
+	md.Set(ipRulesCheckBypassHeaderName, ipRulesCheckBypassHeaderValue)
+	return metadata.NewIncomingContext(ctx, md)
+}
+
+func requireOutgoingBypassBit(t *testing.T, ctx context.Context) {
+	t.Helper()
+
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	require.Equal(t, []string{ipRulesCheckBypassHeaderValue}, md.Get(ipRulesCheckBypassHeaderName))
+}
+
 func TestNoOpEnforcer(t *testing.T) {
 	flags.Set(t, "auth.ip_rules.enable", false)
 
@@ -170,9 +222,12 @@ func TestNoOpEnforcer(t *testing.T) {
 
 	enforcer := env.GetIPRulesEnforcer()
 	require.IsType(t, &ip_rules_enforcer.NoOpEnforcer{}, enforcer)
-	require.NoError(t, enforcer.Authorize(context.Background()))
-	require.NoError(t, enforcer.AuthorizeGroup(context.Background(), "G1"))
-	require.NoError(t, enforcer.AuthorizeHTTPRequest(context.Background(), httptest.NewRequest("GET", "/rpc/BuildBuddyService/GetUser", nil)))
+	_, err = enforcer.Authorize(context.Background())
+	require.NoError(t, err)
+	_, err = enforcer.AuthorizeGroup(context.Background(), "G1")
+	require.NoError(t, err)
+	_, err = enforcer.AuthorizeHTTPRequest(context.Background(), httptest.NewRequest("GET", "/rpc/BuildBuddyService/GetUser", nil))
+	require.NoError(t, err)
 	require.NoError(t, enforcer.Check(context.Background(), "G1", ""))
 }
 
@@ -181,10 +236,10 @@ func TestAuthorizeAndAuthorizeGroup_EnforcementNotEnabled(t *testing.T) {
 	irs := newIPRulesEnforcer(t, env)
 	authCtx, _, groupID := setupAuthenticatedUser(t, env)
 
-	err := irs.Authorize(authCtx)
+	_, err := irs.Authorize(authCtx)
 	require.NoError(t, err)
 
-	err = irs.AuthorizeGroup(authCtx, groupID)
+	_, err = irs.AuthorizeGroup(authCtx, groupID)
 	require.NoError(t, err)
 }
 
@@ -192,11 +247,11 @@ func TestAuthorize_UnauthenticatedBypasses(t *testing.T) {
 	env := getEnv(t)
 	irs := newIPRulesEnforcer(t, env)
 
-	err := irs.Authorize(context.Background())
+	_, err := irs.Authorize(context.Background())
 	require.NoError(t, err)
 
 	ctx := authutil.AuthContextWithError(context.Background(), status.UnauthenticatedError("Invalid API Key"))
-	err = irs.Authorize(ctx)
+	_, err = irs.Authorize(ctx)
 	require.NoError(t, err)
 }
 
@@ -208,33 +263,35 @@ func TestAuthorizeAndAuthorizeGroup_Enforcement(t *testing.T) {
 	insertRule(t, env, groupID, "1.2.3.0/24", "rule1")
 	insertRule(t, env, groupID, "4.5.6.7/32", "rule2")
 
-	err := irs.Authorize(authCtx)
+	_, err := irs.Authorize(authCtx)
 	require.NoError(t, err)
 
 	setGroupEnforcement(t, env, authCtx, groupID, true)
 	authCtx = reauthenticate(t, env, userID)
 
-	err = irs.Authorize(authCtx)
+	_, err = irs.Authorize(authCtx)
 	require.Error(t, err)
 	require.True(t, status.IsFailedPreconditionError(err))
 
 	matchingCtx := context.WithValue(authCtx, clientip.ContextKey, "1.2.3.15")
-	err = irs.Authorize(matchingCtx)
+	newCtx, err := irs.Authorize(matchingCtx)
 	require.NoError(t, err)
+	requireOutgoingBypassBit(t, newCtx)
 
 	exactCtx := context.WithValue(authCtx, clientip.ContextKey, "4.5.6.7")
-	err = irs.Authorize(exactCtx)
+	_, err = irs.Authorize(exactCtx)
 	require.NoError(t, err)
 
 	nonMatchingCtx := context.WithValue(authCtx, clientip.ContextKey, "5.6.7.8")
-	err = irs.Authorize(nonMatchingCtx)
+	_, err = irs.Authorize(nonMatchingCtx)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 
-	err = irs.AuthorizeGroup(matchingCtx, groupID)
+	newCtx, err = irs.AuthorizeGroup(matchingCtx, groupID)
 	require.NoError(t, err)
+	requireOutgoingBypassBit(t, newCtx)
 
-	err = irs.AuthorizeGroup(nonMatchingCtx, groupID)
+	_, err = irs.AuthorizeGroup(nonMatchingCtx, groupID)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 }
@@ -264,20 +321,20 @@ func TestAuthorizeHTTPRequest(t *testing.T) {
 	setGroupEnforcement(t, env, authCtx, groupID, true)
 	authCtx = reauthenticate(t, env, userID)
 
-	err := irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/GetUser", nil))
+	_, err := irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/GetUser", nil))
 	require.NoError(t, err)
 
-	err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/GetGroup", nil))
+	_, err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/GetGroup", nil))
 	require.NoError(t, err)
 
-	err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/non-api", nil))
+	_, err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/non-api", nil))
 	require.NoError(t, err)
 
-	err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/SearchInvocation", nil))
+	_, err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/rpc/BuildBuddyService/SearchInvocation", nil))
 	require.Error(t, err)
 	require.True(t, status.IsFailedPreconditionError(err))
 
-	err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/api/v1/invocation", nil))
+	_, err = irs.AuthorizeHTTPRequest(authCtx, httptest.NewRequest("GET", "http://example/api/v1/invocation", nil))
 	require.Error(t, err)
 	require.True(t, status.IsFailedPreconditionError(err))
 }
@@ -295,8 +352,58 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 	authCtx = contextWithClientIdentity(t, authCtx, env.GetClientIdentityService())
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "5.6.7.8")
 
-	err := irs.Authorize(authCtx)
+	_, err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func TestAuthorizeGetIPRules_PermittedClientsOnly(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{"foo", "bar"})
+
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, "baz")
+	irs := newIPRulesEnforcer(t, env)
+
+	for _, client := range []string{"foo", "bar"} {
+		t.Run(client, func(t *testing.T) {
+			authCtx, _, _ := setupAuthenticatedUser(t, env)
+			ctx := contextWithNamedClientIdentity(t, authCtx, env.GetClientIdentityService(), client)
+
+			_, err := irs.AuthorizeGetIPRules(ctx)
+			require.NoError(t, err)
+		})
+	}
+
+	authCtx, _, _ := setupAuthenticatedUser(t, env)
+	ctx := contextWithNamedClientIdentity(t, authCtx, env.GetClientIdentityService(), "qux")
+
+	_, err := irs.AuthorizeGetIPRules(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestAuthorize_PermittedClientWithBypassBitBypasses(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{interfaces.ClientIdentityCacheProxy})
+
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityCacheProxy)
+
+	irs := newIPRulesEnforcer(t, env)
+	authCtx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, authCtx, groupID, true)
+	authCtx = reauthenticate(t, env, userID)
+	authCtx = contextWithClientIdentity(t, authCtx, env.GetClientIdentityService())
+	authCtx = context.WithValue(authCtx, clientip.ContextKey, "5.6.7.8")
+
+	_, err := irs.Authorize(authCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	bypassCtx := contextWithIncomingBypassBit(authCtx)
+	newCtx, err := irs.Authorize(bypassCtx)
+	require.NoError(t, err)
+	requireOutgoingBypassBit(t, newCtx)
 }
 
 func TestRemoteIPRulesEnforced(t *testing.T) {
@@ -330,6 +437,30 @@ func TestRemoteIPRulesEnforced(t *testing.T) {
 	err = irs.Check(ctx, "GR1", "")
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestRemoteIPRulesFetchSetsBypassMetadata(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityCacheProxy)
+
+	iprs := &fakeIPRulesService{
+		rsp: &irpb.GetRulesResponse{
+			IpRules: []*irpb.IPRule{
+				{IpRuleId: "rule-1", Cidr: "1.2.3.0/24"},
+			},
+		},
+	}
+	flags.Set(t, "auth.ip_rules.remote.target", startRemoteIPRulesServer(t, iprs))
+	irs, err := ip_rules_enforcer.New(env)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), clientip.ContextKey, "1.2.3.4")
+	err = irs.Check(ctx, "GR1", "")
+	require.NoError(t, err)
+
+	md := iprs.getLastIncomingMD()
+	require.Equal(t, []string{ipRulesCheckBypassHeaderValue}, md.Get(ipRulesCheckBypassHeaderName))
+	require.NotEmpty(t, md.Get(authutil.ClientIdentityHeaderName))
 }
 
 func TestRemoteIPRulesCached(t *testing.T) {

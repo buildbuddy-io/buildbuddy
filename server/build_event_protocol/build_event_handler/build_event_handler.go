@@ -1063,9 +1063,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 		if authenticated {
 			if irs := e.env.GetIPRulesEnforcer(); irs != nil {
-				if err := irs.Authorize(e.ctx); err != nil {
+				newCtx, err := irs.Authorize(e.ctx)
+				if err != nil {
 					return err
 				}
+				e.ctx = newCtx
 			}
 			baseBBURL, err := subdomain.ReplaceURLSubdomain(e.ctx, e.env, build_buddy_url.String())
 			if err != nil {

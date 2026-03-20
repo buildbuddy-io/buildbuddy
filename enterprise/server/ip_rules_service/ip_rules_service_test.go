@@ -5,21 +5,16 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -35,20 +30,25 @@ type call struct {
 }
 
 type fakeIPRulesEnforcer struct {
-	calls    []call
-	checkErr error
+	calls                  []call
+	checkErr               error
+	AuthorizeGetIPRulesErr error
 }
 
-func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) error {
-	return nil
+func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) (context.Context, error) {
+	return ctx, nil
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeGetIPRules(ctx context.Context) (context.Context, error) {
+	return ctx, f.AuthorizeGetIPRulesErr
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
+	return ctx, nil
+}
+
+func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	return ctx, nil
 }
 
 func (f *fakeIPRulesEnforcer) InvalidateCache(ctx context.Context, groupID string) {
@@ -111,21 +111,6 @@ func setupService(t *testing.T, enforcer *fakeIPRulesEnforcer, sns *fakeServerNo
 	service, err := ip_rules_service.New(env)
 	require.NoError(t, err)
 	return service, env, authCtx, groupID
-}
-
-func contextWithClientIdentity(t *testing.T, ctx context.Context, service interfaces.ClientIdentityService, client string) context.Context {
-	t.Helper()
-
-	headerValue, err := service.IdentityHeader(&interfaces.ClientIdentity{
-		Client: client,
-		Origin: "test",
-	}, time.Minute)
-	require.NoError(t, err)
-
-	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
-	ctx, err = service.ValidateIncomingIdentity(ctx)
-	require.NoError(t, err)
-	return ctx
 }
 
 func setGroupEnforcement(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
@@ -315,25 +300,19 @@ func TestSetAndGetIPRuleConfig(t *testing.T) {
 	require.False(t, cfgRsp.GetEnforceIpRules())
 }
 
-func TestGetIPRules_NoClientsPermitted_RPCRejected(t *testing.T) {
-	flags.Set(t, "auth.ip_rules.permitted_clients", []string{})
+func TestGetIPRules_RejectsWhenFetchUnauthorized(t *testing.T) {
+	enforcer := &fakeIPRulesEnforcer{AuthorizeGetIPRulesErr: status.InvalidArgumentError("blocked")}
+	svc, _, authCtx, groupID := setupService(t, enforcer, nil)
 
-	svc, env, authCtx, groupID := setupService(t, nil, nil)
-	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "foo")
-
-	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "foo")
-	_, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+	_, err := svc.GetIPRules(authCtx, &irpb.GetRulesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 	})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 }
 
-func TestGetIPRules_TwoClientsPermitted_AllowedAndRejected(t *testing.T) {
-	flags.Set(t, "auth.ip_rules.permitted_clients", []string{"foo", "bar"})
-
-	svc, env, authCtx, groupID := setupService(t, nil, nil)
-	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "baz")
+func TestGetIPRules_ReturnsRulesWhenFetchAuthorized(t *testing.T) {
+	svc, _, authCtx, groupID := setupService(t, nil, nil)
 
 	_, err := svc.AddRule(authCtx, &irpb.AddRuleRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -344,24 +323,12 @@ func TestGetIPRules_TwoClientsPermitted_AllowedAndRejected(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	for _, client := range []string{"foo", "bar"} {
-		t.Run(client, func(t *testing.T) {
-			ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), client)
-			rsp, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
-				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
-			})
-			require.NoError(t, err)
-			require.Len(t, rsp.GetIpRules(), 1)
-			require.Equal(t, "1.2.3.4/32", rsp.GetIpRules()[0].GetCidr())
-		})
-	}
-
-	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "qux")
-	_, err = svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+	rsp, err := svc.GetIPRules(authCtx, &irpb.GetRulesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 	})
-	require.Error(t, err)
-	require.True(t, status.IsInvalidArgumentError(err))
+	require.NoError(t, err)
+	require.Len(t, rsp.GetIpRules(), 1)
+	require.Equal(t, "1.2.3.4/32", rsp.GetIpRules()[0].GetCidr())
 }
 
 func TestSetIPRuleConfigRejectsLockout(t *testing.T) {

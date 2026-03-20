@@ -402,11 +402,13 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		selectedGroupID = g.Group.GroupID
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
 		if irs := s.env.GetIPRulesEnforcer(); irs != nil {
-			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
+			newCtx, err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
 			if status.IsPermissionDeniedError(err) {
 				selectedGroupAccess = uspb.SelectedGroup_DENIED_BY_IP_RULES
 			} else if err != nil {
 				return nil, err
+			} else {
+				ctx = newCtx
 			}
 		}
 	}

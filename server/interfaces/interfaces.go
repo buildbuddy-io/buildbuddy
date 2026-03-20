@@ -1565,19 +1565,25 @@ type AuditLogger interface {
 }
 
 type IPRulesEnforcer interface {
+	// AuthorizeGetIPRules checks whether the caller may call
+	// IPRulesService.GetIPRules.
+	AuthorizeGetIPRules(ctx context.Context) error
+
 	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the group identified in the context.
-	Authorize(ctx context.Context) error
+	// to access the group identified in the context. It returns a derived
+	// context for downstream use.
+	Authorize(ctx context.Context) (context.Context, error)
 
 	// AuthorizeGroup checks whether the authenticated user in the context is
 	// allowed to access the specified groupId. This function should not be used
-	// in performance sensitive code paths.
-	AuthorizeGroup(ctx context.Context, groupID string) error
+	// in performance sensitive code paths. It returns a derived context for
+	// downstream use.
+	AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error)
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
 	// allowed based on the authenticated user and group information in the
-	// context.
-	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+	// context. It returns a derived context for downstream use.
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error)
 
 	// Invalidates all cached IP rules for the specified group ID.
 	InvalidateCache(ctx context.Context, groupID string)
