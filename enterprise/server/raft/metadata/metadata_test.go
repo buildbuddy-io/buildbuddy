@@ -472,7 +472,9 @@ func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
 	flags.Set(t, "cache.raft.min_eviction_age", 0)
-	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	// Force the sampler to refresh its pebble iterator on
+	// every read so that samples have up-to-date atimes.
+	flags.Set(t, "cache.raft.samples_per_batch", 0)
 	flags.Set(t, "cache.raft.sample_pool_size", 10)
 	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
