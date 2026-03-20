@@ -263,14 +263,14 @@ func TestExpiringLRU_KeysExcludesExpired(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		config.Clock.(clockwork.FakeClock).Advance(3 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(3 * time.Second)
 		l.Add("b", 2)
 
 		// "a" and "b" are both alive.
 		require.Equal(t, []string{"b", "a"}, l.Keys())
 
 		// Advance past "a"'s TTL but not "b"'s.
-		config.Clock.(clockwork.FakeClock).Advance(3 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(3 * time.Second)
 
 		// "a" is expired; Keys() should not include it.
 		require.Equal(t, []string{"b"}, l.Keys())
