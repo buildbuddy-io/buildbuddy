@@ -111,6 +111,40 @@ func (s *meteredReadServerStream) Send(message *bspb.ReadResponse) error {
 	return s.ByteStream_ReadServer.Send(message)
 }
 
+// bufferedReadStream collects ReadResponse messages in memory instead of
+// sending them to the client. This allows the caller to discard the buffer
+// on failure without having sent partial data.
+type bufferedReadStream struct {
+	bspb.ByteStream_ReadServer
+	pool     *bytebufferpool.VariableSizePool
+	messages []*bspb.ReadResponse
+	bufs     [][]byte
+}
+
+func (b *bufferedReadStream) Send(message *bspb.ReadResponse) error {
+	data := message.GetData()
+	buf := b.pool.Get(int64(len(data)))
+	copy(buf, data)
+	b.messages = append(b.messages, &bspb.ReadResponse{Data: buf[:len(data)]})
+	b.bufs = append(b.bufs, buf)
+	return nil
+}
+
+func (b *bufferedReadStream) flushTo(stream bspb.ByteStream_ReadServer) error {
+	for _, msg := range b.messages {
+		if err := stream.Send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *bufferedReadStream) release() {
+	for _, buf := range b.bufs {
+		b.pool.Put(buf)
+	}
+}
+
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
@@ -309,39 +343,20 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			continue
 		}
 
-		bytesBefore := stream.bytes
-		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream)
+		// Buffer the local read so that if it fails, no partial data
+		// has been sent to the client and we can cleanly fall back to remote.
+		buf := &bufferedReadStream{ByteStream_ReadServer: stream, pool: s.bufPool}
+		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, buf)
 		if localErr == nil {
+			err := buf.flushTo(stream)
+			buf.release()
+			if err != nil {
+				return m, err
+			}
 			m.chunksLocal++
 			continue
 		}
-
-		// Recover from any local error, regardless of whether partial data was already sent.
-		chunkOffset := stream.bytes - bytesBefore
-		if chunkOffset > 0 {
-			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error_partial",
-				metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
-			}).Inc()
-
-			// If compressed, we can't accurately get the offset.
-			if rn.GetCompressor() != repb.Compressor_IDENTITY {
-				return m, localErr
-			}
-			remoteReq := &bspb.ReadRequest{
-				ResourceName: chunkRN.DownloadString(),
-				ReadOffset:   chunkOffset,
-			}
-			if err := s.readRemoteOnly(ctx, remoteReq, stream); err != nil {
-				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error_partial",
-					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-				}).Inc()
-				return m, err
-			}
-			m.chunksRemote++
-			continue
-		}
+		buf.release()
 
 		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
