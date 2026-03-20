@@ -238,7 +238,7 @@ func (o *insertOpts) apply(opts ...InsertOpt) {
 	}
 }
 
-// WithAsyncBusyTimeout sets the async insert busy timeout range.
+// withAsyncBusyTimeout sets the async insert busy timeout range.
 // Higher values buffer more rows per part, reducing part creation rate.
 func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
 	return func(o *insertOpts) {
