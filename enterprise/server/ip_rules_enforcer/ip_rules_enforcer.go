@@ -104,6 +104,9 @@ func newDBIPRulesProvider(env environment.Env) (*dbIPRulesProvider, error) {
 	if err != nil {
 		return nil, err
 	}
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("DB-backed IP Rules Provider requires a DB")
+	}
 	return &dbIPRulesProvider{
 		db:    env.GetDBHandle(),
 		cache: cache,
