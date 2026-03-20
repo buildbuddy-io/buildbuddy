@@ -30,7 +30,7 @@ var (
 	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
 	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
-	disableUploadCompresssion        = flag.Bool("executor.disable_snapshot_chunk_upload_compression", false, "If true, snapshot chunks will be sent to the remote cache uncompressed.")
+	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
 )
 
 const (
@@ -182,7 +182,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 
 	rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
-	if !*disableUploadCompresssion {
+	if *enableUploadCompresssion {
 		rn.SetCompressor(repb.Compressor_ZSTD)
 	}
 	file, err := os.Open(path)
