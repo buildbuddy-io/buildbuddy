@@ -180,7 +180,7 @@ func TestExpiringLRU_GetAfterExpiry(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(6 * time.Second)
 		v, ok := l.Get("a")
 		require.False(t, ok)
 		require.Zero(t, v)
@@ -194,7 +194,7 @@ func TestExpiringLRU_ContainsAfterExpiry(t *testing.T) {
 
 		l.Add("a", 1)
 		require.True(t, l.Contains("a"))
-		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(6 * time.Second)
 		require.False(t, l.Contains("a"))
 	})
 }
@@ -210,7 +210,7 @@ func TestExpiringLRU_TTLEvictionCallback(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		config.Clock.(clockwork.FakeClock).Advance(6 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(6 * time.Second)
 		l.Get("a")
 		require.Equal(t, []eviction{{"a", 1, lru.TTLEviction}}, evictions)
 	})
@@ -223,9 +223,9 @@ func TestExpiringLRU_AddResetsTTL(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Add("a", 1)
-		config.Clock.(clockwork.FakeClock).Advance(4 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(4 * time.Second)
 		l.Add("a", 2)
-		config.Clock.(clockwork.FakeClock).Advance(4 * time.Second)
+		config.Clock.(*clockwork.FakeClock).Advance(4 * time.Second)
 		v, ok := l.Get("a")
 		require.True(t, ok, "item should not have expired since it was re-added")
 		require.Equal(t, 2, v)
