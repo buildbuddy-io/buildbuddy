@@ -882,10 +882,6 @@ func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 
 		done := 0
 		for _, pu := range partitionUsage {
-			// Force the sampler to refresh its pebble iterator on
-			// every read so that samples have up-to-date atimes.
-			pu.samplesPerBatch = 0
-
 			db, err := pu.dbGetter.DB()
 			if err != nil {
 				log.Warningf("failed to get db: %s", db)
