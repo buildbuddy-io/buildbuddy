@@ -181,6 +181,10 @@ const (
 
 	ChunkedFailureReasonLabel = "reason"
 
+	// Whether the read request had a non-zero offset (e.g. Bazel retry
+	// resuming a partial read).
+	ChunkedOffsetReadLabel = "offset_read"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3745,6 +3749,7 @@ var (
 	}, []string{
 		ChunkedFailureReasonLabel,
 		StatusHumanReadableLabel,
+		ChunkedOffsetReadLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

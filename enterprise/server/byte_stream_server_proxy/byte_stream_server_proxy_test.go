@@ -1047,6 +1047,310 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
 }
 
+type faultyCache struct {
+	interfaces.Cache
+	faultDigest string
+	failAfter   int64
+	failErr     error
+}
+
+func (c *faultyCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	reader, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+	if err != nil {
+		return nil, err
+	}
+	shouldFault := c.faultDigest == r.GetDigest().GetHash()
+	failAfter := c.failAfter
+	failErr := c.failErr
+	if shouldFault {
+		return &faultyReader{ReadCloser: reader, failAfter: failAfter, failErr: failErr}, nil
+	}
+	return reader, nil
+}
+
+type faultyReader struct {
+	io.ReadCloser
+	bytesRead int64
+	failAfter int64
+	failErr   error
+}
+
+func (r *faultyReader) Read(p []byte) (int, error) {
+	remaining := r.failAfter - r.bytesRead
+	if remaining <= 0 {
+		return 0, r.failErr
+	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.ReadCloser.Read(p)
+	r.bytesRead += int64(n)
+	return n, err
+}
+
+func TestReadChunkedWithOffset(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	// Start the backing remote cache services.
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	bsClient := bspb.NewByteStreamClient(remoteConn)
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+
+	// Start the proxy under test and point it at the remote cache.
+	proxyEnv.SetByteStreamClient(bsClient)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Write the blob as CDC chunks and publish the manifest remotely.
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	writeChunkFn := func(chunkData []byte) error {
+		chunkDataCopy := make([]byte, len(chunkData))
+		copy(chunkDataCopy, chunkData)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
+	}
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	require.NoError(t, err)
+	_, err = cdcChunker.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, cdcChunker.Close())
+	require.Greater(t, len(chunkDigests), 1)
+
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+
+	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+
+	t.Run("MidChunkOffset", func(t *testing.T) {
+		offset := chunkDigests[0].GetSizeBytes() + chunkDigests[1].GetSizeBytes()/2
+		downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{
+			ResourceName: downloadCASRN.DownloadString(),
+			ReadOffset:   offset,
+		})
+		require.NoError(t, err)
+
+		var got []byte
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			got = append(got, res.Data...)
+		}
+		require.Equal(t, originalData[offset:], got)
+	})
+
+	t.Run("ChunkBoundaryOffset", func(t *testing.T) {
+		offset := chunkDigests[0].GetSizeBytes()
+		downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{
+			ResourceName: downloadCASRN.DownloadString(),
+			ReadOffset:   offset,
+		})
+		require.NoError(t, err)
+
+		var got []byte
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			got = append(got, res.Data...)
+		}
+		require.Equal(t, originalData[offset:], got)
+	})
+}
+
+func TestReadChunkedPartialLocalFailure(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	// Start the backing remote cache services.
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	bsClient := bspb.NewByteStreamClient(remoteConn)
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+
+	proxyEnv.SetByteStreamClient(bsClient)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Write the blob as CDC chunks and publish the manifest remotely.
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	writeChunkFn := func(chunkData []byte) error {
+		chunkDataCopy := make([]byte, len(chunkData))
+		copy(chunkDataCopy, chunkData)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
+	}
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	require.NoError(t, err)
+	_, err = cdcChunker.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, cdcChunker.Close())
+	require.Greater(t, len(chunkDigests), 1)
+
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+
+	chunk1RN := digest.NewCASResourceName(chunkDigests[1], "", repb.DigestFunction_BLAKE3)
+	chunk1Data, err := remoteEnv.GetCache().Get(ctx, chunk1RN.ToProto())
+	require.NoError(t, err)
+
+	fc := &faultyCache{
+		Cache:       proxyEnv.GetCache(),
+		faultDigest: chunkDigests[1].GetHash(),
+		failAfter:   int64(len(chunk1Data) / 3),
+		failErr:     status.UnavailableError("injected fault"),
+	}
+	proxyEnv.SetCache(fc)
+	require.NoError(t, fc.Cache.Set(ctx, chunk1RN.ToProto(), chunk1Data))
+
+	// Rebuild the proxy so local chunk reads go through the fault-injecting cache.
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
+	require.NoError(t, err)
+
+	var got []byte
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		got = append(got, res.Data...)
+	}
+	require.Equal(t, originalData, got)
+}
+
 func TestWriteChunked(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
