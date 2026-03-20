@@ -217,7 +217,39 @@ func isTimeout(err error) bool {
 	return strings.Contains(err.Error(), "i/o timeout")
 }
 
-func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}) error {
+// InsertOpt is a functional option for configuring insert behavior.
+type InsertOpt func(*insertOpts)
+
+type insertOpts struct {
+	asyncBusyTimeoutMinMs int
+	asyncBusyTimeoutMaxMs int
+}
+
+func defaultInsertOpts() *insertOpts {
+	return &insertOpts{
+		asyncBusyTimeoutMinMs: 10,
+		asyncBusyTimeoutMaxMs: 200,
+	}
+}
+
+func (o *insertOpts) apply(opts ...InsertOpt) {
+	for _, fn := range opts {
+		fn(o)
+	}
+}
+
+// WithAsyncBusyTimeout sets the async insert busy timeout range.
+// Higher values buffer more rows per part, reducing part creation rate.
+func WithAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
+	return func(o *insertOpts) {
+		o.asyncBusyTimeoutMinMs = minMs
+		o.asyncBusyTimeoutMaxMs = maxMs
+	}
+}
+
+func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}, opts ...InsertOpt) error {
+	o := defaultInsertOpts()
+	o.apply(opts...)
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	if *asyncInsert {
@@ -239,9 +271,9 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 				"wait_for_async_insert": 1,
 
 				"async_insert_deduplicate":         1,
-				"wait_for_async_insert_timeout":    30,  // In seconds. Default is 120.
-				"async_insert_busy_timeout_min_ms": 10,  // Default is 50
-				"async_insert_busy_timeout_max_ms": 200, // This is the default, but set in case it changes
+				"wait_for_async_insert_timeout":    30,              // In seconds. Default is 120.
+				"async_insert_busy_timeout_min_ms": o.asyncBusyTimeoutMinMs,
+				"async_insert_busy_timeout_max_ms": o.asyncBusyTimeoutMaxMs,
 			}),
 		)
 	}
