@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[6273],{75148:e=>{e.exports=JSON.parse('{"tags":[{"label":"bazel","permalink":"/changelog/tags/bazel","count":3},{"label":"debugging","permalink":"/changelog/tags/debugging","count":4},{"label":"featured","permalink":"/changelog/tags/featured","count":4}]}')}}]);
