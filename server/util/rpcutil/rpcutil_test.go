@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -146,81 +146,57 @@ func TestCloseAndRecv(t *testing.T) {
 }
 
 func TestSender_CloseAndRecvDoesNotLeakSenderGoroutine(t *testing.T) {
-	const iterations = 100
-	baseline := runtime.NumGoroutine()
+	// Use a background context that is never cancelled, so the only way
+	// the sender goroutine can exit is via sendChan being closed.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
-	for i := 0; i < iterations; i++ {
-		ch := make(chan message[*tspb.Timestamp], 1)
-		closeRecvCh := make(chan message[*tspb.Timestamp], 1)
-		s := &stream[*tspb.Timestamp]{ch: ch, closeRecvCh: closeRecvCh}
-		// Use a background context that is never cancelled, so the only way
-		// the sender goroutine can exit is via sendChan being closed.
-		sender := rpcutil.NewSender(context.Background(), s)
+	ch := make(chan message[*tspb.Timestamp], 1)
+	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
+	s := &stream[*tspb.Timestamp]{ch: ch, closeRecvCh: closeRecvCh}
+	sender := rpcutil.NewSender(context.Background(), s)
 
-		require.NoError(t, sender.SendWithTimeoutCause(tspb.Now(), hugeTimeout, fmt.Errorf("cause")))
-		<-ch
-		closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
-		_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
-		require.NoError(t, err)
-	}
-
-	require.Eventually(t, func() bool {
-		runtime.GC()
-		return runtime.NumGoroutine() <= baseline+5
-	}, time.Second, 10*time.Millisecond)
+	require.NoError(t, sender.SendWithTimeoutCause(tspb.Now(), hugeTimeout, fmt.Errorf("cause")))
+	<-ch
+	closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
+	_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
+	require.NoError(t, err)
 }
 
 func TestSender_CloseAndRecvWithoutSendsDoesNotLeak(t *testing.T) {
-	const iterations = 100
-	baseline := runtime.NumGoroutine()
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
-	for i := 0; i < iterations; i++ {
-		closeRecvCh := make(chan message[*tspb.Timestamp], 1)
-		s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
-		sender := rpcutil.NewSender(context.Background(), s)
+	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
+	s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
+	sender := rpcutil.NewSender(context.Background(), s)
 
-		closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
-		_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
-		require.NoError(t, err)
-	}
-
-	require.Eventually(t, func() bool {
-		runtime.GC()
-		return runtime.NumGoroutine() <= baseline+5
-	}, time.Second, 10*time.Millisecond)
+	closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
+	_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
+	require.NoError(t, err)
 }
 
 func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
-	const iterations = 100
-	baseline := runtime.NumGoroutine()
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
-	for i := 0; i < iterations; i++ {
-		ctx, cancel := context.WithCancel(context.Background())
-		stream := &blockingSendStream[*tspb.Timestamp]{
-			ctx:          ctx,
-			sendStarted:  make(chan struct{}),
-			sendReturned: make(chan struct{}),
-		}
-		sender := rpcutil.NewSender(ctx, stream)
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &blockingSendStream[*tspb.Timestamp]{
+		ctx:          ctx,
+		sendStarted:  make(chan struct{}),
+		sendReturned: make(chan struct{}),
+	}
+	sender := rpcutil.NewSender(ctx, stream)
 
-		err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("test-cause"))
-		require.Error(t, err)
-		select {
-		case <-stream.sendStarted:
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for sender goroutine to start Send")
-		}
-
-		cancel()
-		select {
-		case <-stream.sendReturned:
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for blocked send to return")
-		}
+	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("test-cause"))
+	require.Error(t, err)
+	select {
+	case <-stream.sendStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sender goroutine to start Send")
 	}
 
-	require.Eventually(t, func() bool {
-		runtime.GC()
-		return runtime.NumGoroutine() <= baseline+5
-	}, time.Second, 10*time.Millisecond)
+	cancel()
+	select {
+	case <-stream.sendReturned:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for blocked send to return")
+	}
 }
