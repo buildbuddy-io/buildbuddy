@@ -71,7 +71,9 @@ func (s *stream[T]) CloseAndRecv() (T, error) {
 }
 
 func TestReceiver(t *testing.T) {
-	ctx := context.Background()
+	defer goleak.VerifyNone(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch := make(chan message[*tspb.Timestamp])
 	stream := &stream[*tspb.Timestamp]{ch: ch}
 	receiver := rpcutil.NewReceiver(ctx, stream)
@@ -88,9 +90,13 @@ func TestReceiver(t *testing.T) {
 	msg, err = receiver.RecvWithTimeoutCause(0, cause)
 	require.Nil(t, nil, msg)
 	require.Equal(t, cause, err)
+
+	// unblock the `stream.Recv` method
+	ch <- message[*tspb.Timestamp]{Val: val}
 }
 
 func TestSender(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 	ch := make(chan message[*tspb.Timestamp])
 	stream := &stream[*tspb.Timestamp]{ch: ch}
@@ -101,9 +107,12 @@ func TestSender(t *testing.T) {
 	// Should return cause when timed out
 	err := sender.SendWithTimeoutCause(val, 0, cause)
 	require.Equal(t, cause, err)
+	<-ch
+	sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
 }
 
 func TestSender_AllowsMultipleSuccessfulSends(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 	ch := make(chan message[*tspb.Timestamp], 2)
 	stream := &stream[*tspb.Timestamp]{ch: ch}
@@ -117,9 +126,11 @@ func TestSender_AllowsMultipleSuccessfulSends(t *testing.T) {
 
 	require.Equal(t, val1, (<-ch).Val)
 	require.Equal(t, val2, (<-ch).Val)
+	sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
 }
 
 func TestCloseAndRecv(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 	cause := fmt.Errorf("test-cause")
 	val := tspb.Now()
@@ -148,7 +159,7 @@ func TestCloseAndRecv(t *testing.T) {
 func TestSender_CloseAndRecvDoesNotLeakSenderGoroutine(t *testing.T) {
 	// Use a background context that is never cancelled, so the only way
 	// the sender goroutine can exit is via sendChan being closed.
-	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer goleak.VerifyNone(t)
 
 	ch := make(chan message[*tspb.Timestamp], 1)
 	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
@@ -163,7 +174,7 @@ func TestSender_CloseAndRecvDoesNotLeakSenderGoroutine(t *testing.T) {
 }
 
 func TestSender_CloseAndRecvWithoutSendsDoesNotLeak(t *testing.T) {
-	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer goleak.VerifyNone(t)
 
 	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
 	s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
@@ -175,7 +186,7 @@ func TestSender_CloseAndRecvWithoutSendsDoesNotLeak(t *testing.T) {
 }
 
 func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
-	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer goleak.VerifyNone(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &blockingSendStream[*tspb.Timestamp]{
