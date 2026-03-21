@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -297,6 +298,49 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 	err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func TestBypassAuthorize_Success(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{interfaces.ClientIdentityCacheProxy})
+
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityCacheProxy)
+
+	irs := newIPRulesEnforcer(t, env)
+	authCtx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, authCtx, groupID, true)
+
+	ctx := reauthenticate(t, env, userID)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	ctx = testgrpc.WithIncomingMetadata(ctx, "bypass-ip-rule-enforcement", "true")
+	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
+
+	err := irs.Authorize(ctx)
+	require.NoError(t, err)
+}
+
+func TestBypassAuthorize_Failure(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{interfaces.ClientIdentityApp})
+
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityCacheProxy)
+
+	irs := newIPRulesEnforcer(t, env)
+	authCtx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, authCtx, groupID, true)
+
+	ctx := reauthenticate(t, env, userID)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	ctx = testgrpc.WithIncomingMetadata(ctx, "bypass-ip-rule-enforcement", "true")
+	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
+
+	err := irs.Authorize(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }
 
 func TestRemoteIPRulesEnforced(t *testing.T) {

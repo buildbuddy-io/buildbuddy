@@ -18,6 +18,7 @@ go_library(
         "//server/util/alert",
         "//server/util/clientip",
         "//server/util/db",
+        "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/lru",
@@ -26,6 +27,7 @@ go_library(
         "//third_party/singleflight",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -42,6 +44,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testgrpc",
         "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/status",

@@ -127,3 +127,16 @@ func OutgoingToIncomingContext(t *testing.T, ctx context.Context) context.Contex
 	require.True(t, ok)
 	return metadata.NewIncomingContext(ctx, outgoingMD)
 }
+
+// Attaches the provided key-value pairs as incoming gRPC metadata to the
+// context, creating a new invcoming gRPC metadata if necessary.
+func WithIncomingMetadata(ctx context.Context, kv ...string) context.Context {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if md == nil {
+		md = metadata.MD{}
+	} else {
+		md = md.Copy()
+	}
+	md = metadata.Join(md, metadata.Pairs(kv...))
+	return metadata.NewIncomingContext(ctx, md)
+}

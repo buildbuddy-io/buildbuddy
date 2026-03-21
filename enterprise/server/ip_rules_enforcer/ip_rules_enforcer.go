@@ -2,7 +2,6 @@ package ip_rules_enforcer
 
 import (
 	"context"
-	"flag"
 	"net"
 	"net/http"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
@@ -32,8 +33,11 @@ import (
 )
 
 var (
-	enableIPRules           = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
-	cacheTTL                = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	enableIPRules = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
+	cacheTTL      = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+
+	// TODO(iain): just hardcode this list ("cache-proxy").
+	permittedClients        = flag.Slice("auth.ip_rules.permitted_clients", []string{}, "Clients (identified by clientidentity) that are permitted to access IPRulesService via RPC.")
 	remoteIPRulesTarget     = flag.String("auth.ip_rules.remote.target", "", "The gRPC target of the backend storing IP rules.")
 	remoteIPRulesRPCTimeout = flag.Duration("auth.ip_rules.remote.rpc_timeout", 15*time.Second, "Timeout for remote IP rules RPCs.")
 )
@@ -41,7 +45,34 @@ var (
 const (
 	// The number of IP rules (net.IPNet instances) that we will store in memory.
 	cacheSize = 100_000
+
+	bypassEnforcementKey = "bypass-ip-rule-enforcement"
 )
+
+func isPermittedClient(client string) bool {
+	for _, permittedClient := range *permittedClients {
+		if client == permittedClient {
+			return true
+		}
+	}
+	return false
+}
+
+// To enforce IP Rules, the enforcer needs to fetch them via GetIPRules. This
+// request comes from the server enforcing the rules, not the client. Without
+// special treatment it will be rejected if the organization has enforcement
+// enabled. This bypass mechanism allows trusted clients (identified by
+// clientidentity) to bypass IP rule enforcement when fetching IP rules.
+func bypassIPRuleEnforcement(ctx context.Context, identityService interfaces.ClientIdentityService) bool {
+	if identityService == nil {
+		return false
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil || !isPermittedClient(identity.Client) {
+		return false
+	}
+	return len(metadata.ValueFromIncomingContext(ctx, bypassEnforcementKey)) > 0
+}
 
 type ipRule struct {
 	id      string
@@ -265,6 +296,10 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 
 func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
 	v, _, err := p.sf.Do(ctx, groupID, func(ctx context.Context) ([]ipRule, error) {
+		// These requests may be coming from the server enforcing the IP rules,
+		// not a client. Bypass IP Rule enforcement in the backend so the rules
+		// can be fetched.
+		ctx = metadata.AppendToOutgoingContext(ctx, bypassEnforcementKey, "true")
 		ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 		defer cancel()
 		rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -455,6 +490,11 @@ func (s *Enforcer) Check(ctx context.Context, groupID, skipRuleID string) error 
 }
 
 func (s *Enforcer) authorize(ctx context.Context, groupID string) error {
+	// Allow trusted clients to bypass IP rule enforcement, for fetching IP
+	// rules to be enforced remotely.
+	if bypassIPRuleEnforcement(ctx, s.env.GetClientIdentityService()) {
+		return nil
+	}
 	start := time.Now()
 	err := s.Check(ctx, groupID, "" /*=skipRuleID*/)
 	metrics.IPRulesCheckLatencyUsec.With(
