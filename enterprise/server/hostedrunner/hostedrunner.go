@@ -195,11 +195,12 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
 	}
-	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
-		if bazelCommandOverride != "" {
-			args = append(args, "--bazel_command="+bazelCommandOverride)
-		}
+	bazelCommand, err := r.ciRunnerBazelCommand(ctx, repoURL)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to determine bazel command: %s", err)
+	}
+	if bazelCommand != "" {
+		args = append(args, "--bazel_command="+bazelCommand)
 	}
 	args = append(args, req.GetRunnerFlags()...)
 
@@ -331,6 +332,30 @@ func getExecProperty(execProps []*repb.Platform_Property, key string) string {
 	return ""
 }
 
+func (r *runnerService) ciRunnerBazelCommand(ctx context.Context, repoURL string) (string, error) {
+	if repoURL == "" {
+		return "", nil
+	}
+
+	normalizedRepoURL, err := git.NormalizeRepoURL(repoURL)
+	if err != nil {
+		return "", status.WrapError(err, "normalize git repo url")
+	}
+
+	gitRepository, err := r.getGitRepository(ctx, normalizedRepoURL.String())
+	if err != nil {
+		// Linking a git repo is not required for Remote Bazel for public repos.
+		if status.IsNotFoundError(err) {
+			return "", nil
+		}
+		return "", status.WrapError(err, "get git repository")
+	}
+	if gitRepository.UseCLIInRemoteRunners {
+		return "bb", nil
+	}
+	return "", nil
+}
+
 func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.RunRequest) ([]string, error) {
 	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -393,9 +418,19 @@ func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string
 	if err != nil {
 		return "", err
 	}
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+
+	gitRepository, err := r.getGitRepository(ctx, repoURL)
 	if err != nil {
 		return "", err
+	}
+
+	return app.GetRepositoryInstallationToken(ctx, gitRepository)
+}
+
+func (r *runnerService) getGitRepository(ctx context.Context, repoURL string) (*tables.GitRepository, error) {
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	gitRepository := &tables.GitRepository{}
@@ -407,12 +442,12 @@ func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string
 	`, u.GetGroupID(), repoURL).Take(gitRepository)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
+			return nil, status.NotFoundErrorf("workflow not configured for %s", repoURL)
 		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+		return nil, status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
 	}
 
-	return app.GetRepositoryInstallationToken(ctx, gitRepository)
+	return gitRepository, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
