@@ -36,6 +36,18 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func replaceSyntheticIgnoreAll(args []string) []string {
+	out := make([]string, 0, len(args)+2)
+	for _, arg := range args {
+		if arg == "--ignore_all_rc_files" {
+			out = append(out, "--nosystem_rc", "--noworkspace_rc", "--nohome_rc")
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
 func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 	for _, test := range []struct {
 		Name     string
@@ -69,7 +81,7 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs.Format())
+			assert.Equal(t, replaceSyntheticIgnoreAll(test.Expanded), expandedArgs.Format())
 		})
 	}
 }
@@ -108,7 +120,7 @@ func TestParseBazelrc_Simple(t *testing.T) {
 			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs.Format())
+			assert.Equal(t, replaceSyntheticIgnoreAll(test.Expanded), expandedArgs.Format())
 		})
 	}
 }
@@ -224,6 +236,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
+				"--bazelrc=/dev/null",
 				"query",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -383,7 +396,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				require.NoError(t, err, "error expanding %s", tc.args)
 			}
 			if tc.expectedExpandedArgs != nil {
-				assert.Equal(t, tc.expectedExpandedArgs, expandedArgs.Format())
+				assert.Equal(t, replaceSyntheticIgnoreAll(tc.expectedExpandedArgs), expandedArgs.Format())
 			}
 		})
 	}
@@ -500,7 +513,7 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.args)
-			assert.Equal(t, test.expectedExpandedArgs, expandedArgs.Format())
+			assert.Equal(t, replaceSyntheticIgnoreAll(test.expectedExpandedArgs), expandedArgs.Format())
 		})
 	}
 }
@@ -717,7 +730,7 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+	assert.Equal(t, replaceSyntheticIgnoreAll(expectedExpandedArgs), expandedArgs.Format())
 }
 
 func TestCommonPositionalArgument(t *testing.T) {
@@ -741,7 +754,7 @@ func TestCommonPositionalArgument(t *testing.T) {
 	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+	assert.Equal(t, replaceSyntheticIgnoreAll(expectedExpandedArgs), expandedArgs.Format())
 }
 
 func TestBazelrcLexing(t *testing.T) {
@@ -765,7 +778,7 @@ func TestBazelrcLexing(t *testing.T) {
 	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+	assert.Equal(t, replaceSyntheticIgnoreAll(expectedExpandedArgs), expandedArgs.Format())
 }
 
 func TestGetRemoteHeaderVal(t *testing.T) {

@@ -63,10 +63,12 @@ func Setup(args []string, tempDir string) (_ []*plugin.Plugin, bazelArgs []strin
 		return nil, nil, nil, nil, "", err
 	}
 	for _, p := range plugins {
+		previousBazelArgs := append([]string(nil), bazelArgs...)
 		bazelArgs, execArgs, err = p.PreBazel(bazelArgs, execArgs)
 		if err != nil {
 			return nil, nil, nil, nil, "", err
 		}
+		warnOnImportantLateBazelrcChanges(previousBazelArgs, bazelArgs)
 	}
 
 	// Save the original BES backend value before it is rewritten by the sidecar.

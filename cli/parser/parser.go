@@ -747,11 +747,11 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	return flags, err
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options (as
-// well as any `enable_platform_specific_config` option, if one exists) using
-// those configs, and returns the result.
+// ResolveArgs removes all rc-file options from the args, appends startup
+// options that suppress any rc files the CLI already consumed, parses those
+// rc-files into Configs using the default parser, and expands all config
+// options (as well as any `enable_platform_specific_config` option, if one
+// exists) using those configs, and returns the result.
 func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -768,11 +768,11 @@ func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs
 	return p.resolveArgs(parsedArgs, ws)
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs, and expands all config options (as well as any
-// `enable_platform_specific_config` option, if one exists) using
-// those configs, and returns the result.
+// ResolveArgs removes all rc-file options from the args, appends startup
+// options that suppress any rc files the CLI already consumed, parses those
+// rc-files into Configs, and expands all config options (as well as any
+// `enable_platform_specific_config` option, if one exists) using those
+// configs, and returns the result.
 func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -918,9 +918,9 @@ func (p *Subparser) MakeOption(optionName string, value *string) (option options
 }
 
 // ConsumeAndParseRCFiles removes all rc-file related options from the provided
-// args and appends an `ignore_all_rc_files` option to the startup options.
-// Returns a map of all the named configs in those files and the default
-// (unnamed) config from those files.
+// args, appends startup options that suppress any rc files the CLI already
+// consumed, and returns a map of all the named configs in those files plus the
+// default (unnamed) config.
 func (p *Parser) ConsumeAndParseRCFiles(args *parsed.OrderedArgs) (map[string]*parsed.Config, *parsed.Config, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -930,31 +930,55 @@ func (p *Parser) ConsumeAndParseRCFiles(args *parsed.OrderedArgs) (map[string]*p
 }
 
 // consumeAndParseRCFiles removes all rc-file related options from the provided
-// args and appends an `ignore_all_rc_files` option to the startup options.
-// Returns a map of all the named configs in those files and the default
-// (unnamed) config from those files.
+// args, appends startup options that suppress any rc files the CLI already
+// consumed, and returns a map of all the named configs in those files plus the
+// default (unnamed) config.
 func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir string) (map[string]*parsed.Config, *parsed.Config, error) {
-	rcFiles, err := args.ConsumeRCFileOptions(workspaceDir)
+	consumed, err := args.ConsumeRCFileOptions(workspaceDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	parsedNamedConfigs, defaultConfig, err := p.ParseRCFiles(workspaceDir, rcFiles...)
+	parsedNamedConfigs, defaultConfig, err := p.ParseRCFiles(workspaceDir, consumed.Files...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
 
-	// Ignore all RC files when actually running bazel, since the CLI has already
-	// accounted for them.
-	ignoreAllRCFilesOptionDefinition, ok := p.StartupOptionParser.ByName["ignore_all_rc_files"]
-	if !ok {
-		return nil, nil, fmt.Errorf("`ignore_all_rc_files` was not present in the option definitions.")
+	if consumed.IgnoreAll {
+		// Preserve explicit --ignore_all_rc_files, since the user requested that
+		// Bazel ignore all rc files, including any explicit --bazelrc args added
+		// after the CLI resolved the original command line.
+		opt, err := MakeStartupOption("ignore_all_rc_files", nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := args.Append(opt); err != nil {
+			return nil, nil, err
+		}
+		return parsedNamedConfigs, defaultConfig, nil
 	}
-	opt, err := MakeStartupOption(ignoreAllRCFilesOptionDefinition.Name(), nil)
-	if err != nil {
-		return nil, nil, err
+
+	// Suppress the default rc-file locations that the CLI has already consumed,
+	// while still allowing explicit --bazelrc args added later in the pipeline
+	// to take effect.
+	for _, optName := range []string{"nosystem_rc", "noworkspace_rc", "nohome_rc"} {
+		opt, err := MakeStartupOption(optName, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := args.Append(opt); err != nil {
+			return nil, nil, err
+		}
 	}
-	if err := args.Append(opt); err != nil {
-		return nil, nil, err
+
+	if consumed.ExplicitNullBazelrc {
+		devNull := "/dev/null"
+		opt, err := MakeStartupOption("bazelrc", &devNull)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := args.Append(opt); err != nil {
+			return nil, nil, err
+		}
 	}
 	return parsedNamedConfigs, defaultConfig, nil
 }

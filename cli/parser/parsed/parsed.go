@@ -583,10 +583,17 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
 }
 
+type ConsumedRCFileOptions struct {
+	Files               []string
+	IgnoreAll           bool
+	ExplicitNullBazelrc bool
+}
+
 // ConsumeRCFileOptions removes all rc-file related options from the provided
-// args and appends an `ignore_all_rc_files` option to the startup options.
-// Returns a slice of all the rc files that should be parsed.
-func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
+// args. It returns the rc files that should be parsed along with any startup
+// options that should be preserved when Bazel is invoked later.
+func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (*ConsumedRCFileOptions, error) {
+	consumed := &ConsumedRCFileOptions{}
 	if ignore, err := options.AccumulateValues[*IndexedOption](false, a.RemoveStartupOptions("ignore_all_rc_files")); err != nil {
 		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
@@ -594,7 +601,8 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 		// set. If so, return an empty list of RC files, since bazel will do the
 		// same.
 		a.RemoveStartupOptions("system_rc", "workspace_rc", "home_rc")
-		return nil, nil
+		consumed.IgnoreAll = true
+		return consumed, nil
 	}
 
 	// Parse rc files in the order defined here:
@@ -609,11 +617,11 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 		}
 		switch optName {
 		case "system_rc":
-			rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
-			rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
+			consumed.Files = append(consumed.Files, "/etc/bazel.bazelrc")
+			consumed.Files = append(consumed.Files, `%ProgramData%\bazel.bazelrc`)
 		case "workspace_rc":
 			if workspaceDir != "" {
-				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
+				consumed.Files = append(consumed.Files, filepath.Join(workspaceDir, ".bazelrc"))
 			}
 		case "home_rc":
 			// Use $HOME or %USERPROFILE% to locate the home_rc file.
@@ -622,9 +630,9 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 			// On Unix, if $HOME variable is unset, fallback to finding home directory
 			// by syscall (getpwuid), which typically parse /etc/passwd for the information.
 			if homeDir, osErr := os.UserHomeDir(); osErr == nil && homeDir != "" {
-				rcFiles = append(rcFiles, filepath.Join(homeDir, ".bazelrc"))
+				consumed.Files = append(consumed.Files, filepath.Join(homeDir, ".bazelrc"))
 			} else if currUser, userErr := user.Current(); userErr == nil && currUser != nil && currUser.HomeDir != "" {
-				rcFiles = append(rcFiles, filepath.Join(currUser.HomeDir, ".bazelrc"))
+				consumed.Files = append(consumed.Files, filepath.Join(currUser.HomeDir, ".bazelrc"))
 			} else {
 				log.Debugf("Unable to locate home_rc: %s - %s", osErr, userErr)
 			}
@@ -635,12 +643,12 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 		if o.GetValue() == "/dev/null" {
 			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
 			// subsequent --bazelrc args, so we ignore them as well.
+			consumed.ExplicitNullBazelrc = true
 			break
 		}
-		rcFiles = append(rcFiles, o.GetValue())
-		continue
+		consumed.Files = append(consumed.Files, o.GetValue())
 	}
-	return rcFiles, nil
+	return consumed, nil
 }
 
 type Config struct {
