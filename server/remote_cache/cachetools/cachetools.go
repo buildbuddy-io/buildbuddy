@@ -1291,6 +1291,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 
 type UploadWriter struct {
 	ctx          context.Context
+	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
@@ -1379,6 +1380,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 // Commit sends any bytes remaining in the internal buffer to the CAS
 // and tells the server that the stream is done sending writes.
 func (uw *UploadWriter) Commit() error {
+	defer uw.cancel()
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot commit")
 	}
@@ -1422,6 +1424,7 @@ func (uw *UploadWriter) Close() error {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot close again")
 	}
 	uw.closed = true
+	uw.cancel()
 	uploadBufPool.Put(uw.buf)
 	if uw.useZstd {
 		uploadBufPool.Put(uw.cbuf)
@@ -1452,8 +1455,10 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -1462,6 +1467,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
 			ctx:          ctx,
+			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
@@ -1472,6 +1478,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 	return &UploadWriter{
 		ctx:          ctx,
+		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),
