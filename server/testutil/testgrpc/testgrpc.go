@@ -129,7 +129,7 @@ func OutgoingToIncomingContext(t *testing.T, ctx context.Context) context.Contex
 }
 
 // Attaches the provided key-value pairs as incoming gRPC metadata to the
-// context, creating a new invcoming gRPC metadata if necessary.
+// context, creating new incoming gRPC metadata if necessary.
 func WithIncomingMetadata(ctx context.Context, kv ...string) context.Context {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if md == nil {
