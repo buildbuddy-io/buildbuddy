@@ -1,7 +1,4 @@
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_source")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:layer.bzl", "layer_from_tar")
