@@ -386,6 +386,9 @@ const (
 	ImageFetchUseOCIFetcherLabel = "use_oci_fetcher"
 
 	ManifestPrefixLabel = "prefix"
+
+	// Signing algorithm used (JWT alg), such as "HS256" or "ES256".
+	SigningMethodLabel = "method"
 )
 
 // Label value constants
@@ -3070,6 +3073,16 @@ var (
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 5*time.Second, 2),
 		Help:      "Latency of IP authorization checks.",
 	}, []string{
+		StatusHumanReadableLabel,
+	})
+
+	JWTVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "jwt_verification_count",
+		Help:      "Total number of JWT verifications by signing-method and outcome.",
+	}, []string{
+		SigningMethodLabel,
 		StatusHumanReadableLabel,
 	})
 
