@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -202,6 +202,7 @@ ts_library(
         "//app/target:action_card",
         "//app/target:flaky_target_chip",
         "//app/target:target_artifacts_card",
+        "//app/target:target_edges_card",
         "//app/target:target_test_coverage_card",
         "//app/target:target_test_document_card",
         "//app/target:target_test_log_card",
@@ -211,5 +212,39 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "compact_exec_log_edges",
+    srcs = ["compact_exec_log_edges.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//proto:spawn_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "compact_exec_log_edges_test",
+    srcs = ["compact_exec_log_edges_test.ts"],
+    deps = [
+        ":compact_exec_log_edges",
+        "//:node_modules/tslib",
+    ],
+)
+
+ts_library(
+    name = "target_edges_card",
+    srcs = ["target_edges_card.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/link",
+        "//app/invocation:invocation_model",
+        "//app/router",
+        "//app/target:compact_exec_log_edges",
+        "//proto:build_event_stream_ts_proto",
     ],
 )
