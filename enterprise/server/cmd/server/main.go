@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -305,6 +306,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := scim.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := mcpserver.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := codesearch.Register(realEnv); err != nil {

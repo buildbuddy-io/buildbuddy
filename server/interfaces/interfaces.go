@@ -1692,6 +1692,10 @@ type ServerNotificationService interface {
 	Publish(ctx context.Context, msg proto.Message) error
 }
 
+type MCPService interface {
+	RegisterHandlers(mux HttpServeMux)
+}
+
 type SCIMService interface {
 	RegisterHandlers(mux HttpServeMux)
 }

@@ -53,6 +53,7 @@ go_library(
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/ip_rules_enforcer",
         "//enterprise/server/ip_rules_service",
+        "//enterprise/server/mcp/mcpserver",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/ociregistry",
         "//enterprise/server/quota",
