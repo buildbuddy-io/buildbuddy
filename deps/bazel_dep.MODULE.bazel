@@ -1,6 +1,6 @@
 ## Overrides
 
-bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
+bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")
 bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
 single_version_override(
     module_name = "gazelle",
@@ -18,7 +18,7 @@ single_version_override(
     patches = [
         "//buildpatches/bazel_dep:bzlmod_googleapis.patch",
     ],
-    version = "0.0.0-20241220-5e258e33",
+    version = "0.0.0-20260223-edfe7983",
 )
 
 # Note that this is 'rules_nodejs-core'
@@ -74,11 +74,11 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
 )
 
-bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "34.0.bcr.1", repo_name = "com_google_protobuf")
 
 ## Regular bazel_deps
 
-bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_esbuild", version = "0.23.0")
 bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
 bazel_dep(name = "aspect_rules_js", version = "2.1.3")
@@ -89,14 +89,14 @@ bazel_dep(name = "bazel_worker_api", version = "0.0.10")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "redis", version = "5.0.4")
 bazel_dep(name = "rules_cc", version = "0.2.17")
-bazel_dep(name = "rules_oci", version = "2.0.0")
+bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_python", version = "1.8.1")
-bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.1")
+bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.9.0")
 bazel_dep(name = "rules_uv", version = "0.89.2")
 bazel_dep(name = "rules_shell", version = "0.6.1")
-bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
+bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1")
 
 # BuildBuddy Toolchain
 # Keep up-to-date with
@@ -105,9 +105,9 @@ bazel_dep(name = "rules_bazel_integration_test", version = "0.34.0")
 # - tools/dev_qa_test/BUILD
 bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
 bazel_dep(name = "toolchains_musl", version = "0.1.27")
-bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
+bazel_dep(name = "zlib", version = "1.3.2")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
-bazel_dep(name = "with_cfg.bzl", version = "0.14.1")
+bazel_dep(name = "with_cfg.bzl", version = "0.14.5")
 
 # Bazel uses buildozer for `bazel mod tidy`
 # We want to keep this pre-built binary consistent with our own
