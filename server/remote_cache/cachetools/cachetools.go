@@ -1477,6 +1477,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 	return &UploadWriter{
 		ctx:          ctx,
+		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),
