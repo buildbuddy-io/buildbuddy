@@ -392,18 +392,22 @@ type filteredGRPCLogger struct {
 	inner grpclog.LoggerV2
 }
 
+func (l *filteredGRPCLogger) match(msg string) bool {
+	return strings.Contains(msg, "[client-transport") || strings.Contains(msg, "[server-transport")
+}
+
 func (l *filteredGRPCLogger) Info(args ...any) {
-	if strings.Contains(fmt.Sprint(args...), "[client-transport") {
+	if l.match(fmt.Sprint(args...)) {
 		l.inner.Info(args...)
 	}
 }
 func (l *filteredGRPCLogger) Infoln(args ...any) {
-	if strings.Contains(fmt.Sprint(args...), "[client-transport") {
+	if l.match(fmt.Sprint(args...)) {
 		l.inner.Infoln(args...)
 	}
 }
 func (l *filteredGRPCLogger) Infof(format string, args ...any) {
-	if strings.Contains(fmt.Sprintf(format, args...), "[client-transport") {
+	if l.match(fmt.Sprintf(format, args...)) {
 		l.inner.Infof(format, args...)
 	}
 }

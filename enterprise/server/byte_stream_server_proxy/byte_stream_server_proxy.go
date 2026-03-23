@@ -282,6 +282,8 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 
 		// Fallback to remote for any local read issue unless the stream is corrupted.
 		if stream.frames != framesBefore {
+			log.CtxWarningf(ctx, "Partial chunked local read error for blob %s (ctxErr=%v): %s",
+				rn.GetDigest().GetHash(), ctx.Err(), localErr)
 			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
 				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error_partial",
 				metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
