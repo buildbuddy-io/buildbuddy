@@ -36,7 +36,7 @@ package(default_visibility = ["//visibility:public"])
             "org.opencontainers.image.description": (
                 "Provides debian13 libc"
             ),
-            "org.opencontainers.image.vendor": "Buildbuddy",
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
         compress = "gzip",
         target_compatible_with = [

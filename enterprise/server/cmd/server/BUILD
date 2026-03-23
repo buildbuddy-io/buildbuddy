@@ -146,12 +146,6 @@ go_binary(
 PACKAGE_ROOT = "app"
 
 pkg_tar(
-    name = "binary_tar",
-    srcs = [":buildbuddy"],
-    package_dir = PACKAGE_ROOT,
-)
-
-pkg_tar(
     name = "licenses_tar",
     srcs = [
         ":licenses",
@@ -161,6 +155,12 @@ pkg_tar(
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
+)
+
+pkg_tar(
+    name = "binary_tar",
+    srcs = [":buildbuddy"],
+    package_dir = PACKAGE_ROOT,
 )
 
 pkg_tar(
@@ -176,25 +176,8 @@ pkg_tar(
 )
 
 pkg_tar(
-    name = "config_files_tar",
-    srcs = [
-        ":config_files",
-    ],
-    include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
-    remap_paths = {
-        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
-    },
-)
-
-pkg_tar(
     name = "symlinks_tar",
     symlinks = {
-        "config.yaml": "%s/%s.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % (
-            PACKAGE_ROOT,
-            BINARY_NAME,
-            runfiles_directory(),
-        ),
         "buildbuddy": "tmp",
     },
 )
@@ -213,13 +196,13 @@ layer_from_tar(
     name = "base_image_layer",
     src = "base_image_tar",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise Buildbuddy Server (unconfigured)",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
         "org.opencontainers.image.description": (
-            "Contains the buildbuddy binary, runfiles, and symlinks " +
-            "necessary to run the enterprise buildbuddy server. Does not " +
+            "Contains the BuildBuddy binary, runfiles, and symlinks " +
+            "necessary to run the enterprise BuildBuddy server. Does not " +
             "include configuration files."
         ),
-        "org.opencontainers.image.vendor": "Buildbuddy",
+        "org.opencontainers.image.vendor": "BuildBuddy",
     },
     compress = "gzip",
 )
@@ -238,15 +221,46 @@ image_manifest(
     ],
 )
 
-layer_from_tar(
-    name = "config_files_layer",
-    src = "config_files_tar",
-    annotations = {
-        "org.opencontainers.image.title": "Enterprise Buildbuddy Configuration (FOSS)",
-        "org.opencontainers.image.description": (
-            "Contains the FOSS buildbuddy enterprise configuration files."
+pkg_tar(
+    name = "config_files_tar",
+    srcs = [
+        ":config_files",
+    ],
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
+)
+
+pkg_tar(
+    name = "config_symlink_tar",
+    symlinks = {
+        "config.yaml": "%s/%s.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+            runfiles_directory(),
         ),
-        "org.opencontainers.image.vendor": "Buildbuddy",
+    },
+)
+
+flatten(
+    name = "config_tar",
+    tars = [
+        ":config_files_tar",
+        ":config_symlink_tar",
+    ],
+)
+
+layer_from_tar(
+    name = "config_layer",
+    src = "config_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Configuration (FOSS)",
+        "org.opencontainers.image.description": (
+            "Contains the FOSS BuildBuddy enterprise configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
     },
 )
 
@@ -254,7 +268,7 @@ image_manifest(
     name = "image_manifest",
     base = ":base_image_manifest",
     layers = [
-        ":config_files_layer",
+        ":config_layer",
     ],
 )
 
