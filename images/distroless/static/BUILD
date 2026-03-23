@@ -82,7 +82,7 @@ cacerts(
             "org.opencontainers.image.description": (
                 "Minimal debian13 environment"
             ),
-            "org.opencontainers.image.vendor": "Buildbuddy",
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
         compress = "gzip",
         target_compatible_with = [
