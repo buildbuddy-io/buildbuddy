@@ -77,9 +77,12 @@ var (
 )
 
 func main() {
-	grpclog.SetLoggerV2(&filteredGRPCLogger{
-		inner: grpclog.NewLoggerV2WithVerbosity(os.Stderr, os.Stderr, os.Stderr, 2),
-	})
+	// TODO(buildbuddy-internal#6892): Remove once we figure out Unavailable issues.
+	if os.Getenv("CACHE_PROXY_GRPC_VERBOSE_LOGGING") != "" {
+		grpclog.SetLoggerV2(&filteredGRPCLogger{
+			inner: grpclog.NewLoggerV2WithVerbosity(os.Stderr, os.Stderr, os.Stderr, 2),
+		})
+	}
 
 	version.Print("BuildBuddy cache proxy")
 
@@ -394,22 +397,27 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 	return nil
 }
 
+// TODO(buildbuddy-internal#6892): Remove this logger once we figure out Unavailable issue.
 type filteredGRPCLogger struct {
 	inner grpclog.LoggerV2
 }
 
+func (l *filteredGRPCLogger) match(msg string) bool {
+	return strings.Contains(msg, "[client-transport") || strings.Contains(msg, "[server-transport")
+}
+
 func (l *filteredGRPCLogger) Info(args ...any) {
-	if strings.Contains(fmt.Sprint(args...), "[client-transport") {
+	if l.match(fmt.Sprint(args...)) {
 		l.inner.Info(args...)
 	}
 }
 func (l *filteredGRPCLogger) Infoln(args ...any) {
-	if strings.Contains(fmt.Sprint(args...), "[client-transport") {
+	if l.match(fmt.Sprint(args...)) {
 		l.inner.Infoln(args...)
 	}
 }
 func (l *filteredGRPCLogger) Infof(format string, args ...any) {
-	if strings.Contains(fmt.Sprintf(format, args...), "[client-transport") {
+	if l.match(fmt.Sprintf(format, args...)) {
 		l.inner.Infof(format, args...)
 	}
 }
