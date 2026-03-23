@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -106,7 +107,11 @@ func Load() error {
 
 	// If the file does not exist then skip it.
 	if os.IsNotExist(err) {
-		log.Warningf("No config file found at %s.", configFile)
+		if absoluteConfigFile, err := filepath.Abs(configFile); err != nil {
+			log.Warningf("No config file found at %s, error getting absolute path: %s.", configFile, err)
+		} else {
+			log.Warningf("No config file found at %s (%s).", configFile, absoluteConfigFile)
+		}
 		// Expand secrets in flags even if config wasn't loaded from file.
 		return expandFlagValues()
 	}
