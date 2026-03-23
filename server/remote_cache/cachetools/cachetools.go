@@ -117,6 +117,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	if r.IsEmpty() {
 		return nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
@@ -300,6 +302,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err

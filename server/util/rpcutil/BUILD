@@ -27,5 +27,6 @@ go_test(
         "//server/util/proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_uber_go_goleak//:goleak",
     ],
 )
