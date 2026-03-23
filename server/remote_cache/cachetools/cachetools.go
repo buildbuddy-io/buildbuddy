@@ -1458,6 +1458,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
