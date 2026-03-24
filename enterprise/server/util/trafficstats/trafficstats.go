@@ -72,6 +72,7 @@ type rpcCounters struct {
 	groupID                   string
 	dest                      destination
 	ingressBytes, egressBytes int
+	method                    string
 }
 
 var (
@@ -115,7 +116,7 @@ func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) con
 func (*StatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", dest: destination{provider: "unset", region: "unset"}})
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", dest: destination{provider: "unset", region: "unset"}, method: info.FullMethodName})
 }
 
 func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
@@ -124,12 +125,14 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	}
 	var ingress, egress int
 	var end bool
+	var endErr error
 	switch st := s.(type) {
 	case *stats.InPayload:
 		ingress = st.WireLength
 	case *stats.OutPayload:
 		egress = st.WireLength
 	case *stats.End:
+		endErr = st.Error
 		end = true
 	}
 	if egress > 0 || ingress > 0 || end {
@@ -145,7 +148,11 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			// that the interceptor populated the dimensions. For unary RPCs,
 			// intercetors run after InPayload.
 			if c.groupID == "unset" || c.dest.provider == "unset" {
-				alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %v", c)
+				if endErr == nil {
+					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
+				} else {
+					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
+				}
 			}
 			if c.ingressBytes > 0 {
 				metrics.GRPCServerIngressBytes.WithLabelValues(c.groupID, c.dest.provider, c.dest.region).Add(float64(c.ingressBytes))
