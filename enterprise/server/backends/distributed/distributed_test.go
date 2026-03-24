@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -23,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -38,6 +38,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -2747,6 +2748,17 @@ func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
 	}
 }
 
+func kubediscoverChannel(t *testing.T, portStr, ns, podName string, client kubernetes.Interface) *kubediscovery.Channel {
+	ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
+		Port:      portStr,
+		Namespace: ns,
+		PodName:   podName,
+		Client:    client,
+	})
+	require.NoError(t, err)
+	return ch
+}
+
 func TestKubeDiscoveryReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
@@ -2765,19 +2777,7 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 		fakeKubePod("cache-2", ns, "127.0.0.3"),
 		fakeKubeReplicaSet(ns),
 	)
-
 	portStr := fmt.Sprintf("%d", port)
-	makeKubeChannel := func(podName string) *kubediscovery.Channel {
-		ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
-			Port:      portStr,
-			Namespace: ns,
-			PodName:   podName,
-			Client:    fakeClient,
-		})
-		require.NoError(t, err)
-		return ch
-	}
-
 	baseConfig := Options{
 		ReplicationFactor:  3,
 		DisableLocalLookup: true,
@@ -2786,19 +2786,19 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	config1.KubeDiscoveryChannel = makeKubeChannel("cache-0")
+	config1.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-0", fakeClient)
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	config2.KubeDiscoveryChannel = makeKubeChannel("cache-1")
+	config2.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-1", fakeClient)
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	config3.KubeDiscoveryChannel = makeKubeChannel("cache-2")
+	config3.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-2", fakeClient)
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, peer1)
@@ -2847,19 +2847,7 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 		fakeKubePod("cache-0", ns, "127.0.0.1"),
 		fakeKubeReplicaSet(ns),
 	)
-
 	portStr := fmt.Sprintf("%d", port)
-	makeKubeChannel := func(podName string) *kubediscovery.Channel {
-		ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
-			Port:      portStr,
-			Namespace: ns,
-			PodName:   podName,
-			Client:    fakeClient,
-		})
-		require.NoError(t, err)
-		return ch
-	}
-
 	baseConfig := Options{
 		ReplicationFactor:  1,
 		DisableLocalLookup: true,
@@ -2869,7 +2857,7 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	config1.KubeDiscoveryChannel = makeKubeChannel("cache-0")
+	config1.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-0", fakeClient)
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 	waitForReady(t, peer1)
 
@@ -2892,7 +2880,7 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	config2.KubeDiscoveryChannel = makeKubeChannel("cache-1")
+	config2.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-1", fakeClient)
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 	waitForReady(t, peer2)
 

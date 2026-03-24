@@ -2,7 +2,7 @@ package kubediscovery
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -18,13 +19,13 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
-func new(b bool) *bool { return &b }
+const testNamespace = "test_ns"
 
-func readyPod(name, namespace, ip string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
+func readyPod(name, ip string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            name,
-			Namespace:       namespace,
+			Namespace:       testNamespace,
 			OwnerReferences: ownerRefs,
 			Labels:          map[string]string{"app": "cache"},
 		},
@@ -60,11 +61,11 @@ func statefulSetOwnerRef(name string) []metav1.OwnerReference {
 	}
 }
 
-func replicaSet(name, namespace string) *appsv1.ReplicaSet {
+func replicaSet(name string) *appsv1.ReplicaSet {
 	return &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: testNamespace,
 		},
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -74,11 +75,11 @@ func replicaSet(name, namespace string) *appsv1.ReplicaSet {
 	}
 }
 
-func statefulSet(name, namespace string) *appsv1.StatefulSet {
+func statefulSet(name string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: testNamespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -102,9 +103,7 @@ func newPeerCollector() *peerCollector {
 func (pc *peerCollector) updateFn(peers ...string) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-	cp := make([]string, len(peers))
-	copy(cp, peers)
-	pc.updates = append(pc.updates, cp)
+	pc.updates = append(pc.updates, peers)
 	select {
 	case pc.ch <- struct{}{}:
 	default:
@@ -124,104 +123,72 @@ func (pc *peerCollector) waitForUpdate(t *testing.T, timeout time.Duration) []st
 	}
 }
 
-func (pc *peerCollector) latestPeers() []string {
-	pc.mu.Lock()
-	defer pc.mu.Unlock()
-	if len(pc.updates) == 0 {
-		return nil
-	}
-	return pc.updates[len(pc.updates)-1]
-}
-
 // waitForWatch waits until the fake client has received a watch action on pods.
 func waitForWatch(t *testing.T, client *fake.Clientset, resource string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		for _, a := range client.Actions() {
-			if a.GetVerb() == "watch" && a.GetResource().Resource == resource {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(client.Actions(), func(a k8stesting.Action) bool {
+			return a.GetVerb() == "watch" && a.GetResource().Resource == resource
+		})
 	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for %s watch", resource)
 }
 
-func TestDiscoverPeersFromReplicaSet(t *testing.T) {
-	ns := "test-ns"
-	ownerRefs := replicaSetOwnerRef("cache-rs")
-
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	pod1 := readyPod("cache-1", ns, "10.0.0.2", ownerRefs)
-	pod2 := readyPod("cache-2", ns, "10.0.0.3", ownerRefs)
-	rs := replicaSet("cache-rs", ns)
-
-	client := fake.NewClientset(pod0, pod1, pod2, rs)
-	pc := newPeerCollector()
-
+func testingChannel(t *testing.T, client kubernetes.Interface, pc *peerCollector) *Channel {
+	t.Helper()
 	ch, err := NewChannel(&Config{
 		UpdateFn:  pc.updateFn,
 		Port:      "7999",
-		Namespace: ns,
+		Namespace: testNamespace,
 		PodName:   "cache-0",
 		Client:    client,
 	})
 	require.NoError(t, err)
 	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	t.Cleanup(ch.StopAdvertising)
+	return ch
+}
+
+func TestDiscoverPeersFromReplicaSet(t *testing.T) {
+	ownerRefs := replicaSetOwnerRef("cache-rs")
+
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	pod1 := readyPod("cache-1", "10.0.0.2", ownerRefs)
+	pod2 := readyPod("cache-2", "10.0.0.3", ownerRefs)
+	rs := replicaSet("cache-rs")
+
+	client := fake.NewClientset(pod0, pod1, pod2, rs)
+	pc := newPeerCollector()
+	testingChannel(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	sort.Strings(peers)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}, peers)
 }
 
 func TestDiscoverPeersFromStatefulSet(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := statefulSetOwnerRef("cache-ss")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	pod1 := readyPod("cache-1", ns, "10.0.0.2", ownerRefs)
-	ss := statefulSet("cache-ss", ns)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	pod1 := readyPod("cache-1", "10.0.0.2", ownerRefs)
+	ss := statefulSet("cache-ss")
 
 	client := fake.NewClientset(pod0, pod1, ss)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	sort.Strings(peers)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999"}, peers)
 }
 
 func TestPodAddedDuringWatch(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	pod1 := readyPod("cache-1", ns, "10.0.0.2", ownerRefs)
-	rs := replicaSet("cache-rs", ns)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	pod1 := readyPod("cache-1", "10.0.0.2", ownerRefs)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -231,37 +198,25 @@ func TestPodAddedDuringWatch(t *testing.T) {
 	waitForWatch(t, client, "pods")
 
 	// Add a new pod.
-	pod2 := readyPod("cache-2", ns, "10.0.0.3", ownerRefs)
-	_, err = client.CoreV1().Pods(ns).Create(context.Background(), pod2, metav1.CreateOptions{})
+	pod2 := readyPod("cache-2", "10.0.0.3", ownerRefs)
+	_, err := client.CoreV1().Pods(testNamespace).Create(context.Background(), pod2, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
-	sort.Strings(peers)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}, peers)
 }
 
 func TestPodDeletedDuringWatch(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	pod1 := readyPod("cache-1", ns, "10.0.0.2", ownerRefs)
-	pod2 := readyPod("cache-2", ns, "10.0.0.3", ownerRefs)
-	rs := replicaSet("cache-rs", ns)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	pod1 := readyPod("cache-1", "10.0.0.2", ownerRefs)
+	pod2 := readyPod("cache-2", "10.0.0.3", ownerRefs)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, pod1, pod2, rs)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -271,24 +226,22 @@ func TestPodDeletedDuringWatch(t *testing.T) {
 	waitForWatch(t, client, "pods")
 
 	// Delete a pod.
-	err = client.CoreV1().Pods(ns).Delete(context.Background(), "cache-2", metav1.DeleteOptions{})
+	err := client.CoreV1().Pods(testNamespace).Delete(context.Background(), "cache-2", metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
-	sort.Strings(peers)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999"}, peers)
 }
 
 func TestPodNotReadyExcluded(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
 	// pod1 is not ready
 	pod1 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "cache-1",
-			Namespace:       ns,
+			Namespace:       testNamespace,
 			OwnerReferences: ownerRefs,
 			Labels:          map[string]string{"app": "cache"},
 		},
@@ -300,47 +253,26 @@ func TestPodNotReadyExcluded(t *testing.T) {
 			},
 		},
 	}
-	rs := replicaSet("cache-rs", ns)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
 }
 
 func TestPodBecomesUnready(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	pod1 := readyPod("cache-1", ns, "10.0.0.2", ownerRefs)
-	rs := replicaSet("cache-rs", ns)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	pod1 := readyPod("cache-1", "10.0.0.2", ownerRefs)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -353,7 +285,7 @@ func TestPodBecomesUnready(t *testing.T) {
 	pod1.Status.Conditions = []corev1.PodCondition{
 		{Type: corev1.PodReady, Status: corev1.ConditionFalse},
 	}
-	_, err = client.CoreV1().Pods(ns).Update(context.Background(), pod1, metav1.UpdateOptions{})
+	_, err := client.CoreV1().Pods(testNamespace).Update(context.Background(), pod1, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
@@ -361,15 +293,14 @@ func TestPodBecomesUnready(t *testing.T) {
 }
 
 func TestNoPodIPExcluded(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
 	// pod1 has no IP yet
 	pod1 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "cache-1",
-			Namespace:       ns,
+			Namespace:       testNamespace,
 			OwnerReferences: ownerRefs,
 			Labels:          map[string]string{"app": "cache"},
 		},
@@ -377,32 +308,21 @@ func TestNoPodIPExcluded(t *testing.T) {
 			Phase: corev1.PodPending,
 		},
 	}
-	rs := replicaSet("cache-rs", ns)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
 }
 
 func TestWatchRecoveryFromResourceExpired(t *testing.T) {
-	ns := "test-ns"
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
-	pod0 := readyPod("cache-0", ns, "10.0.0.1", ownerRefs)
-	rs := replicaSet("cache-rs", ns)
+	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
+	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, rs)
 
@@ -427,17 +347,7 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	})
 
 	pc := newPeerCollector()
-
-	ch, err := NewChannel(&Config{
-		UpdateFn:  pc.updateFn,
-		Port:      "7999",
-		Namespace: ns,
-		PodName:   "cache-0",
-		Client:    client,
-	})
-	require.NoError(t, err)
-	ch.StartAdvertising()
-	defer ch.StopAdvertising()
+	testingChannel(t, client, pc)
 
 	// Should eventually get peer after recovery.
 	peers := pc.waitForUpdate(t, 10*time.Second)

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -29,12 +30,12 @@ import (
 const apiMaxBackoff = 30 * time.Second
 
 // PeersUpdateFn is called when the set of discovered peers changes.
-// This matches the signature used by heartbeat.PeersUpdateFn.
 type PeersUpdateFn func(peerSet ...string)
 
 // Config holds configuration for Kubernetes peer discovery.
 type Config struct {
-	// UpdateFn is called whenever the set of discovered peers changes.
+	// UpdateFn is called whenever the set of discovered peers changes. It
+	// should be fast because it's called while holding a lock.
 	UpdateFn PeersUpdateFn
 	// Port is the port number peers listen on (e.g. "7999").
 	Port string
@@ -114,8 +115,7 @@ func (c *Channel) SetUpdateFn(fn PeersUpdateFn) {
 	c.updateFn = fn
 }
 
-// StartAdvertising begins watching for peer pods. The name matches the
-// heartbeat.Channel interface for consistency.
+// StartAdvertising begins watching for peer pods.
 func (c *Channel) StartAdvertising() {
 	go c.discoverAndWatch()
 }
@@ -125,15 +125,18 @@ func (c *Channel) StopAdvertising() {
 	c.cancel()
 }
 
-// discoverAndWatch runs the main discovery loop with exponential backoff.
 func (c *Channel) discoverAndWatch() {
 	backoff := time.Second
 	for {
+		start := time.Now()
 		err := c.runOnce()
 		if c.ctx.Err() != nil {
 			return
 		}
-		log.Warningf("kubediscovery: watch loop ended: %s; retrying in %s", err, backoff)
+		if time.Since(start) > time.Minute {
+			backoff = time.Second
+		}
+		log.Infof("kubediscovery: watch loop ended: %s; retrying in %s", err, backoff)
 		select {
 		case <-time.After(backoff):
 			backoff = min(backoff*2, apiMaxBackoff)
@@ -162,17 +165,13 @@ func (c *Channel) runOnce() error {
 // returns the label selector string that matches all pods managed by
 // that owner.
 func (c *Channel) getLabelSelectorFromOwner(pod *corev1.Pod) (string, error) {
-	var controllerRef *metav1.OwnerReference
-	for i := range pod.OwnerReferences {
-		ref := &pod.OwnerReferences[i]
-		if ref.Controller != nil && *ref.Controller {
-			controllerRef = ref
-			break
-		}
-	}
-	if controllerRef == nil {
+	i := slices.IndexFunc(pod.OwnerReferences, func(ref metav1.OwnerReference) bool {
+		return ref.Controller != nil && *ref.Controller
+	})
+	if i < 0 {
 		return "", fmt.Errorf("pod %s has no controller owner reference", pod.Name)
 	}
+	controllerRef := pod.OwnerReferences[i]
 
 	switch controllerRef.Kind {
 	case "ReplicaSet":
@@ -194,9 +193,6 @@ func (c *Channel) getLabelSelectorFromOwner(pod *corev1.Pod) (string, error) {
 	}
 }
 
-// labelSelectorString converts a LabelSelector to a comma-separated
-// key=value string suitable for use in ListOptions.LabelSelector.
-// Only matchLabels are used; matchExpressions are not supported.
 func labelSelectorString(sel *metav1.LabelSelector) string {
 	if sel == nil {
 		return ""
@@ -215,8 +211,7 @@ func (c *Channel) listAndWatch(labelSelector string) error {
 
 	c.mu.Lock()
 	c.peers = make(map[string]string)
-	for i := range podList.Items {
-		pod := &podList.Items[i]
+	for _, pod := range podList.Items {
 		if addr := c.podAddr(pod); addr != "" {
 			c.peers[pod.Name] = addr
 		}
@@ -288,7 +283,7 @@ func (c *Channel) processEvents(watcher watch.Interface, resourceVersion *string
 
 // podAddr returns the "ip:port" address for a pod, or "" if the pod
 // is not ready to receive traffic.
-func (c *Channel) podAddr(pod *corev1.Pod) string {
+func (c *Channel) podAddr(pod corev1.Pod) string {
 	if pod.Status.PodIP == "" {
 		return ""
 	}
@@ -310,7 +305,7 @@ func (c *Channel) podAddr(pod *corev1.Pod) string {
 func (c *Channel) updatePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	addr := c.podAddr(pod)
+	addr := c.podAddr(*pod)
 	if addr == "" {
 		if _, exists := c.peers[pod.Name]; exists {
 			delete(c.peers, pod.Name)
@@ -340,6 +335,6 @@ func (c *Channel) notifyLocked() {
 		addrs = append(addrs, addr)
 	}
 	sort.Strings(addrs)
-	log.Infof("kubediscovery: peer set changed: %v", addrs)
+	log.Infof("kubediscovery: peer set changed for %v/%v: %v", c.namespace, c.podName, addrs)
 	c.updateFn(addrs...)
 }

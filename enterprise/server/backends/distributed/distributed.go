@@ -156,6 +156,19 @@ func Register(env *real_environment.RealEnv) error {
 		LookasideCacheSizeBytes:      *lookasideCacheSizeBytes,
 		ReadThroughLocalCache:        *readThroughLocalCache,
 	}
+	if *enableKubernetesDiscovery {
+		_, portStr, err := net.SplitHostPort(options.ListenAddr)
+		if err != nil {
+			return status.InternalErrorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", options.ListenAddr, err)
+		}
+		kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
+			Port: portStr,
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to create kubernetes discovery channel: %w", err)
+		}
+		options.KubeDiscoveryChannel = kubeChannel
+	}
 	log.Infof("Enabling distributed cache with options: %+v", options)
 	dc, err := NewDistributedCache(env, env.GetCache(), options, env.GetHealthChecker())
 	if err != nil {
@@ -277,22 +290,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if len(opts.NewNodes) > 0 {
 			extraCHash.Set(opts.NewNodes...)
 		}
-	} else if opts.KubeDiscoveryChannel != nil || *enableKubernetesDiscovery {
-		if opts.KubeDiscoveryChannel != nil {
-			dc.kubeDiscoveryChannel = opts.KubeDiscoveryChannel
-		} else {
-			_, portStr, err := net.SplitHostPort(opts.ListenAddr)
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", opts.ListenAddr, err)
-			}
-			kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
-				Port: portStr,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create kubernetes discovery channel: %w", err)
-			}
-			dc.kubeDiscoveryChannel = kubeChannel
-		}
+	} else if opts.KubeDiscoveryChannel != nil {
+		dc.kubeDiscoveryChannel = opts.KubeDiscoveryChannel
 		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers ...string) {
 			if err := chash.Set(peers...); err != nil {
 				log.Errorf("Error setting peers in consistent hash: %s", err)
