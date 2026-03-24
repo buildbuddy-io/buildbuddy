@@ -62,6 +62,17 @@ func NewStoreFactory(t *testing.T) *StoreFactory {
 
 func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory {
 	rootDir := testfs.MakeTempDir(t)
+	return newStoreFactory(t, rootDir, clock)
+}
+
+// NewStoreFactoryWithRootDir creates a StoreFactory that uses the
+// given root directory for store data. Use t.TempDir() to write to
+// /tmp instead of TEST_TMPDIR when disk space is limited.
+func NewStoreFactoryWithRootDir(t *testing.T, rootDir string) *StoreFactory {
+	return newStoreFactory(t, rootDir, clockwork.NewRealClock())
+}
+
+func newStoreFactory(t *testing.T, rootDir string, clock clockwork.Clock) *StoreFactory {
 	fileDir := filepath.Join(rootDir, "files")
 	err := disk.EnsureDirectoryExists(fileDir)
 	require.NoError(t, err)

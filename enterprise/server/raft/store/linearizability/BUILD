@@ -18,6 +18,7 @@ go_test(
     },
     exec_properties = {
         "test.EstimatedComputeUnits": "10",
+        "test.EstimatedFreeDiskBytes": "10GB",
         "test.workload-isolation-type": "firecracker",
     },
     tags = [

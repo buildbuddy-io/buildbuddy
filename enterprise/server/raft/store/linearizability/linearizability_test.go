@@ -371,7 +371,7 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
-	sf := testutil.NewStoreFactory(t)
+	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
 	s3 := sf.NewStore(t)
@@ -471,7 +471,7 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
-	sf := testutil.NewStoreFactory(t)
+	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
 	s3 := sf.NewStore(t)
