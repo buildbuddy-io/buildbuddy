@@ -53,3 +53,7 @@ common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
 try-import %workspace%/user.bazelrc
+
+common --check_direct_dependencies=off
+common --experimental_remote_cache_chunking
+common --remote_header=x-buildbuddy-cdc-enabled=true
