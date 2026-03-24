@@ -44,9 +44,9 @@ const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
 
-	// Min number of goroutines to run concurrently when uploading a
+	// Number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
-	minChunkedFileWriteConcurrency = 8
+	chunkedFileWriteConcurrency = 4
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -1043,8 +1043,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
 	defer cancelForEarlyExit()
 
-	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
-	eg.SetLimit(writeConcurrency)
+	// This is higher than parallelization for syncing chunks, because other work (like generating digests and writing
+	// to the cache) is less IO-intensive and can run with more concurrency.
+	if *snaputil.ThrottleSnapshotWrites {
+		eg.SetLimit(chunkedFileWriteConcurrency)
+	} else {
+		writeConcurrency := int(math.Max(8, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+		eg.SetLimit(writeConcurrency)
+	}
 
 	// Limit the number of dirty chunks being simultaneously flushed to disk to avoid high IO pressure.
 	var syncMu sync.Mutex
