@@ -26,6 +26,7 @@ go_library(
         "//third_party/singleflight",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -42,6 +43,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testgrpc",
         "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/status",

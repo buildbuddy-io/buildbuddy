@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -297,6 +298,54 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 
 	err := irs.Authorize(authCtx)
 	require.NoError(t, err)
+}
+
+func setIPRulesEnforcedByPeer(t *testing.T, ctx context.Context) context.Context {
+	ctx = ip_rules_enforcer.SetIPRulesEnforcedByPeer(ctx)
+	return testgrpc.OutgoingToIncomingContext(t, ctx)
+}
+
+func TestAuthorize_BypassAllowed(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityCacheProxy)
+
+	irs := newIPRulesEnforcer(t, env)
+	ctx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, ctx, groupID, true)
+	ctx = reauthenticate(t, env, userID)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
+
+	// Without the metadata bit, the cache proxy is NOT trusted.
+	err := irs.Authorize(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// With the metadata bit, the cache proxy IS trusted.
+	ctx = setIPRulesEnforcedByPeer(t, ctx)
+	require.NoError(t, irs.Authorize(ctx))
+}
+
+func TestAuthorize_BypassDenied(t *testing.T) {
+	env := getEnv(t)
+	enterprise_testenv.AddClientIdentity(t, env, "some-random-server")
+
+	irs := newIPRulesEnforcer(t, env)
+	ctx, userID, groupID := setupAuthenticatedUser(t, env)
+
+	insertRule(t, env, groupID, "1.2.3.4/32", "rule1")
+	setGroupEnforcement(t, env, ctx, groupID, true)
+	ctx = reauthenticate(t, env, userID)
+	ctx = contextWithClientIdentity(t, ctx, env.GetClientIdentityService())
+	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
+
+	// Confirm we don't trust "some-random-server".
+	ctx = setIPRulesEnforcedByPeer(t, ctx)
+	err := irs.Authorize(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }
 
 func TestRemoteIPRulesEnforced(t *testing.T) {

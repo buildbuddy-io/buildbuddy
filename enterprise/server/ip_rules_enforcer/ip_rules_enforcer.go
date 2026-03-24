@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
@@ -41,6 +42,12 @@ var (
 const (
 	// The number of IP rules (net.IPNet instances) that we will store in memory.
 	cacheSize = 100_000
+
+	// ipRulesEnforcedMetadataKey is a gRPC metadata key that indicates that the
+	// peer issuing the request has already enforced IP rules on the original
+	// client request. This may be used for proxied requests where the proxy
+	// enforces the IP rules.
+	ipRulesEnforcedMetadataKey = "x-buildbuddy-ip-rules-enforced"
 )
 
 type ipRule struct {
@@ -508,6 +515,13 @@ func (s *Enforcer) Authorize(ctx context.Context) error {
 			si.Client == interfaces.ClientIdentityWorkflow) {
 			return nil
 		}
+
+		// Allow trusted Cache Proxies to bypass local IP rule enforcement if
+		// they have already enforced the rules.
+		if err == nil && si.Client == interfaces.ClientIdentityCacheProxy && ipRulesEnforcedByPeer(ctx) {
+			return nil
+		}
+
 		if err != nil && !status.IsNotFoundError(err) {
 			return err
 		}
@@ -550,4 +564,17 @@ func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) er
 
 func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
 	s.rulesProvider.invalidate(ctx, groupID)
+}
+
+func ipRulesEnforcedByPeer(ctx context.Context) bool {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	vals := md.Get(ipRulesEnforcedMetadataKey)
+	return len(vals) > 0 && vals[0] == "true"
+}
+
+func SetIPRulesEnforcedByPeer(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, ipRulesEnforcedMetadataKey, "true")
 }
