@@ -189,7 +189,7 @@ func update(ctx context.Context, client repb.ContentAddressableStorageClient, bl
 	}
 }
 
-func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
+func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	clock.Advance(atimeUpdatePeriod + time.Second)
 	wait := time.Millisecond
@@ -204,7 +204,7 @@ func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *at
 	t.Fatal("Timed out waiting for remote atime update")
 }
 
-func expectNoAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
+func expectNoAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	for i := 0; i < 10; i++ {
 		clock.Advance(atimeUpdatePeriod + time.Second)

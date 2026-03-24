@@ -509,7 +509,6 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 	}
 	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
-		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
 		return nil, false
 	}
 

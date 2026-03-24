@@ -135,6 +135,12 @@ common --enable_platform_specific_config=true
 common:linux --enable_runfiles
 common:macos --enable_runfiles
 
+# Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
+# Requires a sandboxed execution strategy and is thus not enabled on Windows.
+# https://github.com/bazelbuild/bazel/discussions/22658
+common:linux --experimental_output_paths=strip
+common:macos --experimental_output_paths=strip
+
 # Use C++17 standard for all C++ compilation
 common:linux --host_cxxopt=-std=c++17
 common:linux --cxxopt=-std=c++17

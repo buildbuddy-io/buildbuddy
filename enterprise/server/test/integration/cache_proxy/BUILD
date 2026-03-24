@@ -9,7 +9,10 @@ go_test(
     srcs = ["cache_proxy_test.go"],
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:context_go_proto",
         "//proto:encryption_go_proto",
+        "//proto:iprules_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testkeys",
         "//server/util/authutil",

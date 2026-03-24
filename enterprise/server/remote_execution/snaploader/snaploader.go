@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,9 +44,9 @@ const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
 
-	// Min number of goroutines to run concurrently when uploading a
+	// Number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
-	minChunkedFileWriteConcurrency = 8
+	chunkedFileWriteConcurrency = 4
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -1042,8 +1043,17 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
 	defer cancelForEarlyExit()
 
-	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
-	eg.SetLimit(writeConcurrency)
+	// This is higher than parallelization for syncing chunks, because other work (like generating digests and writing
+	// to the cache) is less IO-intensive and can run with more concurrency.
+	if *snaputil.ThrottleSnapshotWrites {
+		eg.SetLimit(chunkedFileWriteConcurrency)
+	} else {
+		writeConcurrency := int(math.Max(8, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+		eg.SetLimit(writeConcurrency)
+	}
+
+	// Limit the number of dirty chunks being simultaneously flushed to disk to avoid high IO pressure.
+	var syncMu sync.Mutex
 
 	chunks := cow.SortedChunks()
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
@@ -1081,9 +1091,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			if d.GetHash() != allZerosDigest.GetHash() {
 				dirty := cow.Dirty(c.Offset)
 				if dirty {
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Lock()
+					}
 					// Sync dirty chunks to make sure the underlying file is up to date
 					// before we add it to cache.
-					if err := c.Sync(); err != nil {
+					err = c.Sync()
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Unlock()
+					}
+					if err != nil {
 						return returnError(status.WrapError(err, "sync dirty chunk"))
 					}
 				}

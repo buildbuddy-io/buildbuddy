@@ -92,6 +92,7 @@ go_library(
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//stats",
     ],
 )

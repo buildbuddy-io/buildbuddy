@@ -1,10 +1,12 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"hash"
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -29,6 +31,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -144,7 +147,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
 		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
-			reader, err = s.attemptReadChunked(ctx, cacheRN)
+			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
 		if err != nil {
 			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
@@ -201,36 +204,56 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName) (io.ReadCloser, error) {
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
 	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
 
-	rns := manifest.ChunkResourceNames()
+	offsetRead := strconv.FormatBool(offset > 0)
+
+	// Skip chunks that fall entirely before the requested offset.
+	chunkDigests := manifest.ChunkDigests
+	remainingOffset := offset
+	for len(chunkDigests) > 0 && remainingOffset >= chunkDigests[0].GetSizeBytes() {
+		remainingOffset -= chunkDigests[0].GetSizeBytes()
+		chunkDigests = chunkDigests[1:]
+	}
+	if len(chunkDigests) == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+	for _, d := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		chunkRN.SetCompressor(rn.GetCompressor())
+		rns = append(rns, chunkRN.ToProto())
+	}
 	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
 		return nil, err
 	} else if len(missing) > 0 {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunks_missing",
 			metrics.StatusHumanReadableLabel:  "NotFound",
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
 		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
 	}
 
 	rcs := make([]io.ReadCloser, 0, len(rns))
 	for _, crn := range rns {
-		chunkRN := digest.NewCASResourceName(crn.GetDigest(), crn.GetInstanceName(), crn.GetDigestFunction())
-		chunkRN.SetCompressor(rn.GetCompressor())
-		rc, err := s.cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
+		rc, err := s.cache.Reader(ctx, crn, remainingOffset, 0)
+		remainingOffset = 0
 		if err != nil {
 			metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 				metrics.ChunkedFailureReasonLabel: "chunk_read_error",
 				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+				metrics.ChunkedOffsetReadLabel:    offsetRead,
 			}).Inc()
 			for _, openCloser := range rcs {
 				openCloser.Close()

@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/content_addressable_storage_server_proxy",
         "//enterprise/server/experiments",
         "//enterprise/server/hit_tracker_client",
+        "//enterprise/server/ip_rules_enforcer",
         "//enterprise/server/ocifetcher_server_proxy",
         "//enterprise/server/remote_crypter",
         "//enterprise/server/remoteauth",
@@ -58,6 +59,7 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//channelz/service",
+        "@org_golang_google_grpc//grpclog",
         "@org_golang_google_grpc//stats",
     ],
 )

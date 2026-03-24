@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -50,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/grpclog"
 
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -74,6 +77,13 @@ var (
 )
 
 func main() {
+	// TODO(buildbuddy-internal#6892): Remove once we figure out Unavailable issues.
+	if os.Getenv("CACHE_PROXY_GRPC_VERBOSE_LOGGING") != "" {
+		grpclog.SetLoggerV2(&filteredGRPCLogger{
+			inner: grpclog.NewLoggerV2WithVerbosity(os.Stderr, os.Stderr, os.Stderr, 2),
+		})
+	}
+
 	version.Print("BuildBuddy cache proxy")
 
 	// Flags must be parsed before config secrets integration is enabled since
@@ -107,6 +117,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := experiments.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_enforcer.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -218,7 +231,9 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
-		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficStatsHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficStatsHandler.StreamInterceptor},
+		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
@@ -381,3 +396,38 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 
 	return nil
 }
+
+// TODO(buildbuddy-internal#6892): Remove this logger once we figure out Unavailable issue.
+type filteredGRPCLogger struct {
+	inner grpclog.LoggerV2
+}
+
+func (l *filteredGRPCLogger) match(msg string) bool {
+	return strings.Contains(msg, "[client-transport") || strings.Contains(msg, "[server-transport")
+}
+
+func (l *filteredGRPCLogger) Info(args ...any) {
+	if l.match(fmt.Sprint(args...)) {
+		l.inner.Info(args...)
+	}
+}
+func (l *filteredGRPCLogger) Infoln(args ...any) {
+	if l.match(fmt.Sprint(args...)) {
+		l.inner.Infoln(args...)
+	}
+}
+func (l *filteredGRPCLogger) Infof(format string, args ...any) {
+	if l.match(fmt.Sprintf(format, args...)) {
+		l.inner.Infof(format, args...)
+	}
+}
+func (l *filteredGRPCLogger) Warning(args ...any)                 { l.inner.Warning(args...) }
+func (l *filteredGRPCLogger) Warningln(args ...any)               { l.inner.Warningln(args...) }
+func (l *filteredGRPCLogger) Warningf(format string, args ...any) { l.inner.Warningf(format, args...) }
+func (l *filteredGRPCLogger) Error(args ...any)                   { l.inner.Error(args...) }
+func (l *filteredGRPCLogger) Errorln(args ...any)                 { l.inner.Errorln(args...) }
+func (l *filteredGRPCLogger) Errorf(format string, args ...any)   { l.inner.Errorf(format, args...) }
+func (l *filteredGRPCLogger) Fatal(args ...any)                   { l.inner.Fatal(args...) }
+func (l *filteredGRPCLogger) Fatalln(args ...any)                 { l.inner.Fatalln(args...) }
+func (l *filteredGRPCLogger) Fatalf(format string, args ...any)   { l.inner.Fatalf(format, args...) }
+func (l *filteredGRPCLogger) V(level int) bool                    { return l.inner.V(level) }
