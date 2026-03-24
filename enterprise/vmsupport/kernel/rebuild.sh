@@ -14,8 +14,17 @@ set -e
 #     KERNEL_VERSION=v5.15 enterprise/vmsupport/kernel/rebuild.sh
 #
 # Once it's done running, copy the output into deps.bzl.
+#
+# Optional env vars:
+#   OUTPUT_FILE=/path/to/output   # if set, copies built kernel here
+#   SKIP_UPLOAD=1                 # if set, does not upload to GCS
 
-: "${WORKDIR:=/tmp/linux}"
+ORIGINAL_PWD="$PWD"
+# Resolve relative output paths against the caller's original working
+# directory before switching into this script's directory.
+if [[ -n "${OUTPUT_FILE:-}" && "${OUTPUT_FILE}" != /* ]]; then
+  OUTPUT_FILE="${ORIGINAL_PWD}/${OUTPUT_FILE}"
+fi
 
 cd "$(dirname "$0")"
 ARCH=$(uname -m)
@@ -31,6 +40,8 @@ else
   echo >&2 "Unsupported architecture: $ARCH"
   exit 1
 fi
+
+: "${WORKDIR:=/tmp/buildbuddy-guest-kernel-${ARCH}-${VERSION}}"
 
 # Get version-specific config file.
 #
@@ -63,22 +74,29 @@ if [[ "$ARCH" == aarch64 ]]; then
   OUTPUT_PATH=./arch/arm64/boot/Image
 fi
 make -j 16 "$MAKE_TARGET"
-
 SHA256=$(sha256sum "$OUTPUT_PATH" | awk '{print $1}')
 NAME="vmlinux-${ARCH}-${VERSION}-${SHA256}"
 rm -f "$NAME" || true
 ln "${OUTPUT_PATH}" "$NAME"
 
+if [[ -n "${OUTPUT_FILE:-}" ]]; then
+  mkdir -p "$(dirname "$OUTPUT_FILE")"
+  cp "$OUTPUT_PATH" "$OUTPUT_FILE"
+  chmod +x "$OUTPUT_FILE"
+  echo "Wrote built kernel to $OUTPUT_FILE"
+fi
+
 echo "---"
 echo "Successfully built $PWD/$NAME"
-echo "Uploading to https://storage.googleapis.com/buildbuddy-tools/binaries/linux/$NAME ..."
-
-(
-  set -x
-  gsutil cp "$PWD/$NAME" "gs://buildbuddy-tools/binaries/linux/$NAME"
-) || {
-  echo "Upload failed; please upload manually."
-}
+if [[ "${SKIP_UPLOAD:-}" != 1 ]]; then
+  echo "Uploading to https://storage.googleapis.com/buildbuddy-tools/binaries/linux/$NAME ..."
+  (
+    set -x
+    gsutil cp "$PWD/$NAME" "gs://buildbuddy-tools/binaries/linux/$NAME"
+  ) || {
+    echo "Upload failed; please upload manually."
+  }
+fi
 
 ARCH_SUFFIX=""
 if [[ "$ARCH" == aarch64 ]]; then
