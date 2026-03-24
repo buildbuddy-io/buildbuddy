@@ -2,6 +2,7 @@ package ip_rules_service
 
 import (
 	"context"
+	"flag"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	allowIPV6        = flag.Bool("auth.ip_rules.allow_ipv6", false, "If true, IPv6 rules will be allowed.")
-	permittedClients = flag.Slice("auth.ip_rules.permitted_clients", []string{}, "Clients (identified by clientidentity) that are permitted to access IPRulesService via RPC.")
+	allowIPV6 = flag.Bool("auth.ip_rules.allow_ipv6", false, "If true, IPv6 rules will be allowed.")
 )
 
 type Service struct {
@@ -148,22 +147,8 @@ func (s *Service) GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irp
 }
 
 func (s *Service) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error) {
-	identityService := s.env.GetClientIdentityService()
-	if identityService == nil {
-		return nil, status.InternalError("Client Identity Service is required for IPRulesService")
-	}
-	identity, err := identityService.IdentityFromContext(ctx)
-	if err != nil {
-		return nil, status.InvalidArgumentError("Client Identity is required")
-	}
-
-	for _, client := range *permittedClients {
-		if identity.Client == client {
-			return s.GetRules(ctx, req)
-		}
-	}
-
-	return nil, status.InvalidArgumentErrorf("Client %s may not access IPRulesService", identity.Client)
+	// This is a straightforward proxy to get around the capabilities filter.
+	return s.GetRules(ctx, req)
 }
 
 func validateIPRange(value string) (string, error) {
