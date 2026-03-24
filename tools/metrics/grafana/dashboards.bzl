@@ -17,5 +17,6 @@ DASHBOARD_NAMES = [
     "oci-image-fetches",
     "raft",
     "rbeperf",
+    "traffic-stats",
     "workflow",
 ]

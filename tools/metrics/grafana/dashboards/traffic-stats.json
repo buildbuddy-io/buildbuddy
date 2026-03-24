@@ -1,0 +1,465 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Rate of gRPC server response bytes sent over the wire, grouped by the selected label.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "binBps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by(${group_by}) (rate(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\",job=~\"${job}\",provider=~\"${provider}\",remote_region=~\"${remote_region}\",group_id=~\"${group_id}\"}[${window}]))",
+          "legendFormat": "{{${group_by}}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Egress Bytes Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Rate of gRPC server request bytes received over the wire, grouped by the selected label.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "binBps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by(${group_by}) (rate(buildbuddy_grpc_server_ingress_bytes{region=~\"${region}\",job=~\"${job}\",provider=~\"${provider}\",remote_region=~\"${remote_region}\",group_id=~\"${group_id}\"}[${window}]))",
+          "legendFormat": "{{${group_by}}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingress Bytes Rate",
+      "type": "timeseries"
+    }
+  ],
+  "preload": false,
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": [
+    "file:traffic-stats.json"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(buildbuddy_grpc_server_egress_bytes, region)",
+        "includeAll": true,
+        "multi": true,
+        "name": "region",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_grpc_server_egress_bytes, region)",
+          "refId": "Prometheus-region-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, job)",
+        "includeAll": true,
+        "multi": true,
+        "name": "job",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, job)",
+          "refId": "Prometheus-job-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, provider)",
+        "includeAll": true,
+        "multi": true,
+        "name": "provider",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, provider)",
+          "refId": "Prometheus-provider-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, remote_region)",
+        "includeAll": true,
+        "multi": true,
+        "name": "remote_region",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, remote_region)",
+          "refId": "Prometheus-remote_region-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, group_id)",
+        "includeAll": true,
+        "multi": true,
+        "name": "group_id",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_grpc_server_egress_bytes{region=~\"${region}\"}, group_id)",
+          "refId": "Prometheus-group_id-Variable-Query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "provider",
+          "value": "provider"
+        },
+        "includeAll": false,
+        "label": "Group By",
+        "name": "group_by",
+        "options": [
+          {
+            "selected": false,
+            "text": "region",
+            "value": "region"
+          },
+          {
+            "selected": false,
+            "text": "job",
+            "value": "job"
+          },
+          {
+            "selected": true,
+            "text": "provider",
+            "value": "provider"
+          },
+          {
+            "selected": false,
+            "text": "remote_region",
+            "value": "remote_region"
+          },
+          {
+            "selected": false,
+            "text": "group_id",
+            "value": "group_id"
+          }
+        ],
+        "query": "region, job, provider, remote_region, group_id",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "5m",
+          "value": "5m"
+        },
+        "includeAll": false,
+        "label": "Averaging Window",
+        "name": "window",
+        "options": [
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": true,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": false,
+            "text": "10m",
+            "value": "10m"
+          },
+          {
+            "selected": false,
+            "text": "30m",
+            "value": "30m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          },
+          {
+            "selected": false,
+            "text": "4h",
+            "value": "4h"
+          },
+          {
+            "selected": false,
+            "text": "1d",
+            "value": "1d"
+          }
+        ],
+        "query": "1m, 5m, 10m, 30m, 1h, 4h, 1d",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "",
+  "title": "Traffic Stats",
+  "uid": "traffic-stats"
+}
