@@ -39,16 +39,16 @@ type fakeIPRulesEnforcer struct {
 	checkErr error
 }
 
-func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) error {
-	return nil
+func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) (context.Context, error) {
+	return ctx, nil
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
+	return ctx, nil
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	return ctx, nil
 }
 
 func (f *fakeIPRulesEnforcer) InvalidateCache(ctx context.Context, groupID string) {

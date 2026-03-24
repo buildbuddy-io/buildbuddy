@@ -272,6 +272,7 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 
 func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
 	v, _, err := p.sf.Do(ctx, groupID, func(ctx context.Context) ([]ipRule, error) {
+		ctx = SetIPRulesEnforcedByPeer(ctx)
 		ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 		defer cancel()
 		rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -389,16 +390,16 @@ type Enforcer struct {
 
 type NoOpEnforcer struct{}
 
-func (n *NoOpEnforcer) Authorize(ctx context.Context) error {
-	return nil
+func (n *NoOpEnforcer) Authorize(ctx context.Context) (context.Context, error) {
+	return ctx, nil
 }
 
-func (n *NoOpEnforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
-	return nil
+func (n *NoOpEnforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
+	return ctx, nil
 }
 
-func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
-	return nil
+func (n *NoOpEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	return ctx, nil
 }
 
 func (n *NoOpEnforcer) InvalidateCache(ctx context.Context, groupID string) {
@@ -461,50 +462,56 @@ func (s *Enforcer) Check(ctx context.Context, groupID, skipRuleID string) error 
 	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
 }
 
-func (s *Enforcer) authorize(ctx context.Context, groupID string) error {
+func (s *Enforcer) authorize(ctx context.Context, groupID string) (context.Context, error) {
 	start := time.Now()
 	err := s.Check(ctx, groupID, "" /*=skipRuleID*/)
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
-	return err
+	if err != nil {
+		return ctx, err
+	}
+	if *remoteIPRulesTarget != "" {
+		ctx = SetIPRulesEnforcedByPeer(ctx)
+	}
+	return ctx, nil
 }
 
-func (s *Enforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
+func (s *Enforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 	// Server admins in impersonation mode can bypass IP rules.
 	if u.IsImpersonating() {
-		return nil
+		return ctx, nil
 	}
 
 	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 	if !g.EnforceIPRules {
-		return nil
+		return ctx, nil
 	}
 
 	return s.authorize(ctx, groupID)
 }
 
-func (s *Enforcer) Authorize(ctx context.Context) error {
+func (s *Enforcer) Authorize(ctx context.Context) (context.Context, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		// If auth failed we don't need to (and can't) apply IP rules.
-		return nil
+		return ctx, nil
 	}
 
 	// Server admins in impersonation mode can bypass IP rules.
 	if u.IsImpersonating() {
-		return nil
+		return ctx, nil
 	}
 
 	if !u.GetEnforceIPRules() {
-		return nil
+		return ctx, nil
 	}
 
 	if cis := s.env.GetClientIdentityService(); cis != nil {
@@ -513,17 +520,20 @@ func (s *Enforcer) Authorize(ctx context.Context) error {
 		if err == nil && (si.Client == interfaces.ClientIdentityExecutor ||
 			si.Client == interfaces.ClientIdentityApp ||
 			si.Client == interfaces.ClientIdentityWorkflow) {
-			return nil
+			return ctx, nil
 		}
 
 		// Allow trusted Cache Proxies to bypass local IP rule enforcement if
 		// they have already enforced the rules.
 		if err == nil && si.Client == interfaces.ClientIdentityCacheProxy && ipRulesEnforcedByPeer(ctx) {
-			return nil
+			if *remoteIPRulesTarget != "" {
+				ctx = SetIPRulesEnforcedByPeer(ctx)
+			}
+			return ctx, nil
 		}
 
 		if err != nil && !status.IsNotFoundError(err) {
-			return err
+			return ctx, err
 		}
 	}
 
@@ -539,27 +549,24 @@ func (s *Enforcer) Authorize(ctx context.Context) error {
 	return s.authorize(ctx, groupID)
 }
 
-func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
+func (s *Enforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
 	// GetUser is used by the frontend to know what the user is allowed to
 	// do, including whether or not they are allowed access by IP rules.
 	if r.URL.Path == "/rpc/BuildBuddyService/GetUser" {
-		return nil
+		return ctx, nil
 	}
 
 	// GetGroup is used to lookup group metadata for impersonation.
 	if r.URL.Path == "/rpc/BuildBuddyService/GetGroup" {
-		return nil
+		return ctx, nil
 	}
 
 	// All other APIs are subject to IP access checks.
 	if strings.HasPrefix(r.URL.Path, "/rpc/") || strings.HasPrefix(r.URL.Path, "/api/") {
-		err := s.Authorize(ctx)
-		if err != nil {
-			return err
-		}
+		return s.Authorize(ctx)
 	}
 
-	return nil
+	return ctx, nil
 }
 
 func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
