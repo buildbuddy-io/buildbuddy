@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -1045,6 +1046,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
 	eg.SetLimit(writeConcurrency)
 
+	// Limit the number of dirty chunks being simultaneously flushed to disk to avoid high IO pressure.
+	var syncMu sync.Mutex
+
 	chunks := cow.SortedChunks()
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
 	for i, c := range chunks {
@@ -1081,9 +1085,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			if d.GetHash() != allZerosDigest.GetHash() {
 				dirty := cow.Dirty(c.Offset)
 				if dirty {
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Lock()
+					}
 					// Sync dirty chunks to make sure the underlying file is up to date
 					// before we add it to cache.
-					if err := c.Sync(); err != nil {
+					err = c.Sync()
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Unlock()
+					}
+					if err != nil {
 						return returnError(status.WrapError(err, "sync dirty chunk"))
 					}
 				}
