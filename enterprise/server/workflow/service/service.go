@@ -1273,6 +1273,13 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 }
 
 func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.Workflow, workflowAction *config.Action) string {
+	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", workflowAction.Name))
+		if bazelCommandOverride != "" {
+			return bazelCommandOverride
+		}
+	}
+
 	useCLI := false
 	if wf.GitRepository != nil {
 		useCLI = wf.GitRepository.UseCLIInRemoteRunners
