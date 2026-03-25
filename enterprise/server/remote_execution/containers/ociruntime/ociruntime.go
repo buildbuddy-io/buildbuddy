@@ -82,8 +82,8 @@ var (
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
-	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve OCI GPU requests.")
-	gpus                    = flag.Slice("executor.oci.gpus", []string{}, "GPU device identifiers to add to all OCI containers via CDI. Matches Podman's --gpus semantics (for example: 'all', '0', '1').")
+	cdiDevices              = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
+	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
 	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
@@ -223,8 +223,8 @@ type provider struct {
 	// configured memory and cpu.
 	lxcfsMount string
 
-	// CDI registry used for resolving configured GPU devices.
-	// This is initialized once at startup when GPUs are configured.
+	// CDI registry used for resolving configured CDI devices.
+	// This is initialized once at startup when CDI devices are configured.
 	cdiRegistry *cdi.Cache
 }
 
@@ -359,9 +359,17 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
 	var cdiRegistry *cdi.Cache
-	if len(*gpus) > 0 {
+	if len(*cdiDevices) > 0 {
 		registry, err := cdi.NewCache(
 			cdi.WithSpecDirs((*cdiSpecDirs)...),
+			// Disable auto-refresh since we don't have a way to clean up the
+			// goroutines that would be spawned to do the refreshing. For now,
+			// users can just restart the executor to pick up changes to CDI
+			// specs if needed.
+			//
+			// TODO: if we add a provider.Close() lifecycle
+			// method, close the registry when the provider is closed, and
+			// enable auto-refresh.
 			cdi.WithAutoRefresh(false),
 		)
 		if err != nil {
@@ -1309,60 +1317,24 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
-	if err := injectConfiguredGPUs(&spec, c.cdiRegistry); err != nil {
-		return nil, fmt.Errorf("inject configured GPUs: %w", err)
+	if err := injectConfiguredCDIDevices(&spec, c.cdiRegistry); err != nil {
+		return nil, fmt.Errorf("inject configured CDI devices: %w", err)
 	}
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
 }
 
-type cdiVendorLister interface {
-	ListVendors() []string
-}
-
-func discoverGPUVendorFromCDI(lister cdiVendorLister) (string, error) {
-	knownGPUVendors := []string{
-		"nvidia.com",
-		"amd.com",
-	}
-	vendors := lister.ListVendors()
-	for _, knownVendor := range knownGPUVendors {
-		for _, vendor := range vendors {
-			if vendor == knownVendor {
-				return vendor, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("no known GPU vendor found in CDI specs")
-}
-
-func gpusToCDIDevices(gpus []string, lister cdiVendorLister) ([]string, error) {
-	if len(gpus) == 0 {
-		return nil, nil
-	}
-	vendor, err := discoverGPUVendorFromCDI(lister)
-	if err != nil {
-		return nil, fmt.Errorf("discover GPU vendor: %w", err)
-	}
-	cdiDevices := make([]string, 0, len(gpus))
-	for _, gpu := range gpus {
-		cdiDevices = append(cdiDevices, fmt.Sprintf("%s/gpu=%s", vendor, gpu))
-	}
-	return cdiDevices, nil
-}
-
-func injectConfiguredGPUs(spec *specs.Spec, registry *cdi.Cache) error {
-	if len(*gpus) == 0 {
+// injectConfiguredCDIDevices resolves configured CDI devices and applies their
+// container edits to the OCI spec (for example mounts, /dev nodes, env vars,
+// hooks, cgroup device rules).
+func injectConfiguredCDIDevices(spec *specs.Spec, registry *cdi.Cache) error {
+	if len(*cdiDevices) == 0 {
 		return nil
 	}
 	if registry == nil {
 		return fmt.Errorf("CDI registry is not initialized")
 	}
-	cdiDevices, err := gpusToCDIDevices(*gpus, registry)
-	if err != nil {
-		return fmt.Errorf("convert GPUs to CDI devices: %w", err)
-	}
-	if _, err := registry.InjectDevices(spec, cdiDevices...); err != nil {
+	if _, err := registry.InjectDevices(spec, (*cdiDevices)...); err != nil {
 		return fmt.Errorf("set up CDI devices: %w", err)
 	}
 	return nil

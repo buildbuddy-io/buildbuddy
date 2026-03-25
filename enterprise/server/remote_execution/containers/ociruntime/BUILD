@@ -135,17 +135,14 @@ go_test(
 
 # Manual test for NVIDIA GPU support.
 #
-# From a Linux machine with an NVIDIA GPU, run the executor with OCI runtime
-# enabled and 'executor.oci.gpus=all', then run this test against the executor
-# with bazel (e.g. --config=local-rbe-linux).
-#
-# Some host setup is also required:
+# From a Linux machine with an NVIDIA GPU:
 # - Install `nvidia-container-toolkit` (need `nvidia-ctk` in PATH)
 # - Run `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` which
 #   creates a CDI spec.
+# - Run the executor with OCI runtime enabled and --executor.oci.cdi_devices=nvidia.com/gpu=all
+# - Run this test against the executor with bazel, e.g. --config=local-rbe-linux
 sh_test(
     name = "nvidia_gpu_test",
-    timeout = "long",
     srcs = ["nvidia_gpu_test.sh"],
     exec_properties = {
         "test.workload-isolation-type": "oci",
