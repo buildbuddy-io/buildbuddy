@@ -101,16 +101,16 @@ func buildManifest() (*mcptools.Manifest, error) {
 	tools := make([]mcptools.Tool, 0, service.Methods().Len())
 	for i := range service.Methods().Len() {
 		method := service.Methods().Get(i)
-		// MCP tools are modeled as single request/response calls, so streaming
-		// APIs do not fit this adapter.
-		if method.IsStreamingClient() || method.IsStreamingServer() {
-			continue
-		}
 		methodName := string(method.Name())
 		// The allowlist is the source of truth for which public APIs we
 		// intentionally surface to agents.
 		if !mcptools.AllowsRPC(methodName) {
 			continue
+		}
+		// MCP tools are modeled as single request/response calls, so any
+		// allowlisted streaming API is a configuration error.
+		if method.IsStreamingClient() || method.IsStreamingServer() {
+			return nil, fmt.Errorf("allowlisted RPC %q is streaming; MCP tools require unary RPCs", methodName)
 		}
 		schema, err := (&schemaBuilder{
 			docs: docs,
