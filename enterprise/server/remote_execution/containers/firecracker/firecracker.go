@@ -2174,6 +2174,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if networkingEnabled(c.vmConfig.NetworkMode) {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
+	// Pass the host's resolv.conf to the VM so it can use the same DNS
+	// configuration. goinit will fall back to default nameservers if unavailable.
+	if hostResolvConf, err := os.ReadFile("/etc/resolv.conf"); err != nil {
+		log.CtxWarningf(ctx, "Failed to read host /etc/resolv.conf, VM will use default nameservers: %s", err)
+	} else {
+		metadata["resolv_conf"] = string(hostResolvConf)
+	}
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
