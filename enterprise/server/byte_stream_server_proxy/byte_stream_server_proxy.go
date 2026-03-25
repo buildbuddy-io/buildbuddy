@@ -122,6 +122,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	bsm := byteStreamMetrics{
 		requestType:  requestTypeLabel,
 		compressor:   readMetrics.compressor,
+		groupID:      groupIDForMetrics(ctx),
 		err:          err,
 		bytes:        meteredStream.bytes,
 		chunked:      readMetrics.chunked,
@@ -518,7 +519,15 @@ func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
 	if bsm.bytes > 0 {
-		metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bsm.bytes))
+		bytesLabels := prometheus.Labels{
+			metrics.StatusLabel:           status.MetricsLabel(bsm.err),
+			metrics.CacheHitMissStatus:    cacheStatus,
+			metrics.CacheProxyRequestType: bsm.requestType,
+			metrics.CompressionType:       bsm.compressor,
+			metrics.ChunkedLabel:          strconv.FormatBool(bsm.chunked),
+			metrics.GroupID:               bsm.groupID,
+		}
+		metrics.ByteStreamProxiedReadBytes.With(bytesLabels).Add(float64(bsm.bytes))
 	}
 
 	if bsm.chunked && bsm.chunksTotal > 0 {
