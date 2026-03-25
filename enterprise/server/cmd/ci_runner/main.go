@@ -217,6 +217,11 @@ type workspace struct {
 	// of any action's logs yet.
 	reportedInitMetrics bool
 
+	// The original task workspace dir (current working directory when the
+	// runner started, before any WORKDIR_OVERRIDE is applied). Used to locate
+	// binaries (e.g. bb) that were placed there by the executor.
+	taskWorkspaceDir string
+
 	// The root dir under which all work is done.
 	//
 	// This dir has the following structure:
@@ -709,6 +714,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	ws.taskWorkspaceDir = taskWorkspaceDir
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
 	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
 		if err := os.MkdirAll(wd, 0755); err != nil {
@@ -774,7 +780,6 @@ func run() error {
 		}
 		*bazelCommand = bazeliskPath
 	}
-	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
 	if *bazelCommand == bbBinaryName {
 		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
 		if _, err := os.Stat(bbPath); err != nil {
@@ -1075,6 +1080,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if !*skipAutomaticCheckout {
 		if err := ws.setup(ctx); err != nil {
 			return status.WrapError(err, "failed to set up git repo")
+		}
+		if err := ws.adjustBazelCommandForBazelversion(); err != nil {
+			return status.WrapError(err, "adjust bazel command for .bazelversion")
 		}
 	}
 	action, err := getActionToRun()
@@ -2185,6 +2193,40 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 		}
 	}
 
+	return nil
+}
+
+// adjustBazelCommandForBazelversion checks whether the repo's .bazelversion
+// specifies a bb CLI version (buildbuddy-io/...). If so, and if bb is the
+// current bazel command, using bb directly would cause a double invocation:
+// bb acts as bazelisk and re-downloads the version from .bazelversion. To
+// avoid this, switch to bazelisk (which handles the version resolution itself)
+// and update the wrapper scripts accordingly.
+//
+// Must be called after the repo is checked out so that .bazelversion is readable.
+func (ws *workspace) adjustBazelCommandForBazelversion() error {
+	if filepath.Base(*bazelCommand) != bbBinaryName {
+		return nil
+	}
+	bazelVersionPath := filepath.Join(ws.rootDir, repoDirName, ".bazelversion")
+	content, err := os.ReadFile(bazelVersionPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(content)), "buildbuddy-io/") {
+		return nil
+	}
+	bazeliskPath := filepath.Join(ws.rootDir, bazeliskBinaryName)
+	if err := extractBazelisk(bazeliskPath); err != nil {
+		return status.WrapError(err, "extract bazelisk")
+	}
+	*bazelCommand = bazeliskPath
+	if err := ws.writeBazelWrapperScript(ws.taskWorkspaceDir); err != nil {
+		return status.WrapError(err, "update bazel wrapper script")
+	}
 	return nil
 }
 
