@@ -89,7 +89,7 @@ func statefulSet(name string) *appsv1.StatefulSet {
 	}
 }
 
-// peerCollector collects peer updates from the Channel.
+// peerCollector collects peer updates from the PeerWatcher.
 type peerCollector struct {
 	mu      sync.Mutex
 	updates [][]string
@@ -133,9 +133,9 @@ func waitForWatch(t *testing.T, client *fake.Clientset, resource string) {
 	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for %s watch", resource)
 }
 
-func testingChannel(t *testing.T, client kubernetes.Interface, pc *peerCollector) *Channel {
+func testingPeerWatcher(t *testing.T, client kubernetes.Interface, pc *peerCollector) *PeerWatcher {
 	t.Helper()
-	ch, err := NewChannel(&Config{
+	pw, err := NewPeerWatcher(&Config{
 		UpdateFn:  pc.updateFn,
 		Port:      "7999",
 		Namespace: testNamespace,
@@ -143,9 +143,9 @@ func testingChannel(t *testing.T, client kubernetes.Interface, pc *peerCollector
 		Client:    client,
 	})
 	require.NoError(t, err)
-	ch.StartAdvertising()
-	t.Cleanup(ch.StopAdvertising)
-	return ch
+	require.NoError(t, pw.Start())
+	t.Cleanup(pw.Stop)
+	return pw
 }
 
 func TestDiscoverPeersFromReplicaSet(t *testing.T) {
@@ -158,7 +158,7 @@ func TestDiscoverPeersFromReplicaSet(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, pod2, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}, peers)
@@ -173,7 +173,7 @@ func TestDiscoverPeersFromStatefulSet(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, ss)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999"}, peers)
@@ -188,7 +188,7 @@ func TestPodAddedDuringWatch(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -216,7 +216,7 @@ func TestPodDeletedDuringWatch(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, pod2, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -257,7 +257,7 @@ func TestPodNotReadyExcluded(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
@@ -272,7 +272,7 @@ func TestPodBecomesUnready(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	// Wait for initial peer set.
 	peers := pc.waitForUpdate(t, 5*time.Second)
@@ -312,7 +312,7 @@ func TestNoPodIPExcluded(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
@@ -347,7 +347,7 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	})
 
 	pc := newPeerCollector()
-	testingChannel(t, client, pc)
+	testingPeerWatcher(t, client, pc)
 
 	// Should eventually get peer after recovery.
 	peers := pc.waitForUpdate(t, 10*time.Second)

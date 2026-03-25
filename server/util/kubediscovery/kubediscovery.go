@@ -10,13 +10,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/watch"
@@ -29,7 +29,12 @@ import (
 
 const apiMaxBackoff = 30 * time.Second
 
+// maxPeers is a safety limit on the number of tracked peers to prevent
+// unbounded memory growth from a misconfigured label selector.
+const maxPeers = 10000
+
 // PeersUpdateFn is called when the set of discovered peers changes.
+// Each element in peerSet is an "ip:port" string.
 type PeersUpdateFn func(peerSet ...string)
 
 // Config holds configuration for Kubernetes peer discovery.
@@ -49,15 +54,16 @@ type Config struct {
 	Client kubernetes.Interface
 }
 
-// Channel watches Kubernetes pods that share the same controller as this
+// PeerWatcher watches Kubernetes pods that share the same controller as this
 // pod and calls UpdateFn when the peer set changes.
-type Channel struct {
+type PeerWatcher struct {
 	client   kubernetes.Interface
 	port     string
 	updateFn PeersUpdateFn
 
-	namespace string
-	podName   string
+	namespace     string
+	podName       string
+	labelSelector string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -66,20 +72,20 @@ type Channel struct {
 	peers map[string]string // pod name -> "ip:port"
 }
 
-// NewChannel creates a new Kubernetes peer discovery channel.
-func NewChannel(config *Config) (*Channel, error) {
+// NewPeerWatcher creates a new Kubernetes peer discovery watcher.
+func NewPeerWatcher(config *Config) (*PeerWatcher, error) {
 	namespace := config.Namespace
 	if namespace == "" {
-		data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		var err error
+		namespace, err = resources.GetK8sNamespace()
 		if err != nil {
-			return nil, fmt.Errorf("could not determine namespace: %w", err)
+			return nil, err
 		}
-		namespace = strings.TrimSpace(string(data))
 	}
 
 	podName := config.PodName
 	if podName == "" {
-		podName = os.Getenv("HOSTNAME")
+		podName = resources.GetK8sPodName()
 	}
 	if podName == "" {
 		return nil, fmt.Errorf("could not determine pod name: set HOSTNAME env var or Config.PodName")
@@ -97,35 +103,46 @@ func NewChannel(config *Config) (*Channel, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Channel{
-		client:    client,
-		port:      config.Port,
-		updateFn:  config.UpdateFn,
-		namespace: namespace,
-		podName:   podName,
-		ctx:       ctx,
-		cancel:    cancel,
-		peers:     make(map[string]string),
-	}, nil
+	labelSelector, err := resolveLabelSelector(ctx, client, namespace, podName)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	pw := &PeerWatcher{
+		client:        client,
+		port:          config.Port,
+		updateFn:      config.UpdateFn,
+		namespace:     namespace,
+		podName:       podName,
+		ctx:           ctx,
+		cancel:        cancel,
+		labelSelector: labelSelector,
+	}
+
+	return pw, nil
 }
 
 // SetUpdateFn replaces the peer update callback. This must be called
-// before StartAdvertising.
-func (c *Channel) SetUpdateFn(fn PeersUpdateFn) {
+// before Start.
+func (c *PeerWatcher) SetUpdateFn(fn PeersUpdateFn) {
 	c.updateFn = fn
 }
 
-// StartAdvertising begins watching for peer pods.
-func (c *Channel) StartAdvertising() {
+// Start begins watching for peer pods.
+func (c *PeerWatcher) Start() error {
+	if c.updateFn == nil {
+		return fmt.Errorf("kubediscovery: UpdateFn must be set before calling Start")
+	}
 	go c.discoverAndWatch()
+	return nil
 }
 
-// StopAdvertising stops watching for peer pods.
-func (c *Channel) StopAdvertising() {
+// Stop stops watching for peer pods.
+func (c *PeerWatcher) Stop() {
 	c.cancel()
 }
 
-func (c *Channel) discoverAndWatch() {
+func (c *PeerWatcher) discoverAndWatch() {
 	backoff := time.Second
 	for {
 		start := time.Now()
@@ -134,6 +151,7 @@ func (c *Channel) discoverAndWatch() {
 			return
 		}
 		if time.Since(start) > time.Minute {
+			// If we ran for a while, reset the backoff.
 			backoff = time.Second
 		}
 		log.Infof("kubediscovery: watch loop ended: %s; retrying in %s", err, backoff)
@@ -146,64 +164,10 @@ func (c *Channel) discoverAndWatch() {
 	}
 }
 
-// runOnce performs a single cycle: look up our owner, then list+watch peers.
-func (c *Channel) runOnce() error {
-	myPod, err := c.client.CoreV1().Pods(c.namespace).Get(c.ctx, c.podName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get own pod %s/%s: %w", c.namespace, c.podName, err)
-	}
-
-	labelSelector, err := c.getLabelSelectorFromOwner(myPod)
-	if err != nil {
-		return fmt.Errorf("failed to determine label selector: %w", err)
-	}
-
-	return c.listAndWatch(labelSelector)
-}
-
-// getLabelSelectorFromOwner finds the controlling owner of the pod and
-// returns the label selector string that matches all pods managed by
-// that owner.
-func (c *Channel) getLabelSelectorFromOwner(pod *corev1.Pod) (string, error) {
-	i := slices.IndexFunc(pod.OwnerReferences, func(ref metav1.OwnerReference) bool {
-		return ref.Controller != nil && *ref.Controller
-	})
-	if i < 0 {
-		return "", fmt.Errorf("pod %s has no controller owner reference", pod.Name)
-	}
-	controllerRef := pod.OwnerReferences[i]
-
-	switch controllerRef.Kind {
-	case "ReplicaSet":
-		rs, err := c.client.AppsV1().ReplicaSets(c.namespace).Get(c.ctx, controllerRef.Name, metav1.GetOptions{})
-		if err != nil {
-			return "", fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
-		}
-		return labelSelectorString(rs.Spec.Selector), nil
-
-	case "StatefulSet":
-		ss, err := c.client.AppsV1().StatefulSets(c.namespace).Get(c.ctx, controllerRef.Name, metav1.GetOptions{})
-		if err != nil {
-			return "", fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
-		}
-		return labelSelectorString(ss.Spec.Selector), nil
-
-	default:
-		return "", fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
-	}
-}
-
-func labelSelectorString(sel *metav1.LabelSelector) string {
-	if sel == nil {
-		return ""
-	}
-	return "app=" + sel.MatchLabels["app"]
-}
-
-// listAndWatch lists all matching pods then watches for changes.
-func (c *Channel) listAndWatch(labelSelector string) error {
+// runOnce performs a single list+watch cycle.
+func (c *PeerWatcher) runOnce() error {
 	podList, err := c.client.CoreV1().Pods(c.namespace).List(c.ctx, metav1.ListOptions{
-		LabelSelector: labelSelector,
+		LabelSelector: c.labelSelector,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list pods: %w", err)
@@ -224,7 +188,7 @@ func (c *Channel) listAndWatch(labelSelector string) error {
 	// Watch loop: restart the watch when it ends (server can close it).
 	for {
 		watcher, err := c.client.CoreV1().Pods(c.namespace).Watch(c.ctx, metav1.ListOptions{
-			LabelSelector:   labelSelector,
+			LabelSelector:   c.labelSelector,
 			ResourceVersion: resourceVersion,
 		})
 		if err != nil {
@@ -243,9 +207,58 @@ func (c *Channel) listAndWatch(labelSelector string) error {
 	}
 }
 
+// resolveLabelSelector fetches the pod's spec and derives the label
+// selector from the controlling owner (ReplicaSet or StatefulSet).
+func resolveLabelSelector(ctx context.Context, client kubernetes.Interface, namespace, podName string) (string, error) {
+	myPod, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get own pod %s/%s: %w", namespace, podName, err)
+	}
+	return getLabelSelectorFromOwner(ctx, client, namespace, myPod)
+}
+
+// getLabelSelectorFromOwner finds the controlling owner of the pod and
+// returns the label selector string that matches all pods managed by
+// that owner.
+func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface, namespace string, pod *corev1.Pod) (string, error) {
+	i := slices.IndexFunc(pod.OwnerReferences, func(ref metav1.OwnerReference) bool {
+		return ref.Controller != nil && *ref.Controller
+	})
+	if i < 0 {
+		return "", fmt.Errorf("pod %s has no controller owner reference", pod.Name)
+	}
+	controllerRef := pod.OwnerReferences[i]
+
+	switch controllerRef.Kind {
+	case "ReplicaSet":
+		rs, err := client.AppsV1().ReplicaSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
+		}
+		return labelSelectorString(rs.Spec.Selector), nil
+
+	case "StatefulSet":
+		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
+		}
+		return labelSelectorString(ss.Spec.Selector), nil
+
+	default:
+		return "", fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
+	}
+}
+
+func labelSelectorString(sel *metav1.LabelSelector) string {
+	if sel == nil {
+		return ""
+	}
+	return "app=" + sel.MatchLabels["app"]
+}
+
 // processEvents handles watch events until the channel closes or an
 // error occurs.
-func (c *Channel) processEvents(watcher watch.Interface, resourceVersion *string) error {
+func (c *PeerWatcher) processEvents(watcher watch.Interface, resourceVersion *string) error {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -261,17 +274,13 @@ func (c *Channel) processEvents(watcher watch.Interface, resourceVersion *string
 			}
 			switch event.Type {
 			case watch.Added, watch.Modified:
-				pod, ok := event.Object.(*corev1.Pod)
-				if !ok {
-					continue
+				if pod, ok := event.Object.(*corev1.Pod); ok {
+					c.updatePod(pod)
 				}
-				c.updatePod(pod)
 			case watch.Deleted:
-				pod, ok := event.Object.(*corev1.Pod)
-				if !ok {
-					continue
+				if pod, ok := event.Object.(*corev1.Pod); ok {
+					c.removePod(pod.Name)
 				}
-				c.removePod(pod.Name)
 			case watch.Bookmark:
 				// no-op
 			case watch.Error:
@@ -283,7 +292,7 @@ func (c *Channel) processEvents(watcher watch.Interface, resourceVersion *string
 
 // podAddr returns the "ip:port" address for a pod, or "" if the pod
 // is not ready to receive traffic.
-func (c *Channel) podAddr(pod corev1.Pod) string {
+func (c *PeerWatcher) podAddr(pod corev1.Pod) string {
 	if pod.Status.PodIP == "" {
 		return ""
 	}
@@ -302,7 +311,7 @@ func (c *Channel) podAddr(pod corev1.Pod) string {
 	return ""
 }
 
-func (c *Channel) updatePod(pod *corev1.Pod) {
+func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	addr := c.podAddr(*pod)
@@ -318,9 +327,12 @@ func (c *Channel) updatePod(pod *corev1.Pod) {
 		c.peers[pod.Name] = addr
 		c.notifyLocked()
 	}
+	if len(c.peers) > maxPeers {
+		alert.UnexpectedEvent("kubediscovery_too_many_peers", "Found %v peers, which is over the limit of %v", len(c.peers), maxPeers)
+	}
 }
 
-func (c *Channel) removePod(podName string) {
+func (c *PeerWatcher) removePod(podName string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, exists := c.peers[podName]; exists {
@@ -329,7 +341,7 @@ func (c *Channel) removePod(podName string) {
 	}
 }
 
-func (c *Channel) notifyLocked() {
+func (c *PeerWatcher) notifyLocked() {
 	addrs := make([]string, 0, len(c.peers))
 	for _, addr := range c.peers {
 		addrs = append(addrs, addr)

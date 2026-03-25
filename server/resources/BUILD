@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/resources",
     visibility = [
         "//enterprise:__subpackages__",
+        "//server/util/kubediscovery:__subpackages__",
     ],
     deps = [
         "//proto:scheduler_go_proto",

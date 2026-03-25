@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/resources",
         "//server/util/log",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",

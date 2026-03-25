@@ -83,11 +83,7 @@ type Options struct {
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
 	ReadThroughLocalCache        bool
-
-	// KubeDiscoveryChannel is an optional pre-configured kubediscovery
-	// channel. If set, this channel is used for peer discovery instead of
-	// creating one from in-cluster config. This is useful for testing.
-	KubeDiscoveryChannel *kubediscovery.Channel
+	KubePeerWatcher              *kubediscovery.PeerWatcher
 }
 
 type hintedHandoffOrder struct {
@@ -128,7 +124,7 @@ type Cache struct {
 	consistentHash       *consistent_hash.ConsistentHash
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
-	kubeDiscoveryChannel *kubediscovery.Channel
+	kubeDiscoveryChannel *kubediscovery.PeerWatcher
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
@@ -161,13 +157,13 @@ func Register(env *real_environment.RealEnv) error {
 		if err != nil {
 			return status.InternalErrorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", options.ListenAddr, err)
 		}
-		kubeChannel, err := kubediscovery.NewChannel(&kubediscovery.Config{
+		pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
 			Port: portStr,
 		})
 		if err != nil {
-			return status.InternalErrorf("failed to create kubernetes discovery channel: %w", err)
+			return status.InternalErrorf("failed to create kubernetes discovery watcher: %w", err)
 		}
-		options.KubeDiscoveryChannel = kubeChannel
+		options.KubePeerWatcher = pw
 	}
 	log.Infof("Enabling distributed cache with options: %+v", options)
 	dc, err := NewDistributedCache(env, env.GetCache(), options, env.GetHealthChecker())
@@ -217,6 +213,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	// Check Preconditions: if newNodes are enabled, node list must have been manually specified.
 	if len(opts.NewNodes) > 0 && len(opts.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("new nodes may only be specified when all nodes are hardcoded.")
+	}
+	if opts.KubePeerWatcher != nil && len(opts.Nodes) > 0 {
+		return nil, status.InvalidArgumentErrorf("cannot set both Nodes and KubePeerWatcher")
 	}
 	hashFn, err := parseConsistentHash(*consistentHashFunction)
 	if err != nil {
@@ -290,8 +289,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if len(opts.NewNodes) > 0 {
 			extraCHash.Set(opts.NewNodes...)
 		}
-	} else if opts.KubeDiscoveryChannel != nil {
-		dc.kubeDiscoveryChannel = opts.KubeDiscoveryChannel
+	} else if opts.KubePeerWatcher != nil {
+		dc.kubeDiscoveryChannel = opts.KubePeerWatcher
 		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers ...string) {
 			if err := chash.Set(peers...); err != nil {
 				log.Errorf("Error setting peers in consistent hash: %s", err)
@@ -667,7 +666,9 @@ func (c *Cache) StartListening() {
 		c.heartbeatChannel.StartAdvertising()
 	}
 	if c.kubeDiscoveryChannel != nil {
-		c.kubeDiscoveryChannel.StartAdvertising()
+		if err := c.kubeDiscoveryChannel.Start(); err != nil {
+			log.Warningf("Unable to start kube discovery: %s", err)
+		}
 	}
 	if err := c.distributedProxy.StartListening(); err != nil {
 		log.Warningf("Unable to start cacheproxy: %s", err)
@@ -688,7 +689,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 		c.heartbeatChannel.StopAdvertising()
 	}
 	if c.kubeDiscoveryChannel != nil {
-		c.kubeDiscoveryChannel.StopAdvertising()
+		c.kubeDiscoveryChannel.Stop()
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true

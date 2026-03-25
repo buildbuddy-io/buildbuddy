@@ -282,6 +282,18 @@ func GetZone() string {
 	return ""
 }
 
+func GetK8sNamespace() (string, error) {
+	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return "", fmt.Errorf("could not determine namespace: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func GetK8sPodName() string {
+	return os.Getenv("HOSTNAME")
+}
+
 func GetK8sPodUID() (string, error) {
 	if podID := os.Getenv(podUIDVarName); podID != "" {
 		return podID, nil

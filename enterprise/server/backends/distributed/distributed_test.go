@@ -2748,15 +2748,15 @@ func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
 	}
 }
 
-func kubediscoverChannel(t *testing.T, portStr, ns, podName string, client kubernetes.Interface) *kubediscovery.Channel {
-	ch, err := kubediscovery.NewChannel(&kubediscovery.Config{
+func newPeerWatcher(t *testing.T, portStr, ns, podName string, client kubernetes.Interface) *kubediscovery.PeerWatcher {
+	pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
 		Port:      portStr,
 		Namespace: ns,
 		PodName:   podName,
 		Client:    client,
 	})
 	require.NoError(t, err)
-	return ch
+	return pw
 }
 
 func TestKubeDiscoveryReadWrite(t *testing.T) {
@@ -2786,19 +2786,19 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	config1.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-0", fakeClient)
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	config2.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-1", fakeClient)
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	config3.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-2", fakeClient)
+	config3.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-2", fakeClient)
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, peer1)
@@ -2857,7 +2857,7 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	config1.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-0", fakeClient)
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
 	waitForReady(t, peer1)
 
@@ -2880,7 +2880,7 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	config2.KubeDiscoveryChannel = kubediscoverChannel(t, portStr, ns, "cache-1", fakeClient)
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
 	waitForReady(t, peer2)
 
