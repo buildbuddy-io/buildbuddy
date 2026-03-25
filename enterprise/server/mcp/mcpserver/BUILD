@@ -6,7 +6,7 @@ genrule(
     name = "api_tools_manifest",
     srcs = ["//proto/api/v1:api_v1_proto_srcs"],
     outs = ["api_tools_manifest.json"],
-    cmd = "./$(location //enterprise/server/mcp/mcptoolgen:mcptoolgen) -output \"$@\"",
+    cmd = "$(location //enterprise/server/mcp/mcptoolgen:mcptoolgen) -output \"$@\"",
     tools = ["//enterprise/server/mcp/mcptoolgen"],
 )
 

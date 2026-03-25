@@ -12,7 +12,6 @@ var allowedRPCs = map[string]struct{}{
 	"GetLog":        {},
 	"GetTarget":     {},
 	"GetAction":     {},
-	"GetFile":       {},
 }
 
 // Manifest is the generated inventory of API-backed MCP tools.
