@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fsync"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -1530,7 +1531,7 @@ type ImageStore struct {
 	resolver       *oci.Resolver
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
-	layerPullGroup singleflight.Group[string, any]
+	layerPullGroup singleflight.Group[string, int64]
 	// fileCache is used for managing layer eviction.
 	fileCache interfaces.FileCache
 
@@ -1567,8 +1568,10 @@ type Image struct {
 type ImageLayer struct {
 	// Path is the path where the layer is stored on disk.
 	Path string
-	// Size is the size of the layer in bytes.
-	Size int64
+	// EstimatedDiskUsageBytes is a best-effort estimate of layer disk usage.
+	// It may come from a disk walk (startup scan / lookup) or by counting the
+	// uncompressed layer tar stream bytes while extracting.
+	EstimatedDiskUsageBytes int64
 	// DiffID is the uncompressed image digest.
 	DiffID ctr.Hash
 }
@@ -1725,7 +1728,7 @@ func (s *ImageStore) lockImage(ctx context.Context, image *Image) (*LockedImage,
 	// Lock all image layers to prevent eviction.
 	var unlockFns []func()
 	for _, layer := range image.Layers {
-		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.Size)
+		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.EstimatedDiskUsageBytes)
 		if err != nil {
 			// Unlock any layers that we were able to lock, to ensure we don't
 			// end up with a partially locked image.
@@ -1776,23 +1779,24 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			destDir := layerPath(s.layersDir, d)
 			resolvedLayer.Path = destDir
 
-			size, err := layer.Size()
+			compressedSize, err := layer.Size()
 			if err != nil {
 				return status.UnavailableErrorf("get layer size: %s", err)
 			}
-			resolvedLayer.Size = size
 
 			// Check whether the layer already exists and can be reused.
 			if *enableImageEviction {
 				// Check via the filecache LRU - this also temporarily locks the
 				// layer to prevent eviction during the existence check.
-				unlock, err := s.fileCache.TrackExternalDirectory(ctx, destDir, size)
+				unlock, existingLayerSize, err := s.fileCache.LookupExternalDirectory(ctx, destDir)
 				if err != nil {
 					if !status.IsNotFoundError(err) {
-						return status.UnavailableErrorf("stat layer directory: %s", err)
+						return status.UnavailableErrorf("lookup layer directory in local cache: %s", err)
 					}
 					// Layer not in cache, fall through to download it.
 				} else {
+					resolvedLayer.EstimatedDiskUsageBytes = existingLayerSize
+
 					// Layer exists in cache. Release the lock for now - we will
 					// properly re-lock the layers individually later, once we
 					// are outside of the singleflight group.
@@ -1814,17 +1818,21 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// Layer dir does not exist in cache, so we need to download it.
 
 			start := time.Now()
-			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
+			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB compressed)", d.Hex, float64(compressedSize)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
 			// Images often share layers - dedupe individual layer pulls.
 			// Note that each layer pull is also authorized, so include
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
-			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				return nil, downloadLayer(ctx, layer, destDir)
+			size, _, err := s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
+				return downloadLayer(ctx, layer, destDir)
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			resolvedLayer.EstimatedDiskUsageBytes = size
+			return nil
 		})
 	}
 	// Fetch image config file concurrently with layer downloads.
@@ -1848,16 +1856,16 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // For reference implementations, see:
 //   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
 //   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64, error) {
 	rc, err := layer.Uncompressed()
 	if err != nil {
-		return status.UnavailableErrorf("get layer reader: %s", err)
+		return 0, status.UnavailableErrorf("get layer reader: %s", err)
 	}
 	defer rc.Close()
 
 	tempUnpackDir := destDir + tmpSuffix()
 	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
-		return status.UnavailableErrorf("create layer unpack dir: %s", err)
+		return 0, status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
@@ -1865,18 +1873,19 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	// the layer we can ensure it gets persisted to disk (to avoid corruption).
 	root := fsync.NewRoot(tempUnpackDir, nil)
 
-	tr := tar.NewReader(rc)
+	counter := &ioutil.Counter{}
+	tr := tar.NewReader(io.TeeReader(rc, counter))
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
+			return 0, status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
 		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
-			return status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
+			return 0, status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
 		}
 
 		// filepath.Join applies filepath.Clean to all arguments
@@ -1890,7 +1899,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
 			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
 			log.CtxDebugf(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
@@ -1903,7 +1912,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			// Directory whiteout
 			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
 				if err := root.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
+					return 0, status.UnavailableErrorf("setxattr on deleted dir: %s", err)
 				}
 				continue
 			}
@@ -1912,7 +1921,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
 			if err := root.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
-				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
+				return 0, status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
 			continue
 		}
@@ -1920,33 +1929,33 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(file, os.FileMode(header.Mode), header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		case tar.TypeReg:
 			if err := root.CreateFile(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create file: %s", err)
+				return 0, status.UnavailableErrorf("create file: %s", err)
 			}
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
 			if err := root.Symlink(header.Linkname, file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create symlink: %s", err)
+				return 0, status.UnavailableErrorf("create symlink: %s", err)
 			}
 		case tar.TypeLink:
 			target := filepath.Join(tempUnpackDir, header.Linkname)
 			if !strings.HasPrefix(target, tempUnpackDir) {
-				return status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
+				return 0, status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
 			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
 			if err := root.Link(target, file); err != nil {
-				return status.UnavailableErrorf("create hard link: %s", err)
+				return 0, status.UnavailableErrorf("create hard link: %s", err)
 			}
 		}
 	}
 
 	if err := root.Sync(); err != nil {
-		return status.UnavailableErrorf("sync layer paths: %s", err)
+		return 0, status.UnavailableErrorf("sync layer paths: %s", err)
 	}
 
 	if err := os.Rename(tempUnpackDir, destDir); err != nil {
@@ -1954,17 +1963,17 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		// pulling the same layer concurrently with different credentials.
 		if os.IsExist(err) {
 			log.CtxDebugf(ctx, "Ignoring temp layer dir rename failure %q (likely due to concurrent layer download)", err)
-			return nil
+			return counter.Count(), nil
 		}
 
-		return status.UnavailableErrorf("rename temp layer dir: %s", err)
+		return 0, status.UnavailableErrorf("rename temp layer dir: %s", err)
 	}
 
 	if err := fsync.SyncPath(filepath.Dir(destDir)); err != nil {
-		return status.UnavailableErrorf("sync layer dir: %s", err)
+		return 0, status.UnavailableErrorf("sync layer dir: %s", err)
 	}
 
-	return nil
+	return counter.Count(), nil
 }
 
 // Statusz returns statusz page contents for the image store.

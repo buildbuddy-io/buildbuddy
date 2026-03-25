@@ -556,6 +556,10 @@ func (fc *fakeFilecache) TrackExternalDirectory(ctx context.Context, path string
 	return func() {}, nil
 }
 
+func (fc *fakeFilecache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
+	return nil, 0, status.NotFoundErrorf("not found: %s", path)
+}
+
 type fakeBytestreamClient struct {
 	mu        *sync.Mutex
 	data      map[string][]byte

@@ -573,7 +573,7 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 // from deletion until the unlock function is called.
 //
 // The caller is responsible for providing the directory size estimate. This
-// allows using cheaply computed size estimated, such as the OCI layer tarball
+// allows using cheaply computed size estimates, such as the OCI layer tarball
 // size, which is "close enough" to the on-disk size of the extracted layer
 // tarball.
 //
@@ -593,7 +593,7 @@ func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, siz
 	path = filepath.Clean(path)
 	key := externalDirectoryKey(path)
 
-	e, err := c.initExternalDirectoryEntry(key, path, size)
+	e, err := c.initExternalDirectoryEntry(key, path, size, true /*=createIfMissing*/)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +601,21 @@ func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, siz
 	return e.directoryHandle.unlock, nil
 }
 
-func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64) (*entry, error) {
+// LookupExternalDirectory performs a lookup-only external directory lock. It
+// returns NotFound if the directory exists on disk but is not currently
+// tracked by filecache.
+func (c *fileCache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
+	path = filepath.Clean(path)
+	key := externalDirectoryKey(path)
+
+	e, err := c.initExternalDirectoryEntry(key, path, 0 /*=size*/, false /*=createIfMissing*/)
+	if err != nil {
+		return nil, 0, err
+	}
+	return e.directoryHandle.unlock, e.sizeBytes, nil
+}
+
+func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, createIfMissing bool) (*entry, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -626,6 +640,9 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64) (*e
 				return nil, status.InternalErrorf("could not add key %s to filecache lru", key)
 			}
 		} else {
+			if !createIfMissing {
+				return nil, status.NotFoundErrorf("path %q is not tracked", path)
+			}
 			// No existing entry was found in the LRU or awaitingDeletion -
 			// create a new entry.
 			e = &entry{

@@ -929,6 +929,11 @@ type FileCache interface {
 	// See filecache.go for more details.
 	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
 
+	// LookupExternalDirectory looks up and locks an already-tracked external
+	// directory without creating a new tracked entry. It returns NotFound if
+	// the dir does not exist or is not currently tracked.
+	LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error)
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
