@@ -90,7 +90,9 @@ func startNewDCache(t *testing.T, te environment.Env, config Options, baseCache 
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.StartListening()
+	if err := c.StartListening(); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		waitForShutdown(c)
 	})
@@ -616,7 +618,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	}
 
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 	for _, r := range resourcesWritten {
 		for _, distributedCache := range distributedCaches {
@@ -1116,7 +1118,7 @@ func TestHintedHandoff(t *testing.T) {
 	// Restart the downed node -- as soon as it's back up, it should
 	// receive hinted handoffs from the other peers.
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 
 	// Wait for all peers to finish their backfill requests.
@@ -1347,7 +1349,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
@@ -1356,7 +1358,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
@@ -1365,7 +1367,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -1411,7 +1413,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	config2 = baseConfig
 	config2.ListenAddr = peer2
@@ -1419,7 +1421,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	config3 = baseConfig
 	config3.ListenAddr = peer3
@@ -1427,7 +1429,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	// Now bring up the new nodes
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
@@ -1437,7 +1439,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc4.StartListening()
+	require.NoError(t, dc4.StartListening())
 
 	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
 	config5 := baseConfig
@@ -1446,7 +1448,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc5.StartListening()
+	require.NoError(t, dc5.StartListening())
 
 	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
 	config6 := baseConfig
@@ -1455,7 +1457,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc6.StartListening()
+	require.NoError(t, dc6.StartListening())
 
 	memoryCache7 := newMemoryCache(t, singleCacheSizeBytes)
 	config7 := baseConfig
@@ -1464,7 +1466,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc7.StartListening()
+	require.NoError(t, dc7.StartListening())
 
 	memoryCache8 := newMemoryCache(t, singleCacheSizeBytes)
 	config8 := baseConfig
@@ -1473,7 +1475,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc8.StartListening()
+	require.NoError(t, dc8.StartListening())
 
 	memoryCache9 := newMemoryCache(t, singleCacheSizeBytes)
 	config9 := baseConfig
@@ -1482,7 +1484,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc9.StartListening()
+	require.NoError(t, dc9.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)

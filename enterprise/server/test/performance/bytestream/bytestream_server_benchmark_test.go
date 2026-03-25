@@ -153,7 +153,7 @@ func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, l
 	}
 	dc, err := distributed.NewDistributedCache(te, c, conf, te.GetHealthChecker())
 	require.NoError(t, err)
-	dc.StartListening()
+	require.NoError(t, dc.StartListening())
 	t.Cleanup(func() { dc.Shutdown(context.Background()) })
 	return dc
 }

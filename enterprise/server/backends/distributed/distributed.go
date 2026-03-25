@@ -170,7 +170,9 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		log.Fatalf("Error enabling distributed cache: %s", err.Error())
 	}
-	dc.StartListening()
+	if err := dc.StartListening(); err != nil {
+		return err
+	}
 	env.SetCache(dc)
 	return nil
 }
@@ -652,12 +654,12 @@ func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 	}
 }
 
-func (c *Cache) StartListening() {
+func (c *Cache) StartListening() error {
 	c.shutdownMu.Lock()
 	defer c.shutdownMu.Unlock()
 
 	if !c.finishedShutdown {
-		return
+		return nil
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
@@ -667,13 +669,14 @@ func (c *Cache) StartListening() {
 	}
 	if c.kubeDiscoveryChannel != nil {
 		if err := c.kubeDiscoveryChannel.Start(); err != nil {
-			log.Warningf("Unable to start kube discovery: %s", err)
+			return status.InternalErrorf("start kubediscovery: %w", err)
 		}
 	}
 	if err := c.distributedProxy.StartListening(); err != nil {
-		log.Warningf("Unable to start cacheproxy: %s", err)
+		return status.InternalErrorf("start distributed_client: %w", err)
 	}
 	c.finishedShutdown = false
+	return nil
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
