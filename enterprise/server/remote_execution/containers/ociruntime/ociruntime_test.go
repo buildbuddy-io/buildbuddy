@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"math/rand/v2"
@@ -42,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1567,6 +1569,71 @@ func TestPathSanitization(t *testing.T) {
 			assert.Contains(t, err.Error(), test.ExpectedError)
 		})
 	}
+}
+
+func TestImageStoreTracksUncompressedLayerSize(t *testing.T) {
+	setupNetworking(t)
+
+	flags.Set(t, "executor.oci.image_eviction_enabled", true)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
+	require.NotNil(t, resolver)
+
+	content := strings.Repeat("A", 4_000_000)
+	layerTar := testtar.EntryBytes(t, &tar.Header{
+		Name:     "compressible.txt",
+		Typeflag: tar.TypeReg,
+		Mode:     0644,
+		Uid:      os.Getuid(),
+		Gid:      os.Getgid(),
+	}, []byte(content))
+	layer := testregistry.NewBytesLayer(t, layerTar)
+	diffID, err := layer.DiffID()
+	require.NoError(t, err)
+
+	uncompressedReader, err := layer.Uncompressed()
+	require.NoError(t, err)
+	uncompressedSize, err := io.Copy(io.Discard, uncompressedReader)
+	require.NoError(t, err)
+	require.NoError(t, uncompressedReader.Close())
+
+	compressedSize, err := layer.Size()
+	require.NoError(t, err)
+	require.Less(t, compressedSize, uncompressedSize)
+
+	img, err := mutate.AppendLayers(empty.Image, layer)
+	require.NoError(t, err)
+	reg := testregistry.Run(t, testregistry.Opts{})
+	image := reg.Push(t, img, "test-uncompressed-layer-size:latest", nil)
+
+	layerDir := testfs.MakeTempDir(t)
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 1_000_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	imageStore, err := ociruntime.NewImageStore(resolver, layerDir, fc)
+	require.NoError(t, err)
+
+	lockedImg, err := imageStore.PullAndLockImage(ctx, image, oci.Credentials{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, lockedImg)
+	defer lockedImg.Unlock()
+
+	var pulledLayer *ociruntime.ImageLayer
+	for _, layer := range lockedImg.Layers {
+		if layer.DiffID == diffID {
+			pulledLayer = layer
+			break
+		}
+	}
+	require.NotNil(t, pulledLayer)
+	assert.Equal(t, uncompressedSize, pulledLayer.EstimatedDiskUsageBytes)
+	assert.Greater(t, pulledLayer.EstimatedDiskUsageBytes, compressedSize)
 }
 
 func TestPersistentWorker(t *testing.T) {
