@@ -149,10 +149,25 @@ func TestGoldenSet(t *testing.T) {
 }
 
 func TestReplicaOverlapOnMembershipChange(t *testing.T) {
-	// When the set of items changes, we expect that at least one of the first
-	// N replicas overlaps with probability:
+	// When the set of peers changes, a consistent hash should still assing some
+	// percentage of keys to the same peers as before. That is, if the peer set
+	// changes from (A, B, D) to (A, B, C, D), and key 1 was previously assigned
+	// to A, it will have a 75% chance of still being assigned to A.
+	//
+	// If we redo the scenario above, but we pick multiple peers per key,
+	// because the replication factor in the distributed cache is bigger than 1,
+	// then the probabiliy of a key's new peer set having overlap with the its
+	// old peer set is greater than with 1 replica. For example, with 2
+	// replicas, if key 1 was assigned to A and B, because of the hash ring,
+	// there is a 100% chance that the new peer set will include A or B.
+	//
+	// Given:
+	//		N = replication factor (aka peer set size)
+	// 		d = |new_size - old_size|
+	// 		m = max(new_size, old_size)
+	// The formula for calculating the probability that there is overlap between
+	// the old and new peer set is:
 	//   P(overlap) = 1 - C(d, N) / C(m, N)
-	// where d = |new_size - old_size| and m = max(new_size, old_size).
 	// See https://en.wikipedia.org/wiki/Hypergeometric_distribution
 	// With N = 1, this reduces to P(overlap) = 1 - d/m, which is just the
 	// probability that the new item is not chosen as the replica for a key.
