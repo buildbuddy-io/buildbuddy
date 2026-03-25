@@ -76,13 +76,8 @@ type PeerWatcher struct {
 func NewPeerWatcher(config *Config) (*PeerWatcher, error) {
 	namespace := config.Namespace
 	if namespace == "" {
-		var err error
-		namespace, err = resources.GetK8sNamespace()
-		if err != nil {
-			return nil, err
-		}
+		namespace = resources.GetK8sNamespace()
 	}
-
 	podName := config.PodName
 	if podName == "" {
 		podName = resources.GetK8sPodName()
@@ -147,9 +142,6 @@ func (c *PeerWatcher) discoverAndWatch() {
 	for {
 		start := time.Now()
 		err := c.runOnce()
-		if c.ctx.Err() != nil {
-			return
-		}
 		if time.Since(start) > time.Minute {
 			// If we ran for a while, reset the backoff.
 			backoff = time.Second

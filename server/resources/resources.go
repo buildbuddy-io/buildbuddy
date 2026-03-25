@@ -28,14 +28,15 @@ var (
 )
 
 const (
-	cpuEnvVarName      = "SYS_CPU"
-	memoryEnvVarName   = "SYS_MEMORY_BYTES"
-	nodeEnvVarName     = "MY_NODENAME"
-	hostnameEnvVarName = "MY_HOSTNAME"
-	podNameEnvVarName  = "MY_PODNAME"
-	portEnvVarName     = "MY_PORT"
-	poolEnvVarName     = "MY_POOL"
-	podUIDVarName      = "K8S_POD_UID"
+	cpuEnvVarName       = "SYS_CPU"
+	memoryEnvVarName    = "SYS_MEMORY_BYTES"
+	nodeEnvVarName      = "MY_NODENAME"
+	hostnameEnvVarName  = "MY_HOSTNAME"
+	namespaceEnvVarName = "MY_NAMESPACE"
+	podNameEnvVarName   = "MY_PODNAME"
+	portEnvVarName      = "MY_PORT"
+	poolEnvVarName      = "MY_POOL"
+	podUIDVarName       = "K8S_POD_UID"
 
 	// SYS_MILLICPU is deprecated because it is misnamed - it expects CPU cores
 	// rather than CPU-millis as the name implies.
@@ -283,12 +284,8 @@ func GetZone() string {
 	return ""
 }
 
-func GetK8sNamespace() (string, error) {
-	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-	if err != nil {
-		return "", fmt.Errorf("could not determine namespace: %w", err)
-	}
-	return strings.TrimSpace(string(data)), nil
+func GetK8sNamespace() string {
+	return os.Getenv(namespaceEnvVarName)
 }
 
 func GetK8sPodName() string {
