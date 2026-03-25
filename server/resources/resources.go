@@ -32,6 +32,7 @@ const (
 	memoryEnvVarName   = "SYS_MEMORY_BYTES"
 	nodeEnvVarName     = "MY_NODENAME"
 	hostnameEnvVarName = "MY_HOSTNAME"
+	podNameEnvVarName  = "MY_PODNAME"
 	portEnvVarName     = "MY_PORT"
 	poolEnvVarName     = "MY_POOL"
 	podUIDVarName      = "K8S_POD_UID"
@@ -291,7 +292,7 @@ func GetK8sNamespace() (string, error) {
 }
 
 func GetK8sPodName() string {
-	return os.Getenv("HOSTNAME")
+	return os.Getenv(podNameEnvVarName)
 }
 
 func GetK8sPodUID() (string, error) {
