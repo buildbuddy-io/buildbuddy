@@ -3356,7 +3356,7 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 		if cow {
 			env := getTestEnv(ctx, t, envOpts{})
 			dataDir := testfs.MakeDirAll(t, tmp, cowDirName)
-			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/)
+			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/, snaputil.ConvertToCOWConcurrency)
 			require.NoError(t, err)
 			store = c
 		}

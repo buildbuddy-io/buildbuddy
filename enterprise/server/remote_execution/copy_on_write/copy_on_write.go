@@ -52,9 +52,6 @@ const (
 	// also be accessed
 	numChunksToEagerFetch = 32
 
-	// Number of goroutines to run concurrently to convert a file to a COWStore.
-	fileConversionConcurrency = 8
-
 	// Number of goroutines to run concurrently to handle LRU evictions.
 	lruEvictionConcurrency = 2
 )
@@ -787,7 +784,7 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool, concurrency int) (store *COWStore, err error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	var chunks []*Mmap
@@ -882,8 +879,8 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var chunksMu sync.Mutex
-	chunkStarts := make(chan int64, fileConversionConcurrency)
-	for range fileConversionConcurrency {
+	chunkStarts := make(chan int64, concurrency)
+	for range concurrency {
 		eg.Go(func() error {
 			f, err := os.Open(filePath)
 			if err != nil {

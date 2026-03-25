@@ -47,6 +47,8 @@ const (
 	MemoryFileName = "memory"
 
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
+
+	ConvertToCOWConcurrency = 8
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
