@@ -1049,7 +1049,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	if snapshotDetails.snapshotType == diffSnapshotType {
 		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 		mergeStart := time.Now()
-		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		concurrency := mergeDiffSnapshotConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, concurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
@@ -1062,7 +1066,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	// updated the memoryStore in mergeDiffSnapshot above).
 	if snapshotSharingEnabled && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
+		concurrency := snaputil.ConvertToCOWConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir, concurrency)
 		if err != nil {
 			return status.WrapError(err, "convert memory snapshot to COWStore")
 		}
@@ -1394,7 +1402,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 		return nil
 	}
 	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
-	cow, err := c.convertToCOW(ctx, path, chunkDir)
+	cow, err := c.convertToCOW(ctx, path, chunkDir, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return err
 	}
@@ -1463,7 +1471,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	return nil
 }
 
-func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*copy_on_write.COWStore, error) {
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string, concurrency int) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1479,7 +1487,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, concurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
