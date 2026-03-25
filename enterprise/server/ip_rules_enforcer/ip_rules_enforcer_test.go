@@ -303,8 +303,9 @@ func TestAuthorize_TrustedClientIdentityBypasses(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func setIPRulesEnforcedByPeer(t *testing.T, ctx context.Context) context.Context {
-	ctx = ip_rules_enforcer.SetIPRulesEnforcedByPeer(ctx)
+func setBypassIPRulesInIncomingContext(t *testing.T, ctx context.Context) context.Context {
+	t.Helper()
+	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 	return testgrpc.OutgoingToIncomingContext(t, ctx)
 }
 
@@ -327,7 +328,7 @@ func TestAuthorize_BypassAllowed(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 
 	// With the metadata bit, the cache proxy IS trusted.
-	ctx = setIPRulesEnforcedByPeer(t, ctx)
+	ctx = setBypassIPRulesInIncomingContext(t, ctx)
 	_, err = irs.Authorize(ctx)
 	require.NoError(t, err)
 }
@@ -346,7 +347,7 @@ func TestAuthorize_BypassDenied(t *testing.T) {
 	ctx = context.WithValue(ctx, clientip.ContextKey, "5.6.7.8")
 
 	// Confirm we don't trust "some-random-server".
-	ctx = setIPRulesEnforcedByPeer(t, ctx)
+	ctx = setBypassIPRulesInIncomingContext(t, ctx)
 	_, err := irs.Authorize(ctx)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -486,7 +487,7 @@ func TestAuthorizePropagation_Chain(t *testing.T) {
 	ctx = reauthenticate(t, env, userID)
 	ctx = context.WithValue(ctx, clientip.ContextKey, "1.2.3.4")
 
-	// First hop: enforces IP rules, sets enforcement bit in outgoing metadata.
+	// First hop: enforces IP rules, sets bypass bit in outgoing metadata.
 	firstResult, err := firstEnforcer.Authorize(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, firstSvc.getRPCCount())
@@ -498,7 +499,7 @@ func TestAuthorizePropagation_Chain(t *testing.T) {
 	// server context where outgoing metadata starts empty.
 	secondCtx = metadata.NewOutgoingContext(secondCtx, metadata.MD{})
 
-	// Second hop: CacheProxy + enforcement bit → bypass.
+	// Second hop: CacheProxy + bypass bit → bypass.
 	secondResult, err := secondEnforcer.Authorize(secondCtx)
 	require.NoError(t, err)
 	require.Equal(t, 0, secondSvc.getRPCCount())
@@ -507,7 +508,7 @@ func TestAuthorizePropagation_Chain(t *testing.T) {
 	thirdCtx := testgrpc.OutgoingToIncomingContext(t, secondResult)
 	thirdCtx = contextWithClientIdentity(t, thirdCtx, env.GetClientIdentityService())
 
-	// Second hop: CacheProxy + enforcement bit → bypass.
+	// Third hop: CacheProxy + bypass bit → bypass.
 	_, err = thirdEnforcer.Authorize(thirdCtx)
 	require.NoError(t, err)
 	require.Equal(t, 0, thirdSvc.getRPCCount())
