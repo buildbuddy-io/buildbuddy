@@ -131,7 +131,7 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -146,7 +146,7 @@ func TestCOW_Concurrency(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 
 	tester := NewStoreTester(t, s)
@@ -213,7 +213,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "", false)
+	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -282,7 +282,7 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
-				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "", false)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "", false, snaputil.ConvertToCOWConcurrency)
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -359,7 +359,7 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	require.NoError(t, err)
 
 	chunkDir := testfs.MakeTempDir(t)
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 
 	var eg errgroup.Group
@@ -541,7 +541,7 @@ func BenchmarkConvertFileToCOW(b *testing.B) {
 				require.NoError(b, err)
 				b.StartTimer()
 
-				_, err = copy_on_write.ConvertFileToCOW(context.Background(), nil, inputPath, chunkSizeBytes, outputDir, "", false)
+				_, err = copy_on_write.ConvertFileToCOW(context.Background(), nil, inputPath, chunkSizeBytes, outputDir, "", false, snaputil.ConvertToCOWConcurrency)
 				require.NoError(b, err)
 
 				b.StopTimer()

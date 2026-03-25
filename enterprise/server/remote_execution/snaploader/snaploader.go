@@ -1264,7 +1264,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}

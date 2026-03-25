@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -70,7 +71,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		const chunkSize = 512 * 1024
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", enableRemote)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
 
 		// Overwrite a random range to simulate the disk being written to. This
@@ -186,7 +187,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", enableRemote)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
 		// Overwrite a random range to simulate the disk being written to. This
 		// should create some dirty chunks.
@@ -252,7 +253,7 @@ func TestNonMasterSnapshotsWithSnapshotID(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
 		writeRandomRange(t, cowA)
 		cacheSnapshotOptsA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
@@ -312,7 +313,7 @@ func TestSnapshotVersioning(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
 		writeRandomRange(t, cowA)
 		snapshotA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
