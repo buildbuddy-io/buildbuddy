@@ -3599,6 +3599,7 @@ var (
 		CacheProxyRequestType,
 		CompressionType,
 		ChunkedLabel,
+		GroupID,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
