@@ -401,7 +401,7 @@ func MetadataKey(t testing.TB, fr *sgpb.FileRecord) []byte {
 	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version6)
 	require.NoError(t, err)
 	return keyBytes
 }
@@ -420,21 +420,21 @@ func WriteRecord(ctx context.Context, t testing.TB, ts *TestingStore, groupID st
 		DigestFunction: r.GetDigestFunction(),
 	}
 
-	fs := filestore.New()
 	key := MetadataKey(t, fr)
 
 	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
-	writeCloser := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-	bytesWritten, err := writeCloser.Write(buf)
-	require.NoError(t, err)
-
 	now := time.Now()
 	md := &sgpb.FileMetadata{
-		FileRecord:      fr,
-		StorageMetadata: writeCloser.Metadata(),
-		StoredSizeBytes: int64(bytesWritten),
+		FileRecord: fr,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+				Data:          buf,
+				CreatedAtNsec: now.UnixNano(),
+			},
+		},
+		StoredSizeBytes: int64(len(buf)),
 		LastModifyUsec:  now.UnixMicro(),
 		LastAccessUsec:  now.UnixMicro(),
 	}

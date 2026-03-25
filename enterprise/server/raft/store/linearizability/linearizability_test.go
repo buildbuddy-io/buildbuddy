@@ -3,9 +3,9 @@ package linearizability_test
 import (
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -72,8 +72,8 @@ var kvModel = (&porcupine.NondeterministicModel{
 		}
 		return result
 	},
-	Init: func() []interface{} { return []interface{}{""} },
-	Step: func(state, input, output interface{}) []interface{} {
+	Init: func() []any { return []any{""} },
+	Step: func(state, input, output any) []any {
 		inp := input.(opInput)
 		out := output.(opOutput)
 		switch inp.op {
@@ -81,23 +81,23 @@ var kvModel = (&porcupine.NondeterministicModel{
 			if out.err != "" {
 				// Indeterminate write: may or may not
 				// have taken effect.
-				return []interface{}{state, inp.value}
+				return []any{state, inp.value}
 			}
-			return []interface{}{inp.value}
+			return []any{inp.value}
 		case opRead:
 			if out.err != "" {
 				// Failed read: could have seen any
 				// state.
-				return []interface{}{state}
+				return []any{state}
 			}
 			if out.value == state.(string) {
-				return []interface{}{state}
+				return []any{state}
 			}
 			return nil // illegal
 		}
 		return nil
 	},
-	DescribeOperation: func(input, output interface{}) string {
+	DescribeOperation: func(input, output any) string {
 		inp := input.(opInput)
 		out := output.(opOutput)
 		if inp.op == opWrite {
@@ -111,7 +111,7 @@ var kvModel = (&porcupine.NondeterministicModel{
 		}
 		return fmt.Sprintf("get(%s) -> %s", inp.key, out.value)
 	},
-	DescribeState: func(state interface{}) string {
+	DescribeState: func(state any) string {
 		return fmt.Sprintf("%q", state)
 	},
 }).ToModel()
@@ -120,29 +120,34 @@ var kvModel = (&porcupine.NondeterministicModel{
 type eventLog struct {
 	mu     sync.Mutex
 	events []porcupine.Event
-	nextID atomic.Int64
+	nextID int
 }
 
-func (el *eventLog) logCall(clientID int, inp opInput) int64 {
-	id := el.nextID.Add(1) - 1
+func (el *eventLog) logCall(clientID int, inp opInput) int {
 	el.mu.Lock()
 	defer el.mu.Unlock()
+	id := el.nextID
+	el.nextID++
 	el.events = append(el.events, porcupine.Event{
 		Kind:     porcupine.CallEvent,
 		Value:    inp,
-		Id:       int(id),
+		Id:       id,
 		ClientId: clientID,
 	})
 	return id
 }
 
-func (el *eventLog) logReturn(clientID int, id int64, out opOutput) {
+func (el *eventLog) logReturn(clientID int, id int, value string, err error) {
+	out := opOutput{value: value}
+	if err != nil {
+		out.err = err.Error()
+	}
 	el.mu.Lock()
 	defer el.mu.Unlock()
 	el.events = append(el.events, porcupine.Event{
 		Kind:     porcupine.ReturnEvent,
 		Value:    out,
-		Id:       int(id),
+		Id:       id,
 		ClientId: clientID,
 	})
 }
@@ -150,14 +155,11 @@ func (el *eventLog) logReturn(clientID int, id int64, out opOutput) {
 func (el *eventLog) getEvents() []porcupine.Event {
 	el.mu.Lock()
 	defer el.mu.Unlock()
-	out := make([]porcupine.Event, len(el.events))
-	copy(out, el.events)
-	return out
+	return slices.Clone(el.events)
 }
 
 // testKey holds a pre-generated filestore key and its associated file
-// record, used to write data in the same format as writeRecord in
-// store_test.go.
+// record.
 type testKey struct {
 	pebbleKey []byte
 	fr        *sgpb.FileRecord
@@ -181,7 +183,7 @@ func generateTestKeys(t *testing.T, numKeys int) []*testKey {
 		}
 		pk, err := fs.PebbleKey(fr)
 		require.NoError(t, err)
-		keyBytes, err := pk.Bytes(filestore.Version5)
+		keyBytes, err := pk.Bytes(filestore.Version6)
 		require.NoError(t, err)
 		keys[i] = &testKey{
 			pebbleKey: keyBytes,
@@ -192,18 +194,17 @@ func generateTestKeys(t *testing.T, numKeys int) []*testKey {
 	return keys
 }
 
-// writeFileRecord writes a value to the given key.
 func writeFileRecord(ctx context.Context, store *testutil.TestingStore, tk *testKey, value string) error {
-	fs := filestore.New()
 	valBytes := []byte(value)
-	writeCloser := fs.InlineWriter(ctx, int64(len(valBytes)))
-	if _, err := writeCloser.Write(valBytes); err != nil {
-		return err
-	}
 	now := time.Now()
 	md := &sgpb.FileMetadata{
-		FileRecord:      tk.fr,
-		StorageMetadata: writeCloser.Metadata(),
+		FileRecord: tk.fr,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+				Data:          valBytes,
+				CreatedAtNsec: now.UnixNano(),
+			},
+		},
 		StoredSizeBytes: int64(len(valBytes)),
 		LastModifyUsec:  now.UnixMicro(),
 		LastAccessUsec:  now.UnixMicro(),
@@ -249,23 +250,11 @@ func readFileRecord(ctx context.Context, store *testutil.TestingStore, tk *testK
 	if err != nil {
 		return "", err
 	}
-	// Parse FileMetadata to extract the inline data.
 	md := &sgpb.FileMetadata{}
 	if err := proto.Unmarshal(resp.GetKv().GetValue(), md); err != nil {
 		return "", err
 	}
-	fs := filestore.New()
-	rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-	buf := make([]byte, md.GetStoredSizeBytes())
-	n, err := rc.Read(buf)
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	return string(buf[:n]), nil
+	return string(md.GetStorageMetadata().GetInlineMetadata().GetData()), nil
 }
 
 // opTimeout is the maximum time to wait for a single read/write
@@ -276,27 +265,21 @@ const opTimeout = 10 * time.Second
 // tests. Override with TEST_DURATION env var (e.g. "5m", "30s").
 const defaultTestDuration = 3 * time.Minute
 
-func getTestDuration() time.Duration {
-	if v := os.Getenv("TEST_DURATION"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err == nil {
-			return d
-		}
+func getTestDuration(t *testing.T) time.Duration {
+	v := os.Getenv("TEST_DURATION")
+	if v == "" {
+		return defaultTestDuration
 	}
-	return defaultTestDuration
+	d, err := time.ParseDuration(v)
+	require.NoError(t, err, "invalid TEST_DURATION %q", v)
+	return d
 }
 
 // worker runs read/write operations against the cluster and logs
 // events for porcupine.
 func worker(ctx context.Context, clientID int, stores []*testutil.TestingStore, keys []*testKey, elog *eventLog, writeCount *atomic.Int64) {
 	rng := rand.New(rand.NewSource(int64(clientID) + time.Now().UnixNano()))
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
+	for ctx.Err() == nil {
 		store := stores[rng.Intn(len(stores))]
 		tk := keys[rng.Intn(len(keys))]
 
@@ -306,41 +289,28 @@ func worker(ctx context.Context, clientID int, stores []*testutil.TestingStore, 
 			val := fmt.Sprintf("v%d", writeCount.Add(1))
 			inp := opInput{op: opWrite, key: tk.name, value: val}
 			id := elog.logCall(clientID, inp)
-
 			err := writeFileRecord(opCtx, store, tk, val)
 			cancel()
-			if err != nil {
-				elog.logReturn(clientID, id, opOutput{err: err.Error()})
-			} else {
-				elog.logReturn(clientID, id, opOutput{})
-			}
+			elog.logReturn(clientID, id, "", err)
 		} else {
 			inp := opInput{op: opRead, key: tk.name}
 			id := elog.logCall(clientID, inp)
-
 			val, err := readFileRecord(opCtx, store, tk)
 			cancel()
-			if err != nil {
-				elog.logReturn(clientID, id, opOutput{err: err.Error()})
-			} else {
-				elog.logReturn(clientID, id, opOutput{value: val})
-			}
+			elog.logReturn(clientID, id, val, err)
 		}
 	}
 }
 
-// killNemesis kills a single non-first store after a delay to simulate
-// a node failure during operations.
-func killNemesis(ctx context.Context, stores []*testutil.TestingStore, mu *sync.RWMutex, delay time.Duration, idx int) {
+// killNemesis kills a store after a delay to simulate a node failure.
+func killNemesis(ctx context.Context, store *testutil.TestingStore, delay time.Duration) {
 	select {
 	case <-ctx.Done():
 		return
 	case <-time.After(delay):
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	log.Infof("killNemesis: killing store %s (index %d)", stores[idx].NHID(), idx)
-	stores[idx].Stop()
+	log.Infof("killNemesis: killing store %s", store.NHID())
+	store.Stop()
 }
 
 // checkLinearizability runs porcupine on the collected events and
@@ -385,15 +355,13 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 
 	const numKeys = 10
 	const numWorkers = 5
-	testDuration := getTestDuration()
+	testDuration := getTestDuration(t)
 
 	keys := generateTestKeys(t, numKeys)
 
 	// Seed data so the range has enough data for pebble's
 	// EstimateDiskUsage to trigger splits. Sleep to let the
-	// cluster fully initialize (gossip, shard readiness).
 	leaseHolder := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	time.Sleep(10 * time.Second)
 	for i := 0; i < 20; i++ {
 		testutil.WriteRecord(ctx, t, leaseHolder, "default", 1000)
 	}
@@ -411,9 +379,7 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	// Periodically flush all stores so pebble's EstimateDiskUsage
 	// reflects written data. The driver will detect ranges over the
 	// target size and trigger splits automatically.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -426,15 +392,13 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 				}
 			}
 		}
-	}()
+	})
 
 	// Start workers.
 	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			worker(workerCtx, id, stores, keys, elog, &writeCount)
-		}(i)
+		wg.Go(func() {
+			worker(workerCtx, i, stores, keys, elog, &writeCount)
+		})
 	}
 
 	wg.Wait()
@@ -489,13 +453,12 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 
 	const numKeys = 10
 	const numWorkers = 5
-	testDuration := getTestDuration()
+	testDuration := getTestDuration(t)
 
 	keys := generateTestKeys(t, numKeys)
 
 	elog := &eventLog{}
 	var writeCount atomic.Int64
-	var storesMu sync.RWMutex
 
 	workerCtx, workerCancel := context.WithTimeout(ctx, testDuration)
 	defer workerCancel()
@@ -504,21 +467,17 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 
 	// Kill s2 after 10s. The driver will detect under-replication
 	// (2/3 replicas alive) and add a replica on s4.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		killNemesis(workerCtx, allStores, &storesMu, 10*time.Second, 2)
-	}()
+	wg.Go(func() {
+		killNemesis(workerCtx, s2, 10*time.Second)
+	})
 
 	// Start workers on all 4 stores. Workers on s2 will start
 	// getting errors after the kill; workers on s4 will get errors
 	// until it receives a replica.
 	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			worker(workerCtx, id, allStores, keys, elog, &writeCount)
-		}(i)
+		wg.Go(func() {
+			worker(workerCtx, i, allStores, keys, elog, &writeCount)
+		})
 	}
 
 	wg.Wait()
