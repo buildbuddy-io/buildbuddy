@@ -2068,3 +2068,46 @@ actions:
 	checkRunnerResult(t, result)
 	require.Contains(t, result.Output, "fake-cli-command: OK")
 }
+
+func TestRepoPinnedBBWinsOverBundledCLI(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+
+	repoPinnedBBDir := testfs.MakeDirAll(t, tmp, "repo-pinned-cli")
+	repoPinnedBB := testfs.WriteFile(t, repoPinnedBBDir, "bb", `#!/usr/bin/env bash
+echo "repo-pinned-bb: $*"
+`)
+	testfs.MakeExecutable(t, repoPinnedBBDir, "bb")
+
+	wsPath := testfs.MakeTempDir(t)
+	testfs.WriteFile(t, wsPath, "bb", `#!/usr/bin/env bash
+echo "bundled-bb: $*"
+`)
+	testfs.MakeExecutable(t, wsPath, "bb")
+
+	repoPath, _ := makeGitRepo(t, map[string]string{
+		".bazelversion": repoPinnedBB,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    steps:
+      - run: "bazel version"
+`,
+	})
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		"--bazel_command=bb",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "repo-pinned-bb:")
+	assert.NotContains(t, result.Output, "bundled-bb:")
+}

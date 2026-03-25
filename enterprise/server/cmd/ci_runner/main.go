@@ -144,6 +144,12 @@ const (
 
 	clientIdentityEnvVar = ci_runner_env.BBGrpcClientIdentityEnvVarName
 
+	ciRunnerWrapperNameEnvVar      = "CI_RUNNER_WRAPPER_NAME"
+	ciRunnerDefaultBazelBinEnvVar  = "CI_RUNNER_DEFAULT_BAZEL_BIN"
+	ciRunnerBundledBazeliskEnvVar  = "CI_RUNNER_BUNDLED_BAZELISK_BIN"
+	ciRunnerBundledBBEnvVar        = "CI_RUNNER_BUNDLED_BB_BIN"
+	ciRunnerPreferBBForBazelEnvVar = "CI_RUNNER_PREFER_BB_FOR_BAZEL"
+
 	// We save the startup options used for the last executed bazel command so we can apply
 	// them on future bazel commands without restarting the Bazel server.
 	//
@@ -208,9 +214,72 @@ var (
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
+	launcherConfig bazelLauncherConfig
+
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
 )
+
+type bazelLauncherConfig struct {
+	defaultBazelBin    string
+	bundledBazeliskBin string
+	bundledBBBin       string
+	preferCLIForBazel  bool
+}
+
+func (c bazelLauncherConfig) selectBazelLauncher(workspacePath, wrapperName string) (string, bool, error) {
+	shouldPreferBB := wrapperName == bbBinaryName || (c.preferCLIForBazel && (wrapperName == "" || wrapperName == bazelBinaryName || wrapperName == bazeliskBinaryName))
+	if shouldPreferBB {
+		pinsBBCLI, err := workspacePinsBBCLI(workspacePath)
+		if err != nil {
+			return "", false, err
+		}
+		if pinsBBCLI && c.bundledBazeliskBin != "" {
+			return c.bundledBazeliskBin, true, nil
+		}
+		if c.bundledBBBin != "" {
+			return c.bundledBBBin, true, nil
+		}
+	}
+	if c.defaultBazelBin == "" {
+		return "", false, status.InternalError("no bazel binary configured")
+	}
+	return c.defaultBazelBin, filepath.Base(c.defaultBazelBin) == bbBinaryName, nil
+}
+
+func workspacePinsBBCLI(workspacePath string) (bool, error) {
+	if workspacePath == "" {
+		return false, nil
+	}
+	versions, err := parseVersionDotfile(filepath.Join(workspacePath, ".bazelversion"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return len(versions) > 0 && isBBCLIVersion(versions[0]), nil
+}
+
+func parseVersionDotfile(path string) ([]string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(string(b), "\n")
+	var out []string
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func isBBCLIVersion(version string) bool {
+	return strings.HasPrefix(version, "buildbuddy-io/") || strings.HasSuffix(version, "/bb")
+}
 
 type workspace struct {
 	// Whether the workspace setup phase duration and logs were reported as part
@@ -767,29 +836,36 @@ func run() error {
 	}
 
 	// Make sure we have a bazel / bazelisk binary available.
+	bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
+	if err := extractBazelisk(bazeliskPath); err != nil {
+		return status.WrapError(err, "failed to extract bazelisk")
+	}
 	if *bazelCommand == "" {
-		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
-		if err := extractBazelisk(bazeliskPath); err != nil {
-			return status.WrapError(err, "failed to extract bazelisk")
-		}
 		*bazelCommand = bazeliskPath
 	}
-	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
-	if *bazelCommand == bbBinaryName {
-		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
-		if _, err := os.Stat(bbPath); err != nil {
+
+	launcherConfig = bazelLauncherConfig{
+		defaultBazelBin:    *bazelCommand,
+		bundledBazeliskBin: bazeliskPath,
+		preferCLIForBazel:  *bazelCommand == bbBinaryName,
+	}
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+	if _, err := os.Stat(bbPath); err != nil {
+		if *bazelCommand == bbBinaryName {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
-		} else {
+		}
+	} else {
+		launcherConfig.bundledBBBin = bbPath
+		if launcherConfig.preferCLIForBazel {
 			if err := os.Setenv("BB_DISABLE_SIDECAR", "1"); err != nil {
 				backendLog.Warningf("could not set BB_DISABLE_SIDECAR: %s", err)
 			}
-			*bazelCommand = bbPath
 		}
 	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
-	if err := ws.writeBazelWrapperScript(taskWorkspaceDir); err != nil {
+	if err := ws.writeBazelWrapperScript(); err != nil {
 		return status.WrapError(err, "write bazel wrapper script")
 	}
 
@@ -806,14 +882,18 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if err := printCommandLine(ws.log, *bazelCommand, args...); err != nil {
-			return err
-		}
 		bazelWorkspacePath, err := ws.bazelWorkspacePath()
 		if err != nil {
 			return err
 		}
-		if err := runCommand(ctx, *bazelCommand, args, nil, bazelWorkspacePath, ws.log); err != nil {
+		bazelBin, _, err := launcherConfig.selectBazelLauncher(bazelWorkspacePath, bazelBinaryName)
+		if err != nil {
+			return err
+		}
+		if err := printCommandLine(ws.log, bazelBin, args...); err != nil {
+			return err
+		}
+		if err := runCommand(ctx, bazelBin, args, nil, bazelWorkspacePath, ws.log); err != nil {
 			return err
 		}
 		ws.log.Println("Shutdown complete.")
@@ -2140,18 +2220,17 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 // Also adds it to the PATH so it will be invoked whenever `bazel`, `bazelisk`, or `bb` are called.
 // The wrapper script adds a startup option for the custom ci_runner .bazelrc to
 // all bazel commands.
-func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
+func (ws *workspace) writeBazelWrapperScript() error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
-
-	wrapperBinaries := map[string]string{
-		bazelBinaryName:    *bazelCommand,
-		bazeliskBinaryName: *bazelCommand,
+	wrapperNames := []string{bazelBinaryName, bazeliskBinaryName}
+	if launcherConfig.bundledBBBin != "" {
+		wrapperNames = append(wrapperNames, bbBinaryName)
 	}
-	if _, err := os.Stat(bbPath); err == nil {
-		wrapperBinaries[bbBinaryName] = bbPath
+	preferBBForBazel := "0"
+	if launcherConfig.preferCLIForBazel {
+		preferBBForBazel = "1"
 	}
-	for wrapperName, binaryPath := range wrapperBinaries {
+	for _, wrapperName := range wrapperNames {
 		wrapperPath := filepath.Join(wrapperDir, wrapperName)
 		_, err := os.Stat(wrapperPath)
 		if err != nil {
@@ -2165,8 +2244,18 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 		}
 
 		cmd := fmt.Sprintf(
-			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
-			binaryPath,
+			"BAZEL_WRAPPER_MODE=1 %s=%q %s=%q %s=%q %s=%q %s=%q %s=%q exec %s \"$@\"",
+			ciRunnerWrapperNameEnvVar,
+			wrapperName,
+			ciRunnerDefaultBazelBinEnvVar,
+			launcherConfig.defaultBazelBin,
+			ciRunnerBundledBazeliskEnvVar,
+			launcherConfig.bundledBazeliskBin,
+			ciRunnerBundledBBEnvVar,
+			launcherConfig.bundledBBBin,
+			ciRunnerPreferBBForBazelEnvVar,
+			preferBBForBazel,
+			"CI_RUNNER_ROOT",
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
 		)
@@ -2574,7 +2663,13 @@ func runCredentialHelper() error {
 
 func runBazelWrapper() error {
 	rootPath := os.Getenv("CI_RUNNER_ROOT")
-	bazelBin := os.Getenv("BAZEL_BIN")
+	wrapperName := os.Getenv(ciRunnerWrapperNameEnvVar)
+	cfg := bazelLauncherConfig{
+		defaultBazelBin:    os.Getenv(ciRunnerDefaultBazelBinEnvVar),
+		bundledBazeliskBin: os.Getenv(ciRunnerBundledBazeliskEnvVar),
+		bundledBBBin:       os.Getenv(ciRunnerBundledBBEnvVar),
+		preferCLIForBazel:  os.Getenv(ciRunnerPreferBBForBazelEnvVar) == "1",
+	}
 
 	// These arguments are passed as env vars so we don't have to parse out flags
 	// intended for the bazel wrapper from startup options intended to be passed through
@@ -2583,8 +2678,16 @@ func runBazelWrapper() error {
 	if err := os.Unsetenv("CI_RUNNER_ROOT"); err != nil {
 		return err
 	}
-	if err := os.Unsetenv("BAZEL_BIN"); err != nil {
-		return err
+	for _, envVar := range []string{
+		ciRunnerWrapperNameEnvVar,
+		ciRunnerDefaultBazelBinEnvVar,
+		ciRunnerBundledBazeliskEnvVar,
+		ciRunnerBundledBBEnvVar,
+		ciRunnerPreferBBForBazelEnvVar,
+	} {
+		if err := os.Unsetenv(envVar); err != nil {
+			return err
+		}
 	}
 
 	// Get the current bazel workspace path where we expect to find the
@@ -2592,6 +2695,10 @@ func runBazelWrapper() error {
 	workspacePath, err := currentBazelWorkspaceAbsPath()
 	if err != nil && !status.IsNotFoundError(err) {
 		return fmt.Errorf("find bazel workspace: %w", err)
+	}
+	bazelBin, usingBBCLI, err := cfg.selectBazelLauncher(workspacePath, wrapperName)
+	if err != nil {
+		return err
 	}
 
 	originalArgs := os.Args[1:]
@@ -2638,7 +2745,7 @@ func runBazelWrapper() error {
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
-	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+	if usingBBCLI && bazelSubcmd == "run" {
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
 	}
@@ -2727,7 +2834,11 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 	// 'bazel --noblock_for_lock info workspace' should either succeed quickly
 	// if the workspace lock is not held, or fail quickly if it is held.
 	bazelArgs := append(lastUsedStartupOptions, "--noblock_for_lock", "info", "workspace")
-	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
+	bazelBin, _, err := launcherConfig.selectBazelLauncher(bazelWorkspacePath, bazelBinaryName)
+	if err != nil {
+		return err
+	}
+	if err := runCommand(ctx, bazelBin, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
 		return fmt.Errorf("%w: %s", err, buf.String())
 	}
 	return nil
