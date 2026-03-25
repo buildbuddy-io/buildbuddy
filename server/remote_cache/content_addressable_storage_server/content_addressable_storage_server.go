@@ -353,6 +353,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -388,6 +389,17 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 
 		data, ok := cacheRsp[rn.GetDigest()]
+
+		// It's unexpected, but BatchReadBlobs may be used for blobs that are
+		// large enough to be chunked. If the blob was not found and it's large
+		// enough to be chunked, try to reassemble it from CDC chunks.
+		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes() && chunkingEnabled {
+			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
+				data = assembled
+				ok = true
+			}
+		}
+
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
 			Digest: rn.GetDigest(),
 			Data:   data,
@@ -1203,6 +1215,34 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	return &repb.SpliceBlobResponse{
 		BlobDigest: req.GetBlobDigest(),
 	}, nil
+}
+
+func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
+	for _, d := range manifest.ChunkDigests {
+		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		if readZstd {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
+		rns = append(rns, rn.ToProto())
+	}
+	chunkData, err := s.cache.GetMulti(ctx, rns)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 0, blobDigest.GetSizeBytes())
+	for _, d := range manifest.ChunkDigests {
+		data, ok := chunkData[d]
+		if !ok {
+			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+		}
+		buf = append(buf, data...)
+	}
+	return buf, nil
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
