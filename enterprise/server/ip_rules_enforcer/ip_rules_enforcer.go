@@ -43,11 +43,14 @@ const (
 	// The number of IP rules (net.IPNet instances) that we will store in memory.
 	cacheSize = 100_000
 
-	// ipRulesEnforcedMetadataKey is a gRPC metadata key that indicates that the
-	// peer issuing the request has already enforced IP rules on the original
-	// client request. This may be used for proxied requests where the proxy
-	// enforces the IP rules.
-	ipRulesEnforcedMetadataKey = "x-buildbuddy-ip-rules-enforced"
+	// bypassIPRulesMetadataKey is a gRPC metadata key indicating that the peer
+	// would not like IP rules to be enforced for this request. This may be
+	// because the peer has enforced rules already, or because this is a system
+	// request.
+	//
+	// IMPORTANT: this metadata should only be accepted from trusted peers. The
+	// client identity framework can be used to verify the identity of the peer.
+	bypassIPRulesMetadataKey = "x-buildbuddy-bypass-ip-rules"
 )
 
 type ipRule struct {
@@ -272,7 +275,7 @@ func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRule
 
 func (p *remoteIPRulesProvider) fetch(ctx context.Context, groupID string) ([]ipRule, error) {
 	v, _, err := p.sf.Do(ctx, groupID, func(ctx context.Context) ([]ipRule, error) {
-		ctx = SetIPRulesEnforcedByPeer(ctx)
+		ctx = SetBypassIPRules(ctx)
 		ctx, cancel := context.WithTimeout(ctx, *remoteIPRulesRPCTimeout)
 		defer cancel()
 		rsp, err := p.client.GetIPRules(ctx, &irpb.GetRulesRequest{
@@ -472,7 +475,7 @@ func (s *Enforcer) authorize(ctx context.Context, groupID string) (context.Conte
 		return ctx, err
 	}
 	if *remoteIPRulesTarget != "" {
-		ctx = SetIPRulesEnforcedByPeer(ctx)
+		ctx = SetBypassIPRules(ctx)
 	}
 	return ctx, nil
 }
@@ -523,11 +526,12 @@ func (s *Enforcer) Authorize(ctx context.Context) (context.Context, error) {
 			return ctx, nil
 		}
 
-		// Allow trusted Cache Proxies to bypass local IP rule enforcement if
-		// they have already enforced the rules.
-		if err == nil && si.Client == interfaces.ClientIdentityCacheProxy && ipRulesEnforcedByPeer(ctx) {
+		// Allow trusted client to bypass local IP rule enforcement.
+		if err == nil && bypassIPRules(ctx, si) {
+			// Propagate the IP rule bypass to downstream requests, so
+			// proxy-to-proxy isn't subject to IP rules at the destination.
 			if *remoteIPRulesTarget != "" {
-				ctx = SetIPRulesEnforcedByPeer(ctx)
+				ctx = SetBypassIPRules(ctx)
 			}
 			return ctx, nil
 		}
@@ -573,15 +577,19 @@ func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
 	s.rulesProvider.invalidate(ctx, groupID)
 }
 
-func ipRulesEnforcedByPeer(ctx context.Context) bool {
+func bypassIPRules(ctx context.Context, client *interfaces.ClientIdentity) bool {
+	if client == nil || client.Client != interfaces.ClientIdentityCacheProxy {
+		return false
+	}
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return false
 	}
-	vals := md.Get(ipRulesEnforcedMetadataKey)
+	vals := md.Get(bypassIPRulesMetadataKey)
 	return len(vals) > 0 && vals[0] == "true"
 }
 
-func SetIPRulesEnforcedByPeer(ctx context.Context) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, ipRulesEnforcedMetadataKey, "true")
+func SetBypassIPRules(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, bypassIPRulesMetadataKey, "true")
 }
