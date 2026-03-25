@@ -21,6 +21,7 @@ import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import { OutlinedButton } from "../components/button/button";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import Link from "../components/link/link";
 import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationExecLogCard from "../invocation/invocation_exec_log_card";
@@ -28,7 +29,7 @@ import InvocationModel from "../invocation/invocation_model";
 import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
 import { renderTestSize } from "../invocation/target_util";
-import router from "../router/router";
+import router, { Path } from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { copyToClipboard } from "../util/clipboard";
 import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
@@ -100,14 +101,6 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     // TODO: maybe refresh every 3s to handle the case where the invocation is
     // still in progress and NamedSetOfFiles events are still being published
     // for the target
-  }
-
-  private handleOrganizationClicked() {
-    router.navigateHome();
-  }
-
-  private handleInvocationClicked() {
-    router.navigateToInvocation(this.props.invocationId);
   }
 
   renderStatusIcon(): React.ReactNode {
@@ -358,18 +351,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           <div className="container">
             <div className="breadcrumbs">
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
-                </span>
+                </Link>
               )}
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   Builds
-                </span>
+                </Link>
               )}
-              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">
+              <Link className="clickable" href={router.getInvocationUrl(this.props.invocationId)}>
                 Invocation {this.props.invocationId}
-              </span>
+              </Link>
               <span>Target {this.props.label}</span>
             </div>
             <div className="titles">
