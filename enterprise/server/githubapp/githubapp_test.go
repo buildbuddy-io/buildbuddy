@@ -32,16 +32,18 @@ type fakeAppClient struct {
 	t                  testing.TB
 	wantInstallationID int64
 	wantRepos          []string
+	createCalls        int
 }
 
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
+	c.createCalls++
 	assert.Equal(c.t, c.wantInstallationID, installationID)
 
 	var gotRepos []string
 	if opts != nil {
 		gotRepos = opts.Repositories
 	}
-	assert.Equal(c.t, []string{testRepo}, gotRepos)
+	assert.Equal(c.t, c.wantRepos, gotRepos)
 
 	return &github.InstallationToken{Token: github.String(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
@@ -97,18 +99,18 @@ func insertRepo(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
 func TestGetRepositoryInstallationToken(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
-	app := newTestApp(te, &fakeAppClient{
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
 		t:                  t,
 		wantInstallationID: testInstallationID,
 		wantRepos:          []string{testRepo},
-	})
+	}
+	app := newTestApp(te, client)
 
-	tok, err := app.GetRepositoryInstallationToken(ctx, &tables.GitRepository{
-		GroupID: testGroupID,
-		RepoURL: testRepoURL,
-	})
+	tok, _, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
 	require.NoError(t, err)
 	assert.Equal(t, fakeToken, tok)
+	assert.Equal(t, 1, client.createCalls)
 }
 
 func TestGetRepositoryInstallationToken_Unauthorized(t *testing.T) {
@@ -119,26 +121,81 @@ func TestGetRepositoryInstallationToken_Unauthorized(t *testing.T) {
 	unauthorizedCtx, err := auth.WithAuthenticatedUser(context.Background(), "US2")
 	require.NoError(t, err)
 
-	app := newTestApp(te, nil)
+	client := &fakeAppClient{
+		t: t,
+	}
+	app := newTestApp(te, client)
 
-	_, err = app.GetRepositoryInstallationToken(unauthorizedCtx, &tables.GitRepository{
-		GroupID: testGroupID,
-		RepoURL: testRepoURL,
-	})
+	_, _, err = app.GetRepositoryInstallationToken(unauthorizedCtx, testGroupID, testRepoURL)
 	require.Error(t, err)
 	assert.True(t, status.IsPermissionDeniedError(err))
+	assert.Equal(t, 0, client.createCalls)
+}
+
+func TestGetRepositoryInstallationToken_RepoNotImported(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	// Don't create a repo. This can happen if the user installs the BB GitHub app but doesn't
+	// explicitly import any repos to BB.
+
+	client := &fakeAppClient{
+		t: t,
+	}
+	app := newTestApp(te, client)
+
+	tok, _, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.Error(t, err)
+	assert.Empty(t, tok)
+	assert.Equal(t, 0, client.createCalls)
 }
 
 func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
-	app := newTestApp(te, &fakeAppClient{
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
 		t:                  t,
 		wantInstallationID: testInstallationID,
 		wantRepos:          []string{testRepo},
-	})
+	}
+	app := newTestApp(te, client)
 
-	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner, testRepo)
+	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testRepoURL)
 	require.NoError(t, err)
 	assert.Equal(t, fakeToken, tok.GetToken())
+	assert.Equal(t, 1, client.createCalls)
+}
+
+func TestGetInstallationTokenForStatusReportingOnly_UnauthenticatedContext(t *testing.T) {
+	te, authenticatedCtx := setupEnv(t)
+	insertInstallation(t, te, authenticatedCtx)
+	insertRepo(t, te, authenticatedCtx)
+	client := &fakeAppClient{
+		t:                  t,
+		wantInstallationID: testInstallationID,
+		wantRepos:          []string{testRepo},
+	}
+	app := newTestApp(te, client)
+
+	unauthenticatedCtx := context.Background()
+	tok, err := app.GetInstallationTokenForStatusReportingOnly(unauthenticatedCtx, testRepoURL)
+	require.NoError(t, err)
+	assert.Equal(t, fakeToken, tok.GetToken())
+	assert.Equal(t, 1, client.createCalls)
+}
+
+func TestGetInstallationTokenForStatusReportingOnly_RepoNotImported(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	client := &fakeAppClient{
+		t:                  t,
+		wantInstallationID: testInstallationID,
+		wantRepos:          []string{testRepo},
+	}
+	app := newTestApp(te, client)
+
+	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testRepoURL)
+	require.Error(t, err)
+	assert.Nil(t, tok)
+	assert.Equal(t, 0, client.createCalls)
 }

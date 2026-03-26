@@ -559,59 +559,95 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-// GetInstallationTokenForStatusReportingOnly returns an installation token for the given owner.
+// GetInstallationTokenForStatusReportingOnly returns an installation token for the given repo URL.
 // It does not authorize the user, because we don't have an authenticated context when handling
 // webhooks, so should be used for status reporting only.
 //
 // Use GetRepositoryInstallationToken in other cases that should authorize the user.
-func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner, repo string) (*github.InstallationToken, error) {
-	// TODO(Maggie): This should check that the repo is imported to GitRepositories.
+func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, repoURL string) (*github.InstallationToken, error) {
+	// Validate that the repo was imported to BB.
+	gitRepository := &tables.GitRepository{}
+	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_status_reporting").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE repo_url = ?
+	`, repoURL).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("workflow not configured for %s", repoURL)
+		}
+		return nil, status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
+	}
+
 	var installation tables.GitHubAppInstallation
-	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
-		WHERE owner = ?
-	`, owner).Take(&installation)
+		WHERE group_id = ?
+		AND owner = ?
+	`, gitRepository.GroupID, parsedRepoURL.Owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
 		}
 		return nil, err
 	}
-	tok, err := a.createInstallationToken(ctx, installation.InstallationID, repo)
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID, parsedRepoURL.Repo)
 	if err != nil {
 		return nil, err
 	}
 	return tok, nil
 }
 
-// TODO: Add GitRepository check in here and add a test.
-func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
-	if err := authutil.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
-		return "", err
+func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, *tables.GitRepository, error) {
+	if err := authutil.AuthorizeGroupAccess(ctx, a.env, groupID); err != nil {
+		return "", nil, err
 	}
-	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)
+
+	// Validate that the repo was imported to BB.
+	gitRepository := &tables.GitRepository{}
+	err := a.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, repoURL).Take(gitRepository)
 	if err != nil {
-		return "", err
+		if db.IsRecordNotFound(err) {
+			return "", nil, status.NotFoundErrorf("workflow not configured for %s", repoURL)
+		}
+		return "", nil, status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
 	}
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", nil, err
+	}
+
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, repo.GroupID, repoURL.Owner).Take(&installation)
+	`, groupID, parsedRepoURL.Owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+			return "", nil, status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
 		}
-		return "", err
+		return "", nil, err
 	}
-	tok, err := a.createInstallationToken(ctx, installation.InstallationID, repoURL.Repo)
+
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID, parsedRepoURL.Repo)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return tok.GetToken(), nil
+	return tok.GetToken(), gitRepository, nil
 }
 
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.

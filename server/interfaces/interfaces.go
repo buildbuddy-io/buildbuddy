@@ -709,14 +709,13 @@ type GitHubApp interface {
 	CreateRepo(context.Context, *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error)
 
 	// GetInstallationTokenForStatusReportingOnly returns an installation token
-	// for the installation associated with the given installation owner (GitHub
-	// username or org name). It does not authorize the authenticated group ID,
-	// so should be used for status reporting only.
-	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner, repo string) (*github.InstallationToken, error)
+	// for the installation associated with the given GitHub repo URL. It does
+	// not authorize the authenticated group ID, so should be used for status
+	// reporting only.
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, repoURL string) (*github.InstallationToken, error)
 
-	// GetRepositoryInstallationToken returns an installation token for the given
-	// GitRepository.
-	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+	// GetRepositoryInstallationToken returns an installation token for the given repo.
+	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, *tables.GitRepository, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler

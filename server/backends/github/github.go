@@ -586,12 +586,15 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	parts := strings.Split(ownerRepo, "/")
+	repoURL, err := gitutil.NormalizeRepoURL(ownerRepo)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
+	}
+	parts := strings.Split(strings.TrimPrefix(repoURL.Path, "/"), "/")
 	if len(parts) != 2 {
 		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
 	}
 	owner := parts[0]
-	repo := parts[1]
 
 	// When handling webhooks, we do not have an authenticated BuildBuddy user in
 	// the context and cannot use `GetGitHubAppForAuthenticatedUser`.
@@ -599,7 +602,7 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if err != nil {
 		return nil, err
 	}
-	return app.GetInstallationTokenForStatusReportingOnly(ctx, owner, repo)
+	return app.GetInstallationTokenForStatusReportingOnly(ctx, repoURL.String())
 }
 
 func (c *GithubClient) getToken(ctx context.Context, ownerRepo string) (string, error) {

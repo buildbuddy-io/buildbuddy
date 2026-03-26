@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -649,23 +648,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 	if err != nil {
 		return nil, err
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
-		return nil, err
-	}
-	gitRepository := &tables.GitRepository{}
-	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, groupID, repoURL.String()).Take(gitRepository)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundErrorf("repo %q not found", repoURL)
-		}
-		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
-	}
-	token, err := app.GetRepositoryInstallationToken(ctx, gitRepository)
+	token, gitRepository, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL.String())
 	if err != nil {
 		return nil, err
 	}

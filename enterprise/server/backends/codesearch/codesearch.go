@@ -5,9 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -71,21 +69,7 @@ func (css *CodesearchService) getGitRepoAccessToken(ctx context.Context, groupId
 		return "", status.UnavailableErrorf("could not get GitHub app for repo %q: %s", repoURL, err)
 	}
 
-	gitRepository := &tables.GitRepository{}
-	err = css.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, groupId, repoURL).Take(gitRepository)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("repo %q not found", repoURL)
-		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
-	}
-
-	token, err := gha.GetRepositoryInstallationToken(ctx, gitRepository)
+	token, _, err := gha.GetRepositoryInstallationToken(ctx, groupId, repoURL)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not get access token for repo %q: %s", repoURL, err)
 	}

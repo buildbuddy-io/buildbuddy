@@ -23,9 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -398,21 +396,11 @@ func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string
 		return "", err
 	}
 
-	gitRepository := &tables.GitRepository{}
-	err = r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), repoURL).Take(gitRepository)
+	token, _, err := app.GetRepositoryInstallationToken(ctx, u.GetGroupID(), repoURL)
 	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
-		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+		return "", err
 	}
-
-	return app.GetRepositoryInstallationToken(ctx, gitRepository)
+	return token, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
