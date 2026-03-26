@@ -1017,7 +1017,6 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 }
 
 func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
-	appConn := r.appProxyConn
 	port := testport.FindFree(r.t)
 	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
@@ -1030,16 +1029,23 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 		},
 	}
 
-	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
-	require.NoError(r.t, err)
-	proxyEnv.SetAuthenticator(authenticator)
 	require.NoError(r.t, clientidentity.Register(proxyEnv))
 	require.NoError(r.t, ip_rules_enforcer.Register(proxyEnv))
 
-	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
-	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
-	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
-	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	// Dial a connection to the app that includes client identity interceptors,
+	// matching what the real cache proxy does with DialInternal.
+	internalConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, r.AppProxy.GRPCTarget())
+	require.NoError(r.t, err)
+	r.t.Cleanup(func() { internalConn.Close() })
+
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, internalConn)
+	require.NoError(r.t, err)
+	proxyEnv.SetAuthenticator(authenticator)
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(internalConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(internalConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(internalConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(internalConn))
 
 	if opts.EnvModifier != nil {
 		opts.EnvModifier(proxyEnv)
