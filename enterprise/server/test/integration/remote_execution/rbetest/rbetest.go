@@ -1033,7 +1033,8 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	require.NoError(r.t, ip_rules_enforcer.Register(proxyEnv))
 
 	// Dial a connection to the app that includes client identity interceptors,
-	// matching what the real cache proxy does with DialInternal.
+	// similar to what the real cache proxy does with DialInternal, but using
+	// DialInternalWithoutPooling here to avoid connection pooling in tests.
 	internalConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, r.AppProxy.GRPCTarget())
 	require.NoError(r.t, err)
 	r.t.Cleanup(func() { internalConn.Close() })
