@@ -34,8 +34,8 @@ const apiMaxBackoff = 30 * time.Second
 const maxPeers = 10000
 
 // PeersUpdateFn is called when the set of discovered peers changes. The map
-// keys are pod names and the values are "ip:port" strings. The map may be
-// modified.
+// keys are pod names (or node names if UseNodeKey==true) and the values are
+// "ip:port" strings. The receiver owns the map, and may modify it.
 type PeersUpdateFn func(peers map[string]string)
 
 // Config holds configuration for Kubernetes peer discovery.
@@ -53,6 +53,11 @@ type Config struct {
 	// Client is an optional Kubernetes client for testing. If nil,
 	// InClusterConfig is used.
 	Client kubernetes.Interface
+	// UseNodeKey uses the node name instead of the pod name as the peer
+	// map key. This provides stable ring keys for Deployments where pods
+	// are pinned to nodes (e.g. via pod anti-affinity) but pod names
+	// change on every rollout.
+	UseNodeKey bool
 }
 
 // PeerWatcher watches Kubernetes pods that share the same controller as this
@@ -61,6 +66,7 @@ type PeerWatcher struct {
 	client   kubernetes.Interface
 	port     string
 	updateFn PeersUpdateFn
+	peerKey  func(pod corev1.Pod) string
 
 	namespace     string
 	podName       string
@@ -70,7 +76,7 @@ type PeerWatcher struct {
 	cancel context.CancelFunc
 
 	mu    sync.Mutex
-	peers map[string]string // pod name -> "ip:port"
+	peers map[string]string // peer key -> "ip:port"
 }
 
 // NewPeerWatcher creates a new Kubernetes peer discovery watcher.
@@ -104,10 +110,15 @@ func NewPeerWatcher(config *Config) (*PeerWatcher, error) {
 		cancel()
 		return nil, err
 	}
+	peerKey := func(pod corev1.Pod) string { return pod.Name }
+	if config.UseNodeKey {
+		peerKey = func(pod corev1.Pod) string { return pod.Spec.NodeName }
+	}
 	pw := &PeerWatcher{
 		client:        client,
 		port:          config.Port,
 		updateFn:      config.UpdateFn,
+		peerKey:       peerKey,
 		namespace:     namespace,
 		podName:       podName,
 		ctx:           ctx,
@@ -170,7 +181,7 @@ func (c *PeerWatcher) runOnce() error {
 	c.peers = make(map[string]string)
 	for _, pod := range podList.Items {
 		if addr := c.podAddr(pod); addr != "" {
-			c.peers[pod.Name] = addr
+			c.peers[c.peerKey(pod)] = addr
 		}
 	}
 	c.notifyLocked()
@@ -272,7 +283,7 @@ func (c *PeerWatcher) processEvents(watcher watch.Interface, resourceVersion *st
 				}
 			case watch.Deleted:
 				if pod, ok := event.Object.(*corev1.Pod); ok {
-					c.removePod(pod.Name)
+					c.removePod(pod)
 				}
 			case watch.Bookmark:
 				// no-op
@@ -307,17 +318,18 @@ func (c *PeerWatcher) podAddr(pod corev1.Pod) string {
 func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	key := c.peerKey(*pod)
 	addr := c.podAddr(*pod)
 	if addr == "" {
-		if _, exists := c.peers[pod.Name]; exists {
-			delete(c.peers, pod.Name)
+		if _, exists := c.peers[key]; exists {
+			delete(c.peers, key)
 			c.notifyLocked()
 		}
 		return
 	}
-	existing, exists := c.peers[pod.Name]
+	existing, exists := c.peers[key]
 	if !exists || existing != addr {
-		c.peers[pod.Name] = addr
+		c.peers[key] = addr
 		c.notifyLocked()
 	}
 	if len(c.peers) > maxPeers {
@@ -325,11 +337,12 @@ func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	}
 }
 
-func (c *PeerWatcher) removePod(podName string) {
+func (c *PeerWatcher) removePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.peers[podName]; exists {
-		delete(c.peers, podName)
+	key := c.peerKey(*pod)
+	if _, exists := c.peers[key]; exists {
+		delete(c.peers, key)
 		c.notifyLocked()
 	}
 }

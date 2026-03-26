@@ -22,12 +22,19 @@ import (
 const testNamespace = "test_ns"
 
 func readyPod(name, ip string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
+	return readyPodOnNode(name, ip, "", ownerRefs)
+}
+
+func readyPodOnNode(name, ip, nodeName string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            name,
 			Namespace:       testNamespace,
 			OwnerReferences: ownerRefs,
 			Labels:          map[string]string{"app": "cache"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: nodeName,
 		},
 		Status: corev1.PodStatus{
 			PodIP: ip,
@@ -133,15 +140,19 @@ func waitForWatch(t *testing.T, client *fake.Clientset, resource string) {
 	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for %s watch", resource)
 }
 
-func testingPeerWatcher(t *testing.T, client kubernetes.Interface, pc *peerCollector) *PeerWatcher {
+func testingPeerWatcher(t *testing.T, client kubernetes.Interface, pc *peerCollector, opts ...func(*Config)) *PeerWatcher {
 	t.Helper()
-	pw, err := NewPeerWatcher(&Config{
+	cfg := &Config{
 		UpdateFn:  pc.updateFn,
 		Port:      "7999",
 		Namespace: testNamespace,
 		PodName:   "cache-0",
 		Client:    client,
-	})
+	}
+	for _, o := range opts {
+		o(cfg)
+	}
+	pw, err := NewPeerWatcher(cfg)
 	require.NoError(t, err)
 	require.NoError(t, pw.Start())
 	t.Cleanup(pw.Stop)
@@ -352,6 +363,57 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	// Should eventually get peer after recovery.
 	peers := pc.waitForUpdate(t, 10*time.Second)
 	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
+}
+
+func TestUseNodeKey(t *testing.T) {
+	ownerRefs := replicaSetOwnerRef("cache-rs")
+	useNodeKey := func(c *Config) { c.UseNodeKey = true }
+
+	pod0 := readyPodOnNode("cache-0", "10.0.0.1", "node-a", ownerRefs)
+	pod1 := readyPodOnNode("cache-1", "10.0.0.2", "node-b", ownerRefs)
+	rs := replicaSet("cache-rs")
+
+	client := fake.NewClientset(pod0, pod1, rs)
+	pc := newPeerCollector()
+	testingPeerWatcher(t, client, pc, useNodeKey)
+
+	peers := pc.waitForUpdate(t, 5*time.Second)
+	require.Equal(t, map[string]string{
+		"node-a": "10.0.0.1:7999",
+		"node-b": "10.0.0.2:7999",
+	}, peers)
+}
+
+func TestUseNodeKeyPodReplaced(t *testing.T) {
+	ownerRefs := replicaSetOwnerRef("cache-rs")
+	useNodeKey := func(c *Config) { c.UseNodeKey = true }
+
+	pod0 := readyPodOnNode("cache-0", "10.0.0.1", "node-a", ownerRefs)
+	rs := replicaSet("cache-rs")
+
+	client := fake.NewClientset(pod0, rs)
+	pc := newPeerCollector()
+	testingPeerWatcher(t, client, pc, useNodeKey)
+
+	peers := pc.waitForUpdate(t, 5*time.Second)
+	require.Equal(t, map[string]string{"node-a": "10.0.0.1:7999"}, peers)
+
+	waitForWatch(t, client, "pods")
+
+	// Simulate a rolling update: old pod deleted, new pod on same node
+	// with a new name and IP. The node key should stay "node-a".
+	err := client.CoreV1().Pods(testNamespace).Delete(context.Background(), "cache-0", metav1.DeleteOptions{})
+	require.NoError(t, err)
+
+	peers = pc.waitForUpdate(t, 5*time.Second)
+	require.Empty(t, peers)
+
+	newPod := readyPodOnNode("cache-1", "10.0.0.99", "node-a", ownerRefs)
+	_, err = client.CoreV1().Pods(testNamespace).Create(context.Background(), newPod, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	peers = pc.waitForUpdate(t, 5*time.Second)
+	require.Equal(t, map[string]string{"node-a": "10.0.0.99:7999"}, peers)
 }
 
 func TestLabelSelectorString(t *testing.T) {
