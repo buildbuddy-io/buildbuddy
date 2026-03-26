@@ -56,7 +56,7 @@ var (
 	enableAlwaysClone           = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
 	includeSubdirPrefix         = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
 	subdirPrefixLength          = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
-	enableDiskFallbackOnStartup = flag.Bool("executor.local_cache_enable_disk_fallback_on_startup", true, "If true, FastLinkFile may best-effort link from disk while the startup scan is in progress.", flag.Internal)
+	enableDiskFallbackOnStartup = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
 
 	// testOnlyDisableInitialDirectoryScan disables startup scanning in tests.
 	// Keep this false in production paths.
@@ -438,29 +438,12 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	groupID := groupIDStringFromContext(ctx)
 	key := groupSpecificKey(groupID, node)
 
-	c.lock.Lock()
-	ok := c.l.Contains(key)
-	c.lock.Unlock()
-	silenceNotFound := false
-	if !ok {
-		// While the initial scan is still in progress, the file may already
-		// exist on disk but not yet be tracked in the LRU. Fall through to a
-		// best-effort link attempt, but don't log a warning if the file isn't
-		// found, since that will be expected in this case.
-		//
-		// Once the scan is complete, we can skip the FS lookup and just check
-		// the in-memory LRU, which should accurately reflect the filesystem.
-		if !c.scanComplete.Load() && *enableDiskFallbackOnStartup {
-			silenceNotFound = true
-		} else {
-			return false
-		}
+	if !c.containsWithStatFallback(key) {
+		return false
 	}
 	start := time.Now()
 	if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
-		if !(silenceNotFound && status.IsNotFoundError(err)) {
-			log.CtxWarningf(ctx, "Failed to link file from cache: %s", err)
-		}
+		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
 	c.linkFromFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
@@ -476,10 +459,7 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 	groupID := groupIDStringFromContext(ctx)
 	key := groupSpecificKey(groupID, node)
 
-	c.lock.Lock()
-	ok := c.l.Contains(key)
-	c.lock.Unlock()
-	if !ok {
+	if !c.containsWithStatFallback(key) {
 		return nil, status.NotFoundError("not found")
 	}
 	return os.Open(filecachePath(c.rootDir, key))
@@ -691,37 +671,7 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, cre
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
 	k := key(ctx, node)
-
-	statFallback := false
-	if *enableDiskFallbackOnStartup {
-		// If the directory scan is in progress and the file is not found in the
-		// LRU, then fall back to checking if the file exists on disk.
-		statFallback = !c.scanComplete.Load()
-	}
-
-	c.lock.Lock()
-	ok := c.l.Contains(k)
-	c.lock.Unlock()
-	if ok {
-		return true
-	}
-	if !statFallback {
-		return false
-	}
-
-	_, err := os.Stat(filecachePath(c.rootDir, k))
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.CtxWarningf(ctx, "Error: stat filecache path during stat fallback: %q: %s", filecachePath(c.rootDir, k), err)
-		}
-		return false
-	}
-	// Note: we don't bother proactively hydrating the LRU in the case where the
-	// stat fallback succeeded. The initial directory scan should eventually
-	// pick up this file and add it to the the front of the LRU, preserving the
-	// usual guarantee that if ContainsFile returns true, the file should remain
-	// fresh in the cache for a while.
-	return true
+	return c.containsWithStatFallback(k)
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
@@ -898,6 +848,49 @@ func cloneOrLink(groupID, source, destination string) error {
 		}
 	}
 	return nil
+}
+
+// containsWithStatFallback checks if the given key is in the cache. If the
+// initial directory scan is still in progress and the key is not found in the
+// LRU, the file may still be found on disk, so this falls back to checking the
+// filesystem and proactively hydrating the LRU in that case.
+func (c *fileCache) containsWithStatFallback(key string) bool {
+	c.lock.Lock()
+	ok := c.l.Contains(key)
+	c.lock.Unlock()
+	if ok {
+		return true
+	}
+	if c.scanComplete.Load() || !*enableDiskFallbackOnStartup {
+		return false
+	}
+
+	path := filecachePath(c.rootDir, key)
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+
+	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+	if err != nil {
+		log.Warningf("Failed to estimate filecache entry size for %q: %s", path, err)
+		return false
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.l.Contains(key) {
+		return true
+	}
+	success := c.l.Add(key, &entry{
+		addedAtUsec: time.Now().UnixMicro(),
+		sizeBytes:   sizeOnDisk,
+	})
+	if !success {
+		log.Warningf("Could not add key %q to filecache LRU after stat fallback", key)
+		return false
+	}
+	return true
 }
 
 func wrapOSError(err error, message string) error {

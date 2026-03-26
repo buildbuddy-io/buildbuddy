@@ -390,6 +390,13 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	ok := fc.FastLinkFile(ctx, node, outPath)
 	require.True(t, ok, "expected filesystem fallback link to succeed before initial scan completes")
 	assertFileContents(t, outPath, "content")
+
+	f, err := fc.Open(ctx, node)
+	require.NoError(t, err, "expected Open to succeed via disk fallback before initial scan completes")
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "content", string(data))
 }
 
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
