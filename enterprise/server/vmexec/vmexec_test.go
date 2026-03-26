@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -152,6 +153,26 @@ func TestExecStreamed_Crash(t *testing.T) {
 	assert.Equal(t, "foo-stdout\n", string(res.Stdout), "should get partial stdout despite crash")
 	assert.Equal(t, "bar-stderr\n", string(res.Stderr), "should get partial stderr despite crash")
 	assert.Equal(t, commandutil.KilledExitCode, res.ExitCode)
+}
+
+func TestExecStreamed_DisableOutputLimits_AllowsLargeOutput(t *testing.T) {
+	// Set a very small limit but disable via stdio; we should not see
+	// ResourceExhausted at the client while receiving the stream.
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	client := startExecService(t)
+	// Generate >10 bytes of output.
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `printf %0200d 1 >&1`},
+	}
+
+	var stdout, stderr bytes.Buffer
+	stdio := &interfaces.Stdio{Stdout: &stdout, Stderr: &stderr, DisableOutputLimits: true}
+	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, stdio)
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.GreaterOrEqual(t, stdout.Len(), 50)
 }
 
 func startExecService(t *testing.T) vmxpb.ExecClient {
