@@ -9,9 +9,9 @@ package kubediscovery
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -33,9 +33,10 @@ const apiMaxBackoff = 30 * time.Second
 // unbounded memory growth from a misconfigured label selector.
 const maxPeers = 10000
 
-// PeersUpdateFn is called when the set of discovered peers changes.
-// Each element in peerSet is an "ip:port" string.
-type PeersUpdateFn func(peerSet ...string)
+// PeersUpdateFn is called when the set of discovered peers changes. The map
+// keys are pod names and the values are "ip:port" strings. The map may be
+// modified.
+type PeersUpdateFn func(peers map[string]string)
 
 // Config holds configuration for Kubernetes peer discovery.
 type Config struct {
@@ -334,11 +335,5 @@ func (c *PeerWatcher) removePod(podName string) {
 }
 
 func (c *PeerWatcher) notifyLocked() {
-	addrs := make([]string, 0, len(c.peers))
-	for _, addr := range c.peers {
-		addrs = append(addrs, addr)
-	}
-	sort.Strings(addrs)
-	log.Infof("kubediscovery: peer set changed for %v/%v: %v", c.namespace, c.podName, addrs)
-	c.updateFn(addrs...)
+	c.updateFn(maps.Clone(c.peers))
 }

@@ -276,7 +276,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if *lookasideCacheTTL > 0 {
 			lookasideCacheTTLString = lookasideCacheTTL.String()
 		}
-		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", opts.LookasideCacheSizeBytes, lookasideCacheTTLString)
+		dc.log.Infof("Initialized lookaside cache (Size %d, ttl=%s)", opts.LookasideCacheSizeBytes, lookasideCacheTTLString)
 	}
 
 	if zone := resources.GetZone(); zone != "" {
@@ -293,9 +293,10 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		}
 	} else if opts.KubePeerWatcher != nil {
 		dc.kubeDiscoveryChannel = opts.KubePeerWatcher
-		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers ...string) {
-			if err := chash.Set(peers...); err != nil {
-				log.Errorf("Error setting peers in consistent hash: %s", err)
+		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers map[string]string) {
+			dc.log.Infof("distributed cache peer set changed to %v", peers)
+			if err := chash.SetFromMap(peers); err != nil {
+				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
 			}
 		})
 	} else {
@@ -305,7 +306,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			GroupName:    opts.GroupName,
 			UpdateFn: func(peers ...string) {
 				if err := chash.Set(peers...); err != nil {
-					log.Errorf("Error setting peers in consistent hash: %s", err)
+					dc.log.Errorf("Error setting peers in consistent hash: %s", err)
 				}
 			},
 			EnablePeerExpiry: false,
@@ -663,7 +664,6 @@ func (c *Cache) StartListening() error {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
-	log.Infof("Distributed cache listening on %q", c.opts.ListenAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
@@ -675,6 +675,7 @@ func (c *Cache) StartListening() error {
 	if err := c.distributedProxy.StartListening(); err != nil {
 		return status.InternalErrorf("start distributed_client: %w", err)
 	}
+	c.log.Infof("Distributed cache listening on %q", c.opts.ListenAddr)
 	c.finishedShutdown = false
 	return nil
 }

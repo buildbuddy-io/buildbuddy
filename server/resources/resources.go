@@ -33,7 +33,7 @@ const (
 	nodeEnvVarName      = "MY_NODENAME"
 	hostnameEnvVarName  = "MY_HOSTNAME"
 	namespaceEnvVarName = "MY_NAMESPACE"
-	podNameEnvVarName   = "MY_PODNAME"
+	podNameEnvVarName   = "MY_POD_NAME"
 	portEnvVarName      = "MY_PORT"
 	poolEnvVarName      = "MY_POOL"
 	podUIDVarName       = "K8S_POD_UID"

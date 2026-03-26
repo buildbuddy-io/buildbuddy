@@ -92,7 +92,7 @@ func statefulSet(name string) *appsv1.StatefulSet {
 // peerCollector collects peer updates from the PeerWatcher.
 type peerCollector struct {
 	mu      sync.Mutex
-	updates [][]string
+	updates []map[string]string
 	ch      chan struct{}
 }
 
@@ -100,7 +100,7 @@ func newPeerCollector() *peerCollector {
 	return &peerCollector{ch: make(chan struct{}, 100)}
 }
 
-func (pc *peerCollector) updateFn(peers ...string) {
+func (pc *peerCollector) updateFn(peers map[string]string) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	pc.updates = append(pc.updates, peers)
@@ -110,7 +110,7 @@ func (pc *peerCollector) updateFn(peers ...string) {
 	}
 }
 
-func (pc *peerCollector) waitForUpdate(t *testing.T, timeout time.Duration) []string {
+func (pc *peerCollector) waitForUpdate(t *testing.T, timeout time.Duration) map[string]string {
 	t.Helper()
 	select {
 	case <-pc.ch:
@@ -161,7 +161,7 @@ func TestDiscoverPeersFromReplicaSet(t *testing.T) {
 	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999", "cache-1": "10.0.0.2:7999", "cache-2": "10.0.0.3:7999"}, peers)
 }
 
 func TestDiscoverPeersFromStatefulSet(t *testing.T) {
@@ -176,7 +176,7 @@ func TestDiscoverPeersFromStatefulSet(t *testing.T) {
 	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999", "cache-1": "10.0.0.2:7999"}, peers)
 }
 
 func TestPodAddedDuringWatch(t *testing.T) {
@@ -203,7 +203,7 @@ func TestPodAddedDuringWatch(t *testing.T) {
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999", "cache-1": "10.0.0.2:7999", "cache-2": "10.0.0.3:7999"}, peers)
 }
 
 func TestPodDeletedDuringWatch(t *testing.T) {
@@ -230,7 +230,7 @@ func TestPodDeletedDuringWatch(t *testing.T) {
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999", "10.0.0.2:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999", "cache-1": "10.0.0.2:7999"}, peers)
 }
 
 func TestPodNotReadyExcluded(t *testing.T) {
@@ -260,7 +260,7 @@ func TestPodNotReadyExcluded(t *testing.T) {
 	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
 }
 
 func TestPodBecomesUnready(t *testing.T) {
@@ -289,7 +289,7 @@ func TestPodBecomesUnready(t *testing.T) {
 	require.NoError(t, err)
 
 	peers = pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
 }
 
 func TestNoPodIPExcluded(t *testing.T) {
@@ -315,7 +315,7 @@ func TestNoPodIPExcluded(t *testing.T) {
 	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
 }
 
 func TestWatchRecoveryFromResourceExpired(t *testing.T) {
@@ -351,7 +351,7 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 
 	// Should eventually get peer after recovery.
 	peers := pc.waitForUpdate(t, 10*time.Second)
-	require.Equal(t, []string{"10.0.0.1:7999"}, peers)
+	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
 }
 
 func TestLabelSelectorString(t *testing.T) {
