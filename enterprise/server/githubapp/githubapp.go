@@ -554,6 +554,7 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 	if err != nil {
 		return err
 	}
+
 	return a.env.GetWorkflowService().HandleRepositoryEvent(
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
@@ -578,6 +579,7 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 	return tok, nil
 }
 
+// TODO: Add GitRepository check in here and add a test.
 func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
 	if err := authutil.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
 		return "", err
@@ -1231,8 +1233,6 @@ func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Inst
 	return inst, nil
 }
 
-// If repoName is set, the installation token can only access that repo.
-// If the repo URL is https://github.com/owner/repo, then passed repoName should be "repo".
 func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64) (*github.InstallationToken, error) {
 	client, err := a.newAppClient(ctx)
 	if err != nil {
@@ -1310,7 +1310,7 @@ func (a *GitHubApp) waitForInstallation(ctx context.Context, installationID int6
 }
 
 // newAuthenticatedAppClient returns a GitHub Apps client authenticated as the
-// app itself.
+// GitHub app itself.
 func (a *GitHubApp) newAuthenticatedAppClient(ctx context.Context) (githubAppClient, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
