@@ -1037,7 +1037,9 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	// DialInternalWithoutPooling here to avoid connection pooling in tests.
 	internalConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, r.AppProxy.GRPCTarget())
 	require.NoError(r.t, err)
-	r.t.Cleanup(func() { internalConn.Close() })
+	r.t.Cleanup(func() {
+		require.NoError(r.t, internalConn.Close())
+	})
 
 	authenticator, err := remoteauth.NewWithTarget(proxyEnv, internalConn)
 	require.NoError(r.t, err)
