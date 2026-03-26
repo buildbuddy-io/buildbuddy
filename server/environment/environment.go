@@ -133,6 +133,7 @@ type Env interface {
 	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator
 	GetServerNotificationService() interfaces.ServerNotificationService
 	GetGCPService() interfaces.GCPService
+	GetMCPService() interfaces.MCPService
 	GetSCIMService() interfaces.SCIMService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService

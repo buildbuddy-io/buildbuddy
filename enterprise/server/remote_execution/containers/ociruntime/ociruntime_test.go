@@ -2095,6 +2095,62 @@ func TestMounts(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
+func TestCDIDevicesMountsFromCDISpec(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Create a tiny local CDI spec that injects a silly bind mount.
+	cdiSourceDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, cdiSourceDir, map[string]string{
+		"from-cdi.txt": "hello-from-cdi\n",
+	})
+	cdiSpecDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, cdiSpecDir, map[string]string{
+		"vendor1.yaml": fmt.Sprintf(`
+cdiVersion: "0.3.0"
+kind: "vendor1.com/device"
+devices:
+  - name: "dev1"
+    containerEdits:
+      mounts:
+        - hostPath: %q
+          containerPath: "/mnt/from-cdi.txt"
+          options: ["bind", "ro"]
+`, filepath.Join(cdiSourceDir, "from-cdi.txt")),
+	})
+
+	flags.Set(t, "executor.oci.cdi_spec_dirs", []string{cdiSpecDir})
+	flags.Set(t, "executor.oci.cdi_devices", []string{"vendor1.com/device=dev1"})
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	res := c.Run(ctx, &repb.Command{Arguments: []string{"cat", "/mnt/from-cdi.txt"}}, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "hello-from-cdi\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
 func TestPersistentVolumes(t *testing.T) {
 	setupNetworking(t)
 	image := busyboxImage(t)

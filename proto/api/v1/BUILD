@@ -57,6 +57,12 @@ proto_library(
     ],
 )
 
+filegroup(
+    name = "api_v1_proto_srcs",
+    srcs = glob(["**/*.proto"]),
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "api_v1_go_proto",
     compilers = [

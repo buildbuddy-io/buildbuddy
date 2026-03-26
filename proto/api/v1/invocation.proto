@@ -7,7 +7,8 @@ import "proto/api/v1/file.proto";
 // Request passed into GetInvocation.
 // Next tag: 6
 message GetInvocationRequest {
-  // The selector defining which invocations(s) to retrieve.
+  // Required: The selector object defining which invocations(s) to retrieve.
+  // The selector must specify either `invocation_id` or `commit_sha`.
   InvocationSelector selector = 1;
 
   // If true, includes additional build metadata.
@@ -117,8 +118,6 @@ message InvocationMetadata {
 
 // The selector used to specify which invocations to return.
 message InvocationSelector {
-  // One invocation_id or commit_sha is required.
-
   // Optional: The Invocation ID.
   // Return only the invocation with this invocation ID.
   string invocation_id = 1;

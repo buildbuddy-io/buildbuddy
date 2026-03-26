@@ -991,6 +991,12 @@ func (r *Env) waitForExecutorRegistration() {
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
 }
 
+type CacheProxyOptions struct {
+	// EnvModifier modifies the proxy environment before registering services.
+	// Use this to replace the default cache (e.g., with a pebble cache).
+	EnvModifier func(env *testenv.TestEnv)
+}
+
 type CacheProxy struct {
 	t    testing.TB
 	env  *testenv.TestEnv
@@ -1007,7 +1013,10 @@ func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressab
 }
 
 func (r *Env) AddCacheProxy() *CacheProxy {
-	appConn := r.appProxyConn
+	return r.AddCacheProxyWithOptions(&CacheProxyOptions{})
+}
+
+func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	port := testport.FindFree(r.t)
 	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
@@ -1020,16 +1029,31 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 		},
 	}
 
-	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
-	require.NoError(r.t, err)
-	proxyEnv.SetAuthenticator(authenticator)
 	require.NoError(r.t, clientidentity.Register(proxyEnv))
 	require.NoError(r.t, ip_rules_enforcer.Register(proxyEnv))
 
-	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
-	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
-	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
-	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	// Dial a connection to the app that includes client identity interceptors,
+	// similar to what the real cache proxy does with DialInternal, but using
+	// DialInternalWithoutPooling here to avoid connection pooling in tests.
+	internalConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, r.AppProxy.GRPCTarget())
+	require.NoError(r.t, err)
+	r.t.Cleanup(func() {
+		require.NoError(r.t, internalConn.Close())
+	})
+
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, internalConn)
+	require.NoError(r.t, err)
+	proxyEnv.SetAuthenticator(authenticator)
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(internalConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(internalConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(internalConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(internalConn))
+
+	if opts.EnvModifier != nil {
+		opts.EnvModifier(proxyEnv)
+	}
+
 	require.NoError(r.t, atime_updater.Register(proxyEnv))
 
 	// Register the internal (BS & CAS) gRPC servers.
