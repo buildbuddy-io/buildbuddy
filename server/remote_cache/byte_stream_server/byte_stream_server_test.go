@@ -642,6 +642,93 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, fullBlob, buf.Bytes())
 }
 
+func TestReadChunked_NonZeroOffset(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	chunkSize := int64(1024 * 1024)
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, chunkSize)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, chunkSize)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, chunkSize)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, te.GetCache().Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, te.GetCache().Set(ctx, chunk3RN, chunk3))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+
+	for _, tc := range []struct {
+		name   string
+		offset int64
+	}{
+		{name: "mid_first_chunk", offset: chunkSize / 2},
+		{name: "exact_chunk_boundary", offset: chunkSize},
+		{name: "mid_second_chunk", offset: chunkSize + chunkSize/2},
+		{name: "last_chunk", offset: 2 * chunkSize},
+		{name: "mid_last_chunk", offset: 2*chunkSize + chunkSize/2},
+		{name: "at_end", offset: 3 * chunkSize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readReq := &bspb.ReadRequest{
+				ResourceName: blobRN.DownloadString(),
+				ReadOffset:   tc.offset,
+			}
+			stream, err := bsClient.Read(ctx, readReq)
+			require.NoError(t, err)
+			var buf bytes.Buffer
+			for {
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				buf.Write(resp.GetData())
+			}
+			expected := fullBlob[tc.offset:]
+			got := buf.Bytes()
+			if len(expected) == 0 {
+				require.Empty(t, got)
+			} else {
+				require.Equal(t, expected, got)
+			}
+		})
+	}
+}
+
 func TestReadChunked_MissingManifest(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {

@@ -479,7 +479,7 @@ func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.Test
 	testDecryption(ctx, t, crypter, encrypted, metadata, input)
 }
 
-func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock clockwork.FakeClock) error {
+func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock *clockwork.FakeClock) error {
 	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
@@ -504,7 +504,7 @@ func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthen
 }
 
 // advances the fake clock once and waits for the refresh to be done.
-func advanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
+func advanceTimeAndWaitForRefresh(clock *clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
 	lastRun := crypter.testGetLastCacheRefreshRun()
 	clock.Advance(dur)
 	for !crypter.testGetLastCacheRefreshRun().After(lastRun) {
@@ -517,7 +517,7 @@ func advanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, d
 
 // similar to above, but continuously moves fake clock forward while refresh in
 // progress for testing error scenarios where retries may be attempted.
-func contAdvanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
+func contAdvanceTimeAndWaitForRefresh(clock *clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
 	lastRun := crypter.testGetLastCacheRefreshRun()
 	clock.Advance(dur)
 	for !crypter.testGetLastCacheRefreshRun().After(lastRun) {

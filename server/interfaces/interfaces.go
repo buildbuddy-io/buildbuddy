@@ -929,6 +929,11 @@ type FileCache interface {
 	// See filecache.go for more details.
 	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
 
+	// LookupExternalDirectory looks up and locks an already-tracked external
+	// directory without creating a new tracked entry. It returns NotFound if
+	// the dir does not exist or is not currently tracked.
+	LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error)
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
@@ -1566,18 +1571,19 @@ type AuditLogger interface {
 
 type IPRulesEnforcer interface {
 	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the group identified in the context.
-	Authorize(ctx context.Context) error
+	// to access the group identified in the context. The returned context
+	// should be used after successful authorization.
+	Authorize(ctx context.Context) (context.Context, error)
 
 	// AuthorizeGroup checks whether the authenticated user in the context is
 	// allowed to access the specified groupId. This function should not be used
 	// in performance sensitive code paths.
-	AuthorizeGroup(ctx context.Context, groupID string) error
+	AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error)
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
 	// allowed based on the authenticated user and group information in the
 	// context.
-	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error)
 
 	// Invalidates all cached IP rules for the specified group ID.
 	InvalidateCache(ctx context.Context, groupID string)
@@ -1592,6 +1598,7 @@ type IPRulesService interface {
 
 	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)
 	SetIPRuleConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error)
+	GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error)
 	UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error)
@@ -1689,6 +1696,10 @@ type ServerNotificationService interface {
 	// e.g. publishing an InvalidateIPRulesCache notification can be done as:
 	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
 	Publish(ctx context.Context, msg proto.Message) error
+}
+
+type MCPService interface {
+	RegisterHandlers(mux HttpServeMux)
 }
 
 type SCIMService interface {

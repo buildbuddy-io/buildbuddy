@@ -122,6 +122,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	bsm := byteStreamMetrics{
 		requestType:  requestTypeLabel,
 		compressor:   readMetrics.compressor,
+		groupID:      groupIDForMetrics(ctx),
 		err:          err,
 		bytes:        meteredStream.bytes,
 		chunked:      readMetrics.chunked,
@@ -205,6 +206,13 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 					chunksRemote: chunkMetrics.chunksRemote,
 				}, nil
 			}
+
+			if stream.frames > 0 {
+				return readMetrics{
+					cacheStatus: metrics.MissStatusLabel,
+					compressor:  rn.GetCompressor().String(),
+				}, chunkedErr
+			}
 		}
 
 		remoteErr := s.readRemoteWriteLocal(req, stream)
@@ -270,27 +278,84 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		}).Inc()
 		return m, err
 	}
+
+	offset := req.GetReadOffset()
 	for _, chunkDigest := range splitResp.GetChunkDigests() {
+		chunkSize := chunkDigest.GetSizeBytes()
+		if offset >= chunkSize {
+			offset -= chunkSize
+			continue
+		}
+
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(rn.GetCompressor())
-		if err := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream); status.IsNotFoundError(err) {
-			if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
+		intraChunkOffset := offset
+		offset = 0
+
+		// If we're midway through a chunk (non-zero offset),
+		// read remote only, since we can't cache a partial chunk locally.
+		if intraChunkOffset > 0 {
+			remoteReq := &bspb.ReadRequest{
+				ResourceName: chunkRN.DownloadString(),
+				ReadOffset:   intraChunkOffset,
+			}
+			if err := s.readRemoteOnly(ctx, remoteReq, stream); err != nil {
 				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
+					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error_partial",
 					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 				}).Inc()
 				return m, err
 			}
 			m.chunksRemote++
-		} else if err != nil {
+			continue
+		}
+
+		bytesBefore := stream.bytes
+		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream)
+		if localErr == nil {
+			m.chunksLocal++
+			continue
+		}
+
+		// Recover from any local error, regardless of whether partial data was already sent.
+		chunkOffset := stream.bytes - bytesBefore
+		if chunkOffset > 0 {
 			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
+				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error_partial",
+				metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
+			}).Inc()
+
+			// If compressed, we can't accurately get the offset.
+			if rn.GetCompressor() != repb.Compressor_IDENTITY {
+				return m, localErr
+			}
+			remoteReq := &bspb.ReadRequest{
+				ResourceName: chunkRN.DownloadString(),
+				ReadOffset:   chunkOffset,
+			}
+			if err := s.readRemoteOnly(ctx, remoteReq, stream); err != nil {
+				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error_partial",
+					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+				}).Inc()
+				return m, err
+			}
+			m.chunksRemote++
+			continue
+		}
+
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
+		}).Inc()
+		if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
+			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+				metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
 				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 			}).Inc()
 			return m, err
-		} else {
-			m.chunksLocal++
 		}
+		m.chunksRemote++
 	}
 	return m, nil
 }
@@ -454,7 +519,15 @@ func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
 	if bsm.bytes > 0 {
-		metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bsm.bytes))
+		bytesLabels := prometheus.Labels{
+			metrics.StatusLabel:           status.MetricsLabel(bsm.err),
+			metrics.CacheHitMissStatus:    cacheStatus,
+			metrics.CacheProxyRequestType: bsm.requestType,
+			metrics.CompressionType:       bsm.compressor,
+			metrics.ChunkedLabel:          strconv.FormatBool(bsm.chunked),
+			metrics.GroupID:               bsm.groupID,
+		}
+		metrics.ByteStreamProxiedReadBytes.With(bytesLabels).Add(float64(bsm.bytes))
 	}
 
 	if bsm.chunked && bsm.chunksTotal > 0 {

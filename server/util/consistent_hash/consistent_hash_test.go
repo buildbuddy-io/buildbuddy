@@ -275,6 +275,71 @@ func choose(n, k int) int {
 	return result
 }
 
+func TestSetFromMap(t *testing.T) {
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10000)
+
+	// Map pod names (ring keys) to ip:port (values).
+	m := map[string]string{
+		"cache-0": "10.0.0.1:7999",
+		"cache-1": "10.0.0.2:7999",
+		"cache-2": "10.0.0.3:7999",
+	}
+	require.NoError(t, ch.SetFromMap(m))
+
+	expectedValues := []string{"10.0.0.1:7999", "10.0.0.2:7999", "10.0.0.3:7999"}
+	items := ch.GetItems()
+	sort.Strings(items)
+	require.Equal(t, expectedValues, items)
+
+	// Get should return an ip:port value, not a pod name.
+	for i := range 100 {
+		key := strconv.Itoa(i)
+		got := ch.Get(key)
+		require.Contains(t, expectedValues, got, "Get(%q) returned %q", key, got)
+	}
+
+	// GetAllReplicas should return all ip:port values.
+	replicas := ch.GetAllReplicas("somekey")
+	sort.Strings(replicas)
+	require.Equal(t, expectedValues, replicas)
+}
+
+func TestSetFromMapStableKeys(t *testing.T) {
+	// Verify that the ring uses map keys (pod names) for hashing, so
+	// changing a value (IP) without changing the key doesn't move entries.
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10000)
+
+	m1 := map[string]string{
+		"cache-0": "10.0.0.1:7999",
+		"cache-1": "10.0.0.2:7999",
+	}
+	require.NoError(t, ch.SetFromMap(m1))
+
+	// Record which pod name owns each test key.
+	assignments := make(map[string]string, 50)
+	for i := range 50 {
+		k := strconv.Itoa(i)
+		assignments[k] = ch.Get(k)
+	}
+
+	// Change the IP of cache-1 but keep the pod name.
+	m2 := map[string]string{
+		"cache-0": "10.0.0.1:7999",
+		"cache-1": "10.0.0.99:7999", // IP changed
+	}
+	require.NoError(t, ch.SetFromMap(m2))
+
+	for pod, ip := range assignments {
+		got := ch.Get(pod)
+		if ip == "10.0.0.2:7999" {
+			// This key was on cache-1, which now has a new IP.
+			require.Equal(t, "10.0.0.99:7999", got, "key %q should follow cache-1 to new IP", pod)
+		} else {
+			require.Equal(t, ip, got, "key %q should stay on same node", pod)
+		}
+	}
+}
+
 func BenchmarkGetAllReplicas(b *testing.B) {
 	for _, test := range []struct {
 		Name         string
@@ -333,7 +398,7 @@ func newReferereferenceImpl(hashFunction consistent_hash.HashFunction, vnodes in
 		items:   items,
 	}
 	for itemIndex, key := range c.items {
-		for i := 0; i < vnodes; i++ {
+		for i := range vnodes {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
 			c.ring[h] = uint8(itemIndex)

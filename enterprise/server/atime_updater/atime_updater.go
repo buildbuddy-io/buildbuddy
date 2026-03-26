@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/batch_operator"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -49,6 +50,7 @@ func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, err
 			DigestFunction: u.DigestFunction,
 		}
 
+		ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 		_, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
 		metrics.RemoteAtimeUpdatesSent.WithLabelValues(
 			groupID,

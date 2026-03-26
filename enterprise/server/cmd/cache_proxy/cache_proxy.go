@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -107,6 +108,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := experiments.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_enforcer.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -218,7 +222,9 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
-		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficStatsHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficStatsHandler.StreamInterceptor},
+		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)

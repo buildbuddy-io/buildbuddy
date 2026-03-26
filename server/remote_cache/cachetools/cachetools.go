@@ -117,6 +117,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	if r.IsEmpty() {
 		return nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
@@ -300,6 +302,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -314,10 +318,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
-	} else if readerCompression == repb.Compressor_ZSTD && rnCompression == repb.Compressor_IDENTITY {
-		// Upload as compressed instead of decompressing.
-		r = digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-		r.SetCompressor(repb.Compressor_ZSTD)
+	} else if readerCompression != rnCompression {
+		return nil, 0, status.InvalidArgumentErrorf("reader compression %s does not match resource name compression %s; decompression is not supported", readerCompression, rnCompression)
 	}
 	// If readerCompression == rnCompression, no transformation is needed.
 	defer rc.Close()
@@ -493,10 +495,11 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 }
 
 // UploadFromReaderWithCompression uploads data to the CAS, specifying the
-// compression format of the data in the reader. If the reader format differs
-// from the target compression in the resource name, the data will be compressed
-// or decompressed as needed. If both formats are the same, no transformation
-// is applied. Only IDENTITY and ZSTD formats are supported.
+// compression format of the data in the reader. If the reader is uncompressed
+// and the resource name specifies ZSTD, the data will be compressed on the fly.
+// If both formats are the same, no transformation is applied. Decompression
+// (compressed reader to uncompressed resource name) is not supported and will
+// return an error.
 // If the input Reader is also a Seeker, UploadFromReaderWithCompression will retry
 // the upload until success.
 func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
@@ -1288,6 +1291,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 
 type UploadWriter struct {
 	ctx          context.Context
+	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
@@ -1376,6 +1380,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 // Commit sends any bytes remaining in the internal buffer to the CAS
 // and tells the server that the stream is done sending writes.
 func (uw *UploadWriter) Commit() error {
+	defer uw.cancel()
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot commit")
 	}
@@ -1419,6 +1424,7 @@ func (uw *UploadWriter) Close() error {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot close again")
 	}
 	uw.closed = true
+	uw.cancel()
 	uploadBufPool.Put(uw.buf)
 	if uw.useZstd {
 		uploadBufPool.Put(uw.cbuf)
@@ -1449,8 +1455,10 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -1459,6 +1467,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
 			ctx:          ctx,
+			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
@@ -1469,6 +1478,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 	return &UploadWriter{
 		ctx:          ctx,
+		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),

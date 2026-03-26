@@ -51,10 +51,10 @@ runs:
       with:
         # Use the path determined in the conditional steps
         path: ${{ steps.determine-paths-linux.outputs.repo-cache-dir || steps.determine-paths-macos.outputs.repo-cache-dir || steps.determine-paths-windows.outputs.repo-cache-dir }}
-        key: repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: repo-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-
-          repo-cache-${{ runner.os }}-
+          repo-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-
+          repo-cache-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Restore Go Mod Cache
       uses: actions/cache/restore@v4
@@ -62,10 +62,10 @@ runs:
       with:
         # Use the path determined in the conditional steps
         path: ${{ steps.determine-paths-linux.outputs.go-mod-cache-dir || steps.determine-paths-macos.outputs.go-mod-cache-dir || steps.determine-paths-windows.outputs.go-mod-cache-dir }}
-        key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: go-mod-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-
-          go-mod-cache-${{ runner.os }}-
+          go-mod-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-
+          go-mod-cache-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Restore Yarn Cache
       uses: actions/cache/restore@v4
@@ -73,7 +73,7 @@ runs:
       with:
         # Use the path determined in the conditional steps
         path: ${{ steps.determine-paths-linux.outputs.yarn-cache-dir || steps.determine-paths-macos.outputs.yarn-cache-dir || steps.determine-paths-windows.outputs.yarn-cache-dir }}
-        key: yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: yarn-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-
-          yarn-cache-${{ runner.os }}-
+          yarn-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-
+          yarn-cache-${{ runner.os }}-${{ runner.arch }}-

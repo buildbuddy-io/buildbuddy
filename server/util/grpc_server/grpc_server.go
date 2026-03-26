@@ -74,6 +74,8 @@ func MaxRecvMsgSizeBytes() int {
 type GRPCServerConfig struct {
 	ExtraChainedUnaryInterceptors  []grpc.UnaryServerInterceptor
 	ExtraChainedStreamInterceptors []grpc.StreamServerInterceptor
+	PostAuthUnaryInterceptors      []grpc.UnaryServerInterceptor
+	PostAuthStreamInterceptors     []grpc.StreamServerInterceptor
 	ExtraStatsHandlers             []stats.Handler
 }
 
@@ -211,6 +213,8 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
+		grpc.ChainUnaryInterceptor(config.PostAuthUnaryInterceptors...),
+		grpc.ChainStreamInterceptor(config.PostAuthStreamInterceptors...),
 		grpc.StreamInterceptor(interceptors.TracedStreamServerInterceptor("grpc_server.MetricsInterceptor", Metrics().StreamServerInterceptor())),
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),

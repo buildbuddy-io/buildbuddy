@@ -152,6 +152,7 @@ func AppendRcRulesFromFile(workspaceDir string, realPath string, namedConfigs ma
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Handle line continuations (lines can end with "\" to effectively

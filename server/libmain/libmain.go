@@ -61,6 +61,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -324,6 +325,10 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
+	if irs := env.GetIPRulesService(); irs != nil {
+		irpb.RegisterIPRulesServiceServer(grpcServer, irs)
+	}
+
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
@@ -471,6 +476,10 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
 		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
+	}
+
+	if mcp := env.GetMCPService(); mcp != nil {
+		mcp.RegisterHandlers(mux)
 	}
 
 	if scim := env.GetSCIMService(); scim != nil {

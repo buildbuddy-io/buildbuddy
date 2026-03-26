@@ -21,14 +21,14 @@ go_test(
         # Include podman version in the snapshot key so that we reinstall from
         # scratch if we change podman versions.
         "test.runner-recycling-key": "podman-static@" + PODMAN_VERSION,
+        # podman is not compatible with linux-sandbox
+        "test.no-sandbox": "",
     },
     # TODO: set up build constraints for Firecracker so that this can be skipped
     # locally but not when using --config=remote. For now just use the "docker"
     # tag which we apply to tests that only run on CI.
     tags = [
         "docker",
-        # podman is not compatible with linux-sandbox
-        "no-sandbox",
     ],
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {

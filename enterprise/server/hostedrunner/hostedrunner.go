@@ -196,7 +196,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		args = append(args, "--patch_uri="+patchURI)
 	}
 	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "")
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", "remote-bazel"))
 		if bazelCommandOverride != "" {
 			args = append(args, "--bazel_command="+bazelCommandOverride)
 		}

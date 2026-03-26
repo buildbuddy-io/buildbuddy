@@ -83,6 +83,41 @@ func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName
 	return rsp, err
 }
 
+type casCompressionCache struct {
+	interfaces.Cache
+}
+
+func (c *casCompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return c.Cache.Get(ctx, r)
+	}
+	return (&testcompression.CompressionCache{Cache: c.Cache}).Get(ctx, r)
+}
+
+func (c *casCompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		data, err := c.Get(ctx, r)
+		if status.IsNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		foundMap[r.GetDigest()] = data
+	}
+	return foundMap, nil
+}
+
+func (c *casCompressionCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	switch compressor {
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+		return true
+	default:
+		return false
+	}
+}
+
 func TestBatchUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -1103,6 +1138,108 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, regularDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+}
+
+func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		acceptableCompressors []repb.Compressor_Value
+		wantCompressor        repb.Compressor_Value
+		useCompressionCache   bool
+	}{
+		{
+			name:           "Identity",
+			wantCompressor: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                  "Zstd",
+			acceptableCompressors: []repb.Compressor_Value{repb.Compressor_ZSTD},
+			wantCompressor:        repb.Compressor_ZSTD,
+			useCompressionCache:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache.chunking_enabled": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "true",
+					Variants: map[string]any{
+						"true":  true,
+						"false": false,
+					},
+				},
+			})
+			require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			te.SetExperimentFlagProvider(fp)
+			if tc.useCompressionCache {
+				flags.Set(t, "cache.zstd_transcoding_enabled", true)
+				te.SetCache(&casCompressionCache{Cache: te.GetCache()})
+			}
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, te)
+			casClient := repb.NewContentAddressableStorageClient(clientConn)
+			cache := te.GetCache()
+
+			regularBlob := []byte("regular blob")
+			regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(regularDigest, "", repb.DigestFunction_SHA256).ToProto(), regularBlob))
+
+			chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunkedBlob := append(append(chunk1, chunk2...), chunk3...)
+
+			chunkedBlobDigest, err := digest.Compute(bytes.NewReader(chunkedBlob), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+			require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+			require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+
+			manifest := &chunking.Manifest{
+				BlobDigest:     chunkedBlobDigest,
+				ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+				InstanceName:   "",
+				DigestFunction: repb.DigestFunction_SHA256,
+			}
+			require.NoError(t, manifest.Store(ctx, cache))
+
+			wantByDigest := map[string][]byte{
+				regularDigest.GetHash():     regularBlob,
+				chunkedBlobDigest.GetHash(): chunkedBlob,
+			}
+
+			readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				Digests:               []*repb.Digest{regularDigest, chunkedBlobDigest},
+				AcceptableCompressors: tc.acceptableCompressors,
+			})
+			require.NoError(t, err)
+			require.Len(t, readResp.GetResponses(), len(wantByDigest))
+
+			for _, resp := range readResp.GetResponses() {
+				require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
+				require.Equal(t, tc.wantCompressor, resp.GetCompressor())
+
+				wantBlob, ok := wantByDigest[resp.GetDigest().GetHash()]
+				require.True(t, ok, "unexpected digest %s", resp.GetDigest().GetHash())
+				if tc.wantCompressor == repb.Compressor_ZSTD {
+					require.Equal(t, wantBlob, zstdDecompress(t, resp.GetData()))
+				} else {
+					require.Equal(t, wantBlob, resp.GetData())
+				}
+			}
+		})
+	}
 }
 
 func TestSpliceBlobReadOnlyKey(t *testing.T) {

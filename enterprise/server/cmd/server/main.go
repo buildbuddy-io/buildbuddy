@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -78,6 +79,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats"
 
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
@@ -306,6 +308,9 @@ func main() {
 	if err := scim.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := mcpserver.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := codesearch.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -347,11 +352,13 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	trafficHandler, err := trafficstats.NewServerHandler()
 	if err != nil {
-		log.Fatalf("Error creating traffic stats handler: %v", err)
+		log.Fatalf("Error creating traffic stats handlers: %v", err)
 	}
 	libmain.StartAndRunServices(realEnv, grpc_server.GRPCServerConfig{
-		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+		ExtraStatsHandlers:         []stats.Handler{trafficHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficHandler.StreamInterceptor},
 	}) // Returns after graceful shutdown
 }

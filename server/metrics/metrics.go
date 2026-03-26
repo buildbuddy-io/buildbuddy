@@ -181,6 +181,10 @@ const (
 
 	ChunkedFailureReasonLabel = "reason"
 
+	// Whether the read request had a non-zero offset (e.g. Bazel retry
+	// resuming a partial read).
+	ChunkedOffsetReadLabel = "offset_read"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -382,6 +386,9 @@ const (
 	ImageFetchUseOCIFetcherLabel = "use_oci_fetcher"
 
 	ManifestPrefixLabel = "prefix"
+
+	// Signing algorithm used (JWT alg), such as "HS256" or "ES256".
+	SigningMethodLabel = "method"
 )
 
 // Label value constants
@@ -3069,6 +3076,16 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	JWTVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "jwt_verification_count",
+		Help:      "Total number of JWT verifications by signing-method and outcome.",
+	}, []string{
+		SigningMethodLabel,
+		StatusHumanReadableLabel,
+	})
+
 	EncryptionKeyRefreshCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "encryption",
@@ -3582,6 +3599,7 @@ var (
 		CacheProxyRequestType,
 		CompressionType,
 		ChunkedLabel,
+		GroupID,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3745,6 +3763,7 @@ var (
 	}, []string{
 		ChunkedFailureReasonLabel,
 		StatusHumanReadableLabel,
+		ChunkedOffsetReadLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
