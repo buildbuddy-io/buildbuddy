@@ -366,3 +366,45 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestParseProperties_MergesCommandAndActionPlatform(t *testing.T) {
+	// Simulate the split that Bazel can produce: execution platform properties
+	// in Action.platform, target exec_properties in Command.platform.
+	actionPlatform := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "OSFamily", Value: "Linux"},
+		{Name: "Pool", Value: "my-pool"},
+	}}
+	commandPlatform := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "run-under", Value: "/usr/local/bin/wrapper.sh"},
+		{Name: "recycle-runner", Value: "true"},
+	}}
+	task := &repb.ExecutionTask{
+		Action:  &repb.Action{Platform: actionPlatform},
+		Command: &repb.Command{Platform: commandPlatform},
+	}
+	props, err := ParseProperties(task)
+	require.NoError(t, err)
+
+	// Properties from both sources should be present.
+	assert.Equal(t, "linux", props.OS)
+	assert.Equal(t, "my-pool", props.Pool)
+	assert.Equal(t, "/usr/local/bin/wrapper.sh", props.RunUnder)
+	assert.True(t, props.RecycleRunner)
+}
+
+func TestParseProperties_ActionPlatformWinsOnConflict(t *testing.T) {
+	// When the same property appears in both, Action.platform wins (REAPI 2.2).
+	actionPlatform := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "Pool", Value: "from-action"},
+	}}
+	commandPlatform := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "Pool", Value: "from-command"},
+	}}
+	task := &repb.ExecutionTask{
+		Action:  &repb.Action{Platform: actionPlatform},
+		Command: &repb.Command{Platform: commandPlatform},
+	}
+	props, err := ParseProperties(task)
+	require.NoError(t, err)
+	assert.Equal(t, "from-action", props.Pool)
+}
