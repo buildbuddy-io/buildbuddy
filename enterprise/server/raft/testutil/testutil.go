@@ -401,7 +401,7 @@ func MetadataKey(t testing.TB, fr *sgpb.FileRecord) []byte {
 	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version6)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
 	require.NoError(t, err)
 	return keyBytes
 }
