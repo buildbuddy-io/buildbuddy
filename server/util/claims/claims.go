@@ -263,7 +263,7 @@ func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvi
 		lastErr = err
 
 		var validationErr *jwt.ValidationError
-		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+		if errors.As(err, &validationErr) && validationErr.Errors&(jwt.ValidationErrorSignatureInvalid|jwt.ValidationErrorUnverifiable) != 0 {
 			continue
 		}
 		return nil, method, err
@@ -567,16 +567,18 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
-// keys for verifying JWTs.
+// A lazily-evaluated provider of keys to use for verifying JWT signatures.
 type KeyProvider func(ctx context.Context) ([]string, error)
 
 func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+	var keys []string
 	if *newJwtKey != "" {
-		// Try the new key first.
-		return []string{*newJwtKey, *jwtKey}, nil
+		keys = []string{*newJwtKey, *jwtKey}
+	} else {
+		keys = []string{*jwtKey}
 	}
-	return []string{*jwtKey}, nil
+	keys = append(keys, es256PublicKeys...)
+	return keys, nil
 }
 
 // ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
