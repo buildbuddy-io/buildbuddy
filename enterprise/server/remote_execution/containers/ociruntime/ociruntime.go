@@ -57,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -82,6 +83,8 @@ var (
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	cdiDevices              = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
+	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
 	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
@@ -220,6 +223,10 @@ type provider struct {
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
 	lxcfsMount string
+
+	// CDI registry used for resolving configured CDI devices.
+	// This is initialized once at startup when CDI devices are configured.
+	cdiRegistry *cdi.Cache
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
@@ -352,6 +359,26 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
+	var cdiRegistry *cdi.Cache
+	if len(*cdiDevices) > 0 {
+		registry, err := cdi.NewCache(
+			cdi.WithSpecDirs((*cdiSpecDirs)...),
+			// Disable auto-refresh since we don't have a way to clean up the
+			// goroutines that would be spawned to do the refreshing. For now,
+			// users can just restart the executor to pick up changes to CDI
+			// specs if needed.
+			//
+			// TODO: if we add a provider.Close() lifecycle
+			// method, close the registry when the provider is closed, and
+			// enable auto-refresh.
+			cdi.WithAutoRefresh(false),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create CDI registry: %w", err)
+		}
+		cdiRegistry = registry
+	}
+
 	return &provider{
 		env:            env,
 		runtime:        rt,
@@ -362,6 +389,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 		lxcfsMount:     lxcfsMount,
+		cdiRegistry:    cdiRegistry,
 	}, nil
 }
 
@@ -392,6 +420,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
+		cdiRegistry:    p.cdiRegistry,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,
@@ -453,6 +482,8 @@ type ociContainer struct {
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
 	useOCIFetcher bool
+
+	cdiRegistry *cdi.Cache
 }
 
 // Assert [*ociContainer] implements [container.StatsRecorder].
@@ -1287,8 +1318,27 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
+	if err := injectConfiguredCDIDevices(&spec, c.cdiRegistry); err != nil {
+		return nil, fmt.Errorf("inject configured CDI devices: %w", err)
+	}
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
+}
+
+// injectConfiguredCDIDevices resolves configured CDI devices and applies their
+// container edits to the OCI spec (for example mounts, /dev nodes, env vars,
+// hooks, cgroup device rules).
+func injectConfiguredCDIDevices(spec *specs.Spec, registry *cdi.Cache) error {
+	if len(*cdiDevices) == 0 {
+		return nil
+	}
+	if registry == nil {
+		return fmt.Errorf("CDI registry is not initialized")
+	}
+	if _, err := registry.InjectDevices(spec, (*cdiDevices)...); err != nil {
+		return fmt.Errorf("set up CDI devices: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {

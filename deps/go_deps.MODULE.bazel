@@ -270,6 +270,7 @@ use_repo(
     "com_google_cloud_go_storage",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
+    "io_cncf_tags_container_device_interface",
     "io_gorm_driver_clickhouse",
     "io_gorm_driver_mysql",
     "io_gorm_driver_postgres",

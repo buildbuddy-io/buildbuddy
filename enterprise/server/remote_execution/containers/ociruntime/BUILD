@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -48,6 +49,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
         "@io_bazel_rules_go//go/runfiles",
+        "@io_cncf_tags_container_device_interface//pkg/cdi",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
@@ -131,6 +133,25 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
     ],
+)
+
+# Manual test for NVIDIA GPU support.
+#
+# From a Linux machine with an NVIDIA GPU:
+# - Install `nvidia-container-toolkit` (need `nvidia-ctk` in PATH)
+# - Run `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` which
+#   creates a CDI spec.
+# - Run the executor with OCI runtime enabled and --executor.oci.cdi_devices=nvidia.com/gpu=all
+# - Run this test against the executor with bazel, e.g. --config=local-rbe-linux
+sh_test(
+    name = "nvidia_gpu_test",
+    srcs = ["nvidia_gpu_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "oci",
+        "test.container-image": "docker://nvidia/cuda:12.4.1-devel-ubuntu22.04",
+    },
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 alias(
