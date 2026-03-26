@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -2762,11 +2763,14 @@ func newPeerWatcher(t *testing.T, portStr, ns, podName string, client kubernetes
 }
 
 func TestKubeDiscoveryReadWrite(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 
-	// All 3 nodes listen on the same port but different loopback IPs,
-	// matching how kubediscovery constructs addresses (podIP:port).
+	// Each node uses a different loopback IP on the same port, matching
+	// how kubediscovery constructs addresses (podIP:port).
 	port := testport.FindFree(t)
 	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
 	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
@@ -2837,6 +2841,9 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 }
 
 func TestKubeDiscoveryPodJoins(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 
