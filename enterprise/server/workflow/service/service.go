@@ -21,6 +21,7 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -38,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -641,19 +641,8 @@ func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, grou
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
-	gh := ws.env.GetGitHubAppService()
-	if gh == nil {
-		return nil, status.UnimplementedError("No GitHub app configured")
-	}
-	app, err := gh.GetGitHubAppForOwner(ctx, repoURL.Owner)
-	if err != nil {
-		return nil, err
-	}
-	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
-		return nil, err
-	}
 	gitRepository := &tables.GitRepository{}
-	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
+	err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
@@ -665,11 +654,11 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	token, err := app.GetRepositoryInstallationToken(ctx, gitRepository)
+	accessToken, err := githubapp.GetRepositoryInstallationToken(ctx, ws.env, groupID, repoURL.String())
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get repository installation token")
 	}
-	return ws.gitRepositoryWorkflow(gitRepository, token), nil
+	return ws.gitRepositoryWorkflow(gitRepository, accessToken), nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {

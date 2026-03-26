@@ -11,6 +11,7 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -23,9 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -359,7 +358,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 			return nil, status.WrapError(err, "normalize git repo url")
 		}
 
-		gitToken, err := r.getGitToken(ctx, repoURL.String())
+		gitToken, err := githubapp.GetRepositoryInstallationToken(ctx, r.env, u.GetGroupID(), repoURL.String())
 		if err != nil {
 			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
 				" (Note: The token is not needed for public repos): %s", repoURL, err)
@@ -374,45 +373,6 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		"REPO_TOKEN=" + accessToken,
 	}
 	return envOverrides, nil
-}
-
-func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
-	gh := r.env.GetGitHubAppService()
-	if gh == nil {
-		return "", status.UnimplementedError("Not implemented")
-	}
-
-	repo, err := git.ParseGitHubRepoURL(repoURL)
-	if err != nil {
-		return "", err
-	}
-	// If the request was authenticated with a group API key, there will
-	// not be a UserID in the authenticated context, so we cannot use
-	// `GetGitHubAppForAuthenticatedUser`.
-	app, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
-	if err != nil {
-		return "", err
-	}
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	gitRepository := &tables.GitRepository{}
-	err = r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), repoURL).Take(gitRepository)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
-		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
-	}
-
-	return app.GetRepositoryInstallationToken(ctx, gitRepository)
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
