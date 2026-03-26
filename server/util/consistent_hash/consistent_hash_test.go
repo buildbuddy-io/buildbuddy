@@ -190,7 +190,7 @@ func TestSetFromMapStableKeys(t *testing.T) {
 
 	// Record which pod name owns each test key.
 	assignments := make(map[string]string, 50)
-	for i := range len(assignments) {
+	for i := range 50 {
 		k := strconv.Itoa(i)
 		assignments[k] = ch.Get(k)
 	}
@@ -271,7 +271,7 @@ func newReferereferenceImpl(hashFunction consistent_hash.HashFunction, vnodes in
 		items:   items,
 	}
 	for itemIndex, key := range c.items {
-		for i := 0; i < vnodes; i++ {
+		for i := range vnodes {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
 			c.ring[h] = uint8(itemIndex)
