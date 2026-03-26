@@ -34,8 +34,8 @@ const apiMaxBackoff = 30 * time.Second
 const maxPeers = 10000
 
 // PeersUpdateFn is called when the set of discovered peers changes. The map
-// keys are pod names and the values are "ip:port" strings. The map may be
-// modified.
+// keys are pod names for stateful sets and node names for deployments.The
+// values are "ip:port" strings. The receiver owns the map, and may modify it.
 type PeersUpdateFn func(peers map[string]string)
 
 // Config holds configuration for Kubernetes peer discovery.
@@ -61,6 +61,7 @@ type PeerWatcher struct {
 	client   kubernetes.Interface
 	port     string
 	updateFn PeersUpdateFn
+	peerKey  func(pod corev1.Pod) string
 
 	namespace     string
 	podName       string
@@ -70,7 +71,7 @@ type PeerWatcher struct {
 	cancel context.CancelFunc
 
 	mu    sync.Mutex
-	peers map[string]string // pod name -> "ip:port"
+	peers map[string]string // peer key -> "ip:port"
 }
 
 // NewPeerWatcher creates a new Kubernetes peer discovery watcher.
@@ -99,15 +100,20 @@ func NewPeerWatcher(config *Config) (*PeerWatcher, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	labelSelector, err := resolveLabelSelector(ctx, client, namespace, podName)
+	labelSelector, useNodeKey, err := resolveLabelSelector(ctx, client, namespace, podName)
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+	peerKey := func(pod corev1.Pod) string { return pod.Name }
+	if useNodeKey {
+		peerKey = func(pod corev1.Pod) string { return pod.Spec.NodeName }
 	}
 	pw := &PeerWatcher{
 		client:        client,
 		port:          config.Port,
 		updateFn:      config.UpdateFn,
+		peerKey:       peerKey,
 		namespace:     namespace,
 		podName:       podName,
 		ctx:           ctx,
@@ -170,7 +176,7 @@ func (c *PeerWatcher) runOnce() error {
 	c.peers = make(map[string]string)
 	for _, pod := range podList.Items {
 		if addr := c.podAddr(pod); addr != "" {
-			c.peers[pod.Name] = addr
+			c.peers[c.peerKey(pod)] = addr
 		}
 	}
 	c.notifyLocked()
@@ -202,23 +208,25 @@ func (c *PeerWatcher) runOnce() error {
 
 // resolveLabelSelector fetches the pod's spec and derives the label
 // selector from the controlling owner (ReplicaSet or StatefulSet).
-func resolveLabelSelector(ctx context.Context, client kubernetes.Interface, namespace, podName string) (string, error) {
+// It also returns whether to use node names as peer keys (true for
+// ReplicaSets/Deployments where pod names are ephemeral).
+func resolveLabelSelector(ctx context.Context, client kubernetes.Interface, namespace, podName string) (string, bool, error) {
 	myPod, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to get own pod %s/%s: %w", namespace, podName, err)
+		return "", false, fmt.Errorf("failed to get own pod %s/%s: %w", namespace, podName, err)
 	}
 	return getLabelSelectorFromOwner(ctx, client, namespace, myPod)
 }
 
 // getLabelSelectorFromOwner finds the controlling owner of the pod and
 // returns the label selector string that matches all pods managed by
-// that owner.
-func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface, namespace string, pod *corev1.Pod) (string, error) {
+// that owner, plus whether to use node names as peer keys.
+func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface, namespace string, pod *corev1.Pod) (string, bool, error) {
 	i := slices.IndexFunc(pod.OwnerReferences, func(ref metav1.OwnerReference) bool {
 		return ref.Controller != nil && *ref.Controller
 	})
 	if i < 0 {
-		return "", fmt.Errorf("pod %s has no controller owner reference", pod.Name)
+		return "", false, fmt.Errorf("pod %s has no controller owner reference", pod.Name)
 	}
 	controllerRef := pod.OwnerReferences[i]
 
@@ -226,19 +234,19 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 	case "ReplicaSet":
 		rs, err := client.AppsV1().ReplicaSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
-			return "", fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
+			return "", false, fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(rs.Spec.Selector), nil
+		return labelSelectorString(rs.Spec.Selector), true, nil
 
 	case "StatefulSet":
 		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
-			return "", fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
+			return "", false, fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(ss.Spec.Selector), nil
+		return labelSelectorString(ss.Spec.Selector), false, nil
 
 	default:
-		return "", fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
+		return "", false, fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
 	}
 }
 
@@ -272,7 +280,7 @@ func (c *PeerWatcher) processEvents(watcher watch.Interface, resourceVersion *st
 				}
 			case watch.Deleted:
 				if pod, ok := event.Object.(*corev1.Pod); ok {
-					c.removePod(pod.Name)
+					c.removePod(pod)
 				}
 			case watch.Bookmark:
 				// no-op
@@ -307,17 +315,18 @@ func (c *PeerWatcher) podAddr(pod corev1.Pod) string {
 func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	key := c.peerKey(*pod)
 	addr := c.podAddr(*pod)
 	if addr == "" {
-		if _, exists := c.peers[pod.Name]; exists {
-			delete(c.peers, pod.Name)
+		if _, exists := c.peers[key]; exists {
+			delete(c.peers, key)
 			c.notifyLocked()
 		}
 		return
 	}
-	existing, exists := c.peers[pod.Name]
+	existing, exists := c.peers[key]
 	if !exists || existing != addr {
-		c.peers[pod.Name] = addr
+		c.peers[key] = addr
 		c.notifyLocked()
 	}
 	if len(c.peers) > maxPeers {
@@ -325,11 +334,12 @@ func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	}
 }
 
-func (c *PeerWatcher) removePod(podName string) {
+func (c *PeerWatcher) removePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.peers[podName]; exists {
-		delete(c.peers, podName)
+	key := c.peerKey(*pod)
+	if _, exists := c.peers[key]; exists {
+		delete(c.peers, key)
 		c.notifyLocked()
 	}
 }
