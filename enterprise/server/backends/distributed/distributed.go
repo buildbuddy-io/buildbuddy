@@ -158,8 +158,7 @@ func Register(env *real_environment.RealEnv) error {
 			return status.InternalErrorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", options.ListenAddr, err)
 		}
 		pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
-			Port:       portStr,
-			UseNodeKey: true,
+			Port: portStr,
 		})
 		if err != nil {
 			return status.InternalErrorf("failed to create kubernetes discovery watcher: %w", err)

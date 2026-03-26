@@ -34,8 +34,8 @@ const apiMaxBackoff = 30 * time.Second
 const maxPeers = 10000
 
 // PeersUpdateFn is called when the set of discovered peers changes. The map
-// keys are pod names (or node names if UseNodeKey==true) and the values are
-// "ip:port" strings. The receiver owns the map, and may modify it.
+// keys are pod names for stateful sets and node names for deployments.The
+// values are "ip:port" strings. The receiver owns the map, and may modify it.
 type PeersUpdateFn func(peers map[string]string)
 
 // Config holds configuration for Kubernetes peer discovery.
@@ -53,11 +53,6 @@ type Config struct {
 	// Client is an optional Kubernetes client for testing. If nil,
 	// InClusterConfig is used.
 	Client kubernetes.Interface
-	// UseNodeKey uses the node name instead of the pod name as the peer
-	// map key. This provides stable ring keys for Deployments where pods
-	// are pinned to nodes (e.g. via pod anti-affinity) but pod names
-	// change on every rollout.
-	UseNodeKey bool
 }
 
 // PeerWatcher watches Kubernetes pods that share the same controller as this
@@ -105,13 +100,13 @@ func NewPeerWatcher(config *Config) (*PeerWatcher, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	labelSelector, err := resolveLabelSelector(ctx, client, namespace, podName)
+	labelSelector, useNodeKey, err := resolveLabelSelector(ctx, client, namespace, podName)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 	peerKey := func(pod corev1.Pod) string { return pod.Name }
-	if config.UseNodeKey {
+	if useNodeKey {
 		peerKey = func(pod corev1.Pod) string { return pod.Spec.NodeName }
 	}
 	pw := &PeerWatcher{
@@ -213,23 +208,25 @@ func (c *PeerWatcher) runOnce() error {
 
 // resolveLabelSelector fetches the pod's spec and derives the label
 // selector from the controlling owner (ReplicaSet or StatefulSet).
-func resolveLabelSelector(ctx context.Context, client kubernetes.Interface, namespace, podName string) (string, error) {
+// It also returns whether to use node names as peer keys (true for
+// ReplicaSets/Deployments where pod names are ephemeral).
+func resolveLabelSelector(ctx context.Context, client kubernetes.Interface, namespace, podName string) (string, bool, error) {
 	myPod, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to get own pod %s/%s: %w", namespace, podName, err)
+		return "", false, fmt.Errorf("failed to get own pod %s/%s: %w", namespace, podName, err)
 	}
 	return getLabelSelectorFromOwner(ctx, client, namespace, myPod)
 }
 
 // getLabelSelectorFromOwner finds the controlling owner of the pod and
 // returns the label selector string that matches all pods managed by
-// that owner.
-func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface, namespace string, pod *corev1.Pod) (string, error) {
+// that owner, plus whether to use node names as peer keys.
+func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface, namespace string, pod *corev1.Pod) (string, bool, error) {
 	i := slices.IndexFunc(pod.OwnerReferences, func(ref metav1.OwnerReference) bool {
 		return ref.Controller != nil && *ref.Controller
 	})
 	if i < 0 {
-		return "", fmt.Errorf("pod %s has no controller owner reference", pod.Name)
+		return "", false, fmt.Errorf("pod %s has no controller owner reference", pod.Name)
 	}
 	controllerRef := pod.OwnerReferences[i]
 
@@ -237,19 +234,19 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 	case "ReplicaSet":
 		rs, err := client.AppsV1().ReplicaSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
-			return "", fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
+			return "", false, fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(rs.Spec.Selector), nil
+		return labelSelectorString(rs.Spec.Selector), true, nil
 
 	case "StatefulSet":
 		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
-			return "", fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
+			return "", false, fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(ss.Spec.Selector), nil
+		return labelSelectorString(ss.Spec.Selector), false, nil
 
 	default:
-		return "", fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
+		return "", false, fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
 	}
 }
 

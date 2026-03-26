@@ -22,7 +22,7 @@ import (
 const testNamespace = "test_ns"
 
 func readyPod(name, ip string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
-	return readyPodOnNode(name, ip, "", ownerRefs)
+	return readyPodOnNode(name, ip, name, ownerRefs)
 }
 
 func readyPodOnNode(name, ip, nodeName string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
@@ -140,19 +140,15 @@ func waitForWatch(t *testing.T, client *fake.Clientset, resource string) {
 	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for %s watch", resource)
 }
 
-func testingPeerWatcher(t *testing.T, client kubernetes.Interface, pc *peerCollector, opts ...func(*Config)) *PeerWatcher {
+func testingPeerWatcher(t *testing.T, client kubernetes.Interface, pc *peerCollector) *PeerWatcher {
 	t.Helper()
-	cfg := &Config{
+	pw, err := NewPeerWatcher(&Config{
 		UpdateFn:  pc.updateFn,
 		Port:      "7999",
 		Namespace: testNamespace,
 		PodName:   "cache-0",
 		Client:    client,
-	}
-	for _, o := range opts {
-		o(cfg)
-	}
-	pw, err := NewPeerWatcher(cfg)
+	})
 	require.NoError(t, err)
 	require.NoError(t, pw.Start())
 	t.Cleanup(pw.Stop)
@@ -365,9 +361,8 @@ func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
 }
 
-func TestUseNodeKey(t *testing.T) {
+func TestNodeKeyForReplicaSet(t *testing.T) {
 	ownerRefs := replicaSetOwnerRef("cache-rs")
-	useNodeKey := func(c *Config) { c.UseNodeKey = true }
 
 	pod0 := readyPodOnNode("cache-0", "10.0.0.1", "node-a", ownerRefs)
 	pod1 := readyPodOnNode("cache-1", "10.0.0.2", "node-b", ownerRefs)
@@ -375,7 +370,7 @@ func TestUseNodeKey(t *testing.T) {
 
 	client := fake.NewClientset(pod0, pod1, rs)
 	pc := newPeerCollector()
-	testingPeerWatcher(t, client, pc, useNodeKey)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, map[string]string{
@@ -384,16 +379,15 @@ func TestUseNodeKey(t *testing.T) {
 	}, peers)
 }
 
-func TestUseNodeKeyPodReplaced(t *testing.T) {
+func TestNodeKeyPodReplaced(t *testing.T) {
 	ownerRefs := replicaSetOwnerRef("cache-rs")
-	useNodeKey := func(c *Config) { c.UseNodeKey = true }
 
 	pod0 := readyPodOnNode("cache-0", "10.0.0.1", "node-a", ownerRefs)
 	rs := replicaSet("cache-rs")
 
 	client := fake.NewClientset(pod0, rs)
 	pc := newPeerCollector()
-	testingPeerWatcher(t, client, pc, useNodeKey)
+	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
 	require.Equal(t, map[string]string{"node-a": "10.0.0.1:7999"}, peers)
