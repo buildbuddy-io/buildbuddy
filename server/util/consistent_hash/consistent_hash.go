@@ -73,7 +73,7 @@ func (c *ConsistentHash) GetItems() []string {
 
 func (c *ConsistentHash) Set(items ...string) error {
 	if len(items) > maxSize {
-		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 256")
+		return status.InvalidArgumentErrorf("Too many items in consistent hash, max allowed: %v", maxSize)
 	}
 	sort.Strings(items)
 	c.set(items, items)
@@ -85,7 +85,7 @@ func (c *ConsistentHash) Set(items ...string) error {
 // by Get, GetAllReplicas, and GetItems.
 func (c *ConsistentHash) SetFromMap(m map[string]string) error {
 	if len(m) > maxSize {
-		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 256")
+		return status.InvalidArgumentErrorf("Too many items in consistent hash, max allowed: %v", maxSize)
 	}
 	// Sort both keys and values by key
 	keys := make([]string, 0, len(m))
