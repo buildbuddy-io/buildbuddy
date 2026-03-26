@@ -2159,6 +2159,7 @@ func TestFirecrackerResolvConf(t *testing.T) {
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),
+		HostResolvConf: string(hostResolvConf),
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
