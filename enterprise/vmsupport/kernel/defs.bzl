@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//server/util/bb:platform_transition.bzl", "linux_arm64_alias", "linux_x86_64_alias")
+load("//rules:platform_transitions.bzl", "linux_arm64_alias", "linux_x86_64_alias")
 
 GUEST_KERNEL_BUILDER_IMAGE = "docker://gcr.io/flame-public/guest-kernel-builder@sha256:5f6062d843752480f1c619f64af4a0311eff994cb640053b1e3fc1b2fcea88b3"
 
