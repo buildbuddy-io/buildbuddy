@@ -493,6 +493,15 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	res := c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
 	})
+	if status.IsResourceExhaustedError(res.Error) {
+		// Killing the local `podman exec` client is not enough to stop the
+		// command running inside the container. Remove the container so the exec
+		// process cannot keep mutating the workspace after we return the limit
+		// error to the runner.
+		if err := c.killContainerIfRunning(ctx); err != nil {
+			log.Warningf("Failed to stop podman container after output limit exceeded: %s", err)
+		}
+	}
 	// Podman doesn't provide a way to find out whether an exec process was
 	// killed. Instead, `podman exec` returns 137 (= 128 + SIGKILL(9)). However,
 	// this exit code is also valid as a regular exit code returned by a command
