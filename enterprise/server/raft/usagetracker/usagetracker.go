@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -355,11 +356,12 @@ func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
 var digestRunes = []rune("abcdef1234567890")
 
 func (pu *partitionUsage) randomKey(n int) []byte {
-	randKey := pu.partitionKeyPrefix() + "/"
+	var randKey strings.Builder
+	randKey.WriteString(pu.partitionKeyPrefix() + "/")
 	for i := 0; i < n; i++ {
-		randKey += string(digestRunes[rand.Intn(len(digestRunes))])
+		randKey.WriteString(string(digestRunes[rand.Intn(len(digestRunes))]))
 	}
-	return []byte(randKey)
+	return []byte(randKey.String())
 }
 
 func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error {
@@ -681,19 +683,20 @@ func (ut *Tracker) Stop() {
 func (ut *Tracker) Statusz(ctx context.Context) string {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
-	buf := "Partitions:\n"
+	var buf strings.Builder
+	buf.WriteString("Partitions:\n")
 	for _, p := range ut.partitions {
-		buf += fmt.Sprintf("\t%s\n", p.ID)
+		buf.WriteString(fmt.Sprintf("\t%s\n", p.ID))
 		u, ok := ut.byPartition[p.ID]
 		if !ok {
-			buf += "\t\tno data\n"
+			buf.WriteString("\t\tno data\n")
 			continue
 		}
 
 		globalSizeBytes := u.GlobalSizeBytes()
 		percentFull := (float64(globalSizeBytes) / float64(p.MaxSizeBytes)) * 100
 
-		buf += fmt.Sprintf("\t\tCapacity: %s / %s (%2.2f%% full)\n", units.BytesSize(float64(globalSizeBytes)), units.BytesSize(float64(p.MaxSizeBytes)), percentFull)
+		buf.WriteString(fmt.Sprintf("\t\tCapacity: %s / %s (%2.2f%% full)\n", units.BytesSize(float64(globalSizeBytes)), units.BytesSize(float64(p.MaxSizeBytes)), percentFull))
 
 		// Show nodes in a consistent order so that they don't jump around when
 		// refreshing the statusz page.
@@ -702,16 +705,16 @@ func (ut *Tracker) Statusz(ctx context.Context) string {
 			nhids = append(nhids, nhid)
 		}
 		sort.Strings(nhids)
-		buf += "\t\tGlobal Usage:\n"
+		buf.WriteString("\t\tGlobal Usage:\n")
 		for _, nhid := range nhids {
 			nu, ok := u.nodes[nhid]
 			if !ok {
 				continue
 			}
-			buf += fmt.Sprintf("\t\t\t%s: %s (last updated: %s)\n", nhid, units.BytesSize(float64(nu.sizeBytes)), nu.lastUpdate)
+			buf.WriteString(fmt.Sprintf("\t\t\t%s: %s (last updated: %s)\n", nhid, units.BytesSize(float64(nu.sizeBytes)), nu.lastUpdate))
 		}
 	}
-	return buf
+	return buf.String()
 }
 
 func (ut *Tracker) OnEvent(updateType serf.EventType, event serf.Event) {

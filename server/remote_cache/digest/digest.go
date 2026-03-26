@@ -653,8 +653,12 @@ func IsCacheDebuggingEnabled(ctx context.Context) bool {
 }
 
 func MissingDigestError(d *repb.Digest) error {
+	return MissingDigestErrorf(d, "Digest %v not found", d)
+}
+
+func MissingDigestErrorf(d *repb.Digest, format string, args ...interface{}) error {
 	if d == nil {
-		log.Infof("MissingDigestError called with nil digest. Stack trace:\n%s", string(debug.Stack()))
+		log.Infof("MissingDigestErrorf called with nil digest. Stack trace:\n%s", string(debug.Stack()))
 	}
 
 	pf := &errdetails.PreconditionFailure{}
@@ -662,9 +666,9 @@ func MissingDigestError(d *repb.Digest) error {
 		Type:    "MISSING",
 		Subject: fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes()),
 	})
-	st := gstatus.Newf(gcodes.FailedPrecondition, "Digest %v not found", d)
+	st := gstatus.Newf(gcodes.FailedPrecondition, format, args...)
 	if st, err := st.WithDetails(pf); err != nil {
-		return status.InternalErrorf("Digest %v not found.", d)
+		return status.InternalErrorf(format, args...)
 	} else {
 		return st.Err()
 	}

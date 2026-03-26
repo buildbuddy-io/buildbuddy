@@ -181,6 +181,10 @@ const (
 
 	ChunkedFailureReasonLabel = "reason"
 
+	// Whether the read request had a non-zero offset (e.g. Bazel retry
+	// resuming a partial read).
+	ChunkedOffsetReadLabel = "offset_read"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -358,6 +362,14 @@ const (
 
 	GRPCMethodLabel = "grpc_method"
 
+	// Destination cloud provider inferred from the remote IP range: `aws`,
+	// `gcp`, or `other`.
+	DestinationProviderLabel = "provider"
+
+	// Destination region inferred from the remote IP range, or `unknown` if no
+	// known cloud range matches.
+	DestinationRegionLabel = "remote_region"
+
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
@@ -372,6 +384,11 @@ const (
 	ImageFetchTriggerLabel = "trigger"
 	// Label name for whether the OCI fetcher service was used for the image fetch.
 	ImageFetchUseOCIFetcherLabel = "use_oci_fetcher"
+
+	ManifestPrefixLabel = "prefix"
+
+	// Signing algorithm used (JWT alg), such as "HS256" or "ES256".
+	SigningMethodLabel = "method"
 )
 
 // Label value constants
@@ -995,6 +1012,16 @@ var (
 		TreeCacheOperation,
 	})
 
+	SpliceBlobDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "splice_blob_duration_usec",
+		Buckets:   durationUsecBuckets(20*time.Millisecond, 10*time.Minute, 1.4),
+		Help:      "Duration of the full SpliceBlob RPC handler, in **microseconds**.",
+	}, []string{
+		StatusLabel,
+	})
+
 	ChunkedManifestValidationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -1002,6 +1029,15 @@ var (
 		Help:      "Number of chunked manifest Store() calls, labeled by whether the shared validation marker was a hit (skipped re-hashing) or miss (full chunk verification performed).",
 	}, []string{
 		CacheHitMissStatus,
+	})
+
+	ChunkedManifestLoadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "chunked_manifest_load_count",
+		Help:      "Number of successful chunked manifest LoadManifest() calls, labeled by manifest key scheme.",
+	}, []string{
+		ManifestPrefixLabel,
 	})
 
 	GetTreeDirectoryLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3040,6 +3076,16 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	JWTVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "jwt_verification_count",
+		Help:      "Total number of JWT verifications by signing-method and outcome.",
+	}, []string{
+		SigningMethodLabel,
+		StatusHumanReadableLabel,
+	})
+
 	EncryptionKeyRefreshCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "encryption",
@@ -3553,6 +3599,7 @@ var (
 		CacheProxyRequestType,
 		CompressionType,
 		ChunkedLabel,
+		GroupID,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3643,6 +3690,15 @@ var (
 		StatusLabel,
 		CompressionType,
 	})
+	ByteStreamChunkedWriteUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_upload_size_bytes",
+		Buckets:   exponentialBucketRange(1024, 8*1024*1024, 2),
+		Help:      "Compressed upload size for remote chunk uploads during chunked writes.",
+	}, []string{
+		StatusLabel,
+	})
 	ByteStreamChunkedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3707,6 +3763,7 @@ var (
 	}, []string{
 		ChunkedFailureReasonLabel,
 		StatusHumanReadableLabel,
+		ChunkedOffsetReadLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3889,6 +3946,26 @@ var (
 		GRPCPoolIDLabel,
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
+	})
+	GRPCServerEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_egress_bytes",
+		Help:      "The number of gRPC server response bytes sent over the wire, broken down by gRPC method and destination provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
+	}, []string{
+		GroupID,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+	GRPCServerIngressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_ingress_bytes",
+		Help:      "The number of gRPC server request bytes received over the wire, broken down by source provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or request headers.",
+	}, []string{
+		GroupID,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
 	})
 )
 

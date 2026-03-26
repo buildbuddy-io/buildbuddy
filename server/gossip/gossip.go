@@ -148,41 +148,42 @@ func formatMember(m serf.Member) string {
 }
 
 func (gm *GossipManager) Statusz(ctx context.Context) string {
-	buf := "<pre>"
+	var buf strings.Builder
+	buf.WriteString("<pre>")
 	thisNode := gm.LocalMember()
-	buf += fmt.Sprintf("Node: %+v\n", formatMember(thisNode))
+	buf.WriteString(fmt.Sprintf("Node: %+v\n", formatMember(thisNode)))
 
-	buf += "Tags:\n"
+	buf.WriteString("Tags:\n")
 	tagStrings := make([]string, len(gm.getTags()))
 	for tagKey, tagValue := range gm.getTags() {
 		tagStrings = append(tagStrings, fmt.Sprintf("\t%q => %q\n", tagKey, tagValue))
 	}
 	sort.Strings(tagStrings)
 	for _, tagString := range tagStrings {
-		buf += tagString
+		buf.WriteString(tagString)
 	}
 
-	buf += "Peers:\n"
+	buf.WriteString("Peers:\n")
 	peers := gm.Members()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	for _, peerMember := range peers {
 		if peerMember.Name == thisNode.Name {
 			continue
 		}
-		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
+		buf.WriteString(fmt.Sprintf("\t%s\n", formatMember(peerMember)))
 	}
 
-	buf += "Stats:\n"
+	buf.WriteString("Stats:\n")
 	var statStrings []string
 	for k, v := range gm.serfInstance.Stats() {
 		statStrings = append(statStrings, fmt.Sprintf("\t%s: %s\n", k, v))
 	}
 	sort.Strings(statStrings)
 	for _, statString := range statStrings {
-		buf += statString
+		buf.WriteString(statString)
 	}
-	buf += "</pre>"
-	return buf
+	buf.WriteString("</pre>")
+	return buf.String()
 }
 
 // Adapt our log writer into one that is compatible with

@@ -875,7 +875,7 @@ func TestResolve_Concurrency(t *testing.T) {
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
 	}
-	for digest, _ := range pushedDigestToFiles {
+	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
@@ -1597,7 +1597,7 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
 	}
-	for digest, _ := range pushedDigestToFiles {
+	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}

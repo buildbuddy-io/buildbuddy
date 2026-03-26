@@ -276,8 +276,8 @@ func validateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestF
 
 	// Walk the tree path segment by segment starting from root.
 	current := tree.GetRoot()
-	segments := strings.Split(workingDir, "/")
-	for _, seg := range segments {
+	segments := strings.SplitSeq(workingDir, "/")
+	for seg := range segments {
 		found := false
 		for _, dirNode := range current.GetDirectories() {
 			if dirNode.GetName() == seg {
@@ -511,22 +511,18 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		addToFileCache := ws.vfs == nil
 		var err error
 
-		// TODO(tyler-french): Move experiment opt-in to capabilities; also use
-		// the seed from FastCdc2020Params instead of hardcoding 0.
-		chunkingEnabled := slices.Contains(ws.task.GetExperiments(), "executor.upload_outputs_chunked")
-		var avgChunkSizeBytes int64
-		if chunkingEnabled {
-			caps, err := ws.env.GetCapabilitiesClient().GetCapabilities(egCtx, &repb.GetCapabilitiesRequest{})
-			if err != nil {
-				return status.WrapError(err, "get capabilities for chunked upload")
-			}
-			avgChunkSizeBytes = int64(caps.GetCacheCapabilities().GetFastCdc_2020Params().GetAvgChunkSizeBytes())
-			if avgChunkSizeBytes == 0 {
-				chunkingEnabled = false
-			}
-		}
-
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, executeResponse.Result, addToFileCache, chunkingEnabled, avgChunkSizeBytes)
+		txInfo, err = dirtools.UploadTree(
+			egCtx,
+			ws.env,
+			ws.dirHelper,
+			instanceName,
+			digestFunction,
+			filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()),
+			cmd,
+			executeResponse.Result,
+			addToFileCache,
+			int64(ws.task.GetFastCdc_2020Params().GetAvgChunkSizeBytes()),
+		)
 		return err
 	})
 	var logsMu sync.Mutex

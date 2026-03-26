@@ -65,9 +65,6 @@ go_deps.module_override(
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
-        # Add more buffer sizes to grpc mem buffer pool to reduce allocations.
-        # This speeds up large reads/writes.
-        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_more_buffer_sizes.patch",
     ],
     path = "google.golang.org/grpc",
 )
@@ -273,6 +270,7 @@ use_repo(
     "com_google_cloud_go_storage",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
+    "io_cncf_tags_container_device_interface",
     "io_gorm_driver_clickhouse",
     "io_gorm_driver_mysql",
     "io_gorm_driver_postgres",
@@ -312,6 +310,7 @@ use_repo(
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_uber_go_atomic",
+    "org_uber_go_goleak",
 )
 
 inject_repo(

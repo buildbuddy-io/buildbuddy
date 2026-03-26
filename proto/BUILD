@@ -1404,6 +1404,7 @@ go_proto_library(
 go_proto_library(
     name = "iprules_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/iprules",
+    mode = "messages_and_services",
     proto = ":iprules_proto",
     deps = [
         ":context_go_proto",

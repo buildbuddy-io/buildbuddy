@@ -324,11 +324,11 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
-	buf := ""
+	var buf strings.Builder
 	for _, p := range c.partitions {
-		buf += p.Statusz(ctx)
+		buf.WriteString(p.Statusz(ctx))
 	}
-	return buf
+	return buf.String()
 }
 
 func (c *DiskCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
@@ -488,7 +488,7 @@ type partition struct {
 	rootDir          string
 	maxSizeBytes     int64
 	targetSizeBytes  int64
-	lru              interfaces.LRU[*fileRecord]
+	lru              lru.LRU[*fileRecord]
 	fileChannel      chan *fileRecord
 	diskIsMapped     bool
 	doneAsyncLoading chan struct{}
@@ -517,7 +517,7 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		// file (via evictFn).
 		UpdateInPlace: true,
 	}
-	l, err := lru.NewLRU[*fileRecord](config)
+	l, err := lru.New[*fileRecord](config)
 	if err != nil {
 		return nil, err
 	}

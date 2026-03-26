@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -29,15 +30,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-
-	"google.golang.org/grpc/metadata"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -390,6 +390,8 @@ func (g *getTreeStreamer) Trailer() metadata.MD {
 type fakeCasClient struct {
 	treeDigest *repb.Digest
 	response   *repb.GetTreeResponse
+
+	findMissingBlobsFn func(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error)
 }
 
 // BatchReadBlobs implements remote_execution.ContentAddressableStorageClient.
@@ -404,6 +406,9 @@ func (f *fakeCasClient) BatchUpdateBlobs(ctx context.Context, in *repb.BatchUpda
 
 // FindMissingBlobs implements remote_execution.ContentAddressableStorageClient.
 func (f *fakeCasClient) FindMissingBlobs(ctx context.Context, in *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	if f.findMissingBlobsFn != nil {
+		return f.findMissingBlobsFn(ctx, in)
+	}
 	panic("unimplemented")
 }
 
@@ -425,6 +430,54 @@ func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 
 func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
 	panic("unimplemented")
+}
+
+func TestFindMissingBlobs_AppliesCASRPCTimeout(t *testing.T) {
+	// Set a very short timeout so the test is fast.
+	flags.Set(t, "cache.client.cas_rpc_timeout", 1*time.Nanosecond)
+
+	var (
+		attempts     int
+		gotDeadline  time.Time
+		gotReq       *repb.FindMissingBlobsRequest
+		deadlineSkew time.Duration
+	)
+	cas := &fakeCasClient{
+		findMissingBlobsFn: func(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+			attempts++
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok, "outgoing FindMissingBlobs request should have a deadline")
+			gotDeadline = deadline
+			gotReq = req
+			deadlineSkew = time.Until(deadline)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	req := &repb.FindMissingBlobsRequest{
+		InstanceName:   "test",
+		DigestFunction: repb.DigestFunction_SHA256,
+		BlobDigests: []*repb.Digest{
+			{Hash: "abc", SizeBytes: 123},
+		},
+	}
+
+	// Internal retries will stretch the test out unnecessarily, so a short
+	// deadline.
+	const totalRequestTimeout = 10 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), totalRequestTimeout)
+	defer cancel()
+
+	rsp, err := cachetools.FindMissingBlobs(ctx, cas, req)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Nil(t, rsp)
+	require.Equal(t, 1, attempts)
+	require.Same(t, req, gotReq)
+	require.False(t, gotDeadline.IsZero())
+
+	// The remaining client timeout should not exceed the total RPC timeout that
+	// we set initially.
+	assert.LessOrEqual(t, deadlineSkew, totalRequestTimeout)
 }
 
 type fakeFilecache struct {
@@ -501,6 +554,10 @@ func (fc *fakeFilecache) TempDir() string {
 
 func (fc *fakeFilecache) TrackExternalDirectory(ctx context.Context, path string, sizeBytes int64) (unlock func(), err error) {
 	return func() {}, nil
+}
+
+func (fc *fakeFilecache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
+	return nil, 0, status.NotFoundErrorf("not found: %s", path)
 }
 
 type fakeBytestreamClient struct {
@@ -784,7 +841,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, 0 /*=avgChunkSizeBytes*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
@@ -806,7 +863,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, 0 /*=avgChunkSizeBytes*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1133,6 +1190,7 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 		name              string
 		readerCompression repb.Compressor_Value
 		targetCompression repb.Compressor_Value
+		wantErr           bool
 	}{
 		{
 			name:              "IDENTITY reader to IDENTITY target",
@@ -1148,6 +1206,7 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 			name:              "ZSTD reader to IDENTITY target",
 			readerCompression: repb.Compressor_ZSTD,
 			targetCompression: repb.Compressor_IDENTITY,
+			wantErr:           true,
 		},
 		{
 			name:              "ZSTD reader to ZSTD target",
@@ -1178,6 +1237,10 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 
 			d, uploadedBytes, err := cachetools.UploadFromReaderWithCompression(
 				ctx, te.GetByteStreamClient(), uploadRN, bytes.NewReader(readerData), tc.readerCompression)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.NotNil(t, d)
 			require.Greater(t, uploadedBytes, int64(0))
@@ -1216,7 +1279,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	blobSize := int64(3 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), true /*=chunkingEnabled*/, chunking.AvgChunkSizeBytes() /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.AvgChunkSizeBytes())
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -50,9 +51,6 @@ const (
 	// to be eagerly fetched in the background, anticipating that they will
 	// also be accessed
 	numChunksToEagerFetch = 32
-
-	// Number of goroutines to run concurrently to convert a file to a COWStore.
-	fileConversionConcurrency = 8
 
 	// Number of goroutines to run concurrently to handle LRU evictions.
 	lruEvictionConcurrency = 2
@@ -754,7 +752,8 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 	c.usageLock.Lock()
 	defer c.usageLock.Unlock()
 
-	logStr := fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name)
+	var logStr strings.Builder
+	logStr.WriteString(fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name))
 	for op, summary := range c.chunkOperationToUsageSummary {
 		if summary.totalCount > 0 {
 			metrics.COWSnapshotChunkOperationTotalDurationUsec.With(prometheus.Labels{
@@ -762,12 +761,12 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 				metrics.EventName: op,
 				metrics.Stage:     stage,
 			}).Observe(float64(summary.totalDuration.Microseconds()))
-			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
+			logStr.WriteString(fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount))
 		}
 	}
 	c.chunkOperationToUsageSummary = make(map[string]usageSummary, 0)
 
-	log.CtxDebug(c.ctx, logStr)
+	log.CtxDebug(c.ctx, logStr.String())
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -785,7 +784,7 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool, concurrency int) (store *COWStore, err error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	var chunks []*Mmap
@@ -880,8 +879,8 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var chunksMu sync.Mutex
-	chunkStarts := make(chan int64, fileConversionConcurrency)
-	for range fileConversionConcurrency {
+	chunkStarts := make(chan int64, concurrency)
+	for range concurrency {
 		eg.Go(func() error {
 			f, err := os.Open(filePath)
 			if err != nil {
@@ -1303,7 +1302,7 @@ type MmapLRU struct {
 	evictorGroup errgroup.Group
 
 	mu  sync.Mutex
-	lru *lru.LRU[*Mmap]
+	lru lru.LRU[*Mmap]
 }
 
 func NewMmapLRU() (*MmapLRU, error) {
@@ -1315,7 +1314,7 @@ func NewMmapLRU() (*MmapLRU, error) {
 		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
 	}
 	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
-	l, err := lru.NewLRU(&lru.Config[*Mmap]{
+	l, err := lru.New(&lru.Config[*Mmap]{
 		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
 		OnEvict: func(key string, m *Mmap, reason lru.EvictionReason) {
 			// Manual evictions are triggered by calling Unmap(), so there's

@@ -89,11 +89,11 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace
 		}); ok {
-			stackBuf := ""
+			var stackBuf strings.Builder
 			for _, f := range se.StackTrace() {
-				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
+				stackBuf.WriteString(fmt.Sprintf("%+s:%d\n", f, f))
 			}
-			CtxDebug(ctx, stackBuf)
+			CtxDebug(ctx, stackBuf.String())
 		}
 	}
 }
@@ -608,8 +608,8 @@ type logWriter struct {
 }
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	lines := strings.Split(string(b), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(b), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}

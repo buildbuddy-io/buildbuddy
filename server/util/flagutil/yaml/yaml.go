@@ -246,7 +246,7 @@ func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.N
 				// field is not encoded by yaml
 				continue
 			}
-			for _, s := range strings.Split(ft.Tag.Get("config"), ",") {
+			for s := range strings.SplitSeq(ft.Tag.Get("config"), ",") {
 				if s == "secret" {
 					n.Content[idx] = nil
 					break

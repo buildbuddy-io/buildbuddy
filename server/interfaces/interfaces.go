@@ -929,6 +929,11 @@ type FileCache interface {
 	// See filecache.go for more details.
 	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
 
+	// LookupExternalDirectory looks up and locks an already-tracked external
+	// directory without creating a new tracked entry. It returns NotFound if
+	// the dir does not exist or is not currently tracked.
+	LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error)
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
@@ -1352,38 +1357,6 @@ type XcodeLocator interface {
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
-// LRU implements a Least Recently Used cache.
-type LRU[V any] interface {
-	// Inserts a value into the LRU. A boolean is returned that indicates
-	// if the value was successfully added.
-	Add(key string, value V) bool
-
-	// Inserts a value into the back of the LRU. A boolean is returned that
-	// indicates if the value was successfully added.
-	PushBack(key string, value V) bool
-
-	// Gets a value from the LRU, returns a boolean indicating if the value
-	// was present.
-	Get(key string) (V, bool)
-
-	// Returns a boolean indicating if the value is present in the LRU.
-	Contains(key string) bool
-
-	// Removes a value from the LRU, releasing resources associated with
-	// that value. Returns a boolean indicating if the value was sucessfully
-	// removed.
-	Remove(key string) bool
-
-	// Returns the total "size" of the LRU.
-	Size() int64
-
-	// Returns the number of items in the LRU.
-	Len() int
-
-	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (V, bool)
-}
-
 // DistributedLock provides a way to serialize access to a resource, where the
 // accessors may be running on different nodes.
 //
@@ -1596,25 +1569,36 @@ type AuditLogger interface {
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
-type IPRulesService interface {
+type IPRulesEnforcer interface {
 	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the group identified in the context.
-	Authorize(ctx context.Context) error
+	// to access the group identified in the context. The returned context
+	// should be used after successful authorization.
+	Authorize(ctx context.Context) (context.Context, error)
 
 	// AuthorizeGroup checks whether the authenticated user in the context is
 	// allowed to access the specified groupId. This function should not be used
 	// in performance sensitive code paths.
-	AuthorizeGroup(ctx context.Context, groupID string) error
+	AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error)
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
 	// allowed based on the authenticated user and group information in the
 	// context.
-	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error)
 
+	// Invalidates all cached IP rules for the specified group ID.
+	InvalidateCache(ctx context.Context, groupID string)
+
+	// Performs an explicit IP rule check for the given group ID, skipping the
+	// rule with the provided ID, if specified.
+	Check(ctx context.Context, groupID string, skipRuleID string) error
+}
+
+type IPRulesService interface {
 	GetRule(ctx context.Context, groupID string, ruleID string) (*tables.IPRule, error)
 
 	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)
 	SetIPRuleConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error)
+	GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error)
 	UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error)
@@ -1712,6 +1696,10 @@ type ServerNotificationService interface {
 	// e.g. publishing an InvalidateIPRulesCache notification can be done as:
 	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
 	Publish(ctx context.Context, msg proto.Message) error
+}
+
+type MCPService interface {
+	RegisterHandlers(mux HttpServeMux)
 }
 
 type SCIMService interface {

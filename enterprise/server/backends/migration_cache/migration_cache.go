@@ -240,7 +240,9 @@ func distributedCacheFromConfig(env environment.Env, baseCache interfaces.Cache,
 		return nil, err
 	}
 
-	dc.StartListening()
+	if err := dc.StartListening(); err != nil {
+		return nil, err
+	}
 	return dc, nil
 }
 
@@ -994,7 +996,6 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 		}
 
 		if alreadyCopied {
-			log.Debugf("Migration skipping copy digest %v, instance %s, cache %v - already copied", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 			return
 		}
 	}

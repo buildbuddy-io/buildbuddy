@@ -12,6 +12,8 @@ import (
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"google.golang.org/grpc/experimental"
+	"google.golang.org/grpc/mem"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
@@ -20,6 +22,26 @@ const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
 
 func init() {
 	vtprotocodec.Register()
+
+	// Change the default buffer pool. This is like the normal default, but with
+	// more tiers. This improves bytestream reads and writes by 10-20% in
+	// benchmarks, while allocating 10% less.
+	//
+	// With the previous tiers, payloads of 32KiB+1byte would fall in the 1MiB
+	// tier, so they would allocate a lot more memory, plus every time we would
+	// get a 1MiB from the pool, we would clear the whole thing, even though we
+	// only use a part of it.
+	experimental.SetDefaultBufferPool(mem.NewTieredBufferPool(
+		256,
+		4<<10,   // 4KiB
+		16<<10,  // 16KiB (max HTTP/2 frame size used by gRPC)
+		32<<10,  // 32KiB (default buffer size for io.Copy)
+		64<<10,  // 64KiB
+		128<<10, // 128KiB
+		256<<10, // 256KiB
+		512<<10, // 512KiB
+		1<<20,   // 1MiB
+	))
 }
 
 type StreamMsg[T proto.Message] struct {
@@ -99,6 +121,8 @@ type Sender[S proto.Message, R proto.Message] struct {
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
 // acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
+//
+// Must not be called after CloseAndRecvWithTimeoutCause.
 func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
 	if s.sendChan == nil {
 		return status.UnavailableError("Send channel closed")
@@ -125,6 +149,10 @@ func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause 
 // waiting a maximum of timeout. If timeout is reached, the given cause is
 // returned as the error.
 func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
+	if s.sendChan != nil {
+		close(s.sendChan)
+		s.sendChan = nil
+	}
 	ch := make(chan StreamMsg[R], 1)
 	go func() {
 		rsp, err := s.stream.CloseAndRecv()

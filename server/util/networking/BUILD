@@ -31,11 +31,11 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.container-image": "docker://" + NET_TOOLS_IMAGE,
         "test.EstimatedComputeUnits": "4",
+        "test.no-sandbox": "",
     },
     shard_count = 2,
     tags = [
         "docker",
-        "no-sandbox",
     ],
     deps = [
         ":networking",

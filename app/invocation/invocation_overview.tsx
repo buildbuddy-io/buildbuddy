@@ -232,6 +232,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               Buildkite
             </Link>
           )}
+          {this.props.model.getGithubActionsUrl() && (
+            <Link className="detail clickable" href={this.props.model.getGithubActionsUrl()} target="_blank">
+              <img className="icon" src="/image/github.svg" />
+              GitHub Actions
+            </Link>
+          )}
           {this.props.model.getLinks().map((link) => (
             <Link className="detail clickable" href={link.linkUrl} target="_blank">
               <LinkIcon className="icon" />

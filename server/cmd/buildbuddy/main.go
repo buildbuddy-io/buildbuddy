@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
@@ -54,5 +56,5 @@ func main() {
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	libmain.StartAndRunServices(env) // Does not return
+	libmain.StartAndRunServices(env, grpc_server.GRPCServerConfig{}) // Does not return
 }

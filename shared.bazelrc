@@ -135,6 +135,12 @@ common --enable_platform_specific_config=true
 common:linux --enable_runfiles
 common:macos --enable_runfiles
 
+# Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
+# Requires a sandboxed execution strategy and is thus not enabled on Windows.
+# https://github.com/bazelbuild/bazel/discussions/22658
+common:linux --experimental_output_paths=strip
+common:macos --experimental_output_paths=strip
+
 # Use C++17 standard for all C++ compilation
 common:linux --host_cxxopt=-std=c++17
 common:linux --cxxopt=-std=c++17
@@ -164,8 +170,12 @@ common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
 
 # Silence noise about -lm -lm which has no functional downside
-common:macos --linkopt=-Wl,-no_warn_duplicate_libraries
-common:macos --host_linkopt=-Wl,-no_warn_duplicate_libraries
+#
+# TODO(sluongng): Note that adding linkopt here will break --config=remote since
+# we will use Linux exec and target under that config. We should find a better way
+# to add this flag into the toolchain level.
+# common:macos --linkopt=-Wl,-no_warn_duplicate_libraries
+# common:macos --host_linkopt=-Wl,-no_warn_duplicate_libraries
 
 ########################
 # BES + CACHE + REMOTE #
@@ -220,6 +230,8 @@ common:target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_
 common:target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:target-linux-x86-exec-multiarch --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:target-linux-x86-exec-multiarch --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
 

@@ -46,6 +46,7 @@ ts_library(
         "//enterprise/app/repo",
         "//enterprise/app/review",
         "//enterprise/app/settings",
+        "//enterprise/app/settings:settings_theme_transition",
         "//enterprise/app/shortcuts",
         "//enterprise/app/sidebar",
         "//enterprise/app/tap",

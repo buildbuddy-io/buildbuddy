@@ -412,11 +412,12 @@ func getDiffBase() (string, error) {
 // gitListFilesWithExtensions lists all files known to git with the given
 // extensions.
 func gitListFilesWithExtensions(extensions []string) ([]string, error) {
-	cmd := "git ls-files --"
+	var cmd strings.Builder
+	cmd.WriteString("git ls-files --")
 	for _, ext := range extensions {
-		cmd += fmt.Sprintf(" '*%s'", ext)
+		cmd.WriteString(fmt.Sprintf(" '*%s'", ext))
 	}
-	files, err := sh(cmd)
+	files, err := sh(cmd.String())
 	if err != nil {
 		return nil, fmt.Errorf("list files with extensions: %w", err)
 	}

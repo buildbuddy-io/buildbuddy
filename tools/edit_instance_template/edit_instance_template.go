@@ -40,7 +40,7 @@ func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
 		if m.GetKey() != "kube-labels" {
 			continue
 		}
-		for _, entry := range strings.Split(m.GetValue(), ",") {
+		for entry := range strings.SplitSeq(m.GetValue(), ",") {
 			parts := strings.SplitN(entry, "=", 2)
 			if len(parts) != 2 {
 				continue

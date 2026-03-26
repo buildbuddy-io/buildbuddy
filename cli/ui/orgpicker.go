@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -55,7 +56,8 @@ func (m orgPickerModel) Update(msg tea.Msg) (orgPickerModel, tea.Cmd) {
 }
 
 func (m orgPickerModel) View() string {
-	s := titleStyle.Render("Select Organization") + "\n\n"
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Select Organization") + "\n\n")
 	for i, g := range m.groups {
 		cursor := "  "
 		if i == m.cursor {
@@ -71,8 +73,8 @@ func (m orgPickerModel) View() string {
 		} else {
 			line = lipglossNormal.Render(line)
 		}
-		s += line + "\n"
+		s.WriteString(line + "\n")
 	}
-	s += "\n" + helpStyle.Render("  ↑/↓/j/k: navigate • enter: select • ctrl+c: quit")
-	return s
+	s.WriteString("\n" + helpStyle.Render("  ↑/↓/j/k: navigate • enter: select • ctrl+c: quit"))
+	return s.String()
 }

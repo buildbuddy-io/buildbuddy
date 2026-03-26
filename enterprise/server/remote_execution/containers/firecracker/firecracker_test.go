@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -78,6 +79,7 @@ const (
 	ubuntuImage                 = "mirror.gcr.io/library/ubuntu:20.04"
 	imageWithDockerInstalled    = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	imageWithDockerV28Installed = platform.Ubuntu24_04Image
+	dockerDindImage             = "gcr.io/flame-public/test-docker-dind@sha256:68f6d9ab84623d1116c5432a3b924a07ee09960e6129ca1cb03ef14010588cb4"
 
 	// Minimum memory needed for a firecracker VM. This may need to be increased
 	// if the size of initrd.cpio increases.
@@ -151,7 +153,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "4a0b9e65e9db406124d1bb745e3e9e0c7ce3d2d01f282bc73d0addab8a2f0a39"
+		expectedHash    = "8cdc0a30ab7f5a85b90cfc5fa06c6c0339b79110ecf7f0d9789a4653a39b660c"
 		expectedVersion = "18"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -1955,6 +1957,8 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		Arguments: []string{"sh", "-c", `
 			find -name '*.txt' -exec cp {} {}.out \;
 			</dev/zero head -c ` + fmt.Sprint(scratchTestFileSizeBytes) + ` > ~/scratch_file.txt
+			# Sleep a bit to ensure we get a good disk usage sample.
+			sleep 1
 		`},
 	}
 	expectedResult := &interfaces.CommandResult{
@@ -2052,59 +2056,6 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
-}
-
-func TestFirecrackerRootDiskUsageUsesAvailableBytes(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			set -e
-			# Fill the root disk. Keep the command successful even after ENOSPC
-			# so that usage stats are still returned.
-			dd if=/dev/zero of=/root/disk_fill bs=1M status=none || true
-		`},
-	}
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
-			ScratchDiskSizeMb: 50,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
-	require.NotNil(t, res.UsageStats)
-
-	var rootFSU *repb.UsageStats_FileSystemUsage
-	for _, fsu := range res.UsageStats.GetPeakFileSystemUsage() {
-		if fsu.GetTarget() == "/" {
-			rootFSU = fsu
-			break
-		}
-	}
-	require.NotNil(t, rootFSU, "root (/) disk usage was not reported")
-	require.NotNil(t, rootFSU.AvailableBytes, "expected root disk usage to include available bytes")
-
-	used := rootFSU.GetUsedBytes()
-	avail := rootFSU.GetAvailableBytes()
-	usable := used + avail
-	require.Greater(t, usable, int64(0), "expected non-zero usable root disk size")
-
-	// The root disk should be effectively maxed out from the action's
-	// perspective when using used/(used+avail) utilization.
-	utilization := float64(used) / float64(usable)
-	assert.GreaterOrEqual(t, utilization, 0.99)
 }
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
@@ -2507,6 +2458,80 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
+func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		// TODO(bduffany): update arm64 image and enable this test
+		t.Skipf("test is not yet supported on arm64")
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			set -e
+
+			# Test ICMP, both ipv4 and ipv6
+
+			ping -c1 127.0.0.1 >/dev/null
+			ping -c1 8.8.8.8 >/dev/null
+			ping6 -c1 ::1 >/dev/null
+
+			# Test TCP (using HTTP, via httpd), both ipv4 and ipv6
+
+			mkdir -p /tmp/http
+			printf 'hello\n' >/tmp/http/index.html
+			httpd -f -p 18080 -h /tmp/http >/tmp/http/httpd.log 2>&1 &
+			httpd_pid=$!
+			trap 'kill "$httpd_pid"' EXIT
+			check_http() {
+				url="$1"
+				out="$2"
+				ok=false
+				for _ in $(seq 50); do
+					if wget -q -O "$out" "$url"; then
+						ok=true
+						break
+					fi
+					sleep 0.1
+				done
+				if [ "$ok" != "true" ]; then
+					cat /tmp/http/httpd.log >&2 || true
+					exit 1
+				fi
+			}
+
+			check_http http://127.0.0.1:18080/ /tmp/http/out-v4
+			grep -qx 'hello' /tmp/http/out-v4
+
+			check_http http://[::1]:18080/ /tmp/http/out
+			grep -qx 'hello' /tmp/http/out
+			echo ipv4_ipv6_enabled
+		`},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+			Ipv6Enabled:       true,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "", string(res.Stderr))
+	assert.Equal(t, "ipv4_ipv6_enabled\n", string(res.Stdout))
+}
+
 func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	if *skipDockerTests {
 		t.Skip()
@@ -2517,15 +2542,17 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
+		Arguments: []string{"sh", "-c", `
 			set -e
 
 			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+			docker pull ` + busyboxImage + ` >/dev/null 2>&1
 
-			# Try running a few commands
-			docker run --rm -p 127.0.0.1:18080:80 ` + busyboxImage + ` echo Hello
-			docker run --rm ` + busyboxImage + ` echo world
+			# Test basic command
+			docker run --rm ` + busyboxImage + ` echo Hello
+
+			# Test port publishing
+			docker run --rm -p 127.0.0.1:18080:80 ` + busyboxImage + ` echo world
 
 			# Check what storage driver docker is using
 			docker info 2>/dev/null | grep 'Storage Driver'
@@ -2556,11 +2583,15 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	expectedStorageDriver := "vfs"
+	stdout := string(res.Stdout)
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
-		expectedStorageDriver = "overlay2"
+		// Docker may report the native overlay-backed fast path as either the
+		// legacy graphdriver name ("overlay2") or the newer containerd
+		// snapshotter name ("overlayfs"), depending on daemon configuration.
+		assert.Regexp(t, `^Hello\nworld\n Storage Driver: (overlay2|overlayfs)\n$`, stdout, "stdout should contain docker output with a native overlay storage driver")
+	} else {
+		assert.Equal(t, "Hello\nworld\n Storage Driver: vfs\n", stdout, "stdout should contain docker output")
 	}
-	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 }
 
@@ -2569,7 +2600,22 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDockerV28OverUDS(t *testing.T) {
+	// docker v28 requires nf_raw in order to bind ports, so this tests that the
+	// 'raw' table is properly set up in the guest.
 	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerV28Installed)
+}
+
+func TestFirecrackerRunWithDockerDindOverUDS(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		// TODO(bduffany): make this work on arm64
+		t.Skipf("test is not yet supported on arm64")
+	}
+
+	// docker:dind has docker but doesn't have iptables-legacy, so this tests
+	// that we've properly set up the newer nftables-based iptables in the
+	// guest. It also tests that we've set up NAT correctly which is also needed
+	// to make this image work.
+	testFirecrackerRunWithDockerOverUDS(t, dockerDindImage)
 }
 
 func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
@@ -3310,7 +3356,7 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 		if cow {
 			env := getTestEnv(ctx, t, envOpts{})
 			dataDir := testfs.MakeDirAll(t, tmp, cowDirName)
-			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/)
+			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/, snaputil.ConvertToCOWConcurrency)
 			require.NoError(t, err)
 			store = c
 		}

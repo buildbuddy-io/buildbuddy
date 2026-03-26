@@ -15,7 +15,7 @@ import (
 
 type Server struct {
 	fs  filestore.Store
-	lru *lru.LRU[*sgpb.FileMetadata]
+	lru lru.LRU[*sgpb.FileMetadata]
 }
 
 func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
@@ -23,7 +23,7 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 		fs: fs,
 	}
 
-	l, err := lru.NewLRU[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
+	l, err := lru.New[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
 		MaxSize: maxSizeBytes,
 		OnEvict: s.evict,
 		SizeFn:  func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },

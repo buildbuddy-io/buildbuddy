@@ -561,8 +561,8 @@ func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{}
 				state = afterCreateBody
 				continue
 			}
-			if strings.HasPrefix(line, "PROJECTION ") {
-				line = strings.TrimPrefix(line, "PROJECTION ")
+			if after, ok := strings.CutPrefix(line, "PROJECTION "); ok {
+				line = after
 				elems := strings.Split(line, " ")
 				if len(elems) > 0 {
 					names[elems[0]] = struct{}{}

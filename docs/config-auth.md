@@ -114,7 +114,7 @@ auth:
 
 ## SAML 2.0
 
-SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
+SAML 2.0 authentication is available for BuildBuddy Cloud (SaaS).
 
 ### Okta SAML provider
 
@@ -122,19 +122,19 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
 2. On the Okta Applications page, click `Create App Integration`, select `SAML 2.0`.
 
-3. Enter `BuildBuddy` and hit `Next`.
+3. Enter `BuildBuddy` for the application name and hit `Next`.
 
-4. Enter the following fields under **General**, making sure to replace `<org-slug>` with the value froms step 1:
+4. Enter the following fields under **General**, making sure to replace `<org-slug>` with the value from step 1:
 
    a. For Single sign on URL enter: `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`
 
    b. For Audience URI (SP Entity ID) enter: `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`
 
-5. Add an `Attribute Statement` to map `email` and value `user.email`.
+   Press `Next` to continue, followed by `Finish` to create the integration.
 
-6. Click `Finish`.
+5. On the Sign On page, under the Attribute statements, press `Add expression` and create a mapping with name `email` and value `user.profile.email`.
 
-7. Under `Metadata URL` click copy and share this URL (which should have the format `https://xxxx.okta.com/app/XXXX/sso/saml/metadata`) with BuildBuddy support.
+6. Still on the Sign On page, copy and share the `Metadata URL` (which should have the format `https://xxxx.okta.com/app/XXXX/sso/saml/metadata`) with BuildBuddy support.
 
 ### Azure AD / Entra SAML provider
 
@@ -186,24 +186,12 @@ Once the app is created, share the **Identity Provider Metadata** URL with Build
 
 ## User management via SCIM
 
-Users can be provisioned and deprovisioned within BuildBuddy by external auth providers using the SCIM API.
+Users and groups can be provisioned and deprovisioned within BuildBuddy by external auth providers using the SCIM API.
 
 First, create an API key that will be used for managing users on the organization settings page. Select "Org admin key"
 as the key type.
 
 ### Okta
-
-1. First, we will add a custom User attribute that will determine the role of the synced user.
-
-   1. Open the `Profile Editor` page in Okta.
-
-   1. Select the `User (default)` profile.
-
-   1. Add a new attribute with the following settings:
-
-      Display name: `BuildBuddy role`
-
-      Variable name: `buildBuddyRole`
 
 1. Within Okta, open the BuildBuddy application that was created for SAML integration.
 
@@ -211,13 +199,14 @@ as the key type.
 
 1. Go to the `Provisioning` tab, click `Edit` and make the following changes:
 
-   1. For `SCIM connector base URL`, enter `https://app.buildbuddy.io/scim`
+   1. For `SCIM connector base URL`, enter `https://app.buildbuddy.io/scim/v2`
 
    1. For `Unique identifier field for users `, enter `userName`.
 
-   1. Under `Supported provisioning actions`, enable `Import New Users and Profile Updates`, `Push New Users` and `Push Profile Updates`.
+   1. Enable all options under `Supported provisioning actions`.
 
    1. For `Authentication Mode`, select `HTTP Header` and enter the previously created API key as the `Token`.
+   1. Press `Test Connector Configuration` to validate that the endpoint and the API key are configured properly.
 
    1. Click `Save`
 
@@ -227,37 +216,14 @@ as the key type.
 
    1. Click `Save`.
 
-1. Under `Attribute Mappings` perform the following changes:
+1. In the `Attribute Mappings` section, delete all mappings except `userName`, `givenName` and `familyName`.
 
-   1. Delete all mappings except `userName`, `givenName` and `familyName`.
+1. On the `Push Groups` tab, add each group you want synced to BuildBuddy.
 
-   1. Click `Go to Profile Editor`, click `Add Attribute` and create an attribute with the following details:
+   Once you have at least one group synced you can go to the BuildBuddy UI and assign a role to the group using the
+   [IAM Groups](https://app.buildbuddy.io/settings/org/user-lists) page.
 
-      Display name: `Role`
-
-      Variable name: `role`
-
-      External name: `role`
-
-      External namespace: `urn:ietf:params:scim:schemas:core:2.0:User`
-
-1. Navigate back to the `Provisioning` page.
-
-1. Under `Attribute Mappings` do the following:
-
-   1. Click `Show Unmapped Attributes`
-
-   1. Find the `Role` attribute and click the edit icon.
-
-   1. Under `Attribute value` select `Map from Okta Profile` and choose `buildBuddyRole` as the source attribute.
-
-   1. For `Apply on`, select `Create and update`
-
-   1. Click `Save` to finish adding the attribute.
-
-By default, users that do not have the attribute field set will be created with the `developer` role.
-
-You can modify the attribute value in Okta if you wish to grant them a different role.
+   Users that are synced to BuildBuddy but are not assigned a role will have the minimal (Reader) role.
 
 ### Azure AD / Entra
 

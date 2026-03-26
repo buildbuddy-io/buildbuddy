@@ -1062,8 +1062,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if authenticated {
-			if irs := e.env.GetIPRulesService(); irs != nil {
-				if err := irs.Authorize(e.ctx); err != nil {
+			if irs := e.env.GetIPRulesEnforcer(); irs != nil {
+				if _, err := irs.Authorize(e.ctx); err != nil {
 					return err
 				}
 			}

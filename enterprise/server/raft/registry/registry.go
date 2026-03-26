@@ -196,7 +196,7 @@ func (n *StaticRegistry) RemoveShard(rangeID uint64) {
 
 	s, ok := n.shards[rangeID]
 	if ok {
-		for ni, _ := range s {
+		for ni := range s {
 			delete(n.nodeTargets, ni)
 		}
 	}
@@ -327,7 +327,8 @@ func (n *StaticRegistry) String() string {
 			return replicas[i].GetRangeId() < replicas[j].GetRangeId()
 		})
 	}
-	buf := "\nRegistry\n"
+	var buf strings.Builder
+	buf.WriteString("\nRegistry\n")
 	for nhid, replicas := range nhidToReplicas {
 		a, ok := n.targetAddresses.Load(nhid)
 		if !ok {
@@ -335,10 +336,10 @@ func (n *StaticRegistry) String() string {
 		}
 		addr := a.(addresses)
 
-		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", nhid, addr.raft, addr.grpc)
-		buf += fmt.Sprintf("   %+v\n", replicas)
+		buf.WriteString(fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", nhid, addr.raft, addr.grpc))
+		buf.WriteString(fmt.Sprintf("   %+v\n", replicas))
 	}
-	return buf
+	return buf.String()
 }
 
 // DynamicNodeRegistry is a node registry backed by gossip. It is capable of

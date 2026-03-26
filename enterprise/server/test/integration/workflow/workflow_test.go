@@ -6,6 +6,8 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -57,11 +59,43 @@ sh_binary(
 		"buildbuddy.yaml": `
 actions:
   - name: "Test action"
+    bazel_use_cli: false
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "build //:nop" ]
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
 `,
+	}
+}
+
+// simpleRepoUseCLI simulates a test repo that should use the bb CLI for bazel commands.
+// USE_BAZEL_VERSION is set to a pre-built bazel binary, which speeds up the test.
+func simpleRepoUseCLI(t *testing.T) map[string]string {
+	// The CLI expands all bazelrcs and appends `--ignore_all_rc_files` before invoking the testbazel binary
+	// pointed to by USE_BAZEL_VERSION.
+	// When the testbazel binary is invoked, it adds a --bazelrc at exec time, which is too late and is ignored due to `--ignore_all_rc_files`.
+	// Here we explicitly add the bazelrc to the command.
+	bazelrcPath := filepath.Join(os.Getenv("TEST_TMPDIR"), fmt.Sprintf("bazel-%s.bazelrc", testbazel.Version))
+	return map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "nop",
+    srcs = ["nop.sh"],
+)
+`,
+		"WORKSPACE": ``,
+		"nop.sh":    ``,
+		"buildbuddy.yaml": fmt.Sprintf(`
+actions:
+  - name: "Test action"
+    bazel_use_cli: true
+    triggers: { push: { branches: [ master ] } }
+    bazel_commands: [ '--bazelrc=%s build //:nop' ]
+    env:
+      USE_BAZEL_VERSION: %q
+    os: %s
+    arch: %s
+`, bazelrcPath, testbazel.BinaryPath(t), runtime.GOOS, runtime.GOARCH),
 	}
 }
 
@@ -80,6 +114,7 @@ sh_binary(
 		"buildbuddy.yaml": `
 actions:
   - name: "Slow test action"
+    bazel_use_cli: false
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "run //:sleep_forever_test" ]
     os: ` + runtime.GOOS + `
@@ -539,4 +574,31 @@ func TestInvalidYAML(t *testing.T) {
 
 func pointer[T any](val T) *T {
 	return &val
+}
+
+func TestBazelUseCLI(t *testing.T) {
+	fakeGitProvider := testgit.NewFakeProvider()
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	repoContentsMap := simpleRepoUseCLI(t)
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	repo := createWorkflow(t, env, repoURL)
+
+	triggerWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, commitSHA)
+
+	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
+
+	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
+	require.Equal(t, repoURL, inv.GetRepoUrl())
+	require.Equal(t, commitSHA, inv.GetCommitSha())
+	require.Equal(t, "CI_RUNNER", inv.GetRole())
 }

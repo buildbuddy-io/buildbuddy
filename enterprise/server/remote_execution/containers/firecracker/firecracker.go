@@ -589,6 +589,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
 		EnableVfs:         args.Props.EnableVFS,
+		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1048,7 +1049,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	if snapshotDetails.snapshotType == diffSnapshotType {
 		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 		mergeStart := time.Now()
-		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		concurrency := mergeDiffSnapshotConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, concurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
@@ -1061,7 +1066,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	// updated the memoryStore in mergeDiffSnapshot above).
 	if snapshotSharingEnabled && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
+		concurrency := snaputil.ConvertToCOWConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir, concurrency)
 		if err != nil {
 			return status.WrapError(err, "convert memory snapshot to COWStore")
 		}
@@ -1393,7 +1402,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 		return nil
 	}
 	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
-	cow, err := c.convertToCOW(ctx, path, chunkDir)
+	cow, err := c.convertToCOW(ctx, path, chunkDir, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return err
 	}
@@ -1462,7 +1471,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	return nil
 }
 
-func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*copy_on_write.COWStore, error) {
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string, concurrency int) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1478,7 +1487,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, concurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -1620,7 +1629,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.nopnp",
 		"i8042.dumbkbd",
 		"tsc=reliable",
-		"ipv6.disable=1",
+	}
+	if !vmConfig.GetIpv6Enabled() {
+		kernelArgs = append(kernelArgs, "ipv6.disable=1")
 	}
 	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
@@ -2955,7 +2966,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			}
 		}
 
-		var chunkSrcLog string
+		var chunkSrcLog strings.Builder
 		for chunkSrc, count := range chunkSourceCounter {
 			sourceLabel := snaputil.ChunkSourceLabel(chunkSrc)
 			bytesRead := bytesReadPerSource[chunkSrc]
@@ -2967,7 +2978,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 				metrics.FileName:    name,
 				metrics.ChunkSource: sourceLabel,
 			}).Add(float64(bytesReadPerSource[chunkSrc]))
-			chunkSrcLog += fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel)
+			chunkSrcLog.WriteString(fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel))
 		}
 
 		metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
@@ -2977,7 +2988,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			metrics.FileName: name,
 		}).Add(float64(dirtyBytes))
 
-		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog)
+		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
 	}
 	return nil
 }
@@ -3255,8 +3266,8 @@ func parseFatalInitError(tail string) error {
 	}
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(tail, "\n")
+	for line := range lines {
 		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
 			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
 		}
@@ -3271,13 +3282,13 @@ func (c *FirecrackerContainer) parseOOMError(logTail string) error {
 		return nil
 	}
 	lines := strings.Split(logTail, "\n")
-	oomLines := ""
+	var oomLines strings.Builder
 	for _, line := range lines {
 		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
-			oomLines += line + "\n"
+			oomLines.WriteString(line + "\n")
 		}
 	}
-	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.
@@ -3448,8 +3459,8 @@ func getRandomNUMANode() (int, error) {
 	// Parse file contents
 	// Example: "0-1,3" is parsed as []int{0, 1, 3}
 	var nodes []int
-	nodeRanges := strings.Split(s, ",")
-	for _, r := range nodeRanges {
+	nodeRanges := strings.SplitSeq(s, ",")
+	for r := range nodeRanges {
 		startStr, endStr, _ := strings.Cut(r, "-")
 		start, err := strconv.Atoi(startStr)
 		if err != nil {

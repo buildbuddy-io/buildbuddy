@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_content_addressable_storage_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -57,6 +59,7 @@ import (
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
+	"google.golang.org/grpc/stats"
 )
 
 var (
@@ -107,6 +110,9 @@ func main() {
 	if err := experiments.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := ip_rules_enforcer.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
@@ -125,6 +131,8 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	// Start and register internal servers first because the external proxy
+	// services rely on the internal servers.
 	if err := startInternalGRPCServers(env); err != nil {
 		log.Fatalf("Could not start internal GRPC server: %s", err)
 	}
@@ -202,6 +210,10 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
+	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	if err != nil {
+		return status.WrapError(err, "failed to create traffic stats handler")
+	}
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
@@ -210,12 +222,9 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
-	}
-
-	// Start and register internal servers first because the external proxy
-	// services rely on the internal servers.
-	if err := registerInternalServices(env); err != nil {
-		return err
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficStatsHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficStatsHandler.StreamInterceptor},
+		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
@@ -253,10 +262,13 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 	channelzservice.RegisterChannelzServiceToServer(b.GetServer())
+	env.SetInternalGRPCServer(b.GetServer())
+	if err := registerInternalServices(env); err != nil {
+		return err
+	}
 	if err = b.Start(); err != nil {
 		return err
 	}
-	env.SetInternalGRPCServer(b.GetServer())
 	return nil
 }
 

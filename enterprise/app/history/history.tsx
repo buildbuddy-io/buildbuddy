@@ -20,7 +20,7 @@ import Spinner from "../../../app/components/spinner/spinner";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
 import format from "../../../app/format/format";
 import InvocationCardComponent from "../../../app/invocation/invocation_card";
-import router from "../../../app/router/router";
+import router, { Path } from "../../../app/router/router";
 import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
@@ -463,34 +463,34 @@ export default class HistoryComponent extends React.Component<Props, State> {
             <div className="top-bar">
               <div className="breadcrumbs">
                 {this.props.user && this.props.user?.selectedGroupName() && (
-                  <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={Path.home}>
                     {this.props.user?.selectedGroupName()}
-                  </span>
+                  </Link>
                 )}
                 {(this.props.username || this.props.tab == "#users") && (
-                  <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={`${Path.home}#users`}>
                     Users
-                  </span>
+                  </Link>
                 )}
                 {(this.props.hostname || this.props.tab == "#hosts") && (
-                  <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={`${Path.home}#hosts`}>
                     Hosts
-                  </span>
+                  </Link>
                 )}
                 {(this.props.repo || this.props.tab == "#repos") && (
-                  <span onClick={this.handleReposClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={`${Path.home}#repos`}>
                     Repos
-                  </span>
+                  </Link>
                 )}
                 {(this.props.branch || this.props.tab == "#branches") && (
-                  <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={`${Path.home}#branches`}>
                     Branches
-                  </span>
+                  </Link>
                 )}
                 {(this.props.commit || this.props.tab == "#commits") && (
-                  <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
+                  <Link className="clickable" href={`${Path.home}#commits`}>
                     Commits
-                  </span>
+                  </Link>
                 )}
                 {scope && <span>{scope}</span>}
                 {!this.props.username && !this.props.hostname && this.props.tab == "" && (

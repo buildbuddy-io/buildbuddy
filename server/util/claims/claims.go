@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -226,19 +227,27 @@ func (c *Claims) IsCustomerSSO() bool {
 }
 
 func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	c, method, err := parseClaimsInternal(ctx, token, keyProvider)
+	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+	return c, err
+}
+
+func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, string, error) {
+	method := "unknown"
 	keys, err := keyProvider(ctx)
 	if err != nil {
-		return nil, err
+		return nil, method, err
 	}
 	if len(keys) == 0 {
 		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
-		return nil, status.InternalError("no keys available for parsing claims")
+		return nil, method, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+			method = token.Method.Alg()
 			switch token.Method {
 			case jwt.SigningMethodHS256:
 				return []byte(key), nil
@@ -249,7 +258,7 @@ func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*C
 			}
 		})
 		if err == nil {
-			return claims, nil
+			return claims, method, nil
 		}
 		lastErr = err
 
@@ -257,9 +266,9 @@ func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*C
 		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
 			continue
 		}
-		return nil, err
+		return nil, method, err
 	}
-	return nil, lastErr
+	return nil, method, lastErr
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
@@ -580,7 +589,7 @@ type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
-	lru interfaces.LRU[*Claims]
+	lru lru.LRU[*Claims]
 
 	keyProvider KeyProvider
 }
@@ -594,7 +603,7 @@ func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 		MaxSize: claimsCacheSize,
 		SizeFn:  func(v *Claims) int64 { return 1 },
 	}
-	lru, err := lru.NewLRU[*Claims](config)
+	lru, err := lru.New[*Claims](config)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -65,53 +64,22 @@ var (
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
-type apiKeyGroupCacheEntry struct {
-	data         interfaces.APIKeyGroup
-	expiresAfter time.Time
-}
-
-// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel
-// invocation can generate large bursts of RPCs, each of which needs to be
-// authed.
-// There's no need to go to the database for every single request as this data
-// rarely changes.
-type apiKeyGroupCache struct {
-	// Note that even though we base this off an LRU cache, every entry has a
-	// hard expiration time to force a refresh of the underlying data.
-	lru interfaces.LRU[*apiKeyGroupCacheEntry]
-	ttl time.Duration
-	mu  sync.Mutex
-}
-
-func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
-	config := &lru.Config[*apiKeyGroupCacheEntry]{
-		MaxSize: apiKeyGroupCacheSize,
-		SizeFn:  func(v *apiKeyGroupCacheEntry) int64 { return 1 },
-	}
-	lru, err := lru.NewLRU[*apiKeyGroupCacheEntry](config)
+// newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
+// Bazel invocation can generate large bursts of RPCs, each of which needs to
+// be authed. There's no need to go to the database for every single request as
+// this data rarely changes.
+func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup], error) {
+	cache, err := lru.New[interfaces.APIKeyGroup](&lru.Config[interfaces.APIKeyGroup]{
+		MaxSize:    apiKeyGroupCacheSize,
+		SizeFn:     func(v interfaces.APIKeyGroup) int64 { return 1 },
+		TTL:        *apiKeyGroupCacheTTL,
+		ThreadSafe: true,
+		Clock:      clock,
+	})
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
-	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
-}
-
-func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
-	c.mu.Lock()
-	entry, ok := c.lru.Get(apiKey)
-	c.mu.Unlock()
-	if !ok {
-		return nil, ok
-	}
-	if time.Now().After(entry.expiresAfter) {
-		return nil, false
-	}
-	return entry.data, true
-}
-
-func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
-	c.mu.Lock()
-	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
-	c.mu.Unlock()
+	return cache, nil
 }
 
 type AuthDB struct {
@@ -119,7 +87,7 @@ type AuthDB struct {
 	h     interfaces.DBHandle
 	clock clockwork.Clock
 
-	apiKeyGroupCache *apiKeyGroupCache
+	apiKeyGroupCache lru.LRU[interfaces.APIKeyGroup]
 	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
 
 	// Nil if API key encryption is not enabled.
@@ -132,8 +100,8 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 		h:     h,
 		clock: env.GetClock(),
 	}
-	if *apiKeyGroupCacheTTL != 0 {
-		akgCache, err := newAPIKeyGroupCache()
+	if *apiKeyGroupCacheTTL > 0 {
+		akgCache, err := newAPIKeyGroupCache(adb.clock)
 		if err != nil {
 			return nil, err
 		}
@@ -277,8 +245,10 @@ type apiKeyGroupRow struct {
 	EnforceIPRules         bool
 	IsParent               bool
 	GroupStatus            int32 `gorm:"column:group_status"`
-	// Role from either direct or user-list membership for user-owned keys.
-	MembershipRole *uint32 `gorm:"column:membership_role"`
+	// Role from direct group membership for user-owned keys.
+	DirectMembershipRole *uint32 `gorm:"column:direct_membership_role"`
+	// Role from indirect membership via user lists for user-owned keys.
+	UserListMembershipRole *uint32 `gorm:"column:user_list_membership_role"`
 }
 
 func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
@@ -587,10 +557,10 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	}
 
 	// For user API keys, the above data may contain multiple rows per API key
-	// per each membership row. We need to go through the full data set and
-	// generate one row per API key. The membership role information is used to
-	// enforce maximum capabilities on user API keys such that the API key
-	// capabilities never exceed the capabilities of the owning user.
+	// due to user-list membership joins. We need to go through the full data
+	// set and generate one row per API key. The membership role information is
+	// used to enforce maximum capabilities on user API keys such that the API
+	// key capabilities never exceed the capabilities of the owning user.
 	type apiKeyWithRoles struct {
 		row *apiKeyGroupRow
 		// User membership information for user API keys.
@@ -604,12 +574,16 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 		entry, ok := consolidated[apiKeyID]
 		if !ok {
 			c := *row
-			c.MembershipRole = nil
+			c.DirectMembershipRole = nil
+			c.UserListMembershipRole = nil
 			entry = &apiKeyWithRoles{row: &c}
 			consolidated[apiKeyID] = entry
 		}
-		if row.MembershipRole != nil {
-			entry.userMembershipRoles = append(entry.userMembershipRoles, role.Role(*row.MembershipRole))
+		if row.DirectMembershipRole != nil {
+			entry.userMembershipRoles = append(entry.userMembershipRoles, role.Role(*row.DirectMembershipRole))
+		}
+		if row.UserListMembershipRole != nil {
+			entry.userMembershipRoles = append(entry.userMembershipRoles, role.Role(*row.UserListMembershipRole))
 		}
 	}
 
@@ -653,13 +627,19 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 }
 
 func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
+	memberStatus := int32(grpb.GroupMembershipStatus_MEMBER)
 	// This query may return multiple rows per API key for user API keys
-	// when a user has multiple memberships in a group (e.g. direct membership
-	// and indirect membership through a user list).
-	qb := query_builder.NewQuery(`
+	// when a user has multiple indirect memberships through user lists.
+
+	userListMembershipVal := "NULL"
+	if authutil.UserListsEnabled() {
+		userListMembershipVal = "ulg.role"
+	}
+	baseQuery := fmt.Sprintf(`
 		SELECT
 			ak.*,
-			membership.role AS membership_role,
+			ug.role AS direct_membership_role,
+			%s AS user_list_membership_role,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
 			g.enforce_ip_rules,
@@ -667,9 +647,22 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			g.status AS group_status
 		FROM "APIKeys" AS ak
 		JOIN "Groups" AS g ON ak.group_id = g.group_id
-		LEFT JOIN (` + d.userMembershipRolesQuery() + `) AS membership
-			ON membership.user_id = ak.user_id AND membership.group_id = ak.group_id
-	`)
+		LEFT JOIN "UserGroups" AS ug
+			ON ug.user_user_id = ak.user_id
+			AND ug.group_group_id = ak.group_id
+			AND ug.membership_status = %d
+	`, userListMembershipVal, memberStatus)
+	if authutil.UserListsEnabled() {
+		baseQuery += `
+			LEFT JOIN "UserUserLists" AS uu
+				ON uu.user_user_id = ak.user_id
+			LEFT JOIN "UserListGroups" AS ulg
+				ON ulg.user_list_user_list_id = uu.user_list_user_list_id
+				AND ulg.group_group_id = ak.group_id
+		`
+	}
+
+	qb := query_builder.NewQuery(baseQuery)
 	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 
 	if subDomain != "" {
@@ -687,12 +680,20 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 
 		// User-owned keys should only be considered if the owning user still has a
 		// valid direct or indirect membership in the key's group.
-		qb.AddWhereClause(`(
-			ak.user_id = ''
-			OR ak.user_id IS NULL
-			OR membership.user_id IS NOT NULL
-		)`)
-
+		if authutil.UserListsEnabled() {
+			qb.AddWhereClause(`(
+				ak.user_id = ''
+				OR ak.user_id IS NULL
+				OR ug.user_user_id IS NOT NULL
+				OR ulg.group_group_id IS NOT NULL
+			)`)
+		} else {
+			qb.AddWhereClause(`(
+				ak.user_id = ''
+				OR ak.user_id IS NULL
+				OR ug.user_user_id IS NOT NULL
+			)`)
+		}
 	} else {
 		qb.AddWhereClause(`(
 			ak.user_id = ''
@@ -700,31 +701,6 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 		)`)
 	}
 	return qb
-}
-
-func (d *AuthDB) userMembershipRolesQuery() string {
-	memberStatus := int32(grpb.GroupMembershipStatus_MEMBER)
-	q := fmt.Sprintf(`
-		SELECT
-			ug.user_user_id AS user_id,
-			ug.group_group_id AS group_id,
-			ug.role
-		FROM "UserGroups" AS ug
-		WHERE ug.membership_status = %d
-	`, memberStatus)
-	if authutil.UserListsEnabled() {
-		q += `
-		UNION ALL
-		SELECT
-			uu.user_user_id AS user_id,
-			ulg.group_group_id AS group_id,
-			ulg.role
-		FROM "UserUserLists" AS uu
-		JOIN "UserListGroups" AS ulg
-			ON ulg.user_list_user_list_id = uu.user_list_user_list_id
-		`
-	}
-	return q
 }
 
 func redactInvalidAPIKey(key string) string {

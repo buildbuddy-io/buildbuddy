@@ -74,7 +74,7 @@ func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
 		if !ok {
 			continue
 		}
-		for _, option := range p.OptionList.Option {
+		for _, option := range p.OptionList.GetOption() {
 			if option.OptionName == envVarOptionName {
 				parts := strings.Split(option.OptionValue, envVarSeparator)
 				if len(parts) == 2 {
@@ -148,7 +148,7 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 				switch c := child.Id.(type) {
 				case *build_event_stream.BuildEventId_Pattern:
 					{
-						sep.setPattern(c.Pattern.Pattern, priority)
+						sep.setPattern(c.Pattern.GetPattern(), priority)
 					}
 				}
 			}
@@ -209,7 +209,7 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		}
 	case *build_event_stream.BuildEvent_BuildMetrics:
 		{
-			sep.invocation.ActionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
+			sep.invocation.ActionCount = p.BuildMetrics.GetActionSummary().GetActionsExecuted()
 		}
 	case *build_event_stream.BuildEvent_WorkspaceInfo:
 		{
@@ -238,7 +238,7 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 }
 
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
-	if commandLine.CommandLineLabel != StructuredCommandLineLabelCanonical {
+	if commandLine.GetCommandLineLabel() != StructuredCommandLineLabelCanonical {
 		return
 	}
 
@@ -373,31 +373,31 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
 	priority := workspaceStatusPriority
-	for _, item := range workspaceStatus.Item {
-		if item.Value == "" {
+	for _, item := range workspaceStatus.GetItem() {
+		if item.GetValue() == "" {
 			continue
 		}
-		switch item.Key {
+		switch item.GetKey() {
 		case "BUILD_USER":
-			sep.setUser(item.Value, priority)
+			sep.setUser(item.GetValue(), priority)
 		case "USER":
-			sep.setUser(item.Value, priority)
+			sep.setUser(item.GetValue(), priority)
 		case "BUILD_HOST":
-			sep.setHost(item.Value, priority)
+			sep.setHost(item.GetValue(), priority)
 		case "HOST":
-			sep.setHost(item.Value, priority)
+			sep.setHost(item.GetValue(), priority)
 		case "PATTERN":
-			sep.setPattern(strings.Split(item.Value, " "), priority)
+			sep.setPattern(strings.Split(item.GetValue(), " "), priority)
 		case "ROLE":
-			sep.setRole(item.Value, priority)
+			sep.setRole(item.GetValue(), priority)
 		case "REPO_URL":
-			sep.setRepoUrl(item.Value, priority)
+			sep.setRepoUrl(item.GetValue(), priority)
 		case "GIT_BRANCH":
-			sep.setBranchName(item.Value, priority)
+			sep.setBranchName(item.GetValue(), priority)
 		case "COMMIT_SHA":
-			sep.setCommitSha(item.Value, priority)
+			sep.setCommitSha(item.GetValue(), priority)
 		case "TAGS":
-			sep.setTags(item.Value, priority)
+			sep.setTags(item.GetValue(), priority)
 		}
 	}
 }
@@ -442,8 +442,8 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 
 	// Support TAG_ prefixed metadata
 	for key, value := range metadata {
-		if strings.HasPrefix(key, "TAG_") {
-			tagKey := strings.TrimPrefix(key, "TAG_")
+		if after, ok := strings.CutPrefix(key, "TAG_"); ok {
+			tagKey := after
 			if value != "" {
 				tagValues = append(tagValues, tagKey+"="+value)
 			} else {

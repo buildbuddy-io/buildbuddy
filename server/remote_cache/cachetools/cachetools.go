@@ -81,7 +81,9 @@ func retryOptions(name string) *retry.Options {
 	return opts
 }
 
-func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+// FindMissingBlobs issues a FindMissingBlobs RPC with retry behavior and the
+// standard CAS RPC timeout applied to each attempt.
+func FindMissingBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	return retry.Do(ctx, retryOptions("FindMissingBlobs"), func(ctx context.Context) (*repb.FindMissingBlobsResponse, error) {
 		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 		defer cancel()
@@ -90,8 +92,12 @@ func findMissingBlobsWithRetries(ctx context.Context, casClient repb.ContentAddr
 }
 
 func spliceBlobWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.SpliceBlobRequest) error {
+	// SpliceBlob verifies all chunks server-side (read + hash), so it needs
+	// more time than a typical CAS RPC. Scale by chunk count, clamped to
+	// [casRPCTimeout, 10min].
+	timeout := min(max(250*time.Millisecond*time.Duration(len(req.GetChunkDigests())), *casRPCTimeout), 10*time.Minute)
 	_, err := retry.Do(ctx, retryOptions("SpliceBlob"), func(ctx context.Context) (*repb.SpliceBlobResponse, error) {
-		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return casClient.SpliceBlob(ctx, req)
 	})
@@ -111,6 +117,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	if r.IsEmpty() {
 		return nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
@@ -118,7 +126,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(r.GetDigest())
+			return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
 		}
 		return err
 	}
@@ -153,6 +161,9 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			break
 		}
 		if err != nil {
+			if gstatus.Code(err) == gcodes.NotFound {
+				return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
+			}
 			return err
 		}
 		if _, err := w.Write(rsp.Data); err != nil {
@@ -175,7 +186,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 				return retry.NonRetryableError(err)
 			}
 			err := getBlob(ctx, bsClient, r, out)
-			if status.IsNotFoundError(err) {
+			if status.IsNotFoundError(err) || status.IsFailedPreconditionError(err) {
 				return retry.NonRetryableError(err)
 			}
 			return err
@@ -291,6 +302,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -305,10 +318,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
-	} else if readerCompression == repb.Compressor_ZSTD && rnCompression == repb.Compressor_IDENTITY {
-		// Upload as compressed instead of decompressing.
-		r = digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-		r.SetCompressor(repb.Compressor_ZSTD)
+	} else if readerCompression != rnCompression {
+		return nil, 0, status.InvalidArgumentErrorf("reader compression %s does not match resource name compression %s; decompression is not supported", readerCompression, rnCompression)
 	}
 	// If readerCompression == rnCompression, no transformation is needed.
 	defer rc.Close()
@@ -421,7 +432,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		DigestFunction: r.GetDigestFunction(),
 	}
 	casClient := env.GetContentAddressableStorageClient()
-	missingRsp, err := findMissingBlobsWithRetries(ctx, casClient, manifest.ToFindMissingBlobsRequest())
+	missingRsp, err := FindMissingBlobs(ctx, casClient, manifest.ToFindMissingBlobsRequest())
 	if err != nil {
 		return nil, 0, status.WrapError(err, "find missing chunks")
 	}
@@ -484,10 +495,11 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 }
 
 // UploadFromReaderWithCompression uploads data to the CAS, specifying the
-// compression format of the data in the reader. If the reader format differs
-// from the target compression in the resource name, the data will be compressed
-// or decompressed as needed. If both formats are the same, no transformation
-// is applied. Only IDENTITY and ZSTD formats are supported.
+// compression format of the data in the reader. If the reader is uncompressed
+// and the resource name specifies ZSTD, the data will be compressed on the fly.
+// If both formats are the same, no transformation is applied. Decompression
+// (compressed reader to uncompressed resource name) is not supported and will
+// return an error.
 // If the input Reader is also a Seeker, UploadFromReaderWithCompression will retry
 // the upload until success.
 func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader, readerCompression repb.Compressor_Value) (*repb.Digest, int64, error) {
@@ -705,13 +717,12 @@ type BatchCASUploader struct {
 	digestFunction    repb.DigestFunction_Value
 	unsentBatchSize   int64
 	stats             UploadStats
-	chunkingEnabled   bool
 	avgChunkSizeBytes int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, avgChunkSizeBytes int64) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, avgChunkSizeBytes int64) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	// TODO(tyler-french): Set a concurrency limit on ul.eg so total uploader
 	// file operations are globally bounded.
@@ -724,7 +735,6 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		instanceName:      instanceName,
 		digestFunction:    digestFunction,
 		uploads:           make(map[digest.Key]struct{}),
-		chunkingEnabled:   chunkingEnabled,
 		avgChunkSizeBytes: avgChunkSizeBytes,
 	}
 }
@@ -760,7 +770,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
-		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingEnabled && ul.avgChunkSizeBytes > 0 {
+		if ras, ok := rsc.(readAtSeeker); ok && ul.avgChunkSizeBytes > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
 				// BatchCASUploader already controls per-file concurrency, so keep
@@ -954,7 +964,7 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, false /*=chunkingEnabled*/, 0 /*=avgChunkSizeBytes*/)
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, 0 /*=avgChunkSizeBytes*/)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
@@ -1281,6 +1291,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 
 type UploadWriter struct {
 	ctx          context.Context
+	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
@@ -1369,6 +1380,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 // Commit sends any bytes remaining in the internal buffer to the CAS
 // and tells the server that the stream is done sending writes.
 func (uw *UploadWriter) Commit() error {
+	defer uw.cancel()
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot commit")
 	}
@@ -1412,6 +1424,7 @@ func (uw *UploadWriter) Close() error {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot close again")
 	}
 	uw.closed = true
+	uw.cancel()
 	uploadBufPool.Put(uw.buf)
 	if uw.useZstd {
 		uploadBufPool.Put(uw.cbuf)
@@ -1442,8 +1455,10 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -1452,6 +1467,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
 			ctx:          ctx,
+			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
 			uploadString: r.NewUploadString(),
@@ -1462,6 +1478,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 	return &UploadWriter{
 		ctx:          ctx,
+		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,
 		uploadString: r.NewUploadString(),

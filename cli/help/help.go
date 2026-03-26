@@ -94,8 +94,8 @@ func HandleHelp(args parsed.Args) (exitCode int, err error) {
 	// Match example "bazel help ..." commands in "Getting more help" section
 	moreHelpPattern := regexp.MustCompile(`^(\s*)bazel( help\s+.*)$`)
 	// Get help output lines with trailing newlines removed
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n")
+	for line := range lines {
 		line = strings.TrimRight(line, "\r")
 
 		if line == "Available commands:" {

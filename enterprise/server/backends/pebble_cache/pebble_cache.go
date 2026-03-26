@@ -1472,16 +1472,17 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	evictors := p.evictors
 	p.statusMu.Unlock()
 
-	buf := "<pre>"
-	buf += db.Metrics().String()
+	var buf strings.Builder
+	buf.WriteString("<pre>")
+	buf.WriteString(db.Metrics().String())
 	writeStalls, stallDuration := p.metricsCollector.WriteStallStats()
 	diskSlows, diskStalls := p.metricsCollector.DiskStallStats()
-	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration)
-	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls)
+	buf.WriteString(fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration))
+	buf.WriteString(fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls))
 
 	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
 	if err == nil {
-		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
+		buf.WriteString(fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes))
 	}
 	var totalSizeBytes, totalCASCount, totalACCount, totalSampledSize int64
 	sampledSizeByGroup := make(map[string]int64)
@@ -1497,26 +1498,26 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	}
 	estimatedSizeByGroup := computeEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
 	minVersion, maxVersion := p.minAndMaxDatabaseVersions()
-	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", minVersion, maxVersion, p.activeDatabaseVersion())
-	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
-	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
-	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
+	buf.WriteString(fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", minVersion, maxVersion, p.activeDatabaseVersion()))
+	buf.WriteString(fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes))
+	buf.WriteString(fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount))
+	buf.WriteString(fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount))
 	if len(estimatedSizeByGroup) > 0 {
 		sortedKeys := slices.Sorted(maps.Keys(estimatedSizeByGroup))
-		buf += "\n[All partitions] Approximate size by group:\n"
+		buf.WriteString("\n[All partitions] Approximate size by group:\n")
 		for _, g := range sortedKeys {
 			if s, ok := estimatedSizeByGroup[g]; ok {
-				buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
+				buf.WriteString(fmt.Sprintf("  %s: %d bytes\n", g, s))
 			}
 		}
-		buf += fmt.Sprintf("  Total size of sampled files: %d bytes\n", totalSampledSize)
+		buf.WriteString(fmt.Sprintf("  Total size of sampled files: %d bytes\n", totalSampledSize))
 	}
 
-	buf += "</pre>"
+	buf.WriteString("</pre>")
 	for _, e := range evictors {
-		buf += e.Statusz(ctx)
+		buf.WriteString(e.Statusz(ctx))
 	}
-	return buf
+	return buf.String()
 }
 
 func (p *PebbleCache) userGroupID(ctx context.Context) string {

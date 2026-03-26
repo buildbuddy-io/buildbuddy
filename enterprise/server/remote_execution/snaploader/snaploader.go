@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,9 +44,9 @@ const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
 
-	// Min number of goroutines to run concurrently when uploading a
+	// Number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
-	minChunkedFileWriteConcurrency = 8
+	chunkedFileWriteConcurrency = 4
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -260,11 +261,12 @@ func snapshotDebugString(ctx context.Context, env environment.Env, s *fcpb.Snaps
 }
 
 func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet, remote bool) string {
-	keySetStr := snapshotDebugString(ctx, env, s.GetBranchKey(), remote, "" /*snapshotID*/)
+	var keySetStr strings.Builder
+	keySetStr.WriteString(snapshotDebugString(ctx, env, s.GetBranchKey(), remote, "" /*snapshotID*/))
 	for _, key := range s.FallbackKeys {
-		keySetStr += fmt.Sprintf(", %s", snapshotDebugString(ctx, env, key, remote, "" /*snapshotID*/))
+		keySetStr.WriteString(fmt.Sprintf(", %s", snapshotDebugString(ctx, env, key, remote, "" /*snapshotID*/)))
 	}
-	return keySetStr
+	return keySetStr.String()
 }
 
 func SnapshotDebugString(ctx context.Context, env environment.Env, s *Snapshot) string {
@@ -1041,8 +1043,17 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
 	defer cancelForEarlyExit()
 
-	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
-	eg.SetLimit(writeConcurrency)
+	// This is higher than parallelization for syncing chunks, because other work (like generating digests and writing
+	// to the cache) is less IO-intensive and can run with more concurrency.
+	if *snaputil.ThrottleSnapshotWrites {
+		eg.SetLimit(chunkedFileWriteConcurrency)
+	} else {
+		writeConcurrency := int(math.Max(8, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+		eg.SetLimit(writeConcurrency)
+	}
+
+	// Limit the number of dirty chunks being simultaneously flushed to disk to avoid high IO pressure.
+	var syncMu sync.Mutex
 
 	chunks := cow.SortedChunks()
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
@@ -1080,9 +1091,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			if d.GetHash() != allZerosDigest.GetHash() {
 				dirty := cow.Dirty(c.Offset)
 				if dirty {
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Lock()
+					}
 					// Sync dirty chunks to make sure the underlying file is up to date
 					// before we add it to cache.
-					if err := c.Sync(); err != nil {
+					err = c.Sync()
+					if *snaputil.ThrottleSnapshotWrites {
+						syncMu.Unlock()
+					}
+					if err != nil {
 						return returnError(status.WrapError(err, "sync dirty chunk"))
 					}
 				}
@@ -1190,11 +1208,11 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 }
 
 func hashStrings(strs ...string) string {
-	out := ""
+	var out strings.Builder
 	for _, s := range strs {
-		out += hash.String(s)
+		out.WriteString(hash.String(s))
 	}
-	return hash.String(out)
+	return hash.String(out.String())
 }
 
 func groupID(ctx context.Context, env environment.Env) (string, error) {
@@ -1246,7 +1264,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}

@@ -14,6 +14,8 @@ go_library(
         "@io_opentelemetry_go_otel_metric//:metric",
         "@io_opentelemetry_go_otel_metric//noop",
         "@io_opentelemetry_go_otel_sdk_metric//:metric",
+        "@org_golang_google_grpc//experimental",
+        "@org_golang_google_grpc//mem",
     ],
 )
 
@@ -25,5 +27,6 @@ go_test(
         "//server/util/proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_uber_go_goleak//:goleak",
     ],
 )

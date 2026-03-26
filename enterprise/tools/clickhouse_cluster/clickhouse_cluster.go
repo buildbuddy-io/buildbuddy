@@ -133,7 +133,8 @@ func run() error {
 }
 
 func getConfigXML(r int) string {
-	xml := `
+	var xml strings.Builder
+	xml.WriteString(`
 <clickhouse>
 	<logger>
 		<level>` + *serverLogLevel + `</level>
@@ -147,16 +148,16 @@ func getConfigXML(r int) string {
 	<remote_servers>
 		<` + clusterName + `>
 			<shard>
-`
+`)
 	for r := 1; r <= *replicas; r++ {
-		xml += `
+		xml.WriteString(`
 				<replica>
 					<host>clickhouse` + fmt.Sprint(r) + `</host>
 					<port>9000</port>
 				</replica>
-`
+`)
 	}
-	xml += `
+	xml.WriteString(`
 			</shard>
 		</` + clusterName + `>
 	</remote_servers>
@@ -175,13 +176,14 @@ func getConfigXML(r int) string {
 		<replica>replica` + fmt.Sprint(r) + `</replica>
 	</macros>
 </clickhouse>
-`
-	return xml
+`)
+	return xml.String()
 }
 
 func getDockerComposeConfig(tmp string) string {
 	user := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
-	yml := `
+	var yml strings.Builder
+	yml.WriteString(`
 version: "3.3"
 services:
   zookeeper:
@@ -190,7 +192,7 @@ services:
     container_name: "zookeeper"
     ports:
       - "2181:2181"
-`
+`)
 	for r := 1; r <= *replicas; r++ {
 		configDir := filepath.Join(tmp, fmt.Sprintf("clickhouse%d", r))
 		var v []string
@@ -199,7 +201,7 @@ services:
 			v = append(v, configFile+`:/etc/clickhouse-server/config.d/`+fmt.Sprintf("%d_%s", i, filepath.Base(configFile))+`:ro`)
 		}
 		v = append(v, *volumes...)
-		yml += `
+		yml.WriteString(`
   clickhouse` + fmt.Sprint(r) + `:
     image: "` + clickhouseServerImage + `"
     ulimits: { nofile: { soft: 262144, hard: 262144 } }
@@ -216,9 +218,9 @@ services:
     ports:
       - "` + fmt.Sprint(clickhouseTCPPortNumber(r)) + `:9000"
       - "` + fmt.Sprint(clickhouseHTTPPortNumber(r)) + `:8123"
-`
+`)
 	}
-	return yml
+	return yml.String()
 }
 
 func mustMarshalJSON(value any) string {

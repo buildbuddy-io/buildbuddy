@@ -2,6 +2,7 @@ package rbuilder
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -178,12 +179,13 @@ func (bb *BatchBuilder) Size() int {
 }
 
 func (bb *BatchBuilder) String() string {
-	builder := fmt.Sprintf("Builder(err: %s)", bb.err)
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Builder(err: %s)", bb.err))
 	for i, v := range bb.cmd.Union {
 		out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(v)
-		builder += fmt.Sprintf(" [%d]: %+v", i, string(out))
+		builder.WriteString(fmt.Sprintf(" [%d]: %+v", i, string(out)))
 	}
-	return builder
+	return builder.String()
 }
 
 type BatchResponse struct {

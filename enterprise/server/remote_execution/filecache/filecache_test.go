@@ -892,6 +892,53 @@ func TestTrackExternalDirectory_Basic(t *testing.T) {
 	unlock2()
 }
 
+func TestLookupExternalDirectory_DoesNotCreateNewEntry(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create a directory on disk but don't track it in filecache.
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// Lookup-only should not create an entry.
+	unlock, _, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+	require.Nil(t, unlock)
+}
+
+func TestLookupExternalDirectory_FindsTrackedEntry(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// Track the directory first.
+	unlock, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	unlock()
+
+	// Lookup-only should find and lock the existing tracked entry.
+	unlockLookupOnly, sizeBytes, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.NoError(t, err)
+	require.NotNil(t, unlockLookupOnly)
+	require.Equal(t, int64(1000), sizeBytes)
+	unlockLookupOnly()
+}
+
 func TestTrackExternalDirectory_NotFoundForNonExistentPath(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)

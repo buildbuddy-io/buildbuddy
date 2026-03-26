@@ -189,7 +189,7 @@ func DeleteNetNamespaces(ctx context.Context) error {
 		return nil
 	}
 	var lastErr error
-	for _, ns := range strings.Split(output, "\n") {
+	for ns := range strings.SplitSeq(output, "\n") {
 		// Sometimes the output contains spaces, like
 		//     bb-executor-1
 		//     bb-executor-2
