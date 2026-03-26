@@ -478,6 +478,10 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
+	if mcp := env.GetMCPService(); mcp != nil {
+		mcp.RegisterHandlers(mux)
+	}
+
 	if scim := env.GetSCIMService(); scim != nil {
 		scim.RegisterHandlers(mux)
 	}
