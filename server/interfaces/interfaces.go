@@ -712,7 +712,7 @@ type GitHubApp interface {
 	// for the installation associated with the given installation owner (GitHub
 	// username or org name). It does not authorize the authenticated group ID,
 	// so should be used for status reporting only.
-	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner, repo string) (*github.InstallationToken, error)
 
 	// GetRepositoryInstallationToken returns an installation token for the given
 	// GitRepository.

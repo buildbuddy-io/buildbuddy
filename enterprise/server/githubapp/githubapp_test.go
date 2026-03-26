@@ -31,11 +31,18 @@ var (
 type fakeAppClient struct {
 	t                  testing.TB
 	wantInstallationID int64
+	wantRepos          []string
 }
 
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
-	c.t.Helper()
 	assert.Equal(c.t, c.wantInstallationID, installationID)
+
+	var gotRepos []string
+	if opts != nil {
+		gotRepos = opts.Repositories
+	}
+	assert.Equal(c.t, []string{testRepo}, gotRepos)
+
 	return &github.InstallationToken{Token: github.String(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
 	}, nil
@@ -93,6 +100,7 @@ func TestGetRepositoryInstallationToken(t *testing.T) {
 	app := newTestApp(te, &fakeAppClient{
 		t:                  t,
 		wantInstallationID: testInstallationID,
+		wantRepos:          []string{testRepo},
 	})
 
 	tok, err := app.GetRepositoryInstallationToken(ctx, &tables.GitRepository{
@@ -127,9 +135,10 @@ func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 	app := newTestApp(te, &fakeAppClient{
 		t:                  t,
 		wantInstallationID: testInstallationID,
+		wantRepos:          []string{testRepo},
 	})
 
-	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner)
+	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner, testRepo)
 	require.NoError(t, err)
 	assert.Equal(t, fakeToken, tok.GetToken())
 }

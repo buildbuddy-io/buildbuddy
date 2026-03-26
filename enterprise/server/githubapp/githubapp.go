@@ -550,7 +550,7 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 	if err != nil {
 		return status.NotFoundError("the repository as well as a BuildBuddy GitHub app installation must be linked to a BuildBuddy org in order to use workflows")
 	}
-	tok, err := a.createInstallationToken(ctx, row.InstallationID)
+	tok, err := a.createInstallationToken(ctx, row.InstallationID, repoURL.Repo)
 	if err != nil {
 		return err
 	}
@@ -559,7 +559,13 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
+// GetInstallationTokenForStatusReportingOnly returns an installation token for the given owner.
+// It does not authorize the user, because we don't have an authenticated context when handling
+// webhooks, so should be used for status reporting only.
+//
+// Use GetRepositoryInstallationToken in other cases that should authorize the user.
+func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner, repo string) (*github.InstallationToken, error) {
+	// TODO(Maggie): This should check that the repo is imported to GitRepositories.
 	var installation tables.GitHubAppInstallation
 	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
 		SELECT *
@@ -572,7 +578,7 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 		}
 		return nil, err
 	}
-	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +607,7 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 		}
 		return "", err
 	}
-	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID, repoURL.Repo)
 	if err != nil {
 		return "", err
 	}
@@ -1233,12 +1239,20 @@ func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Inst
 	return inst, nil
 }
 
-func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64) (*github.InstallationToken, error) {
+// If repoName is set, the installation token can only access that repo.
+// If the repo URL is https://github.com/owner/repo, then passed repoName should be "repo".
+func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64, repoName string) (*github.InstallationToken, error) {
 	client, err := a.newAppClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
+	var opts *github.InstallationTokenOptions
+	if repoName != "" {
+		opts = &github.InstallationTokenOptions{
+			Repositories: []string{repoName},
+		}
+	}
+	t, res, err := client.CreateInstallationToken(ctx, installationID, opts)
 	if err := checkResponse(res, err); err != nil {
 		return nil, status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
 	}
@@ -1335,7 +1349,7 @@ func (a *GitHubApp) newInstallationClient(ctx context.Context, userToken string,
 	if err := a.authorizeUserInstallationAccess(ctx, userToken, installationID); err != nil {
 		return nil, "", err
 	}
-	token, err := a.createInstallationToken(ctx, installationID)
+	token, err := a.createInstallationToken(ctx, installationID, "")
 	if err != nil {
 		return nil, "", err
 	}

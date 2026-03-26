@@ -590,13 +590,16 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if len(parts) != 2 {
 		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
 	}
+	owner := parts[0]
+	repo := parts[1]
+
 	// When handling webhooks, we do not have an authenticated BuildBuddy user in
 	// the context and cannot use `GetGitHubAppForAuthenticatedUser`.
-	app, err := gh.GetGitHubAppForOwner(ctx, parts[0])
+	app, err := gh.GetGitHubAppForOwner(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
+	return app.GetInstallationTokenForStatusReportingOnly(ctx, owner, repo)
 }
 
 func (c *GithubClient) getToken(ctx context.Context, ownerRepo string) (string, error) {
