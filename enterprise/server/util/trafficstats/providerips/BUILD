@@ -6,4 +6,5 @@ go_library(
     name = "providerips",
     srcs = ["providerips.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats/providerips",
+    visibility = ["//visibility:public"],
 )
