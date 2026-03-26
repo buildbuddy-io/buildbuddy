@@ -240,7 +240,9 @@ func distributedCacheFromConfig(env environment.Env, baseCache interfaces.Cache,
 		return nil, err
 	}
 
-	dc.StartListening()
+	if err := dc.StartListening(); err != nil {
+		return nil, err
+	}
 	return dc, nil
 }
 
