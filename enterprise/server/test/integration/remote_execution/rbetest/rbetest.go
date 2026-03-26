@@ -991,6 +991,12 @@ func (r *Env) waitForExecutorRegistration() {
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
 }
 
+type CacheProxyOptions struct {
+	// EnvModifier modifies the proxy environment before registering services.
+	// Use this to replace the default cache (e.g., with a pebble cache).
+	EnvModifier func(env *testenv.TestEnv)
+}
+
 type CacheProxy struct {
 	t    testing.TB
 	env  *testenv.TestEnv
@@ -1007,6 +1013,10 @@ func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressab
 }
 
 func (r *Env) AddCacheProxy() *CacheProxy {
+	return r.AddCacheProxyWithOptions(&CacheProxyOptions{})
+}
+
+func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	appConn := r.appProxyConn
 	port := testport.FindFree(r.t)
 	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
@@ -1030,6 +1040,11 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
 	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+
+	if opts.EnvModifier != nil {
+		opts.EnvModifier(proxyEnv)
+	}
+
 	require.NoError(r.t, atime_updater.Register(proxyEnv))
 
 	// Register the internal (BS & CAS) gRPC servers.
