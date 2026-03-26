@@ -2727,6 +2727,9 @@ func fakeKubePod(name, namespace, ip string) *corev1.Pod {
 				},
 			},
 		},
+		Spec: corev1.PodSpec{
+			NodeName: name,
+		},
 		Status: corev1.PodStatus{
 			PodIP: ip,
 			Phase: corev1.PodRunning,
