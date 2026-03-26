@@ -79,7 +79,7 @@ var (
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
-	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incrementalindexing action.")
+	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
@@ -608,15 +608,15 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 }
 
 func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
-	enableCSIndexing, enableKytheIndexing, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
+	enableCS, enableKythe, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
 	if err != nil {
 		return err
 	}
-	if enableCSIndexing {
+	if enableCS {
 		// TODO(jdelfino): Using the cache API URL here is hacky, long term we might want a codesearch_api_url
 		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(cache_api_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
 	}
-	if enableKytheIndexing {
+	if enableKythe {
 		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
 	}
 	return nil
