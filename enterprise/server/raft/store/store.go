@@ -3895,6 +3895,7 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 		case <-scanDelay.Chan():
 		}
 		replicas := store.getLeasedReplicas(ctx)
+		log.Infof("VANJAAAAAAAAAAAA scanned replicas %v", len(replicas))
 		for _, repl := range replicas {
 			if store.driverQueue != nil {
 				store.driverQueue.MaybeAddRangeTask(ctx, repl)

@@ -311,7 +311,12 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return CreateStoresWithStats(alive)
+	s := CreateStoresWithStats(alive)
+	log.Infof("\nVANJAAAAA: GetStoresWithStats")
+	for _, usage := range s.Usages {
+		log.Infof("VANJAAAAA: store usage: %s", usage.String())
+	}
+	return s
 }
 
 // Returns stores with stats that are not dead (include both alive and suspect).
@@ -335,7 +340,12 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return CreateStoresWithStats(alive)
+	s := CreateStoresWithStats(alive)
+	log.Infof("\nVANJAAAAA: GetStoresWithStatsFromIDs %v", nhids)
+	for _, usage := range s.Usages {
+		log.Infof("VANJAAAAA: store usage: %s", usage.String())
+	}
+	return s
 }
 
 func (sm *StoreMap) AllStoresAvailableAndReady() bool {
