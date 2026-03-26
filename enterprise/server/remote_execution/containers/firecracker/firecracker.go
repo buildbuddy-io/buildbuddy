@@ -521,6 +521,7 @@ type Provider struct {
 	executorConfig         *ExecutorConfig
 	networkPool            *networking.VMNetworkPool
 	marshalledDNSOverrides string
+	hostResolvConf         string
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
@@ -553,11 +554,18 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, err
 	}
 
+	// Pass the host's resolv.conf to the VM so it can use the same DNS
+	// configuration. goinit will fall back to default nameservers if unavailable.
+	hostResolvConf, err := os.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		log.Warningf("Failed to read host /etc/resolv.conf, VMs will use default nameservers: %s", err)
+	}
 	return &Provider{
 		env:                    env,
 		executorConfig:         executorConfig,
 		networkPool:            networkPool,
 		marshalledDNSOverrides: dns,
+		hostResolvConf:         string(hostResolvConf),
 	}, nil
 }
 
@@ -604,6 +612,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
 		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
@@ -679,6 +688,7 @@ type FirecrackerContainer struct {
 
 	executorConfig         *ExecutorConfig
 	marshalledDNSOverrides string
+	hostResolvConf         string
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -758,6 +768,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmConfig:               opts.VMConfiguration.CloneVT(),
 		executorConfig:         opts.ExecutorConfig,
 		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
+		hostResolvConf:         opts.HostResolvConf,
 		jailerRoot:             opts.ExecutorConfig.JailerRoot,
 		containerImage:         opts.ContainerImage,
 		user:                   opts.User,
@@ -2176,11 +2187,8 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	}
 	// Pass the host's resolv.conf to the VM so it can use the same DNS
 	// configuration. goinit will fall back to default nameservers if unavailable.
-	if hostResolvConf, err := os.ReadFile("/etc/resolv.conf"); err != nil {
-		log.CtxWarningf(ctx, "Failed to read host /etc/resolv.conf, VM will use default nameservers: %s", err)
-	} else {
-		metadata["resolv_conf"] = string(hostResolvConf)
-	}
+	metadata["resolv_conf"] = c.hostResolvConf
+
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
