@@ -643,6 +643,10 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
 	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
 	defer cancel()
+	// TODO: Switch this internal diagnostic capture to a bounded file-backed sink.
+	// We intentionally do not exempt podman pull logs from the output cap in
+	// this change, because leaving this shared in-memory buffer unbounded risks
+	// executor OOMs on noisy/corrupt image pulls.
 	output := lockingbuffer.New()
 	stdio := &interfaces.Stdio{Stderr: output, Stdout: output}
 	if *podmanPullLogLevel != "" {
@@ -734,7 +738,25 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
-	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+	// Ensure output limits are enforced even if the underlying CommandRunner
+	// does not apply them (for example, in tests with a custom runner). Respect
+	// DisableOutputLimits if set by the caller.
+	wrapped := stdio
+	if wrapped == nil {
+		wrapped = &interfaces.Stdio{}
+	}
+	if !wrapped.DisableOutputLimits {
+		// Copy to avoid mutating the caller's struct.
+		s := &interfaces.Stdio{Stdin: wrapped.Stdin, Stdout: wrapped.Stdout, Stderr: wrapped.Stderr, DisableOutputLimits: wrapped.DisableOutputLimits}
+		if s.Stdout != nil {
+			s.Stdout = commandutil.LimitStdOutErrWriter(s.Stdout)
+		}
+		if s.Stderr != nil {
+			s.Stderr = commandutil.LimitStdOutErrWriter(s.Stderr)
+		}
+		wrapped = s
+	}
+	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, wrapped)
 
 	// If the disk is under heavy load, podman may fail with "database is
 	// locked". Detect these and return a retryable error.
