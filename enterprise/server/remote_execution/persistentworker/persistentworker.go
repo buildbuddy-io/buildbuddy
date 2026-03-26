@@ -143,6 +143,9 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: stderr,
+			// Persistent workers currently opt out of stdout/stderr limits; add
+			// dedicated worker protocol limits separately.
+			DisableOutputLimits: true,
 		}
 		res := w.container.Exec(ctx, command, stdio)
 		w.workerStatus = res
