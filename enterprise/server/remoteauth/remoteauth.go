@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -347,6 +348,7 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	if useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
 		req.JwtSigningMethod = authpb.JWTSigningMethod_ES256.Enum()
 	}
+	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 	resp, err := a.authClient.Authenticate(ctx, &req)
 	if err != nil {
 		return "", err

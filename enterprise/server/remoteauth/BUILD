@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/ip_rules_enforcer",
         "//proto:auth_go_proto",
         "//server/environment",
         "//server/interfaces",
