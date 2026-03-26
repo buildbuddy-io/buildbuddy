@@ -123,7 +123,6 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		writeFile(t, baseDir, "my/fun/file", false)
@@ -135,6 +134,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		node = nodeFromString("my/evil/file", false)
 		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"))
 		require.NoError(t, err)
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Recreate filecache and wait for it to scan exsting files.
@@ -143,7 +143,6 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		node := nodeFromString("my/fun/file", false)
@@ -157,6 +156,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		assert.True(t, evilLinked, "existing file should link")
 		assert.FileExists(t, filepath.Join(baseDir, "my/evil/fastlinked-file"))
 		assertFileContents(t, filepath.Join(baseDir, "my/evil/fastlinked-file"), "my/evil/file")
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Recreate filecache and wait for it to scan exsting files.
@@ -380,7 +380,6 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		nodes := make([]*repb.FileNode, 10)
@@ -395,6 +394,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		}
 		log.Printf("Done adding initial files")
 		unprefixedNodes = nodes
+		require.NoError(t, fc.Close())
 	}
 
 	var prefixLength4Nodes []*repb.FileNode
@@ -408,7 +408,6 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		// Ensure that the files from the previous iteration (without subdir
@@ -450,6 +449,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 		// The disk usage should be the size of the new files.
 		require.Equal(t, int64(4096*10), fileDiskUsageRecursive(t, fcDir))
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Now *decrease* the subdir prefix length from 4 -> 2; should be able
@@ -503,6 +503,32 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		// The disk usage should be the size of the new files.
 		require.Equal(t, int64(4096*10), fileDiskUsageRecursive(t, fcDir))
 	}
+}
+
+func TestFileCacheUncleanShutdown(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	// Create a filecache, add a file, then simulate an unclean shutdown by
+	// NOT calling Close() (leaving the lock file in place).
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	writeFile(t, baseDir, "file", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	// Intentionally skip fc.Close() to simulate unclean shutdown.
+
+	// Re-open the filecache. The lock file should be detected, the cache
+	// directory wiped, and the previously-added file should no longer be found.
+	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	assert.False(t, linked, "cache should have been wiped after unclean shutdown")
 }
 
 func TestFileCacheWriter(t *testing.T) {
