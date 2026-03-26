@@ -395,7 +395,16 @@ const (
 // calling executorplatform.ApplyOverrides.
 func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	m := map[string]string{}
-	for _, prop := range GetProto(task.GetAction(), task.GetCommand()).GetProperties() {
+	// Read properties from both Command.platform and Action.platform,
+	// with Action.platform taking precedence on conflicts (per REAPI 2.2).
+	// Both are read (rather than picking one) because Bazel may split
+	// exec_properties across the two: the execution platform's properties
+	// go into Action.platform, while target-level exec_properties may
+	// only appear in Command.platform.
+	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
+		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
+	}
+	for _, prop := range task.GetAction().GetPlatform().GetProperties() {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
 	}
 	for _, prop := range task.GetPlatformOverrides().GetProperties() {
