@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -52,9 +53,14 @@ const (
 )
 
 var (
-	enableAlwaysClone   = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
-	subdirPrefixLength  = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableAlwaysClone           = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	includeSubdirPrefix         = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	subdirPrefixLength          = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableDiskFallbackOnStartup = flag.Bool("executor.local_cache_enable_disk_fallback_on_startup", true, "If true, FastLinkFile may best-effort link from disk while the startup scan is in progress.", flag.Internal)
+
+	// testOnlyDisableInitialDirectoryScan disables startup scanning in tests.
+	// Keep this false in production paths.
+	testOnlyDisableInitialDirectoryScan bool
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -83,10 +89,11 @@ var (
 // outputPath and return true. If no file is found in the cache, fileCache
 // will return false.
 type fileCache struct {
-	rootDir     string
-	lock        sync.Mutex
-	l           lru.LRU[*entry]
-	dirScanDone chan struct{}
+	rootDir      string
+	lock         sync.Mutex
+	l            lru.LRU[*entry]
+	dirScanDone  chan struct{}
+	scanComplete atomic.Bool
 	// Directories that are marked for deletion and are waiting for the last
 	// user to unlock the directory. The key is the directory path.
 	awaitingDeletion map[string]*entry
@@ -233,7 +240,9 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := os.MkdirAll(c.TempDir(), 0755); err != nil {
 		return nil, status.WrapErrorf(err, "failed to create filecache temp dir")
 	}
-	go c.scanDir()
+	if !testOnlyDisableInitialDirectoryScan {
+		go c.scanDir()
+	}
 	c.wg.Go(c.handleTrashNotifications)
 	return c, nil
 }
@@ -390,6 +399,7 @@ func (c *fileCache) scanDir() {
 	c.lock.Unlock()
 
 	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
+	c.scanComplete.Store(true)
 	close(c.dirScanDone)
 }
 
@@ -431,12 +441,26 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	c.lock.Lock()
 	ok := c.l.Contains(key)
 	c.lock.Unlock()
+	silenceNotFound := false
 	if !ok {
-		return false
+		// While the initial scan is still in progress, the file may already
+		// exist on disk but not yet be tracked in the LRU. Fall through to a
+		// best-effort link attempt, but don't log a warning if the file isn't
+		// found, since that will be expected in this case.
+		//
+		// Once the scan is complete, we can skip the FS lookup and just check
+		// the in-memory LRU, which should accurately reflect the filesystem.
+		if !c.scanComplete.Load() && *enableDiskFallbackOnStartup {
+			silenceNotFound = true
+		} else {
+			return false
+		}
 	}
 	start := time.Now()
 	if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
-		log.Warningf("Failed to link file from cache: %s", err)
+		if !(silenceNotFound && status.IsNotFoundError(err)) {
+			log.CtxWarningf(ctx, "Failed to link file from cache: %s", err)
+		}
 		return false
 	}
 	c.linkFromFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
@@ -668,9 +692,36 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, cre
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
 	k := key(ctx, node)
 
+	statFallback := false
+	if *enableDiskFallbackOnStartup {
+		// If the directory scan is in progress and the file is not found in the
+		// LRU, then fall back to checking if the file exists on disk.
+		statFallback = !c.scanComplete.Load()
+	}
+
 	c.lock.Lock()
-	defer c.lock.Unlock()
-	return c.l.Contains(k)
+	ok := c.l.Contains(k)
+	c.lock.Unlock()
+	if ok {
+		return true
+	}
+	if !statFallback {
+		return false
+	}
+
+	_, err := os.Stat(filecachePath(c.rootDir, k))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.CtxWarningf(ctx, "Error: stat filecache path during stat fallback: %q: %s", filecachePath(c.rootDir, k), err)
+		}
+		return false
+	}
+	// Note: we don't bother proactively hydrating the LRU in the case where the
+	// stat fallback succeeded. The initial directory scan should eventually
+	// pick up this file and add it to the the front of the LRU, preserving the
+	// usual guarantee that if ContainsFile returns true, the file should remain
+	// fresh in the cache for a while.
+	return true
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
@@ -854,4 +905,17 @@ func wrapOSError(err error, message string) error {
 		return status.NotFoundErrorf("%s: %s", message, err)
 	}
 	return status.InternalErrorf("%s: %s", message, err)
+}
+
+// DisableInitialDirectoryScanForTest disables startup scanning for newly
+// created filecache instances. Tests should pair this with
+// EnableInitialDirectoryScanForTest via t.Cleanup.
+func DisableInitialDirectoryScanForTest() {
+	testOnlyDisableInitialDirectoryScan = true
+}
+
+// EnableInitialDirectoryScanForTest re-enables startup scanning for newly
+// created filecache instances.
+func EnableInitialDirectoryScanForTest() {
+	testOnlyDisableInitialDirectoryScan = false
 }

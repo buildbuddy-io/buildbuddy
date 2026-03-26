@@ -369,6 +369,29 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 	}
 }
 
+func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) {
+	ctx := context.Background()
+	filecache.DisableInitialDirectoryScanForTest()
+	t.Cleanup(filecache.EnableInitialDirectoryScanForTest)
+
+	filecacheRoot := testfs.MakeTempDir(t)
+	outDir := testfs.MakeTempDir(t)
+
+	node := nodeFromString("content", false)
+	writeFileContent(t, filecacheRoot, "ANON/"+node.GetDigest().GetHash(), "content", false)
+
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+
+	require.True(t, fc.ContainsFile(ctx, node), "expected disk fallback hit with initial scan disabled")
+
+	outPath := filepath.Join(outDir, "linked")
+	ok := fc.FastLinkFile(ctx, node, outPath)
+	require.True(t, ok, "expected filesystem fallback link to succeed before initial scan completes")
+	assertFileContents(t, outPath, "content")
+}
+
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
