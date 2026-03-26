@@ -293,8 +293,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		}
 	} else if opts.KubePeerWatcher != nil {
 		dc.kubeDiscoveryChannel = opts.KubePeerWatcher
-		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers ...string) {
-			if err := chash.Set(peers...); err != nil {
+		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers map[string]string) {
+			log.Infof("distributed cache peer set changed to %v", peers)
+			if err := chash.SetFromMap(peers); err != nil {
 				log.Errorf("Error setting peers in consistent hash: %s", err)
 			}
 		})
