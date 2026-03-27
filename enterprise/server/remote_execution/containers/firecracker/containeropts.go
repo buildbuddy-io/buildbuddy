@@ -57,11 +57,6 @@ type ContainerOpts struct {
 	// in the guest. It is the marshalled form of []*networking.DNSOverride
 	MarshalledDNSOverrides string
 
-	// HostResolvConf is the contents of the host's /etc/resolv.conf, passed
-	// to the VM via MMDS so it uses the same DNS configuration. Empty if the
-	// file could not be read; goinit falls back to hardcoded nameservers.
-	HostResolvConf string
-
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.
