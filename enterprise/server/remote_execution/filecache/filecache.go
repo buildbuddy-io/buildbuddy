@@ -221,6 +221,15 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
+	// If a lock file exists from a previous run, the filecache did not shut
+	// down cleanly (e.g. power loss). Wipe the cache to avoid serving
+	// potentially corrupted files.
+	if !deleteContent {
+		if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
+			log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
+			deleteContent = true
+		}
+	}
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
 		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
@@ -230,24 +239,10 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	// If a lock file exists from a previous run, the filecache did not shut
-	// down cleanly (e.g. power loss). Wipe the cache to avoid serving
-	// potentially corrupted files.
-	lockFilePath := filepath.Join(rootDir, lockFile)
-	if !deleteContent {
-		if _, err := os.Stat(lockFilePath); err == nil {
-			log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
-			if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
-				return nil, err
-			}
-			if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-				return nil, err
-			}
-		}
-	}
 	// Create and sync the lock file so it is guaranteed to be on disk before
 	// any cache files are written. This ensures a subsequent power loss is
 	// detectable on the next boot.
+	lockFilePath := filepath.Join(rootDir, lockFile)
 	f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to create filecache lock file")
