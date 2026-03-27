@@ -369,6 +369,36 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 	}
 }
 
+func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) {
+	ctx := context.Background()
+	filecache.DisableInitialDirectoryScanForTest()
+	t.Cleanup(filecache.EnableInitialDirectoryScanForTest)
+
+	filecacheRoot := testfs.MakeTempDir(t)
+	outDir := testfs.MakeTempDir(t)
+
+	node := nodeFromString("content", false)
+	writeFileContent(t, filecacheRoot, "ANON/"+node.GetDigest().GetHash(), "content", false)
+
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+
+	require.True(t, fc.ContainsFile(ctx, node), "expected disk fallback hit with initial scan disabled")
+
+	outPath := filepath.Join(outDir, "linked")
+	ok := fc.FastLinkFile(ctx, node, outPath)
+	require.True(t, ok, "expected filesystem fallback link to succeed before initial scan completes")
+	assertFileContents(t, outPath, "content")
+
+	f, err := fc.Open(ctx, node)
+	require.NoError(t, err, "expected Open to succeed via disk fallback before initial scan completes")
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "content", string(data))
+}
+
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
