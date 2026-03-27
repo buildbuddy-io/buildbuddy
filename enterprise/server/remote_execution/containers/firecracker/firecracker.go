@@ -559,7 +559,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 	if *firecrackerVMResolvConfPath != "" {
 		b, err := os.ReadFile(*firecrackerVMResolvConfPath)
 		if err != nil {
-			log.Warningf("Failed to read %s, VMs will use default nameservers: %s", *firecrackerVMResolvConfPath, err)
+			return nil, status.WrapErrorf(err, "read resolv.conf %s", *firecrackerVMResolvConfPath)
 		}
 		hostResolvConf = string(b)
 	}
