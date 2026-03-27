@@ -395,7 +395,7 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	})
 
 	// Start workers.
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		wg.Go(func() {
 			worker(workerCtx, i, stores, keys, elog, &writeCount)
 		})
@@ -474,7 +474,7 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 	// Start workers on all 4 stores. Workers on s2 will start
 	// getting errors after the kill; workers on s4 will get errors
 	// until it receives a replica.
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		wg.Go(func() {
 			worker(workerCtx, i, allStores, keys, elog, &writeCount)
 		})
