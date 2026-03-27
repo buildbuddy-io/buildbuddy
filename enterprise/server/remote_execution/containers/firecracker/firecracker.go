@@ -93,6 +93,7 @@ var (
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
@@ -521,6 +522,7 @@ type Provider struct {
 	executorConfig         *ExecutorConfig
 	networkPool            *networking.VMNetworkPool
 	marshalledDNSOverrides string
+	hostResolvConf         string
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
@@ -553,11 +555,20 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, err
 	}
 
+	var hostResolvConf string
+	if *firecrackerVMResolvConfPath != "" {
+		b, err := os.ReadFile(*firecrackerVMResolvConfPath)
+		if err != nil {
+			log.Warningf("Failed to read %s, VMs will use default nameservers: %s", *firecrackerVMResolvConfPath, err)
+		}
+		hostResolvConf = string(b)
+	}
 	return &Provider{
 		env:                    env,
 		executorConfig:         executorConfig,
 		networkPool:            networkPool,
 		marshalledDNSOverrides: dns,
+		hostResolvConf:         hostResolvConf,
 	}, nil
 }
 
@@ -604,6 +615,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
 		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
@@ -679,6 +691,7 @@ type FirecrackerContainer struct {
 
 	executorConfig         *ExecutorConfig
 	marshalledDNSOverrides string
+	hostResolvConf         string
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -758,6 +771,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmConfig:               opts.VMConfiguration.CloneVT(),
 		executorConfig:         opts.ExecutorConfig,
 		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
+		hostResolvConf:         opts.HostResolvConf,
 		jailerRoot:             opts.ExecutorConfig.JailerRoot,
 		containerImage:         opts.ContainerImage,
 		user:                   opts.User,
@@ -2174,6 +2188,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if networkingEnabled(c.vmConfig.NetworkMode) {
 		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
+	// Pass the host's resolv.conf to the VM so it can use the same DNS
+	// configuration. goinit will fall back to default nameservers if unavailable.
+	metadata["resolv_conf"] = c.hostResolvConf
+
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
