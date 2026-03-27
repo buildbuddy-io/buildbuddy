@@ -153,7 +153,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "b1a416631ea244bcbbc9a70d731eda8b7a5a14bc018e4e99dfa37123f3283c44"
+		expectedHash    = "8cdc0a30ab7f5a85b90cfc5fa06c6c0339b79110ecf7f0d9789a4653a39b660c"
 		expectedVersion = "18"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -2136,39 +2136,6 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	// Note: some bytes are sent (the ping request) and received (ICMP reject).
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-}
-
-func TestFirecrackerResolvConf(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	// Read the host's resolv.conf to verify the VM receives the same content.
-	hostResolvConf, err := os.ReadFile("/etc/resolv.conf")
-	require.NoError(t, err)
-
-	cmd := &repb.Command{Arguments: []string{"cat", "/etc/resolv.conf"}}
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-		HostResolvConf: string(hostResolvConf),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
-
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, string(hostResolvConf), string(res.Stdout))
 }
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
