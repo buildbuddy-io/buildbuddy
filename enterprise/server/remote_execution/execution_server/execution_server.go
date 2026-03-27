@@ -854,11 +854,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets {
+	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
 		if secretService == nil {
 			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
-		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID, props.EnvSecrets...)
 		if err != nil {
 			return nil, err
 		}
