@@ -157,6 +157,74 @@ func TestClearIdentity(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestOverridePropagated_DefaultTrue(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	// Start with an existing identity header in the outgoing context.
+	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "upstream-origin",
+		Client: "upstream",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, existingHeader))
+	ctx, err = sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// Default behavior (override_propagated=true): a new header should be appended.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 2, len(vals), "expected both old and new headers")
+}
+
+func TestOverridePropagated_False_PreservesExisting(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.override_propagated", false)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "upstream-origin",
+		Client: "upstream",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, existingHeader))
+	ctx, err = sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// With override_propagated=false, the existing header should be preserved and no new one added.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected only the original header")
+	require.Equal(t, existingHeader, vals[0])
+}
+
+func TestOverridePropagated_False_AddsWhenMissing(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.override_propagated", false)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	// No existing identity header in the outgoing context.
+	ctx := context.Background()
+	ctx, err := sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// Even with override_propagated=false, a header should be added when none exists.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected a new header to be added")
+}
+
 func BenchmarkAddIdentityToContext(b *testing.B) {
 	sis := newService(b, clockwork.NewRealClock())
 

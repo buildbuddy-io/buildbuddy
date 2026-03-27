@@ -29,6 +29,9 @@ var (
 	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
 	expiration = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
 	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
+
+	// TODO(iain): delete this flag once all proxies in prod enforce IP rules.
+	overridePropagated = flag.Bool("app.client_identity.override_propagated", true, "If false, AddIdentityToContext will not set a new client identity header when one is already present in the outgoing context.")
 )
 
 type Service struct {
@@ -116,6 +119,13 @@ func (s *Service) getCachedHeader() (string, error) {
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	if !*overridePropagated {
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			if vals := md.Get(authutil.ClientIdentityHeaderName); len(vals) > 0 {
+				return ctx, nil
+			}
+		}
+	}
 	header, err := s.getCachedHeader()
 	if err != nil {
 		return ctx, err

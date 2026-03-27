@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -30,10 +29,9 @@ var (
 )
 
 type RemoteCrypter struct {
-	authenticator         interfaces.Authenticator
-	client                enpb.EncryptionServiceClient
-	cache                 *crypter_key_cache.KeyCache
-	clientIdentityService interfaces.ClientIdentityService
+	authenticator interfaces.Authenticator
+	client        enpb.EncryptionServiceClient
+	cache         *crypter_key_cache.KeyCache
 }
 
 func SupportsEncryption(env environment.Env) func(ctx context.Context) bool {
@@ -53,28 +51,19 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 
-	// Installing the client identity service in the environment causes it to
-	// parse the incoming client identity for all incoming RPCs and set a
-	// client identity for all outgoing RPCs. We don't want that in the Proxy,
-	// so, create a new client identity service here for populating the client
-	// identity just for GetEncryptionKey RPCs.
-	clientIdentityService, err := clientidentity.New(env.GetClock())
+	conn, err := grpc_client.DialInternal(env, *target)
 	if err != nil {
 		return err
 	}
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return err
-	}
-	crypter := New(env, env.GetAuthenticator(), clientIdentityService, env.GetClock(), conn)
+	crypter := New(env, env.GetAuthenticator(), env.GetClock(), conn)
 	env.SetCrypter(crypter)
 	return nil
 }
 
-func New(env environment.Env, authenticator interfaces.Authenticator, clientIdentityService interfaces.ClientIdentityService, clock clockwork.Clock, conn grpc.ClientConnInterface) *RemoteCrypter {
+func New(env environment.Env, authenticator interfaces.Authenticator, clock clockwork.Clock, conn grpc.ClientConnInterface) *RemoteCrypter {
 	client := enpb.NewEncryptionServiceClient(conn)
 	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
-		return refreshKey(ctx, ck, client, clientIdentityService)
+		return refreshKey(ctx, ck, client)
 	}
 
 	// Don't start the asynchronous key refresher. Instead, rely on refetching
@@ -88,17 +77,7 @@ func New(env environment.Env, authenticator interfaces.Authenticator, clientIden
 	}
 }
 
-func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient, clientIdentityService interfaces.ClientIdentityService) ([]byte, *sgpb.EncryptionMetadata, error) {
-	// The GetEncryptionKey RPC is only permitted for certain clients, so we
-	// don't want to use the callers identity (or lack thereof) for this RPC.
-	// Clear it here and set this server's identity, if present, because there
-	// can only be one client identity per RPC.
-	ctx = clientidentity.ClearIdentity(ctx)
-	ctx, err := clientIdentityService.AddIdentityToContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, client enpb.EncryptionServiceClient) ([]byte, *sgpb.EncryptionMetadata, error) {
 	req := &enpb.GetEncryptionKeyRequest{}
 	if ck.KeyID != "" {
 		req = &enpb.GetEncryptionKeyRequest{

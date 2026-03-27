@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
@@ -99,6 +100,9 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
+	if err := clientidentity.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remoteauth.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
