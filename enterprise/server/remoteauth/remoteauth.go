@@ -48,7 +48,7 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) error {
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialInternal(env, *target)
 	if err != nil {
 		return err
 	}
