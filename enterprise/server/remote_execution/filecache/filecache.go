@@ -62,9 +62,10 @@ const (
 )
 
 var (
-	enableAlwaysClone   = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
-	subdirPrefixLength  = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableAlwaysClone              = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	includeSubdirPrefix            = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	subdirPrefixLength             = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", true, "If true, write a marker file to the filecache directory while running. If the marker is present at startup, the filecache is wiped to avoid serving potentially corrupted files from a previous unclean shutdown (e.g. power loss).")
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -223,13 +224,15 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	// If a lock file exists from a previous run, the filecache did not shut
-	// down cleanly (e.g. power loss). Wipe the cache to avoid serving
-	// potentially corrupted files.
-	if !deleteContent {
-		if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
-			log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
-			deleteContent = true
+	if *deleteFilecacheOnUncleanShutdown {
+		// If a lock file exists from a previous run, the filecache did not shut
+		// down cleanly (e.g. power loss). Wipe the cache to avoid serving
+		// potentially corrupted files.
+		if !deleteContent {
+			if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
+				log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
+				deleteContent = true
+			}
 		}
 	}
 	if deleteContent {
@@ -241,23 +244,25 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	// Create and sync the lock file so it is guaranteed to be on disk before
-	// any cache files are written. This ensures a subsequent power loss is
-	// detectable on the next boot.
-	lockFilePath := filepath.Join(rootDir, lockFile)
-	f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return nil, status.WrapErrorf(err, "failed to create filecache lock file")
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return nil, status.WrapErrorf(err, "failed to sync filecache lock file")
-	}
-	if err := f.Close(); err != nil {
-		return nil, status.WrapErrorf(err, "failed to close filecache lock file")
-	}
-	if err := syncDir(rootDir); err != nil {
-		return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
+	if *deleteFilecacheOnUncleanShutdown {
+		// Create and sync the lock file so it is guaranteed to be on disk before
+		// any cache files are written. This ensures a subsequent power loss is
+		// detectable on the next boot.
+		lockFilePath := filepath.Join(rootDir, lockFile)
+		f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to create filecache lock file")
+		}
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return nil, status.WrapErrorf(err, "failed to sync filecache lock file")
+		}
+		if err := f.Close(); err != nil {
+			return nil, status.WrapErrorf(err, "failed to close filecache lock file")
+		}
+		if err := syncDir(rootDir); err != nil {
+			return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
+		}
 	}
 	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
@@ -296,26 +301,28 @@ func (c *fileCache) Close() error {
 	c.isClosed.Store(true)
 	close(c.closed)
 	c.wg.Wait()
-	// Flush all dirty pages to disk before removing the lock file. This
-	// ensures that all cache files written during this session are durable
-	// before we signal a clean shutdown. Without this, a power loss after the
-	// lock file is removed but before the OS flushes the page cache could
-	// leave corrupted files on disk with no lock file to detect them.
-	dir, err := os.Open(c.rootDir)
-	if err != nil {
-		log.Warningf("filecache(%q): failed to open root dir for syncfs: %s", c.rootDir, err)
-	} else {
-		start := time.Now()
-		syncfsErr := unix.Syncfs(int(dir.Fd()))
-		log.Infof("filecache(%q): syncfs took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
-		dir.Close()
-	}
-	lockFilePath := filepath.Join(c.rootDir, lockFile)
-	if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
-	}
-	if err := syncDir(c.rootDir); err != nil {
-		log.Warningf("filecache(%q): failed to sync root dir after removing lock file: %s", c.rootDir, err)
+	if *deleteFilecacheOnUncleanShutdown {
+		// Flush all dirty pages to disk before removing the lock file. This
+		// ensures that all cache files written during this session are durable
+		// before we signal a clean shutdown. Without this, a power loss after the
+		// lock file is removed but before the OS flushes the page cache could
+		// leave corrupted files on disk with no lock file to detect them.
+		dir, err := os.Open(c.rootDir)
+		if err != nil {
+			log.Warningf("filecache(%q): failed to open root dir for syncfs: %s", c.rootDir, err)
+		} else {
+			start := time.Now()
+			syncfsErr := unix.Syncfs(int(dir.Fd()))
+			log.Infof("filecache(%q): syncfs took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
+			dir.Close()
+		}
+		lockFilePath := filepath.Join(c.rootDir, lockFile)
+		if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
+		}
+		if err := syncDir(c.rootDir); err != nil {
+			log.Warningf("filecache(%q): failed to sync root dir after removing lock file: %s", c.rootDir, err)
+		}
 	}
 	return nil
 }
