@@ -53,7 +53,7 @@ const (
 	// process exited uncleanly (e.g. power loss or crash), and the filecache
 	// contents may be in a corrupted state. In that case, the filecache root
 	// dir is wiped and rebuilt from scratch.
-	lockFile = "filecache.lock"
+	lockFile = "filecache.dirty"
 
 	// Threshold at which to log when the trash collection is backing up.
 	trashCollectionLogThreshold = 8
@@ -208,7 +208,10 @@ func syncDir(path string) error {
 		return err
 	}
 	defer dir.Close()
-	return dir.Sync()
+	start := time.Now()
+	err = dir.Sync()
+	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
+	return err
 }
 
 // NewFileCache constructs an fileCache with maxSize that will cache files
@@ -491,10 +494,6 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	defer func() {
 		c.requestCounter[hit].Inc()
 	}()
-	if err := c.checkClosed(); err != nil {
-		log.Warningf("filecache.FastLinkFile: %s", err)
-		return false
-	}
 
 	groupID := groupIDStringFromContext(ctx)
 	key := groupSpecificKey(groupID, node)
@@ -519,9 +518,6 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 		hit := f != nil
 		c.requestCounter[hit].Inc()
 	}()
-	if err := c.checkClosed(); err != nil {
-		return nil, err
-	}
 
 	groupID := groupIDStringFromContext(ctx)
 	key := groupSpecificKey(groupID, node)
@@ -685,9 +681,6 @@ func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, siz
 // returns NotFound if the directory exists on disk but is not currently
 // tracked by filecache.
 func (c *fileCache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
-	if err := c.checkClosed(); err != nil {
-		return nil, 0, err
-	}
 	path = filepath.Clean(path)
 	key := externalDirectoryKey(path)
 
@@ -749,9 +742,6 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, cre
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	if err := c.checkClosed(); err != nil {
-		return false
-	}
 	k := key(ctx, node)
 
 	c.lock.Lock()
@@ -776,9 +766,6 @@ func (c *fileCache) WaitForDirectoryScanToComplete() {
 
 // Read atomically reads a file from filecache.
 func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
-	if err := c.checkClosed(); err != nil {
-		return nil, err
-	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err
