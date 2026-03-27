@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -294,6 +296,20 @@ func (c *fileCache) Close() error {
 	c.isClosed.Store(true)
 	close(c.closed)
 	c.wg.Wait()
+	// Flush all dirty pages to disk before removing the lock file. This
+	// ensures that all cache files written during this session are durable
+	// before we signal a clean shutdown. Without this, a power loss after the
+	// lock file is removed but before the OS flushes the page cache could
+	// leave corrupted files on disk with no lock file to detect them.
+	dir, err := os.Open(c.rootDir)
+	if err != nil {
+		log.Warningf("filecache(%q): failed to open root dir for syncfs: %s", c.rootDir, err)
+	} else {
+		start := time.Now()
+		syncfsErr := unix.Syncfs(int(dir.Fd()))
+		log.Infof("filecache(%q): syncfs took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
+		dir.Close()
+	}
 	lockFilePath := filepath.Join(c.rootDir, lockFile)
 	if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
