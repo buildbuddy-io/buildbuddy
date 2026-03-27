@@ -248,13 +248,16 @@ func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvi
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
 			method = token.Method.Alg()
+			if token.Method != key.SigningMethod {
+				return nil, fmt.Errorf("incorrect key signing method: %v", token.Method.Alg())
+			}
 			switch token.Method {
 			case jwt.SigningMethodHS256:
-				return []byte(key), nil
+				return []byte(key.Key), nil
 			case jwt.SigningMethodES256:
-				return jwt.ParseECPublicKeyFromPEM([]byte(key))
+				return jwt.ParseECPublicKeyFromPEM([]byte(key.Key))
 			default:
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Method.Alg())
+				return nil, fmt.Errorf("unsupported signing method: %v", token.Method.Alg())
 			}
 		})
 		if err == nil {
@@ -567,17 +570,30 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// A lazily-evaluated provider of keys to use for verifying JWT signatures.
-type KeyProvider func(ctx context.Context) ([]string, error)
+// VerificationKey pairs a key with its expected signing method.
+type VerificationKey struct {
+	Key           string
+	SigningMethod jwt.SigningMethod
+}
 
-func DefaultKeyProvider(ctx context.Context) ([]string, error) {
-	var keys []string
+// A lazily-evaluated provider of keys to use for verifying JWT signatures.
+type KeyProvider func(ctx context.Context) ([]VerificationKey, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]VerificationKey, error) {
+	var keys []VerificationKey
 	if *newJwtKey != "" {
-		keys = []string{*newJwtKey, *jwtKey}
+		keys = []VerificationKey{
+			{Key: *newJwtKey, SigningMethod: jwt.SigningMethodHS256},
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
 	} else {
-		keys = []string{*jwtKey}
+		keys = []VerificationKey{
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
 	}
-	keys = append(keys, es256PublicKeys...)
+	for _, k := range es256PublicKeys {
+		keys = append(keys, VerificationKey{Key: k, SigningMethod: jwt.SigningMethodES256})
+	}
 	return keys, nil
 }
 
