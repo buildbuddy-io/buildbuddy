@@ -202,3 +202,93 @@ func TestUpdateSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestGetSecretEnvVars_Filter(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	authenticator := enterprise_testauth.Configure(t, te)
+	ctx := context.Background()
+
+	// Generate and write a master key for KMS.
+	masterKey := make([]byte, 32)
+	_, err := rand.Read(masterKey)
+	require.NoError(t, err)
+	masterKeyFile, err := os.OpenFile(
+		testfs.MakeTempFile(t, testfs.MakeTempDir(t), "master-key-*"),
+		os.O_WRONLY, 0,
+	)
+	require.NoError(t, err)
+	_, err = masterKeyFile.Write(masterKey)
+	require.NoError(t, err)
+	require.NoError(t, masterKeyFile.Close())
+	flags.Set(t, "keystore.master_key_uri", "local-insecure-kms://"+filepath.Base(masterKeyFile.Name()))
+	flags.Set(t, "keystore.local_insecure_kms_directory", filepath.Dir(masterKeyFile.Name()))
+	require.NoError(t, kms.Register(te))
+
+	flags.Set(t, "app.enable_secret_service", true)
+	require.NoError(t, secrets.Register(te))
+
+	secretService := te.GetSecretService()
+	require.NotNil(t, secretService)
+
+	// Create a user and grab their default group.
+	u := enterprise_testauth.CreateRandomUser(t, te, "example.com")
+	require.NotEmpty(t, u.Groups)
+	gid := u.Groups[0].Group.GroupID
+
+	// Generate and persist group keypair.
+	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(te)
+	require.NoError(t, err)
+	res := te.GetDBHandle().NewQuery(ctx, "set_group_keys").Raw(`
+		UPDATE "Groups" SET public_key = ?, encrypted_private_key = ? WHERE group_id = ?`,
+		pubKey, encPrivKey, gid,
+	).Exec()
+	require.NoError(t, res.Error)
+
+	userCtx, err := authenticator.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	// Store three secrets.
+	for name, val := range map[string]string{
+		"SECRET_A": "value-a",
+		"SECRET_B": "value-b",
+		"SECRET_C": "value-c",
+	} {
+		encValue, err := keystore.NewAnonymousSealedBox(pubKey, val)
+		require.NoError(t, err)
+		_, _, err = secretService.UpdateSecret(userCtx, &skpb.UpdateSecretRequest{
+			Secret: &skpb.Secret{Name: name, Value: encValue},
+		})
+		require.NoError(t, err)
+	}
+
+	t.Run("no filter returns all secrets", func(t *testing.T) {
+		envVars, err := secretService.GetSecretEnvVars(userCtx, gid)
+		require.NoError(t, err)
+		assert.Len(t, envVars, 3)
+	})
+
+	t.Run("single name filter", func(t *testing.T) {
+		envVars, err := secretService.GetSecretEnvVars(userCtx, gid, "SECRET_A")
+		require.NoError(t, err)
+		require.Len(t, envVars, 1)
+		assert.Equal(t, "SECRET_A", envVars[0].GetName())
+		assert.Equal(t, "value-a", envVars[0].GetValue())
+	})
+
+	t.Run("multiple name filter", func(t *testing.T) {
+		envVars, err := secretService.GetSecretEnvVars(userCtx, gid, "SECRET_A", "SECRET_C")
+		require.NoError(t, err)
+		assert.Len(t, envVars, 2)
+		names := make([]string, len(envVars))
+		for i, ev := range envVars {
+			names[i] = ev.GetName()
+		}
+		assert.ElementsMatch(t, []string{"SECRET_A", "SECRET_C"}, names)
+	})
+
+	t.Run("nonexistent name returns empty", func(t *testing.T) {
+		envVars, err := secretService.GetSecretEnvVars(userCtx, gid, "DOES_NOT_EXIST")
+		require.NoError(t, err)
+		assert.Empty(t, envVars)
+	})
+}

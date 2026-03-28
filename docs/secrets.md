@@ -57,6 +57,19 @@ foo_library(
 )
 ```
 
+If you only need a subset of your secrets in a given action, use the
+`env-secrets` property instead. It accepts a comma-separated list of
+secret names and injects only those secrets as environment variables.
+
+```python title="BUILD"
+foo_library(
+    # ...
+    exec_properties = {
+        "env-secrets": "API_KEY,DB_PASSWORD",
+    }
+)
+```
+
 ### Workflows
 
 [BuildBuddy workflows](workflows-setup) do not need additional

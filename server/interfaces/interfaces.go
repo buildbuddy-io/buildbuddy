@@ -1464,7 +1464,8 @@ type SecretService interface {
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
-	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+	// If secretNames is non-empty, only secrets whose names appear in the list are returned.
+	GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error)
 }
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
