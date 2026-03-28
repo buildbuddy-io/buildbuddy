@@ -22,10 +22,6 @@ import (
 )
 
 const (
-	// TTL for action-merging data about queued executions. This should be
-	// approximately equal to the longest execution queue times.
-	queuedExecutionTTL = 10 * time.Minute
-
 	// The default TTL for action-merging data about claimed execution. This
 	// is expressed in the number of "lease periods," which is defined in
 	// `remote_execution.lease_duration` and should be thought of in terms of
@@ -60,6 +56,7 @@ var (
 	enableActionMerging = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
 	hedgedActionCount   = flag.Int("remote_execution.action_merging_hedge_count", 0, "When action merging is enabled, this flag controls how many additional, 'hedged' attempts an action is run in the background. Note that even hedged actions are run at most once per execution request.")
 	hedgeAfterDelay     = flag.Duration("remote_execution.action_merging_hedge_delay", 0*time.Second, "When action merging hedging is enabled, up to --remote_execution.action_merging_hedge_count hedged actions are run with this delay of linear backoff.")
+	queuedExecutionTTL  = flag.Duration("remote_execution.action_merging_queued_execution_ttl", 10*time.Minute, "TTL for action-merging data about queued (unclaimed) executions. Should be approximately equal to the longest expected queue times.")
 )
 
 // Returns the redis key pointing to the hash storing action merging state. The
@@ -290,8 +287,8 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 		pipe.HSet(ctx, forwardKey, lastExecutionSubmitTimeKey, nowString)
 		pipe.HIncrBy(ctx, forwardKey, hedgedExecutionCountKey, 0)
 		pipe.HIncrBy(ctx, forwardKey, actionCountKey, 1)
-		pipe.Expire(ctx, forwardKey, queuedExecutionTTL)
-		pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
+		pipe.Expire(ctx, forwardKey, *queuedExecutionTTL)
+		pipe.Set(ctx, reverseKey, forwardKey, *queuedExecutionTTL)
 		_, err = pipe.Exec(ctx)
 		executionID = newExecutionID
 		return err
