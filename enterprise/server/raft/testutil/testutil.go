@@ -92,6 +92,9 @@ func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v d
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
+	// If the store was previously stopped, Stop() will have torn
+	// down the gossip manager. Create a fresh one on the same
+	// address so the node rejoins the cluster.
 	if ts.closed {
 		gm, err := gossip.NewWithArgs("name-"+ts.GossipAddress, ts.GossipAddress, sf.gossipAddrs)
 		require.NoError(t, err)

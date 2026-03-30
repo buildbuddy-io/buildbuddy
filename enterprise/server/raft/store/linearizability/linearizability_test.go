@@ -320,7 +320,7 @@ func killRestartLoop(ctx context.Context, t *testing.T, sf *testutil.StoreFactor
 
 		// Keep the node dead for a random duration. With
 		// dead_store_timeout=1m, longer downtimes may trigger
-		// up-replication to s4.
+		// up-replication to another available node.
 		downtime := 10*time.Second + time.Duration(rng.Intn(110))*time.Second
 		log.Infof("killRestartLoop: store %s will be down for %s", victim.NHID(), downtime)
 		select {
@@ -454,9 +454,9 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 
 // TestLinearizabilityUnderKillRestart verifies linearizability while
 // nodes are repeatedly killed and restarted. Uses 4 nodes: shard
-// starts on s1-s3, and the nemesis kills/restarts s2 or s3 at random
-// intervals. If a node stays dead long enough, the driver may
-// up-replicate to s4.
+// starts on s1-s3, and the nemesis kills/restarts any node at
+// random intervals. If a node stays dead long enough, the driver
+// may up-replicate to another available node.
 func TestLinearizabilityUnderKillRestart(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
