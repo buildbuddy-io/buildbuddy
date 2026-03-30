@@ -9,6 +9,9 @@ PODMAN_VERSION = "v5.7.0"
 PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
+# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
+BB_CLI_VERSION = "5.0.266"
+
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
@@ -244,6 +247,34 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-arm64",
+        executable = True,
+        integrity = "sha256-YbA6ieC71SyHEs9jZs5d4FziKO+N+sOyVsyRAD8Jogk=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-x86_64",
+        executable = True,
+        integrity = "sha256-0+YsSnSw5m+MrpgLMfcgQtInOmfQyLeW+E1IVmv9gs4=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-arm64",
+        executable = True,
+        integrity = "sha256-2o5DMCcCDjbiDQeQtfG0x26QAWai3wUHnr9DRfmi1Aw=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-x86_64",
+        executable = True,
+        integrity = "sha256-Avig/euOP1xFfiwIDMoHwOh66nMu0DICaciYuojmd/I=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
