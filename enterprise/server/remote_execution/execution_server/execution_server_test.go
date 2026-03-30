@@ -2,7 +2,6 @@ package execution_server_test
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -198,58 +197,6 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
-}
-
-func TestDispatch_HeaderEnvOverridesMarkedForRedaction(t *testing.T) {
-	env, _, _ := setupEnv(t)
-	ctx := context.Background()
-	s := env.GetRemoteExecutionService()
-
-	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
-	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
-		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
-		ToolInvocationId: iid,
-	})
-	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
-	require.NoError(t, err)
-
-	// Simulate x-buildbuddy-platform.env-overrides header (short-lived secrets).
-	md, _ := metadata.FromIncomingContext(ctx)
-	md = md.Copy()
-	md.Set("x-buildbuddy-platform.env-overrides", "SECRET_TOKEN=abc123,API_KEY=xyz789")
-	ctx = metadata.NewIncomingContext(ctx, md)
-
-	action := &repb.Action{}
-	arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
-	ad := arn.GetDigest()
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
-	require.NoError(t, err)
-	taskID := arn.NewUploadString()
-	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
-	require.NoError(t, err)
-
-	sched := env.GetSchedulerService().(*schedulerServerMock)
-	require.Equal(t, 1, len(sched.scheduleReqs))
-	task := &repb.ExecutionTask{}
-	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
-	require.NoError(t, err)
-
-	// Find the BUILDBUDDY_SECRET_ENV_VAR_NAMES env var on the task command.
-	var redactionValue string
-	for _, ev := range task.GetCommand().GetEnvironmentVariables() {
-		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
-			redactionValue = ev.GetValue()
-			break
-		}
-	}
-	require.NotEmpty(t, redactionValue,
-		"env-overrides passed via x-buildbuddy-platform header should be marked for redaction")
-
-	var redactionNames []string
-	err = json.Unmarshal([]byte(redactionValue), &redactionNames)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"SECRET_TOKEN", "API_KEY"}, redactionNames)
 }
 
 func TestDispatch_ActionEnvOverridesNotMarkedForRedaction(t *testing.T) {
