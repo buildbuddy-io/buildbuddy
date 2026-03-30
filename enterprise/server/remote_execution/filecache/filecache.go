@@ -48,15 +48,23 @@ const (
 	// Temporary directory under the filecache root.
 	tmpDir = "_tmp"
 
+	// lockFile is a file placed in the filecache root dir while the filecache
+	// is running. If this file is found on startup, it means the previous
+	// process exited uncleanly (e.g. power loss or crash), and the filecache
+	// contents may be in a corrupted state. In that case, the filecache root
+	// dir is wiped and rebuilt from scratch.
+	lockFile = "filecache.dirty"
+
 	// Threshold at which to log when the trash collection is backing up.
 	trashCollectionLogThreshold = 8
 )
 
 var (
-	enableAlwaysClone           = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix         = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
-	subdirPrefixLength          = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
-	enableDiskFallbackOnStartup = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
+	enableAlwaysClone                = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
+	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", true, "If true, write a marker file to the filecache directory while running. If the marker is present at startup, the filecache is wiped to avoid serving potentially corrupted files from a previous unclean shutdown (e.g. power loss).")
 
 	// testOnlyDisableInitialDirectoryScan disables startup scanning in tests.
 	// Keep this false in production paths.
@@ -100,6 +108,7 @@ type fileCache struct {
 	trashList        []string
 	trashCh          chan struct{}
 	closed           chan struct{}
+	isClosed         atomic.Bool
 	wg               sync.WaitGroup
 
 	linkFromFileCacheLatency prometheus.Observer
@@ -198,12 +207,37 @@ func (h *directoryHandle) moveToTrash() error {
 	return h.filecache.trash(h.path)
 }
 
+// syncDir fsyncs the directory at path to ensure any pending metadata changes
+// (e.g. file creation or deletion) are durable on disk.
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	start := time.Now()
+	err = dir.Sync()
+	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
+	return err
+}
+
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.
 func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
+	}
+	if *deleteFilecacheOnUncleanShutdown {
+		// If a lock file exists from a previous run, the filecache did not shut
+		// down cleanly (e.g. power loss). Wipe the cache to avoid serving
+		// potentially corrupted files.
+		if !deleteContent {
+			if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
+				log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
+				deleteContent = true
+			}
+		}
 	}
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
@@ -213,6 +247,26 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	}
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
+	}
+	if *deleteFilecacheOnUncleanShutdown {
+		// Create and sync the lock file so it is guaranteed to be on disk before
+		// any cache files are written. This ensures a subsequent power loss is
+		// detectable on the next boot.
+		lockFilePath := filepath.Join(rootDir, lockFile)
+		f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to create filecache lock file")
+		}
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return nil, status.WrapErrorf(err, "failed to sync filecache lock file")
+		}
+		if err := f.Close(); err != nil {
+			return nil, status.WrapErrorf(err, "failed to close filecache lock file")
+		}
+		if err := syncDir(rootDir); err != nil {
+			return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
+		}
 	}
 	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
@@ -247,11 +301,29 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	return c, nil
 }
 
-// Close stops the background goroutine that cleans up trash and waits for it
-// to exit.
+// Close stops accepting new requests, waits for background goroutines to exit,
+// then removes the lock file and syncs the directory to record a clean shutdown.
 func (c *fileCache) Close() error {
+	c.isClosed.Store(true)
 	close(c.closed)
 	c.wg.Wait()
+	if *deleteFilecacheOnUncleanShutdown {
+		// Flush all dirty pages to disk before removing the lock file. This
+		// ensures that all cache files written during this session are durable
+		// before we signal a clean shutdown. Without this, a power loss after the
+		// lock file is removed but before the OS flushes the page cache could
+		// leave corrupted files on disk with no lock file to detect them.
+		start := time.Now()
+		syncfsErr := syncFilesystem(c.rootDir)
+		log.Infof("filecache(%q): syncFilesystem took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
+		lockFilePath := filepath.Join(c.rootDir, lockFile)
+		if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
+		}
+		if err := syncDir(c.rootDir); err != nil {
+			log.Warningf("filecache(%q): failed to sync root dir after removing lock file: %s", c.rootDir, err)
+		}
+	}
 	return nil
 }
 
@@ -430,6 +502,13 @@ func key(ctx context.Context, node *repb.FileNode) string {
 	return k
 }
 
+func (c *fileCache) checkClosed() error {
+	if c.isClosed.Load() {
+		return status.FailedPreconditionError("filecache is closed")
+	}
+	return nil
+}
+
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
 	defer func() {
 		c.requestCounter[hit].Inc()
@@ -544,6 +623,9 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	if err := c.checkClosed(); err != nil {
+		return err
+	}
 	start := time.Now()
 	groupID := groupIDStringFromContext(ctx)
 	// Locking happens in addFileToGroup().
@@ -594,6 +676,9 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 // approach ensures that eviction is both fast and atomic (the atomicity
 // property is required to uphold the invariants described above).
 func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error) {
+	if err := c.checkClosed(); err != nil {
+		return nil, err
+	}
 	path = filepath.Clean(path)
 	key := externalDirectoryKey(path)
 
@@ -675,6 +760,9 @@ func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool 
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
+	if err := c.checkClosed(); err != nil {
+		return false
+	}
 	k := key(ctx, node)
 
 	c.lock.Lock()
@@ -705,6 +793,9 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 
 // Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+	if err := c.checkClosed(); err != nil {
+		return 0, err
+	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return 0, err
@@ -812,6 +903,9 @@ func (v *verifiedWriter) Close() error {
 }
 
 func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
+	if err := c.checkClosed(); err != nil {
+		return nil, err
+	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err
