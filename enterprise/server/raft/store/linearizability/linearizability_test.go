@@ -268,10 +268,12 @@ const defaultTestDuration = 3 * time.Minute
 func getTestDuration(t *testing.T) time.Duration {
 	v := os.Getenv("TEST_DURATION")
 	if v == "" {
+		t.Logf("TEST_DURATION not set, using default %v", defaultTestDuration)
 		return defaultTestDuration
 	}
 	d, err := time.ParseDuration(v)
 	require.NoError(t, err, "invalid TEST_DURATION %q", v)
+	t.Logf("TEST_DURATION=%s (parsed as %v)", v, d)
 	return d
 }
 
