@@ -183,7 +183,7 @@ func generateTestKeys(t *testing.T, numKeys int) []*testKey {
 		}
 		pk, err := fs.PebbleKey(fr)
 		require.NoError(t, err)
-		keyBytes, err := pk.Bytes(filestore.Version6)
+		keyBytes, err := pk.Bytes(filestore.Version5)
 		require.NoError(t, err)
 		keys[i] = &testKey{
 			pebbleKey: keyBytes,
@@ -302,15 +302,45 @@ func worker(ctx context.Context, clientID int, stores []*testutil.TestingStore, 
 	}
 }
 
-// killNemesis kills a store after a delay to simulate a node failure.
-func killNemesis(ctx context.Context, store *testutil.TestingStore, delay time.Duration) {
+// killRestartLoop repeatedly kills and restarts a random store.
+// Must be called from the test goroutine since RecreateStore uses
+// require.
+func killRestartLoop(ctx context.Context, t *testing.T, sf *testutil.StoreFactory, stores []*testutil.TestingStore) {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Wait before first kill to let the cluster stabilize.
 	select {
 	case <-ctx.Done():
 		return
-	case <-time.After(delay):
+	case <-time.After(10 * time.Second):
 	}
-	log.Infof("killNemesis: killing store %s", store.NHID())
-	store.Stop()
+	for ctx.Err() == nil {
+		victim := stores[rng.Intn(len(stores))]
+		log.Infof("killRestartLoop: killing store %s", victim.NHID())
+		victim.Stop()
+
+		// Keep the node dead for a random duration. With
+		// dead_store_timeout=1m, longer downtimes may trigger
+		// up-replication to another available node.
+		downtime := 10*time.Second + time.Duration(rng.Intn(110))*time.Second
+		log.Infof("killRestartLoop: store %s will be down for %s", victim.NHID(), downtime)
+		select {
+		case <-ctx.Done():
+			sf.RecreateStore(t, victim)
+			return
+		case <-time.After(downtime):
+		}
+
+		sf.RecreateStore(t, victim)
+		log.Infof("killRestartLoop: restarted store %s", victim.NHID())
+
+		// Let the node rejoin before the next kill.
+		uptime := 5*time.Second + time.Duration(rng.Intn(30))*time.Second
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(uptime):
+		}
+	}
 }
 
 // checkLinearizability runs porcupine on the collected events and
@@ -422,17 +452,21 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	checkLinearizability(t, elog, "/tmp/linearizability-splits.html")
 }
 
-// TestLinearizabilityUnderUpReplication verifies linearizability while
-// a node is killed and the driver up-replicates to restore the
-// replica count. Uses 4 nodes: shard starts on s1-s3, s2 is killed,
-// and the driver adds a replica on s4.
-func TestLinearizabilityUnderUpReplication(t *testing.T) {
+// TestLinearizabilityUnderKillRestart verifies linearizability while
+// nodes are repeatedly killed and restarted. Uses 4 nodes: shard
+// starts on s1-s3, and the nemesis kills/restarts any node at
+// random intervals. If a node stays dead long enough, the driver
+// may up-replicate to another available node.
+func TestLinearizabilityUnderKillRestart(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", true)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.dead_store_timeout", 1*time.Minute)
+	flags.Set(t, "cache.raft.suspect_store_duration", 10*time.Second)
+	flags.Set(t, "cache.raft.replica_scan_interval", 5*time.Second)
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
 	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
@@ -442,8 +476,6 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	// Start shard on s1-s3 only. s4 is available via gossip for
-	// up-replication after s2 is killed.
 	initialStores := []*testutil.TestingStore{s1, s2, s3}
 	allStores := []*testutil.TestingStore{s1, s2, s3, s4}
 	sf.StartShard(t, ctx, initialStores...)
@@ -465,23 +497,20 @@ func TestLinearizabilityUnderUpReplication(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Kill s2 after 10s. The driver will detect under-replication
-	// (2/3 replicas alive) and add a replica on s4.
-	wg.Go(func() {
-		killNemesis(workerCtx, s2, 10*time.Second)
-	})
-
-	// Start workers on all 4 stores. Workers on s2 will start
-	// getting errors after the kill; workers on s4 will get errors
-	// until it receives a replica.
+	// Start workers on all 4 stores. Workers hitting a dead or
+	// replica-less store will get errors (treated as indeterminate).
 	for i := range numWorkers {
 		wg.Go(func() {
 			worker(workerCtx, i, allStores, keys, elog, &writeCount)
 		})
 	}
 
+	// Run kill/restart loop on the test goroutine. Kills one
+	// random node at a time to maintain quorum.
+	killRestartLoop(workerCtx, t, sf, allStores)
+
 	wg.Wait()
 
 	log.Infof("Collected %d events (%d writes)", len(elog.getEvents()), writeCount.Load())
-	checkLinearizability(t, elog, "/tmp/linearizability-up-replication.html")
+	checkLinearizability(t, elog, "/tmp/linearizability-kill-restart.html")
 }

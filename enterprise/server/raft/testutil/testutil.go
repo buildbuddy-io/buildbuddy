@@ -92,6 +92,16 @@ func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v d
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
+	// If the store was previously stopped, Stop() will have torn
+	// down the gossip manager. Create a fresh one on the same
+	// address so the node rejoins the cluster.
+	if ts.closed {
+		gm, err := gossip.NewWithArgs("name-"+ts.GossipAddress, ts.GossipAddress, sf.gossipAddrs)
+		require.NoError(t, err)
+		ts.gm = gm
+		ts.closed = false
+	}
+
 	te := testenv.GetTestEnv(t)
 	te.SetClock(sf.clock)
 
@@ -150,10 +160,6 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	store.StartReplicaJanitor()
 	ts.Store = store
 	ts.leaser = store.LeaserForTest()
-
-	t.Cleanup(func() {
-		ts.Stop()
-	})
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
@@ -165,14 +171,18 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	require.NoError(t, err)
 
 	ts := &TestingStore{
-		t:           t,
-		gm:          gm,
-		RaftAddress: localAddr(t),
-		GRPCAddress: localAddr(t),
-		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
-		nhid:        id.String(),
+		t:             t,
+		gm:            gm,
+		RaftAddress:   localAddr(t),
+		GRPCAddress:   localAddr(t),
+		GossipAddress: nodeAddr,
+		RootDir:       filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+		nhid:          id.String(),
 	}
 	sf.RecreateStore(t, ts)
+	t.Cleanup(func() {
+		ts.Stop()
+	})
 	return ts
 }
 
@@ -195,12 +205,13 @@ type TestingStore struct {
 	leaser pebble.Leaser
 	nhid   string
 
-	gm          *gossip.GossipManager
-	Registry    registry.NodeRegistry
-	RootDir     string
-	RaftAddress string
-	GRPCAddress string
-	closed      bool
+	gm            *gossip.GossipManager
+	Registry      registry.NodeRegistry
+	RootDir       string
+	RaftAddress   string
+	GRPCAddress   string
+	GossipAddress string
+	closed        bool
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {
