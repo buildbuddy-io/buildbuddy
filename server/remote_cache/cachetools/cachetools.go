@@ -442,6 +442,20 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		missingChunkHashes.Add(d.GetHash())
 	}
 
+	var totalChunkBytes int64
+	for _, d := range chunkDigests {
+		totalChunkBytes += d.GetSizeBytes()
+	}
+	dedupedChunks := int64(len(chunkDigests)) - int64(len(missingChunkHashes))
+	dedupedBytes := totalChunkBytes
+	for _, d := range missingRsp.GetMissingBlobDigests() {
+		dedupedBytes -= d.GetSizeBytes()
+	}
+	metrics.CacheClientChunkedUploadChunksTotal.Add(float64(len(chunkDigests)))
+	metrics.CacheClientChunkedUploadChunksDeduped.Add(float64(dedupedChunks))
+	metrics.CacheClientChunkedUploadChunkBytesTotal.Add(float64(totalChunkBytes))
+	metrics.CacheClientChunkedUploadChunkBytesDeduped.Add(float64(dedupedBytes))
+
 	var uploadedBytes int64
 	var offset int64
 	for _, d := range chunkDigests {

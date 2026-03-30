@@ -3660,6 +3660,31 @@ var (
 		CompressionType,
 		GroupID,
 	})
+	CacheClientChunkedUploadChunkBytesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunk_bytes_total",
+		Help:      "Total uncompressed chunk bytes produced during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunkBytesDeduped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunk_bytes_deduped",
+		Help:      "Uncompressed chunk bytes deduplicated (already existed on remote) during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunksTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunks_total",
+		Help:      "Total number of chunks produced during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunksDeduped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunks_deduped",
+		Help:      "Number of chunks deduplicated (already existed on remote) during chunked uploads.",
+	})
+
 	ByteStreamChunkedWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
