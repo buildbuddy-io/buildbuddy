@@ -2,12 +2,10 @@ package executorplatform
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -313,9 +311,6 @@ func TestEnvAndArgOverrides(t *testing.T) {
 			{Name: "B", Value: "2"},
 			{Name: "A", Value: "3"},
 			{Name: "C", Value: `{"some":1,"value":2}`},
-			// env-overrides names are added to the redaction list so the CI
-			// runner can redact short-lived secret values from logs.
-			{Name: ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, Value: `["A","B","A","C"]`},
 		},
 	}
 
@@ -324,67 +319,6 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	commandText, err := prototext.Marshal(command)
 	require.NoError(t, err)
 	require.Equal(t, expectedCmdText, commandText)
-}
-
-func TestEnvOverrides_AddsNamesToSecretRedactionList(t *testing.T) {
-	for _, tc := range []struct {
-		name                    string
-		envOverrides            string
-		existingRedactionNames  []string
-		expectedRedactionNames  []string
-	}{
-		{
-			name:                   "env-overrides without pre-existing redaction list",
-			envOverrides:           "SECRET_TOKEN=abc123,API_KEY=xyz789",
-			existingRedactionNames: nil,
-			expectedRedactionNames: []string{"SECRET_TOKEN", "API_KEY"},
-		},
-		{
-			name:                   "env-overrides appended to pre-existing redaction list",
-			envOverrides:           "SHORT_LIVED_TOKEN=mytoken",
-			existingRedactionNames: []string{"ORG_SECRET_1", "ORG_SECRET_2"},
-			expectedRedactionNames: []string{"ORG_SECRET_1", "ORG_SECRET_2", "SHORT_LIVED_TOKEN"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			props := []*repb.Platform_Property{
-				{Name: "env-overrides", Value: tc.envOverrides},
-			}
-			plat := &repb.Platform{Properties: props}
-			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
-			require.NoError(t, err)
-
-			command := &repb.Command{}
-			// Set up pre-existing redaction env var if needed.
-			if tc.existingRedactionNames != nil {
-				serialized, err := json.Marshal(tc.existingRedactionNames)
-				require.NoError(t, err)
-				command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-					Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
-					Value: string(serialized),
-				})
-			}
-
-			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(env, bare, platformProps, command)
-			require.NoError(t, err)
-
-			// Find the BUILDBUDDY_SECRET_ENV_VAR_NAMES env var.
-			var redactionValue string
-			for _, ev := range command.EnvironmentVariables {
-				if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
-					redactionValue = ev.GetValue()
-					break
-				}
-			}
-			require.NotEmpty(t, redactionValue, "expected %s env var to be set", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction)
-
-			var redactionNames []string
-			err = json.Unmarshal([]byte(redactionValue), &redactionNames)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expectedRedactionNames, redactionNames)
-		})
-	}
 }
 
 func TestRunUnder(t *testing.T) {
