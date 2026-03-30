@@ -514,6 +514,8 @@ func TestFileCacheUncleanShutdown(t *testing.T) {
 	// NOT calling Close() (leaving the lock file in place).
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
+	defer fc.Close()
+
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
