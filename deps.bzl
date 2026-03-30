@@ -216,23 +216,22 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "638197740c7694004df224c14bb3555ab548f323f5549eedf84f8ea7b10a3038",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-638197740c7694004df224c14bb3555ab548f323f5549eedf84f8ea7b10a3038"],
+        sha256 = "938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "04c7910a6ee6666f4ac713ce2a42ffaa49e7fd2d2d9268a123a38e3e84c5a8bd",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-04c7910a6ee6666f4ac713ce2a42ffaa49e7fd2d2d9268a123a38e3e84c5a8bd"],
+        sha256 = "9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3"],
+        sha256 = "6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a"],
         executable = True,
     )
-
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
         executable = True,
