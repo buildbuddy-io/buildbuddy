@@ -853,6 +853,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
+	var secretEnvVarNames []string
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
 		if secretService == nil {
@@ -867,20 +868,45 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			return nil, err
 		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
-		secretEnvVarNames := make([]string, 0, len(envVars))
 		for _, envVar := range envVars {
 			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
 		}
-		if len(secretEnvVarNames) > 0 {
-			serializedNames, err := json.Marshal(secretEnvVarNames)
-			if err != nil {
-				return nil, status.WrapError(err, "marshal secret env var names")
+	}
+
+	// Env vars passed via x-buildbuddy-platform.env-overrides headers are
+	// treated as secrets for redaction purposes, since the header path is
+	// specifically intended for sensitive short-lived values that shouldn't
+	// be stored in the action cache.
+	for _, prop := range executionTask.GetPlatformOverrides().GetProperties() {
+		propName := strings.ToLower(prop.GetName())
+		var envOverrides []string
+		switch propName {
+		case platform.EnvOverridesPropertyName:
+			envOverrides = strings.Split(prop.GetValue(), ",")
+		case platform.EnvOverridesBase64PropertyName:
+			for encoded := range strings.SplitSeq(prop.GetValue(), ",") {
+				if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+					envOverrides = append(envOverrides, string(decoded))
+				}
 			}
-			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
-				Value: string(serializedNames),
-			})
 		}
+		for _, override := range envOverrides {
+			name, _, _ := strings.Cut(override, "=")
+			if name != "" {
+				secretEnvVarNames = append(secretEnvVarNames, name)
+			}
+		}
+	}
+
+	if len(secretEnvVarNames) > 0 {
+		serializedNames, err := json.Marshal(secretEnvVarNames)
+		if err != nil {
+			return nil, status.WrapError(err, "marshal secret env var names")
+		}
+		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+			Value: string(serializedNames),
+		})
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()

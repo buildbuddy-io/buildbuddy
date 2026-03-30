@@ -72,6 +72,7 @@ go_test(
         ":execution_server",
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/experiments",
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/testredis",
