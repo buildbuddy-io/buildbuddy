@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -545,7 +546,13 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 }
 
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
-	isLegacyWorkflow := !isRepositoryWorkflowID(workflowID)
+	groupID, repoURL, err := ws.parseRepositoryWorkflowID(ctx, workflowID)
+	if status.IsPermissionDeniedError(err) {
+		return nil, err
+	}
+	// Legacy workflows can't be identified by repository workflow IDs, so if it doesn't parse, it's a legacy workflow.
+	isLegacyWorkflow := err != nil
+
 	if isLegacyWorkflow {
 		wf := &tables.Workflow{}
 		err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_by_id").Raw(
@@ -563,10 +570,6 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 
 	// If the workflow ID identifies a GitRepository, look up the GitRepository and construct a synthetic Workflow
 	// from it.
-	groupID, repoURL, err := parseRepositoryWorkflowID(workflowID)
-	if err != nil {
-		return nil, err
-	}
 	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, repoURL)
 	if err != nil {
 		return nil, err
@@ -1697,12 +1700,7 @@ func (ws *workflowService) gitRepositoryWorkflow(repo *tables.GitRepository, acc
 	return &repositoryWorkflow{GitRepository: repo, Workflow: wf}
 }
 
-func isRepositoryWorkflowID(id string) bool {
-	_, _, err := parseRepositoryWorkflowID(id)
-	return err == nil
-}
-
-func parseRepositoryWorkflowID(id string) (groupID string, repoURL *gitutil.RepoURL, err error) {
+func (ws *workflowService) parseRepositoryWorkflowID(ctx context.Context, id string) (groupID string, repoURL *gitutil.RepoURL, err error) {
 	parts := strings.SplitN(id, ":", 3)
 	if len(parts) != 3 || parts[0] != repoWorkflowIDPrefix || parts[1] == "" || parts[2] == "" {
 		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: expected '%s:<group_id>:<repo_url>'", repoWorkflowIDPrefix)
@@ -1711,6 +1709,11 @@ func parseRepositoryWorkflowID(id string) (groupID string, repoURL *gitutil.Repo
 	repoURL, err = gitutil.ParseGitHubRepoURL(parts[2])
 	if err != nil {
 		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: failed to parse repo URL: %s", err)
+	}
+
+	// Check that the authorized user has access to the group ID requested in the workflow ID.
+	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+		return "", nil, err
 	}
 	return groupID, repoURL, nil
 }

@@ -32,6 +32,7 @@ go_library(
         "//server/remote_execution/config",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/db",
