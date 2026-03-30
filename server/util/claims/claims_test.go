@@ -409,8 +409,8 @@ func TestParseClaims_ES256(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)
@@ -423,8 +423,8 @@ func TestParseClaims_ES256(t *testing.T) {
 
 func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)
@@ -481,8 +481,8 @@ func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
 
 func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)

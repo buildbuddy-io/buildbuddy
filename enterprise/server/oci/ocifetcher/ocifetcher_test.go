@@ -701,6 +701,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 }
 
 func TestServerBypassRegistry(t *testing.T) {
+	// TODO(dan): https://github.com/buildbuddy-io/buildbuddy-internal/issues/6877
 	quarantine.SkipQuarantinedTest(t)
 	const adminGroupID = "GR123"
 

@@ -469,6 +469,7 @@ func TestFindMissingMetadata(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6876
 	quarantine.SkipQuarantinedTest(t)
 
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
