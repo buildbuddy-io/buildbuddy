@@ -31,7 +31,6 @@ go_library(
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
     ] + select({
-        "@io_bazel_rules_go//go/platform:darwin": [],
         "@io_bazel_rules_go//go/platform:linux": [
             "@org_golang_x_sys//unix",
         ],
