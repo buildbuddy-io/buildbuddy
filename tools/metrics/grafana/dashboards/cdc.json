@@ -143,7 +143,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[${window}]))",
           "interval": "${window}",
           "legendFormat": "Bytes Saved",
           "range": true,
@@ -162,7 +162,7 @@
           "refId": "B"
         }
       ],
-      "title": "Bytes Saved Per ${window} (${proxy_region})",
+      "title": "Write Bytes Saved Per ${window} [proxy + executor]",
       "type": "timeseries"
     },
     {
@@ -218,7 +218,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d]))",
+          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d]))",
           "legendFormat": "Last 7 Days",
           "range": true,
           "refId": "A"
@@ -280,7 +280,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[30d]))",
+          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[30d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[30d]))",
           "legendFormat": "Last 30 Days",
           "range": true,
           "refId": "A"
@@ -342,7 +342,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d))",
+          "expr": "sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d)) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d] offset 7d))",
           "legendFormat": "Previous Week",
           "range": true,
           "refId": "A"
@@ -407,7 +407,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) - sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d))) / sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d)) * 100",
+          "expr": "((sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d]))) - (sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d)) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d] offset 7d)))) / (sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d] offset 7d)) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d] offset 7d))) * 100",
           "legendFormat": "WoW Change",
           "range": true,
           "refId": "A"
@@ -469,7 +469,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d]))) / (sum(increase(buildbuddy_proxy_action_cache_read_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_action_cache_write_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_byte_stream_read_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_byte_stream_write_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])))",
+          "expr": "(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[7d]))) / (sum(increase(buildbuddy_proxy_action_cache_read_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_action_cache_write_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_byte_stream_read_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_byte_stream_write_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])) + sum(increase(buildbuddy_proxy_content_addressable_storage_bytes{region=~\"${proxy_region}\", job=\"cache-proxy\"}[7d])))",
           "legendFormat": "% Saved",
           "range": true,
           "refId": "A"
@@ -582,7 +582,7 @@
           "refId": "B"
         }
       ],
-      "title": "Read Throughput (Bytes/s)",
+      "title": "Read Throughput (Bytes/s) [proxy]",
       "type": "timeseries"
     },
     {
@@ -689,7 +689,7 @@
           "refId": "B"
         }
       ],
-      "title": "Write Throughput (Bytes/s)",
+      "title": "Write Throughput (Bytes/s) [proxy]",
       "type": "timeseries"
     },
     {
@@ -796,7 +796,7 @@
           "refId": "B"
         }
       ],
-      "title": "Read Request Rate (req/s)",
+      "title": "Read Request Rate (req/s) [proxy]",
       "type": "timeseries"
     },
     {
@@ -903,7 +903,7 @@
           "refId": "B"
         }
       ],
-      "title": "Write Request Rate (req/s)",
+      "title": "Write Request Rate (req/s) [proxy]",
       "type": "timeseries"
     },
     {
@@ -1030,7 +1030,7 @@
           "refId": "A"
         }
       ],
-      "title": "SplitBlob API Calls by Response Code",
+      "title": "SplitBlob API Calls by Response Code [server-side]",
       "type": "timeseries"
     },
     {
@@ -1157,7 +1157,7 @@
           "refId": "A"
         }
       ],
-      "title": "SpliceBlob API Calls by Response Code",
+      "title": "SpliceBlob API Calls by Response Code [server-side]",
       "type": "timeseries"
     },
     {
@@ -1411,7 +1411,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "(sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[${window}]))) / (sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_cache_client_chunked_upload_chunk_bytes_total{region=~\"${proxy_region}\"}[${window}])))",
           "legendFormat": "bytes dedup ratio",
           "range": true,
           "refId": "A"
@@ -1422,13 +1422,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "(sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_cache_client_chunked_upload_chunks_deduped{region=~\"${proxy_region}\"}[${window}]))) / (sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunks_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_cache_client_chunked_upload_chunks_total{region=~\"${proxy_region}\"}[${window}])))",
           "legendFormat": "chunk count dedup ratio",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Write Deduplication Ratio",
+      "title": "Write Deduplication Ratio [proxy + executor]",
       "type": "timeseries"
     },
     {
@@ -1520,7 +1520,7 @@
           },
           "editorMode": "code",
           "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
-          "legendFormat": "bytes saved (deduped)",
+          "legendFormat": "proxy bytes saved",
           "range": true,
           "refId": "A"
         },
@@ -1530,13 +1530,24 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{region=~\"${proxy_region}\"}[${window}]))",
+          "legendFormat": "executor bytes saved",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_cache_client_chunked_upload_chunk_bytes_total{region=~\"${proxy_region}\"}[${window}]))",
           "legendFormat": "total chunk bytes",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Deduplication Savings (Bytes/s)",
+      "title": "Deduplication Savings (Bytes/s) [proxy + executor]",
       "type": "timeseries"
     },
     {
@@ -1634,7 +1645,7 @@
           "refId": "A"
         }
       ],
-      "title": "Chunk Read Local Cache Hit Ratio",
+      "title": "Chunk Read Local Cache Hit Ratio [proxy]",
       "type": "timeseries"
     },
     {
@@ -1772,7 +1783,7 @@
           "refId": "B"
         }
       ],
-      "title": "Chunk Reads by Source (chunks/s)",
+      "title": "Chunk Reads by Source (chunks/s) [proxy]",
       "type": "timeseries"
     },
     {
