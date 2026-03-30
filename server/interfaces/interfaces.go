@@ -715,6 +715,7 @@ type GitHubApp interface {
 	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
 	// GetRepositoryInstallationToken returns an installation token for the given repo.
+	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
 	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
