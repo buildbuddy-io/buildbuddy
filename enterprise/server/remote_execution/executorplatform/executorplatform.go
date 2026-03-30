@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -263,6 +264,17 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		})
 	}
 
+	// Add env-override names to the secret redaction list so the CI runner
+	// redacts short-lived secret values from workflow logs.
+	if len(platformProps.EnvOverrides) > 0 {
+		envOverrideNames := make([]string, 0, len(platformProps.EnvOverrides))
+		for _, e := range platformProps.EnvOverrides {
+			name, _, _ := strings.Cut(e, "=")
+			envOverrideNames = append(envOverrideNames, name)
+		}
+		appendSecretEnvVarNamesForRedaction(command, envOverrideNames)
+	}
+
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
 	if platformProps.WorkflowID != "" {
@@ -287,4 +299,34 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	return nil
+}
+
+// appendSecretEnvVarNamesForRedaction appends the given env var names to the
+// BUILDBUDDY_SECRET_ENV_VAR_NAMES environment variable on the command, so that
+// the CI runner knows to redact their values from logs.
+func appendSecretEnvVarNamesForRedaction(command *repb.Command, names []string) {
+	var existing []string
+	var existingIdx int = -1
+	for i, ev := range command.EnvironmentVariables {
+		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			existingIdx = i
+			if ev.GetValue() != "" {
+				_ = json.Unmarshal([]byte(ev.GetValue()), &existing)
+			}
+			break
+		}
+	}
+	allNames := append(existing, names...)
+	serialized, err := json.Marshal(allNames)
+	if err != nil {
+		return
+	}
+	if existingIdx >= 0 {
+		command.EnvironmentVariables[existingIdx].Value = string(serialized)
+	} else {
+		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+			Value: string(serialized),
+		})
+	}
 }
