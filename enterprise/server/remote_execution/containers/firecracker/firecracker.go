@@ -93,6 +93,7 @@ var (
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
@@ -554,18 +555,20 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, err
 	}
 
-	// Pass the host's resolv.conf to the VM so it can use the same DNS
-	// configuration. goinit will fall back to default nameservers if unavailable.
-	hostResolvConf, err := os.ReadFile("/etc/resolv.conf")
-	if err != nil {
-		log.Warningf("Failed to read host /etc/resolv.conf, VMs will use default nameservers: %s", err)
+	var hostResolvConf string
+	if *firecrackerVMResolvConfPath != "" {
+		b, err := os.ReadFile(*firecrackerVMResolvConfPath)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "read resolv.conf %s", *firecrackerVMResolvConfPath)
+		}
+		hostResolvConf = string(b)
 	}
 	return &Provider{
 		env:                    env,
 		executorConfig:         executorConfig,
 		networkPool:            networkPool,
 		marshalledDNSOverrides: dns,
-		hostResolvConf:         string(hostResolvConf),
+		hostResolvConf:         hostResolvConf,
 	}, nil
 }
 

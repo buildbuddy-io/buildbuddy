@@ -18,6 +18,7 @@ go_library(
         "//server/util/claims",
         "//server/util/disk",
         "//server/util/fastcopy",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",

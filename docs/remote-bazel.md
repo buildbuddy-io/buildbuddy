@@ -400,6 +400,14 @@ bb remote \
   --script='bazel run :my_script --password=$PWD'
 ```
 
+To inject only specific secrets, use `env-secrets` with a comma-separated list of secret names:
+
+```bash
+bb remote \
+  --runner_exec_properties=env-secrets=API_KEY,DB_PASSWORD \
+  --script='bazel run :my_script --password=$DB_PASSWORD'
+```
+
 To access short-lived secrets, you can use remote headers to set environment variables:
 
 ```bash

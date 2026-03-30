@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/golang-jwt/jwt/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -48,7 +49,7 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) error {
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialInternal(env, *target)
 	if err != nil {
 		return err
 	}
@@ -119,7 +120,7 @@ type keyProvider struct {
 	quit   chan struct{}
 }
 
-func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
+func (kp *keyProvider) provide(ctx context.Context) ([]claims.VerificationKey, error) {
 	if useES256SignedJWTs(ctx, kp.env.GetExperimentFlagProvider()) {
 		return kp.getES256PublicKeys(ctx), nil
 	}
@@ -131,10 +132,14 @@ func (kp *keyProvider) provide(ctx context.Context) ([]string, error) {
 	return defaultKeys, nil
 }
 
-func (kp *keyProvider) getES256PublicKeys(ctx context.Context) []string {
+func (kp *keyProvider) getES256PublicKeys(ctx context.Context) []claims.VerificationKey {
 	kp.mu.RLock()
 	defer kp.mu.RUnlock()
-	return kp.keys
+	keys := make([]claims.VerificationKey, len(kp.keys))
+	for i, k := range kp.keys {
+		keys[i] = claims.VerificationKey{Key: k, SigningMethod: jwt.SigningMethodES256}
+	}
+	return keys
 }
 
 func (kp *keyProvider) startRefresher(refreshInterval time.Duration) {

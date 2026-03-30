@@ -98,6 +98,7 @@ const (
 	EnvOverridesPropertyName                = "env-overrides"
 	EnvOverridesBase64PropertyName          = "env-overrides-base64"
 	IncludeSecretsPropertyName              = "include-secrets"
+	EnvSecretsPropertyName                  = "env-secrets"
 	DefaultTimeoutPropertyName              = "default-timeout"
 	TerminationGracePeriodPropertyName      = "termination-grace-period"
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
@@ -259,6 +260,9 @@ type Properties struct {
 
 	EnableVFS      bool
 	IncludeSecrets bool
+	// EnvSecrets is a list of specific secret names to inject as env vars.
+	// Takes precedence over IncludeSecrets for targeted injection.
+	EnvSecrets []string
 
 	// OriginalPool can be set to inform BuildBuddy about the original pool name
 	// from another remote execution platform. This allows configuring task
@@ -529,6 +533,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
+		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
