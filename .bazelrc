@@ -40,6 +40,13 @@ common:ci --config=ci-shared
 common:ci --config=remote-minimal
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 
+# Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
+common:ci-anon --config=ci
+common:ci-anon --bes_backend=remote.buildbuddy.io
+common:ci-anon --remote_downloader=remote.buildbuddy.io
+common:ci-anon --remote_cache=remote.buildbuddy.io
+common:ci-anon --remote_executor=remote.buildbuddy.io
+
 # Configuration used for all BuildBuddy workflows
 common:workflows --config=ci-shared
 common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
