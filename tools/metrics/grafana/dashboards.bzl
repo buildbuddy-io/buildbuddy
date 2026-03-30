@@ -19,4 +19,5 @@ DASHBOARD_NAMES = [
     "rbeperf",
     "traffic-stats",
     "workflow",
+    "zookeeper",
 ]
