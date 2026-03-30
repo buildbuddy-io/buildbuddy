@@ -18,6 +18,7 @@ go_library(
         "//cli/explain",
         "//cli/fix",
         "//cli/index",
+        "//cli/invocation",
         "//cli/login",
         "//cli/plugin",
         "//cli/printlog",

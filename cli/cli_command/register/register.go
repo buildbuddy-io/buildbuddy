@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
+	"github.com/buildbuddy-io/buildbuddy/cli/invocation"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
@@ -73,6 +74,11 @@ func register() {
 			Name:    "fix",
 			Help:    "Applies fixes to WORKSPACE and BUILD files.",
 			Handler: fix.HandleFix,
+		},
+		{
+			Name:    "invocation",
+			Help:    "Fetch invocation metadata and logs.",
+			Handler: invocation.HandleInvocation,
 		},
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
