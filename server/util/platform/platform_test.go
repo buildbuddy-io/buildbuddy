@@ -366,3 +366,84 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestSecretEnvVarNamesFromOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		platform *repb.Platform
+		want     []string
+	}{
+		{
+			name:     "nil platform",
+			platform: nil,
+			want:     nil,
+		},
+		{
+			name:     "empty platform",
+			platform: &repb.Platform{},
+			want:     nil,
+		},
+		{
+			name: "unrelated properties",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: "Linux"},
+			}},
+			want: nil,
+		},
+		{
+			name: "env-overrides single",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "SECRET_TOKEN=abc123"},
+			}},
+			want: []string{"SECRET_TOKEN"},
+		},
+		{
+			name: "env-overrides multiple",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "SECRET_TOKEN=abc123,API_KEY=xyz789"},
+			}},
+			want: []string{"SECRET_TOKEN", "API_KEY"},
+		},
+		{
+			name: "env-overrides-base64",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte("TOKEN=secret")) + "," + base64.StdEncoding.EncodeToString([]byte("KEY=value"))},
+			}},
+			want: []string{"TOKEN", "KEY"},
+		},
+		{
+			name: "env-overrides-base64 skips invalid encoding",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides-base64", Value: "!!!invalid!!!," + base64.StdEncoding.EncodeToString([]byte("GOOD=val"))},
+			}},
+			want: []string{"GOOD"},
+		},
+		{
+			name: "both env-overrides and base64",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "A=1,B=2"},
+				{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte("C=3"))},
+			}},
+			want: []string{"A", "B", "C"},
+		},
+		{
+			name: "empty values skipped",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "A=1,,B=2"},
+			}},
+			want: []string{"A", "B"},
+		},
+		{
+			name: "value with equals sign in value",
+			platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "TOKEN=abc=def=ghi"},
+			}},
+			want: []string{"TOKEN"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SecretEnvVarNamesFromOverrides(tc.platform)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

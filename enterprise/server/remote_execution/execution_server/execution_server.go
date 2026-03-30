@@ -877,26 +877,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	// treated as secrets for redaction purposes, since the header path is
 	// specifically intended for sensitive short-lived values that shouldn't
 	// be stored in the action cache.
-	for _, prop := range executionTask.GetPlatformOverrides().GetProperties() {
-		propName := strings.ToLower(prop.GetName())
-		var envOverrides []string
-		switch propName {
-		case platform.EnvOverridesPropertyName:
-			envOverrides = strings.Split(prop.GetValue(), ",")
-		case platform.EnvOverridesBase64PropertyName:
-			for encoded := range strings.SplitSeq(prop.GetValue(), ",") {
-				if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
-					envOverrides = append(envOverrides, string(decoded))
-				}
-			}
-		}
-		for _, override := range envOverrides {
-			name, _, _ := strings.Cut(override, "=")
-			if name != "" {
-				secretEnvVarNames = append(secretEnvVarNames, name)
-			}
-		}
-	}
+	secretEnvVarNames = append(secretEnvVarNames, platform.SecretEnvVarNamesFromOverrides(executionTask.GetPlatformOverrides())...)
 
 	if len(secretEnvVarNames) > 0 {
 		serializedNames, err := json.Marshal(secretEnvVarNames)

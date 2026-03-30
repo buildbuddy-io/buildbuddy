@@ -840,3 +840,32 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 	return "", status.InvalidArgumentErrorf(
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
+
+// SecretEnvVarNamesFromOverrides extracts environment variable names from
+// env-overrides and env-overrides-base64 platform properties. This is used to
+// identify header-sourced env overrides that should be treated as secrets for
+// redaction purposes.
+func SecretEnvVarNamesFromOverrides(overrides *repb.Platform) []string {
+	var names []string
+	for _, prop := range overrides.GetProperties() {
+		propName := strings.ToLower(prop.GetName())
+		var envOverrides []string
+		switch propName {
+		case EnvOverridesPropertyName:
+			envOverrides = strings.Split(prop.GetValue(), ",")
+		case EnvOverridesBase64PropertyName:
+			for _, encoded := range strings.Split(prop.GetValue(), ",") {
+				if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+					envOverrides = append(envOverrides, string(decoded))
+				}
+			}
+		}
+		for _, override := range envOverrides {
+			name, _, _ := strings.Cut(override, "=")
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
