@@ -185,6 +185,9 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
         # should only apply to the multiarch one.
         skip_latest_tag = skip_update_latest_tag or arch_specific_executor_tag
         push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/server/cmd/executor:executor_image', skip_latest_tag)
+    # Enterprise cache proxy (edge)
+    if 'buildbuddy-edge-enterprise' in images:
+        push_image_for_project("flame-public/buildbuddy-edge-enterprise", 'enterprise-' + version_tag, '//enterprise/server/cmd/cache_proxy:cache_proxy_image', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -220,6 +223,7 @@ def main():
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
+    parser.add_argument('--update_edge_image', default=False, action='store_true')
     parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
     parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
@@ -281,6 +285,8 @@ def main():
         images.append("buildbuddy-app-enterprise")
     if args.update_executor_image:
         images.append("buildbuddy-executor-enterprise")
+    if args.update_edge_image:
+        images.append("buildbuddy-edge-enterprise")
 
     if images:
         print('Building and pushing docker images', images)
