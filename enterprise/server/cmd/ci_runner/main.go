@@ -2805,7 +2805,6 @@ func parseSecretRedactionValues(serializedSecretNames string) []string {
 		}
 	}
 
-	// Collect values of explicitly named secrets.
 	values := make([]string, 0, len(explicitNames))
 	for name := range explicitNames {
 		if val, ok := os.LookupEnv(name); ok && val != "" {
@@ -2813,7 +2812,6 @@ func parseSecretRedactionValues(serializedSecretNames string) []string {
 		}
 	}
 
-	// Also collect values of env vars whose names look sensitive.
 	values = append(values, redact.CollectSensitiveEnvValues(os.Environ())...)
 
 	return values

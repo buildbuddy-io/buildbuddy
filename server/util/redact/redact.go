@@ -105,6 +105,8 @@ var (
 		"bes_header",
 	}
 	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
+
+	sensitiveEnvVarSubstrings = []string{"SECRET", "TOKEN", "PASSWORD", "CREDENTIALS"}
 )
 
 func init() {
@@ -925,11 +927,6 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 
 	return prototext.Unmarshal([]byte(txt), event)
 }
-
-// sensitiveEnvVarSubstrings lists substrings that, when found (case-insensitive)
-// in an environment variable name, indicate the value should be redacted from
-// workflow logs.
-var sensitiveEnvVarSubstrings = []string{"SECRET", "TOKEN", "PASSWORD", "CREDENTIALS"}
 
 // containsSensitiveEnvToken reports whether token appears as a distinct segment
 // of the env var name, using non-alphanumeric characters as delimiters.
