@@ -1,11 +1,13 @@
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 # Prebuilt bb CLI binary, used by //tools/lint.
 # This avoids building the full bb CLI from source (which pulls in
 # Kubernetes client-go, gRPC xDS, etc.) just to shell out to `bb fix`.
 #
 # To update the version:
-#   tools/bb/update_version.sh <version>
+#   bazel run //tools/bb:update_version -- <version>
+# or run the script directly:
+#   python3 tools/bb/update_version.py <version>
 # where <version> is a tag from https://github.com/buildbuddy-io/bazel/releases
 alias(
     name = "bb",
@@ -18,7 +20,8 @@ alias(
     visibility = ["//tools/lint:__pkg__"],
 )
 
-sh_binary(
+py_binary(
     name = "update_version",
-    srcs = ["update_version.sh"],
+    srcs = ["update_version.py"],
+    main = "update_version.py",
 )
