@@ -38,13 +38,17 @@ go_test(
     srcs = ["mcpserver_test.go"],
     embed = [":mcpserver"],
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/mcp/jsonrpc",
         "//proto:capability_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
+        "//server/testutil/testfs",
         "//server/util/authutil",
         "//server/util/status",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -46,6 +46,8 @@ var (
 )
 
 const (
+	mcpExperimentName = "api.enable_mcp"
+
 	// Path where we serve the MCP API (on the HTTP port).
 	mcpPath = "/mcp"
 
@@ -90,10 +92,11 @@ func init() {
 //     middleware as the /api/v1 endpoint) and returns the proto response as MCP
 //     structured content.
 type Service struct {
-	authenticator      interfaces.Authenticator
-	apiService         interfaces.ApiService
-	authInterceptor    func(http.Handler) http.Handler
-	allowedAPIRPCNames func(ctx context.Context, groupID string) []string
+	authenticator          interfaces.Authenticator
+	apiService             interfaces.ApiService
+	authInterceptor        func(http.Handler) http.Handler
+	allowedAPIRPCNames     func(ctx context.Context, groupID string) []string
+	experimentFlagProvider interfaces.ExperimentFlagProvider
 }
 
 // initializeParams contains the subset of initialize parameters this server
@@ -157,6 +160,7 @@ func Register(env *real_environment.RealEnv) error {
 		func(ctx context.Context, groupID string) []string {
 			return capabilities_filter.AllowedRPCs(ctx, env, groupID)
 		},
+		env.GetExperimentFlagProvider(),
 	))
 	return nil
 }
@@ -167,12 +171,14 @@ func NewService(
 	apiService interfaces.ApiService,
 	authInterceptor func(http.Handler) http.Handler,
 	allowedAPIRPCNames func(ctx context.Context, groupID string) []string,
+	experimentFlagProvider interfaces.ExperimentFlagProvider,
 ) *Service {
 	return &Service{
-		authenticator:      authenticator,
-		apiService:         apiService,
-		authInterceptor:    authInterceptor,
-		allowedAPIRPCNames: allowedAPIRPCNames,
+		authenticator:          authenticator,
+		apiService:             apiService,
+		authInterceptor:        authInterceptor,
+		allowedAPIRPCNames:     allowedAPIRPCNames,
+		experimentFlagProvider: experimentFlagProvider,
 	}
 }
 
@@ -198,6 +204,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	groupID, err := s.authenticatedGroupID(r.Context())
 	if err != nil {
 		writeHTTPError(w, err)
+		return
+	}
+	if !s.enabled(r.Context()) {
+		writeHTTPError(w, status.PermissionDeniedError("MCP API is disabled for this organization"))
 		return
 	}
 
@@ -234,6 +244,13 @@ func (s *Service) authenticatedGroupID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return user.GetGroupID(), nil
+}
+
+func (s *Service) enabled(ctx context.Context) bool {
+	if s.experimentFlagProvider == nil {
+		return true
+	}
+	return s.experimentFlagProvider.Boolean(ctx, mcpExperimentName, true)
 }
 
 // handleMessage routes one JSON-RPC request or batch and returns the HTTP

@@ -4,19 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 type fakeAPIService struct {
@@ -163,6 +168,127 @@ func TestMCPToolCall_GetInvocation(t *testing.T) {
 	require.Len(t, invocations, 1)
 }
 
+func TestMCPPing(t *testing.T) {
+	for _, testCase := range []struct {
+		name               string
+		users              map[string]interfaces.UserInfo
+		apiKey             string
+		experimentConfig   string
+		expectedHTTPStatus int
+		expectedBodySubstr string
+	}{
+		{
+			name: "defaults enabled without experiment provider",
+			users: testUsers(
+				testUser("developer-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+			),
+			apiKey:             "developer-key",
+			expectedHTTPStatus: http.StatusOK,
+		},
+		{
+			name: "experiment defaults enabled",
+			users: testUsers(
+				testUser("developer-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+			),
+			apiKey: "developer-key",
+			experimentConfig: `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "api.enable_mcp": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "true"
+    }
+  }
+}`,
+			expectedHTTPStatus: http.StatusOK,
+		},
+		{
+			name: "experiment can disable a specific group",
+			users: testUsers(
+				testUser("group-1-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+				testUser("group-2-key", "GROUP2", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+			),
+			apiKey: "group-1-key",
+			experimentConfig: `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "api.enable_mcp": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "true",
+      "targeting": {
+        "if": [
+          { "==": [{ "var": "group_id" }, "GROUP1"] },
+          "false",
+          "true"
+        ]
+      }
+    }
+  }
+}`,
+			expectedHTTPStatus: http.StatusForbidden,
+			expectedBodySubstr: "MCP API is disabled for this organization",
+		},
+		{
+			name: "experiment leaves other groups enabled",
+			users: testUsers(
+				testUser("group-1-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+				testUser("group-2-key", "GROUP2", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+			),
+			apiKey: "group-2-key",
+			experimentConfig: `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "api.enable_mcp": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "true",
+      "targeting": {
+        "if": [
+          { "==": [{ "var": "group_id" }, "GROUP1"] },
+          "false",
+          "true"
+        ]
+      }
+    }
+  }
+}`,
+			expectedHTTPStatus: http.StatusOK,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			opts := testServerOptions{users: testCase.users}
+			if testCase.experimentConfig != "" {
+				opts.experimentFlagProvider = newTestExperimentProvider(t, testCase.experimentConfig)
+			}
+
+			server := newTestServer(t, opts)
+			statusCode, body := postJSONRPC(t, server.URL, testCase.apiKey, "ping", nil)
+			require.Equal(t, testCase.expectedHTTPStatus, statusCode)
+
+			if testCase.expectedHTTPStatus == http.StatusOK {
+				var rsp rpcResponse[map[string]any]
+				require.NoError(t, json.Unmarshal([]byte(body), &rsp))
+				require.Nil(t, rsp.Error)
+				require.Empty(t, rsp.Result)
+				return
+			}
+
+			require.Contains(t, body, testCase.expectedBodySubstr)
+		})
+	}
+}
+
 // testUser constructs one authenticated caller identity keyed by its API key.
 func testUser(apiKey, groupID string, capabilities []cappb.Capability) interfaces.UserInfo {
 	return &testauth.TestUser{
@@ -186,9 +312,10 @@ func testUsers(users ...interfaces.UserInfo) map[string]interfaces.UserInfo {
 }
 
 type testServerOptions struct {
-	users       map[string]interfaces.UserInfo
-	apiService  interfaces.ApiService
-	allowedRPCs []string
+	users                  map[string]interfaces.UserInfo
+	apiService             interfaces.ApiService
+	allowedRPCs            []string
+	experimentFlagProvider interfaces.ExperimentFlagProvider
 }
 
 func newTestServer(t *testing.T, opts testServerOptions) *httptest.Server {
@@ -205,6 +332,7 @@ func newTestServer(t *testing.T, opts testServerOptions) *httptest.Server {
 		func(ctx context.Context, groupID string) []string {
 			return opts.allowedRPCs
 		},
+		opts.experimentFlagProvider,
 	)
 
 	mux := http.NewServeMux()
@@ -239,6 +367,15 @@ type rpcResponse[T any] struct {
 }
 
 func callJSONRPC[T any](t *testing.T, baseURL, apiKey, method string, params any) *rpcResponse[T] {
+	statusCode, body := postJSONRPC(t, baseURL, apiKey, method, params)
+	require.Equal(t, http.StatusOK, statusCode)
+
+	var decoded rpcResponse[T]
+	require.NoError(t, json.Unmarshal([]byte(body), &decoded))
+	return &decoded
+}
+
+func postJSONRPC(t *testing.T, baseURL, apiKey, method string, params any) (int, string) {
 	request := jsonrpc.Request{
 		JSONRPC: jsonrpc.Version,
 		ID:      json.RawMessage("1"),
@@ -261,9 +398,27 @@ func callJSONRPC[T any](t *testing.T, baseURL, apiKey, method string, params any
 	require.NoError(t, err)
 	defer rsp.Body.Close()
 
-	var decoded rpcResponse[T]
-	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&decoded))
-	return &decoded
+	responseBody, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err)
+	return rsp.StatusCode, string(responseBody)
+}
+
+func newTestExperimentProvider(t *testing.T, config string) interfaces.ExperimentFlagProvider {
+	t.Helper()
+
+	configDir := testfs.MakeTempDir(t)
+	configPath := testfs.WriteFile(t, configDir, "config.flagd.json", config)
+
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configPath))
+	require.NoError(t, err)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	return fp
 }
 
 // unmarshalJSON decodes one JSON blob into the provided test struct.
