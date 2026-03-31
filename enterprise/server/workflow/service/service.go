@@ -1531,7 +1531,9 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	if err != nil {
 		return "", err
 	}
+
 	if isTrusted {
+		// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 		headerEnv := []*repb.Command_EnvironmentVariable{
 			{Name: ci_runner_env.BuildBuddyAPIKeyEnvVarName, Value: key.Value},
 			{Name: "REPO_USER", Value: wf.Username},
