@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package gateway;
+
+import "proto/gateway.proto";
+
+option go_package = "gateway_service";
+
+service GatewayService {
+  // Register authenticates the caller via their API key, assigns them a
+  // WireGuard identity and IP within their group's network, and returns the
+  // full configuration needed to bring up the tunnel.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+}
