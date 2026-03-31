@@ -564,3 +564,78 @@ func TestWriteEventLog_ServerTimeout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Line 1\n", string(data.GetBuffer()))
 }
+
+func TestWriteEventLog_ActiveStreamDoesNotTimeout(t *testing.T) {
+	originalTimeout := buildbuddy_server.WriteEventLogTimeout
+	buildbuddy_server.WriteEventLogTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { buildbuddy_server.WriteEventLogTimeout = originalTimeout })
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	kvStore, err := memory_kvstore.NewMemoryKeyValStore()
+	require.NoError(t, err)
+	te.SetKeyValStore(kvStore)
+
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), user1)
+	require.NoError(t, err)
+
+	bbServer, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	iid, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
+		InvocationId: iid,
+		Status:       inspb.OverallStatus_IN_PROGRESS,
+	})
+	require.NoError(t, err)
+
+	stream, err := client.WriteEventLog(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 1\n"),
+	})
+	require.NoError(t, err)
+
+	time.Sleep(300 * time.Millisecond)
+
+	err = stream.Send(&elpb.WriteEventLogRequest{
+		Type: elpb.LogType_RUN_LOG,
+		Metadata: &elpb.LogMetadata{
+			InvocationId: iid,
+		},
+		Data: []byte("Line 2\n"),
+	})
+	require.NoError(t, err)
+
+	time.Sleep(300 * time.Millisecond)
+
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	getLogStream, err := client.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: iid,
+		Type:         elpb.LogType_RUN_LOG,
+	})
+	require.NoError(t, err)
+
+	data, err := getLogStream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "Line 1\nLine 2\n", string(data.GetBuffer()))
+}

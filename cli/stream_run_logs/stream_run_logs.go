@@ -54,6 +54,11 @@ type Opts struct {
 	OnFailure    FailureMode
 }
 
+type streamOutputResult struct {
+	err             error
+	logStreamBroken bool
+}
+
 // If streaming run logs is requested with --stream_run_logs, parse required args.
 func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 	parsedArgs, err := parser.ParseArgs(args)
@@ -231,7 +236,7 @@ func runScriptDirectly(scriptPath string, sigChan <-chan os.Signal) (int, error)
 }
 
 func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, opts Opts, scriptPath string, sigChan <-chan os.Signal) (exitCode int, interrupted bool, err error) {
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// TODO(#6629): Proxy run logs through the sidecar.
@@ -240,7 +245,11 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		exitCode, err = handleStreamingFailure(scriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to create log stream: %s", err))
 		return exitCode, true, err
 	}
+	logStreamBroken := false
 	defer func() {
+		if logStreamBroken {
+			return
+		}
 		if _, err := stream.CloseAndRecv(); err != nil {
 			log.Warnf("Failed to close stream: %s", err)
 		}
@@ -275,15 +284,16 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 		}
 	}()
 
-	copyOutputDone := make(chan error)
+	copyOutputDone := make(chan streamOutputResult)
 	go func() {
-		copyOutputDone <- streamOutput(ctx, bbClient, opts.InvocationID, ptmx, stream)
+		copyOutputDone <- streamOutput(opts.InvocationID, ptmx, stream)
 	}()
 
 	cmdErr := cmd.Wait()
-	copyErr := <-copyOutputDone
-	if copyErr != nil {
-		log.Warnf("Failed to stream output: %s", copyErr)
+	copyResult := <-copyOutputDone
+	logStreamBroken = copyResult.logStreamBroken
+	if copyResult.err != nil {
+		log.Warnf("Failed to stream output: %s", copyResult.err)
 	}
 
 	exitCode = 0
@@ -297,15 +307,19 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	// Send a final log message with timestamp and exit code.
 	exitMsg := fmt.Sprintf("\n%s (command exited with code %d)\n", time.Now().UTC().Format("2006-01-02 15:04:05.000 MST"), exitCode)
-	if err := uploadLogs(ctx, bbClient, opts.InvocationID, stream, []byte(exitMsg)); err != nil {
-		log.Warnf("Failed to upload exit code log: %s", err)
+	if !logStreamBroken {
+		if err := uploadLogs(opts.InvocationID, stream, []byte(exitMsg)); err != nil {
+			logStreamBroken = true
+			log.Warnf("Failed to upload exit code log: %s", err)
+		}
 	}
 
 	return exitCode, <-signalReceived, nil
 }
 
 // streamOutput streams output to both stdout and uploads them to the BuildBuddy server.
-func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, outputReader io.Reader, writeStream bbspb.BuildBuddyService_WriteEventLogClient) error {
+func streamOutput(invocationID string, outputReader io.Reader, writeStream bbspb.BuildBuddyService_WriteEventLogClient) streamOutputResult {
+	result := streamOutputResult{}
 	uploadRunLogs := true
 	flushTimer := time.NewTimer(flushChunkTimeout)
 	defer flushTimer.Stop()
@@ -317,12 +331,16 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 		// When a PTY is closed, it returns EIO.
 		if err == io.EOF || errors.Is(err, syscall.EIO) {
 			if len(writeBuf) > 0 {
-				_ = uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf)
+				if err := uploadLogs(invocationID, writeStream, writeBuf); err != nil {
+					log.Warnf("Failed to stream run logs: %s", err)
+					result.logStreamBroken = true
+				}
 			}
-			return nil
+			return result
 		}
 		if err != nil {
-			return err
+			result.err = err
+			return result
 		}
 
 		os.Stdout.Write(readBuf[:n])
@@ -340,7 +358,9 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 
 		// Flush writes to the server once we've accumulated enough data.
 		if len(writeBuf) > 0 && (len(writeBuf)+n > UploadBufferSize || forceFlush) {
-			if err := uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf); err != nil {
+			if err := uploadLogs(invocationID, writeStream, writeBuf); err != nil {
+				log.Warnf("Failed to stream run logs: %s", err)
+				result.logStreamBroken = true
 				uploadRunLogs = false
 				continue
 			}
@@ -361,7 +381,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 	}
 }
 
-func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
+func uploadLogs(invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
 	// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
 	if err := stream.Send(&elpb.WriteEventLogRequest{
 		Type: elpb.LogType_RUN_LOG,
@@ -370,13 +390,6 @@ func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		},
 		Data: data,
 	}); err != nil {
-		log.Warnf("Failed to stream run logs: %s", err)
-		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-			InvocationId: invocationID,
-			Status:       inspb.OverallStatus_DISCONNECTED,
-		}); err != nil {
-			log.Warnf("Failed to update run status: %s", err)
-		}
 		return err
 	}
 	return nil

@@ -18,6 +18,7 @@ go_test(
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
+        "//server/buildbuddy_server",
         "//server/tables",
         "//server/testutil/app",
         "//server/testutil/testfs",

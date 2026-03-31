@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -245,6 +246,37 @@ echo "Should never get here"
 	require.NoError(t, err)
 	require.Equal(t, 1, len(invRsp.Invocation))
 	require.Equal(t, inspb.OverallStatus_DISCONNECTED, invRsp.Invocation[0].GetRunStatus())
+}
+
+func TestIdleStreamTimeoutStillReportsFinalRunStatus(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"echo.sh": `#!/bin/bash
+sleep 1
+`,
+	})
+
+	originalTimeout := buildbuddy_server.WriteEventLogTimeout
+	buildbuddy_server.WriteEventLogTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { buildbuddy_server.WriteEventLogTimeout = originalTimeout })
+
+	app, webClient, setupOpts := setup(t)
+	mockBuild(t, app, webClient.RequestContext.GetGroupId(), setupOpts.InvocationID)
+
+	exitCode, err := stream_run_logs.Execute(ws+"/echo.sh", *setupOpts)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	invRsp := &inpb.GetInvocationResponse{}
+	err = webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: webClient.RequestContext,
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: setupOpts.InvocationID,
+		},
+	}, invRsp)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(invRsp.Invocation))
+	require.Equal(t, inspb.OverallStatus_SUCCESS, invRsp.Invocation[0].GetRunStatus())
 }
 
 func setup(t *testing.T) (*app.App, *buildbuddy_enterprise.WebClient, *stream_run_logs.Opts) {
