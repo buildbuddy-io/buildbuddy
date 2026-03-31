@@ -929,7 +929,20 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 // sensitiveEnvVarSubstrings lists substrings that, when found (case-insensitive)
 // in an environment variable name, indicate the value should be redacted from
 // workflow logs.
-var sensitiveEnvVarSubstrings = []string{"SECRET", "TOKEN", "PASSWORD", "KEY", "CREDENTIALS"}
+var sensitiveEnvVarSubstrings = []string{"SECRET", "TOKEN", "PASSWORD", "CREDENTIALS"}
+
+// containsSensitiveEnvToken reports whether token appears as a distinct segment
+// of the env var name, using non-alphanumeric characters as delimiters.
+func containsSensitiveEnvToken(name string, token string) bool {
+	for _, segment := range strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
+		return (r < 'A' || r > 'Z') && (r < '0' || r > '9')
+	}) {
+		if segment == token {
+			return true
+		}
+	}
+	return false
+}
 
 // EnvNameLooksSensitive reports whether an environment variable name contains
 // one of the well-known secret-related substrings (case-insensitive).
@@ -940,7 +953,9 @@ func EnvNameLooksSensitive(name string) bool {
 			return true
 		}
 	}
-	return false
+	// Match KEY more conservatively than the other markers to avoid false
+	// positives such as MONKEY or KEYBOARD_LAYOUT.
+	return containsSensitiveEnvToken(name, "KEY")
 }
 
 // CollectSensitiveEnvValues scans the provided environment entries (in the
