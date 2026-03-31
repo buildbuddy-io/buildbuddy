@@ -253,6 +253,31 @@ proto_library(
 )
 
 proto_library(
+    name = "gateway_proto",
+    srcs = ["gateway.proto"],
+)
+
+go_proto_library(
+    name = "gateway_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway",
+    proto = ":gateway_proto",
+)
+
+proto_library(
+    name = "gateway_service_proto",
+    srcs = ["gateway_service.proto"],
+    deps = [":gateway_proto"],
+)
+
+go_proto_library(
+    name = "gateway_service_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway_service",
+    mode = "services_only",
+    proto = ":gateway_service_proto",
+    deps = [":gateway_go_proto"],
+)
+
+proto_library(
     name = "github_proto",
     srcs = ["github.proto"],
     deps = [":context_proto"],
