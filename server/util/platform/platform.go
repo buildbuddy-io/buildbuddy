@@ -854,7 +854,7 @@ func SecretEnvVarNamesFromOverrides(overrides *repb.Platform) []string {
 		case EnvOverridesPropertyName:
 			envOverrides = strings.Split(prop.GetValue(), ",")
 		case EnvOverridesBase64PropertyName:
-			for _, encoded := range strings.Split(prop.GetValue(), ",") {
+			for encoded := range strings.SplitSeq(prop.GetValue(), ",") {
 				if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
 					envOverrides = append(envOverrides, string(decoded))
 				}
