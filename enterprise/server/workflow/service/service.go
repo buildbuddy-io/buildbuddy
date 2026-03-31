@@ -21,7 +21,6 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -661,11 +660,27 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	accessToken, err := githubapp.GetRepositoryInstallationToken(ctx, ws.env, groupID, repoURL.String())
+	accessToken, err := ws.getGitHubAccessToken(ctx, groupID, repoURL.String())
 	if err != nil {
 		return nil, status.WrapError(err, "get repository installation token")
 	}
 	return ws.gitRepositoryWorkflow(gitRepository, accessToken), nil
+}
+
+func (ws *workflowService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := ws.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -129,13 +128,29 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 		return err
 	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
-	token, err := githubapp.GetRepositoryInstallationToken(authCtx, env, groupID, repoURL)
+	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
 	if err != nil {
 		return status.WrapError(err, "failed to refresh remote runner git token")
 	}
 	envOverrides["REPO_TOKEN"] = token
 	applyEnvOverrides(task, envOverrides)
 	return nil
+}
+
+func getGitHubAccessToken(ctx context.Context, env environment.Env, groupID string, repoURL string) (string, error) {
+	gh := env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
