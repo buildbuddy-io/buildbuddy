@@ -8,9 +8,10 @@ message RegisterRequest {
   // Optional. Identifies which network within the group to join.
   // Defaults to "" (the group's default network).
   string network_name = 1;
+
   // Optional. DNS name for this peer within the network. Other peers on the
   // same network can resolve this name to this peer's assigned IP via the
-  // DNS server at gateway_ip:53. Last registration with a given name wins.
+  // DNS server. The *last* registration with a given name wins.
   string peer_name = 2;
 }
 
@@ -18,16 +19,22 @@ message RegisterResponse {
   // Client's WireGuard private key, hex-encoded. Server-generated; not retained
   // by the gateway after this response is sent.
   string private_key = 1;
+
   // Gateway's WireGuard public key for this network, hex-encoded.
   string server_public_key = 2;
+
   // host:udp_port that clients should configure as their WireGuard endpoint.
   string server_endpoint = 3;
-  // IP address assigned to this client within the tunnel, e.g. "10.0.0.5".
+
+  // IP address assigned to this client within the tunnel, e.g. "10.0.0.5" or
+  // "fd00:bb::2"
   string assigned_ip = 4;
+
   // IP address of the gateway hub within the tunnel. Also serves as the DNS
   // resolver for peer names: pass this to netstack.CreateNetTUN so that
   // hostnames registered via peer_name resolve through the tunnel.
   string gateway_ip = 5;
+
   // CIDR of the network, e.g. "10.0.0.0/24".
   string network_cidr = 6;
 }
