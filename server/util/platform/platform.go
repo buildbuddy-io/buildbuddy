@@ -851,9 +851,11 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 // those header-sourced values are intended to be short-lived and should be
 // redacted from workflow logs.
 //
-// In contrast, it should not be used on a general action platform containing
-// env-overrides=CC=clang,DEBUG=1, since those ordinary action properties are
-// not necessarily secrets and marking them for redaction would be too broad.
+// An execution can also have ordinary action platform properties such as
+// env-overrides=CC=clang,DEBUG=1 at the same time. Those action-defined
+// env-overrides are not necessarily secrets, so callers should pass only the
+// remote-header override platform (for example, ExecutionTask.PlatformOverrides),
+// not a merged view that also includes Action.Platform or Command.Platform.
 func SecretEnvVarNamesFromOverrides(overrides *repb.Platform) []string {
 	var names []string
 	for _, prop := range overrides.GetProperties() {
