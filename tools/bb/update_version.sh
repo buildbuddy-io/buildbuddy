@@ -21,7 +21,8 @@ else
   fi
   echo "Latest release: ${version}"
 fi
-DEPS_BZL="$(cd "$(dirname "$0")/../.." && pwd)/deps.bzl"
+WORKSPACE_DIR="${BUILD_WORKSPACE_DIRECTORY:-$(cd "$(dirname "$0")/../.." && pwd)}"
+DEPS_BZL="${WORKSPACE_DIR}/deps.bzl"
 
 platforms=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64)
 
@@ -38,15 +39,44 @@ for platform in "${platforms[@]}"; do
   echo "${platform}: ${sums[$platform]}"
 done
 
-# Update version
-sed -i "s/^BB_CLI_VERSION = \".*\"/BB_CLI_VERSION = \"${version}\"/" "$DEPS_BZL"
+export SUM_darwin_arm64="${sums[darwin-arm64]}"
+export SUM_darwin_x86_64="${sums[darwin-x86_64]}"
+export SUM_linux_arm64="${sums[linux-arm64]}"
+export SUM_linux_x86_64="${sums[linux-x86_64]}"
 
-# Update integrity hashes
-for platform in "${platforms[@]}"; do
-  repo_name="io_buildbuddy_bb_cli-${platform}"
-  # Match the integrity line inside the http_file block for this repo
-  sed -i "/name = \"${repo_name}\"/,/^    )/{s|integrity = \"sha256-[^\"]*\"|integrity = \"${sums[$platform]}\"|;}" "$DEPS_BZL"
-done
+python3 - "$DEPS_BZL" "$version" <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+version = sys.argv[2]
+content = path.read_text()
+content, n = re.subn(
+    r'^BB_CLI_VERSION = ".*"$',
+    f'BB_CLI_VERSION = "{version}"',
+    content,
+    count=1,
+    flags=re.MULTILINE,
+)
+if n != 1:
+    raise SystemExit("failed to update BB_CLI_VERSION")
+
+for platform, integrity in {
+    "darwin-arm64": os.environ["SUM_darwin_arm64"],
+    "darwin-x86_64": os.environ["SUM_darwin_x86_64"],
+    "linux-arm64": os.environ["SUM_linux_arm64"],
+    "linux-x86_64": os.environ["SUM_linux_x86_64"],
+}.items():
+    repo_name = f'io_buildbuddy_bb_cli-{platform}'
+    pattern = rf'(name = "{re.escape(repo_name)}",.*?\n\s*executable = True,\n\s*integrity = ")sha256-[^"]*(")'
+    content, n = re.subn(pattern, rf'\1{integrity}\2', content, count=1, flags=re.DOTALL)
+    if n != 1:
+        raise SystemExit(f"failed to update integrity for {repo_name}")
+
+path.write_text(content)
+PY
 
 echo
 echo "Updated deps.bzl to bb CLI version ${version}"
