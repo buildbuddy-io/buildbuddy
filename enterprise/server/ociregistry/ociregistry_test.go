@@ -383,3 +383,216 @@ func TestPull(t *testing.T) {
 		})
 	}
 }
+
+func TestMirrorConfig(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetClientIdentityService())
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	// Two upstream registries, each with their own request counter.
+	upstream1Counter := atomic.Int32{}
+	upstream1 := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			upstream1Counter.Add(1)
+			return true
+		},
+	})
+	t.Cleanup(func() { upstream1.Shutdown(context.TODO()) })
+
+	upstream2Counter := atomic.Int32{}
+	upstream2 := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			upstream2Counter.Add(1)
+			return true
+		},
+	})
+	t.Cleanup(func() { upstream2.Shutdown(context.TODO()) })
+
+	// Configure registry domain and two mirrors on different subdomains.
+	flags.Set(t, "ociregistry.domain", "registry.test")
+	flags.Set(t, "ociregistry.mirrors", []ociregistry.Mirror{
+		{
+			SubDomain:        "mirror1",
+			Namespace:        "ns1",
+			RemoteRegistry:   upstream1.Address(),
+			RemoteRepository: "repo1",
+		},
+		{
+			SubDomain:        "mirror2",
+			Namespace:        "ns2",
+			RemoteRegistry:   upstream2.Address(),
+			RemoteRepository: "repo2",
+		},
+	})
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	port := testport.FindFree(t)
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+	mirrorServer := &http.Server{Handler: ocireg}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() { mirrorServer.Shutdown(context.TODO()) })
+
+	// Push an image to upstream1 under repo1/myimage (for mirror1).
+	_, image1 := upstream1.PushNamedImage(t, "repo1/myimage", nil)
+	layers1, err := image1.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers1), 0)
+	layer1Digest, err := layers1[0].Digest()
+	require.NoError(t, err)
+
+	// Push an image to upstream2 under repo2/myimage (for mirror2).
+	_, image2 := upstream2.PushNamedImage(t, "repo2/myimage", nil)
+	layers2, err := image2.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers2), 0)
+	layer2Digest, err := layers2[0].Digest()
+	require.NoError(t, err)
+
+	// Also push an image to upstream1 under a plain name for the legacy
+	// (non-registry-domain) path.
+	legacyImageName, legacyImage := upstream1.PushNamedImage(t, "legacyimage", nil)
+	legacyLayers, err := legacyImage.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(legacyLayers), 0)
+	legacyLayerDigest, err := legacyLayers[0].Digest()
+	require.NoError(t, err)
+
+	t.Run("v2 check on mirror subdomain returns OK", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+"/v2/", nil)
+		require.NoError(t, err)
+		req.Host = "mirror1.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("pull blob via mirror1 subdomain routes to upstream1", func(t *testing.T) {
+		u1Before := upstream1Counter.Load()
+		u2Before := upstream2Counter.Load()
+
+		// Path uses the mirror namespace: ns1/myimage
+		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror1.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		rc, err := layers1[0].Compressed()
+		require.NoError(t, err)
+		expectedBody, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.Equal(t, expectedBody, body)
+
+		// Upstream1 should have received a request, upstream2 should not.
+		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
+		require.Equal(t, int32(0), upstream2Counter.Load()-u2Before)
+	})
+
+	t.Run("pull blob via mirror2 subdomain routes to upstream2", func(t *testing.T) {
+		u1Before := upstream1Counter.Load()
+		u2Before := upstream2Counter.Load()
+
+		path := "/v2/ns2/myimage/blobs/" + layer2Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror2.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		rc, err := layers2[0].Compressed()
+		require.NoError(t, err)
+		expectedBody, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.Equal(t, expectedBody, body)
+
+		// Upstream2 should have received a request, upstream1 should not.
+		require.Equal(t, int32(0), upstream1Counter.Load()-u1Before)
+		require.Greater(t, upstream2Counter.Load()-u2Before, int32(0))
+	})
+
+	t.Run("pull manifest via mirror1 subdomain routes to upstream1", func(t *testing.T) {
+		u1Before := upstream1Counter.Load()
+		u2Before := upstream2Counter.Load()
+
+		path := "/v2/ns1/myimage/manifests/latest"
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror1.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		expectedManifest, err := image1.RawManifest()
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, body)
+
+		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
+		require.Equal(t, int32(0), upstream2Counter.Load()-u2Before)
+	})
+
+	t.Run("wrong namespace on mirror subdomain returns not found", func(t *testing.T) {
+		// ns2 namespace on mirror1 subdomain should not match.
+		path := "/v2/ns2/myimage/blobs/" + layer1Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "mirror1.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("unknown subdomain returns not found", func(t *testing.T) {
+		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		req.Host = "unknown.registry.test"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("non-registry-domain request uses legacy routing", func(t *testing.T) {
+		u1Before := upstream1Counter.Load()
+
+		// Legacy path: repository includes the upstream host in the URL.
+		path := "/v2/" + legacyImageName + "/blobs/" + legacyLayerDigest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		// Host defaults to mirrorHostPort (localhost:PORT), which does not
+		// match registry.test, so the legacy codepath is used.
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		rc, err := legacyLayers[0].Compressed()
+		require.NoError(t, err)
+		expectedBody, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.Equal(t, expectedBody, body)
+
+		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
+	})
+}

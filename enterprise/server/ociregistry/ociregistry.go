@@ -3,18 +3,19 @@ package ociregistry
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -38,14 +39,35 @@ const (
 	actionCacheLabel = "action_cache"
 )
 
+// Mirror configures OCI registry mirrors on the registry domain.
+// Currently only registries that do not require auth can be mirrored.
+type Mirror struct {
+	// The registry subdomain that must match for this mirror config to be in effect.
+	SubDomain string `yaml:"subdomain" json:"subdomain"`
+	// The namespace (request path prefix) that must match for this config to be in effect.
+	Namespace string `yaml:"namespace" json:"namespace"`
+
+	// The remote registry to mirror.
+	RemoteRegistry string `yaml:"remote_registry" json:"remote_registry"`
+	// The repository (path prefix) on the remote repository.
+	RemoteRepository string `yaml:"remote_repository" json:"remote_repository"`
+}
+
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
+	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
+	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
+)
+
+var (
+	errNotFound = status.NotFoundError("not found")
 )
 
 type registry struct {
-	env    environment.Env
-	client *http.Client
+	env     environment.Env
+	client  *http.Client
+	mirrors []Mirror
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -67,6 +89,9 @@ func New(env environment.Env) (*registry, error) {
 	r := &registry{
 		env:    env,
 		client: client,
+	}
+	if *registryDomain != "" {
+		r.mirrors = *mirrorConfigs
 	}
 	return r, nil
 }
@@ -110,7 +135,11 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		// The image repository name, which can include a registry host and optional port.
 		// For example, "alpine" is a repository name. By default, the registry portion is index.docker.io.
 		// "mycustomregistry.com:8080/alpine" is also a repository name. The registry portion is mycustomregistry.com:8080.
-		repository := m[1]
+		repository, err := r.determineUpstreamRepository(ctx, req, m[1])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 
 		blobsOrManifests := m[2]
 		var ociResourceType ocipb.OCIResourceType
@@ -137,14 +166,80 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	http.NotFound(w, req)
 }
 
+// isRegistryDomainRequest checks if req matches the configured registry domain.
+// If the request host matches, the subdomain portion of the host is returned.
+// e.g. if the domain is foo.com the function will return as follows
+//    bar.foo.com -> ("bar", true)
+//    foo.com -> ("", true)
+//    baz.baz.com -> ("", false)
+//    baz.com -> ("", false)
+func isRegistryDomainRequest(req *http.Request) (string, bool) {
+	if *registryDomain == "" {
+		return "", false
+	}
+
+	if req.Host == *registryDomain {
+		return "", true
+	}
+
+	return strings.CutSuffix(req.Host, "."+*registryDomain)
+}
+
+func (r *registry) determineUpstreamRepository(ctx context.Context, req *http.Request, repository string) (string, error) {
+	// If the request is not for the dedicated registry domain, fallback to
+	// the previous DockerHub mirroring behavior.
+	registrySubdomain, ok := isRegistryDomainRequest(req)
+	if !ok {
+		if repository == "" {
+			return gcrname.DefaultRegistry, nil
+		}
+		return repository, nil
+	}
+
+	for _, mirror := range r.mirrors {
+		if mirror.SubDomain != registrySubdomain {
+			continue
+		}
+
+		// If we're not looking up a specific repository then turn the bare registry.
+		if repository == "" {
+			return mirror.RemoteRegistry, nil
+		}
+
+		after, found := strings.CutPrefix(repository, mirror.Namespace+"/")
+		if !found {
+			continue
+		}
+
+		// Rewrite the target according to the mirroring config.
+		return mirror.RemoteRegistry + "/" + mirror.RemoteRepository + "/" + after, nil
+	}
+	return "", errNotFound
+}
+
 func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, inreq *http.Request) {
+	remoteRegistry, err := r.determineUpstreamRepository(ctx, inreq, "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// If the request is not for the DockerHub mirror, for now just return
+	// an OK response which tells the client that no auth is required. For now,
+	// we are only mirroring repositories that don't require auth.
+	if remoteRegistry != gcrname.DefaultRegistry {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+
 	scheme := "https"
 	if inreq.URL.Scheme != "" {
 		scheme = inreq.URL.Scheme
 	}
 	u := &url.URL{
 		Scheme: scheme,
-		Host:   gcrname.DefaultRegistry,
+		Host:   remoteRegistry,
 		Path:   "/v2/",
 	}
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
@@ -168,7 +263,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 }
 
-func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
+func (r *registry) makeUpstreamRequest(ctx context.Context, method string, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
 	var path string
 	switch ociResourceType {
 	case ocipb.OCIResourceType_BLOB:
@@ -188,8 +283,8 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not make %s request to upstream registry %q: %s", method, upreq.URL.Hostname(), err)
 	}
-	if acceptHeader != "" {
-		upreq.Header.Set(headerAccept, acceptHeader)
+	for _, acceptHeader := range acceptHeaders {
+		upreq.Header.Add(headerAccept, acceptHeader)
 	}
 	if authorizationHeader != "" {
 		upreq.Header.Set(headerAuthorization, authorizationHeader)
@@ -208,8 +303,8 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
-	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
+	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeaders, authorizationHeader, ociResourceType, ref)
 	if err != nil {
 		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
@@ -255,7 +350,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
 			return
@@ -303,7 +398,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 
-	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
+	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
 		return
