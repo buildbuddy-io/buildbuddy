@@ -63,8 +63,6 @@ var (
 
 	es256PrivateKey *ecdsa.PrivateKey
 	es256PublicKeys []string = []string{}
-
-	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
 )
 
 func Init() error {
@@ -494,13 +492,15 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if *reparseJWTs {
+	// Skip re-parsing if an auth error is already set, since that means
+	// authentication was already attempted and failed.
+	if authErr, _ := authutil.AuthErrorFromContext(ctx); authErr == nil && *reparseJWTs {
 		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
 			caller := "unknown"
 			if _, file, line, ok := runtime.Caller(1); ok {
 				caller = fmt.Sprintf("%s:%d", file, line)
 			}
-			reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+			alert.UnexpectedEvent("Reparsing JWT (caller: %s)", caller)
 			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 			if err != nil {
 				return nil, err
