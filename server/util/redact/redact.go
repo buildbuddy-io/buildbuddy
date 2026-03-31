@@ -106,7 +106,7 @@ var (
 	}
 	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
 
-	sensitiveEnvVarSubstrings = []string{"SECRET", "TOKEN", "PASSWORD", "CREDENTIALS"}
+	sensitiveEnvVarTokens = []string{"SECRET", "TOKEN", "PASSWORD", "KEY", "CREDENTIALS"}
 )
 
 func init() {
@@ -942,17 +942,14 @@ func containsSensitiveEnvToken(name string, token string) bool {
 }
 
 // EnvNameLooksSensitive reports whether an environment variable name contains
-// one of the well-known secret-related substrings (case-insensitive).
+// one of the well-known secret-related tokens (case-insensitive).
 func EnvNameLooksSensitive(name string) bool {
-	upper := strings.ToUpper(name)
-	for _, substr := range sensitiveEnvVarSubstrings {
-		if strings.Contains(upper, substr) {
+	for _, token := range sensitiveEnvVarTokens {
+		if containsSensitiveEnvToken(name, token) {
 			return true
 		}
 	}
-	// Match KEY more conservatively than the other markers to avoid false
-	// positives such as MONKEY or KEYBOARD_LAYOUT.
-	return containsSensitiveEnvToken(name, "KEY")
+	return false
 }
 
 // CollectSensitiveEnvValues scans the provided environment entries (in the

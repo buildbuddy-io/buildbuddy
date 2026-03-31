@@ -1082,9 +1082,13 @@ func TestEnvNameLooksSensitive(t *testing.T) {
 		{"my_secret", true},
 		{"Api_Token", true},
 		{"db_password", true},
-		// KEY should be matched conservatively to avoid false positives.
+		// Token-based matching should avoid substring false positives.
 		{"MONKEY", false},
 		{"KEYBOARD_LAYOUT", false},
+		{"SECRETION", false},
+		{"TOKENIZER", false},
+		{"PASSWORDLESS", false},
+		{"CREDENTIALSTORE", false},
 		{"DONKEY_TOKEN", true},
 		// Non-sensitive names
 		{"HOME", false},
@@ -1109,6 +1113,7 @@ func TestCollectSensitiveEnvValues(t *testing.T) {
 		"GCP_CREDENTIALS={\"type\":\"service_account\"}",
 		"MONKEY=banana",
 		"KEYBOARD_LAYOUT=qwerty",
+		"SECRETION=should-not-redact",
 		"SAFE_VAR=not-a-secret",
 		"EMPTY_SECRET=",
 	}
@@ -1121,6 +1126,7 @@ func TestCollectSensitiveEnvValues(t *testing.T) {
 	assert.Contains(t, values, `{"type":"service_account"}`)
 	assert.NotContains(t, values, "banana")
 	assert.NotContains(t, values, "qwerty")
+	assert.NotContains(t, values, "should-not-redact")
 	assert.NotContains(t, values, "not-a-secret")
 	// Empty values should be excluded.
 	for _, v := range values {
