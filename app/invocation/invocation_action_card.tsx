@@ -656,23 +656,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
     alert_service.success("`bb execute` command copied to clipboard");
   };
 
-  handleFileClicked(node: TreeNode) {
-    if (!("digest" in node.obj)) return;
-    if (!node.obj?.digest) return;
+  private fetchAndExpandDir(node: TreeNode): Promise<TreeNode[]> {
+    if (!("digest" in node.obj) || !node.obj?.digest) return Promise.resolve([]);
 
-    let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
-    let digestString = node.obj.digest.hash ?? "";
-    if (this.state.treeShaToExpanded.get(digestString)) {
-      this.state.treeShaToExpanded.set(digestString, false);
-      this.forceUpdate();
-      return;
-    }
-    if (node.type == "file") {
-      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
-      return;
-    }
+    const dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
+    const digestString = node.obj.digest.hash ?? "";
 
-    rpcService
+    return rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
       .then((array: Uint8Array) =>
@@ -681,9 +671,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           : build.bazel.remote.execution.v2.Directory.decode(array)
       )
       .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
-        if (!dir) {
-          return;
-        }
+        if (!dir) return [];
 
         this.state.treeShaToExpanded.set(digestString, true);
         const nodes = dir.directories
@@ -704,8 +692,37 @@ export default class InvocationActionCardComponent extends React.Component<Props
             }))
           );
         this.state.treeShaToChildrenMap.set(digestString, nodes);
-        this.forceUpdate();
-      })
+        return nodes;
+      });
+  }
+
+  private autoExpandSingleChildDirs(nodes: TreeNode[]): Promise<void> {
+    const dirNodes = nodes.filter((n) => n.type === "dir" || n.type === "tree");
+    if (dirNodes.length === 1 && dirNodes.length === nodes.length) {
+      return this.fetchAndExpandDir(dirNodes[0]).then((children) => this.autoExpandSingleChildDirs(children));
+    }
+    return Promise.resolve();
+  }
+
+  handleFileClicked(node: TreeNode) {
+    if (!("digest" in node.obj)) return;
+    if (!node.obj?.digest) return;
+
+    let digestString = node.obj.digest.hash ?? "";
+    if (this.state.treeShaToExpanded.get(digestString)) {
+      this.state.treeShaToExpanded.set(digestString, false);
+      this.forceUpdate();
+      return;
+    }
+    if (node.type == "file") {
+      let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
+      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
+      return;
+    }
+
+    this.fetchAndExpandDir(node)
+      .then((children) => this.autoExpandSingleChildDirs(children))
+      .then(() => this.forceUpdate())
       .catch((e) => console.error(e));
   }
 
