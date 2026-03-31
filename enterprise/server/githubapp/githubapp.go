@@ -579,12 +579,27 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 	return tok, nil
 }
 
-// TODO: Add GitRepository check in here and add a test.
-func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
-	if err := authutil.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
+func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
+	if err := authutil.AuthorizeGroupAccess(ctx, a.env, groupID); err != nil {
 		return "", err
 	}
-	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)
+
+	// Validate that the repo was imported to BB.
+	gitRepository := &tables.GitRepository{}
+	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_token").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, repoURL).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("repo %s not found", repoURL)
+		}
+		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
 	if err != nil {
 		return "", err
 	}
@@ -594,7 +609,7 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, repo.GroupID, repoURL.Owner).Take(&installation)
+	`, groupID, parsedRepoURL.Owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
@@ -606,6 +621,26 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 		return "", err
 	}
 	return tok.GetToken(), nil
+}
+
+// GetRepositoryInstallationToken is a convenience function that wraps the interface method on GitHubApp.
+func GetRepositoryInstallationToken(ctx context.Context, env environment.Env, groupID, repoURL string) (string, error) {
+	gh := env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %q: %s", repoURL, err)
+	}
+	// If the request was authenticated with a group API key, there will
+	// not be a UserID in the authenticated context, so we cannot use
+	// `GetGitHubAppForAuthenticatedUser`.
+	app, err := gh.GetGitHubAppForOwner(ctx, parsedRepoURL.Owner)
+	if err != nil {
+		return "", status.WrapError(err, "get GitHub app for owner")
+	}
+	return app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
 }
 
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.

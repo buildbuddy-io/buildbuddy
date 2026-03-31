@@ -53,7 +53,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )

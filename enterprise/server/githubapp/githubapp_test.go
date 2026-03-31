@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,11 +30,12 @@ var (
 type fakeAppClient struct {
 	t                  testing.TB
 	wantInstallationID int64
+	createTokenCalls   int
 }
 
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
-	c.t.Helper()
-	assert.Equal(c.t, c.wantInstallationID, installationID)
+	c.createTokenCalls++
+	require.Equal(c.t, c.wantInstallationID, installationID)
 	return &github.InstallationToken{Token: github.String(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
 	}, nil
@@ -90,17 +90,17 @@ func insertRepo(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
 func TestGetRepositoryInstallationToken(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
-	app := newTestApp(te, &fakeAppClient{
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
 		t:                  t,
 		wantInstallationID: testInstallationID,
-	})
+	}
+	app := newTestApp(te, client)
 
-	tok, err := app.GetRepositoryInstallationToken(ctx, &tables.GitRepository{
-		GroupID: testGroupID,
-		RepoURL: testRepoURL,
-	})
+	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
 	require.NoError(t, err)
-	assert.Equal(t, fakeToken, tok)
+	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 1, client.createTokenCalls)
 }
 
 func TestGetRepositoryInstallationToken_Unauthorized(t *testing.T) {
@@ -111,16 +111,33 @@ func TestGetRepositoryInstallationToken_Unauthorized(t *testing.T) {
 	unauthorizedCtx, err := auth.WithAuthenticatedUser(context.Background(), "US2")
 	require.NoError(t, err)
 
-	app := newTestApp(te, nil)
+	client := &fakeAppClient{
+		t: t,
+	}
+	app := newTestApp(te, client)
 
-	_, err = app.GetRepositoryInstallationToken(unauthorizedCtx, &tables.GitRepository{
-		GroupID: testGroupID,
-		RepoURL: testRepoURL,
-	})
+	token, err := app.GetRepositoryInstallationToken(unauthorizedCtx, testGroupID, testRepoURL)
 	require.Error(t, err)
-	assert.True(t, status.IsPermissionDeniedError(err))
+	require.Empty(t, token)
+	require.Equal(t, 0, client.createTokenCalls)
 }
 
+func TestGetRepositoryInstallationToken_RepoNotImported(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	// Don't create a repo. This can happen if the user installs the BB GitHub app but doesn't
+	// explicitly import any repos to BB.
+
+	client := &fakeAppClient{
+		t: t,
+	}
+	app := newTestApp(te, client)
+
+	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.Error(t, err)
+	require.Empty(t, tok)
+	require.Equal(t, 0, client.createTokenCalls)
+}
 func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
@@ -131,5 +148,15 @@ func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 
 	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner)
 	require.NoError(t, err)
-	assert.Equal(t, fakeToken, tok.GetToken())
+	require.Equal(t, fakeToken, tok.GetToken())
+
+	// We support status reporting if you install the BB GitHub app but don't import any repos to BB.
+	// Make sure we don't return an error, even if the repo is not imported to BB.
+	gitRepository := &tables.GitRepository{}
+	err = te.GetDBHandle().NewQuery(ctx, "test_get_installation_token_for_status_reporting_only").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+	`, testGroupID).Take(gitRepository)
+	require.Error(t, err)
 }
