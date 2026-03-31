@@ -43,9 +43,29 @@ var (
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
 
+// Opts configures optional behavior for the registry.
+// A zero-value Opts preserves the original behavior (Docker Hub mirror).
+type Opts struct {
+	// RewriteRepository, if non-nil, transforms the URL-path repository
+	// string before resolving it to an upstream reference.
+	// For example, it can rewrite "buildbuddy/executor" to
+	// "gcr.io/flame-public/executor".
+	RewriteRepository func(repository string) string
+
+	// SimpleV2Check, when true, causes GET /v2/ to return HTTP 200
+	// directly instead of proxying to the upstream registry's /v2/.
+	SimpleV2Check bool
+
+	// SkipAuthPrefix, when true, skips attaching a BuildBuddy user prefix
+	// to the context. Useful for standalone public registry mirrors that
+	// don't require BuildBuddy authentication.
+	SkipAuthPrefix bool
+}
+
 type registry struct {
 	env    environment.Env
 	client *http.Client
+	opts   Opts
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -62,11 +82,16 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func New(env environment.Env) (*registry, error) {
+func New(env environment.Env, opts ...Opts) (*registry, error) {
+	var o Opts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	client := httpclient.New(nil, "ociregistry")
 	r := &registry{
 		env:    env,
 		client: client,
+		opts:   o,
 	}
 	return r, nil
 }
@@ -82,10 +107,13 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
-		return
+	if !r.opts.SkipAuthPrefix {
+		var err error
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Only GET and HEAD requests for blobs and manifests are supported.
@@ -138,6 +166,10 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 }
 
 func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, inreq *http.Request) {
+	if r.opts.SimpleV2Check {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	scheme := "https"
 	if inreq.URL.Scheme != "" {
 		scheme = inreq.URL.Scheme
@@ -233,6 +265,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
 		return
+	}
+
+	if r.opts.RewriteRepository != nil {
+		repository = r.opts.RewriteRepository(repository)
 	}
 
 	identifierIsDigest := isDigest(identifier)
