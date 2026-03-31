@@ -846,11 +846,14 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 // identify header-sourced env overrides that should be treated as secrets for
 // redaction purposes.
 //
-// Note: this helper assumes the provided platform contains only remote-header
-// overrides (for example, ExecutionTask.PlatformOverrides as populated from
-// x-buildbuddy-platform.* headers), not arbitrary platform properties. If
-// callers start passing in platforms that may contain non-secret env-overrides
-// from some other source, this logic could over-redact them.
+// For example, it's appropriate to call this on ExecutionTask.PlatformOverrides
+// after receiving x-buildbuddy-platform.env-overrides=API_KEY=abc123, because
+// those header-sourced values are intended to be short-lived and should be
+// redacted from workflow logs.
+//
+// In contrast, it should not be used on a general action platform containing
+// env-overrides=CC=clang,DEBUG=1, since those ordinary action properties are
+// not necessarily secrets and marking them for redaction would be too broad.
 func SecretEnvVarNamesFromOverrides(overrides *repb.Platform) []string {
 	var names []string
 	for _, prop := range overrides.GetProperties() {
