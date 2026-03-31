@@ -6,12 +6,14 @@ package mcptools
 import "encoding/json"
 
 // allowedRPCs is the reviewed set of public API methods currently exposed via
-// MCP. Keep this list intentionally small and expand it one method at a time.
+// MCP. This list is kept intentionally small until we have more experience with
+// how MCP is used.
 var allowedRPCs = map[string]struct{}{
 	"GetInvocation": {},
 	"GetLog":        {},
 	"GetTarget":     {},
 	"GetAction":     {},
+	"GetFileRange":  {},
 }
 
 // Manifest is the generated inventory of API-backed MCP tools.

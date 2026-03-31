@@ -4,7 +4,8 @@ package api.v1;
 
 // Request object for GetFile
 message GetFileRequest {
-  // File URI corresponding to the `uri` field in the File message.
+  // File URI corresponding to the `uri` field in a File message from a build
+  // event stream.
   //
   // If the BuildBuddy instance supports ZSTD transcoding, the literal string
   // "/blobs/" in the URI (third-to-last path segment) may be replaced with
@@ -22,6 +23,37 @@ message GetFileRequest {
 // Response object for GetFile
 message GetFileResponse {
   // The file data.
+  bytes data = 1;
+}
+
+// Request object for GetFileRange
+message GetFileRangeRequest {
+  // File URI corresponding to the `uri` field in a File message from a build
+  // event stream.
+  //
+  // If the BuildBuddy instance supports ZSTD transcoding, the literal string
+  // "/blobs/" in the URI (third-to-last path segment) may be replaced with
+  // "/compressed-blobs/zstd/", and the server will return a compressed payload.
+  //
+  // Examples:
+  // * Uncompressed blob with remote instance name of "ci":
+  //   bytestream://remote.buildbuddy.io/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216
+  //
+  // * zstd-compressed blob with no remote instance name:
+  //   bytestream://remote.buildbuddy.io/compressed-blobs/zstd/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216
+  string uri = 1;
+
+  // Inclusive byte offset to start reading from.
+  int64 start = 2;
+
+  // Exclusive byte offset to stop reading at. Must be greater than `start`. The
+  // requested range size (end - start) must be no larger than 16 MiB.
+  int64 end = 3;
+}
+
+// Response object for GetFileRange
+message GetFileRangeResponse {
+  // The requested file data.
   bytes data = 1;
 }
 
