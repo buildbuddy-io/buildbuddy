@@ -1948,7 +1948,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForExperiments(ctx, req.GetExecutorHostname(), task.serializedTask)
+			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), task.serializedTask, task.metadata.GetTaskGroupId())
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -2041,16 +2041,36 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	return nil
 }
 
-func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, task []byte) []byte {
-	fp := s.env.GetExperimentFlagProvider()
-	if fp == nil {
-		return task
-	}
-
+// modifyTaskForLease applies lease-time mutations to the serialized task.
+//
+// We do this at lease time so each execution attempt gets the latest values
+// for things like experiments and token refreshes.
+// This is important for tasks that are queued for a long time or are retried
+// after some time, as values computed at initial enqueue can be stale.
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, task []byte, taskGroupID string) []byte {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
+	}
+
+	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, taskProto)
+	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
+		log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
+	}
+
+	if newTask, err := proto.Marshal(taskProto); err != nil {
+		log.CtxWarningf(ctx, "Failed to marshal updated ExecutionTask: %s", err)
+		return task
+	} else {
+		return newTask
+	}
+}
+
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return taskProto
 	}
 
 	selfHosted := false
@@ -2092,17 +2112,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
 
-	if newTask, err := proto.Marshal(taskProto); err != nil {
-		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
-		return task
-	} else {
-		return newTask
-	}
+	return taskProto
 }
 
 func getWorkflowName(task *repb.ExecutionTask) string {
-	args := task.GetCommand().GetArguments()
-	if len(args) < 2 || args[0] != "./"+ci_runner_util.ExecutableName {
+	if !(ci_runner_util.IsRemoteRunnerTask(task)) {
 		return ""
 	}
 	for _, arg := range task.GetCommand().GetArguments() {

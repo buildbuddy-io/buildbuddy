@@ -367,6 +367,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	}
 
 	// Use env override headers for credentials.
+	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		"REPO_USER=" + req.GetGitRepo().GetUsername(),
