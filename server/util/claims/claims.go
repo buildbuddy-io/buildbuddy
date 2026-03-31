@@ -500,7 +500,7 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 			if _, file, line, ok := runtime.Caller(1); ok {
 				caller = fmt.Sprintf("%s:%d", file, line)
 			}
-			alert.UnexpectedEvent("Reparsing JWT (caller: %s)", caller)
+			alert.CtxUnexpectedEvent(ctx, "jwt_reparse", "caller: %s", caller)
 			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 			if err != nil {
 				return nil, err
