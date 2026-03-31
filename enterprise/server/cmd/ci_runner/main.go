@@ -2791,22 +2791,30 @@ func diskUsage() (*diskUsageStats, error) {
 }
 
 func parseSecretRedactionValues(serializedSecretNames string) []string {
-	if serializedSecretNames == "" {
-		return nil
-	}
-	var names []string
-	if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
-		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
-		return nil
-	}
-	values := make([]string, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
+	explicitNames := make(map[string]struct{})
+	if serializedSecretNames != "" {
+		var names []string
+		if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
+			backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+		} else {
+			for _, name := range names {
+				if name != "" {
+					explicitNames[name] = struct{}{}
+				}
+			}
 		}
+	}
+
+	// Collect values of explicitly named secrets.
+	values := make([]string, 0, len(explicitNames))
+	for name := range explicitNames {
 		if val, ok := os.LookupEnv(name); ok && val != "" {
 			values = append(values, val)
 		}
 	}
+
+	// Also collect values of env vars whose names look sensitive.
+	values = append(values, redact.CollectSensitiveEnvValues(os.Environ())...)
+
 	return values
 }
