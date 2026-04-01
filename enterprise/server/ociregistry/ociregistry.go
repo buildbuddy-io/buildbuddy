@@ -13,13 +13,17 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -97,8 +101,32 @@ func New(env environment.Env) (*registry, error) {
 	return r, nil
 }
 
+type instrumentedWriter struct {
+	http.ResponseWriter
+	bytesWritten int64
+}
+
+func (rw *instrumentedWriter) Write(p []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(p)
+	rw.bytesWritten += int64(n)
+	return n, err
+}
+
 func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.handleRegistryRequest(w, req)
+	rw := &instrumentedWriter{ResponseWriter: w}
+	r.handleRegistryRequest(rw, req)
+
+	provider := "unknown"
+	region := "unknown"
+	ip := clientip.Get(req.Context())
+	dest, err := trafficstats.Classify(ip)
+	if err == nil {
+		provider, region = dest.Provider, dest.Region
+	}
+	metrics.OCIRegistryEgressBytes.With(prometheus.Labels{
+		metrics.DestinationProviderLabel: provider,
+		metrics.DestinationRegionLabel:   region,
+	}).Add(float64(rw.bytesWritten))
 }
 
 // The OCI registry is intended to be a read-through cache for public OCI images
