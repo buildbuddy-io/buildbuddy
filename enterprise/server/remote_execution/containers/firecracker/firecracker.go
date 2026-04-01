@@ -96,6 +96,7 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
+	sharedSnapshotRefreshInterval         = flag.Duration("executor.shared_snapshot_refresh_interval", time.Hour, "Maximum frequency for refreshing snapshots written to the shared default-branch snapshot key when remote-snapshot-save-policy is not \"always\".")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -651,7 +652,7 @@ type FirecrackerContainer struct {
 	id         string // a random GUID, unique per-run of firecracker
 	snapshotID string // a random GUID, unique per-run of firecracker
 	vmIdx      int    // the index of this vm on the host machine
-	loader     *snaploader.FileCacheLoader
+	loader     snaploader.Loader
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -1172,17 +1173,20 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 	}
 }
 
+// TODO: Throttle these
 func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) bool {
 	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
 		return false
 	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot {
 		return true
-	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+	}
+	if c.writesDefaultBranchSnapshot() {
+		return c.shouldRefreshSharedSnapshot(ctx, false /* local */)
+	}
+	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 	}
 
@@ -1202,10 +1206,11 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
 	// as it should be a good proxy for the user's intent on snapshot behavior.
 	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+	if savePolicy == platform.AlwaysSaveSnapshot {
 		return true
+	}
+	if c.writesDefaultBranchSnapshot() {
+		return c.shouldRefreshSharedSnapshot(ctx, true /* local */)
 	}
 	// By default (applies if save policy is unset or invalid) or if
 	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
@@ -2899,6 +2904,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if shouldSaveSnapshot {
 		// If an older snapshot is present -- nuke it since we're writing a new one.
+		// TODO: Should we always do this?
 		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
 			return err
 		}
@@ -3397,6 +3403,41 @@ func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loade
 	return err == nil
 }
 
+func (c *FirecrackerContainer) shouldRefreshSharedSnapshot(ctx context.Context, local bool) bool {
+	if *sharedSnapshotRefreshInterval <= 0 {
+		return true
+	}
+
+	writeKey := c.SnapshotKeySet().GetWriteKey()
+	if writeKey == nil {
+		return true
+	}
+
+	var (
+		err       error
+		lastSaved time.Time
+		scope     = "remote"
+	)
+	if local {
+		scope = "local"
+		lastSaved, err = c.loader.LocalSnapshotLastSavedTime(ctx, writeKey, c.supportsRemoteSnapshots)
+	} else {
+		lastSaved, err = c.loader.RemoteSnapshotLastSavedTime(ctx, writeKey)
+	}
+	if err != nil {
+		log.CtxInfof(ctx, "Saving %s snapshot for key %+v because no recent snapshot metadata was found: %s", scope, writeKey, err)
+		return true
+	}
+
+	age := time.Since(lastSaved)
+	if age >= *sharedSnapshotRefreshInterval {
+		return true
+	}
+
+	log.CtxInfof(ctx, "Skipping %s snapshot refresh for key %+v; existing snapshot is %s old (< %s)", scope, writeKey, age, *sharedSnapshotRefreshInterval)
+	return false
+}
+
 // hasFallbackKeys reports whether there are fallback snapshot keys.
 //
 // If none are present, it's likely this run is for the master snapshot
@@ -3411,6 +3452,27 @@ func (c *FirecrackerContainer) hasFallbackKeys() bool {
 // the default branch.
 func (c *FirecrackerContainer) isLikelyDefaultSnapshot() bool {
 	return !c.hasFallbackKeys()
+}
+
+func (c *FirecrackerContainer) writesDefaultBranchSnapshot() bool {
+	writeKey := c.SnapshotKeySet().GetWriteKey()
+	if writeKey == nil {
+		return false
+	}
+	defaultBranch := c.taskEnv("GIT_REPO_DEFAULT_BRANCH")
+	if defaultBranch == "" {
+		return c.isLikelyDefaultSnapshot()
+	}
+	return writeKey.GetRef() == defaultBranch
+}
+
+func (c *FirecrackerContainer) taskEnv(name string) string {
+	for _, e := range c.task.GetCommand().GetEnvironmentVariables() {
+		if e.GetName() == name {
+			return e.GetValue()
+		}
+	}
+	return ""
 }
 
 func isExitErrorSIGTERM(err error) bool {

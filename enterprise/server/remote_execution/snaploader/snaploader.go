@@ -392,6 +392,14 @@ type Loader interface {
 	// snapshot configuration and artifact paths specified by opts.
 	CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error
 
+	// LocalSnapshotLastSavedTime returns the completion time of the latest local
+	// snapshot for the exact key. It does not consider fallback keys.
+	LocalSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteChunks bool) (time.Time, error)
+
+	// RemoteSnapshotLastSavedTime returns the completion time of the latest
+	// remote snapshot for the exact key. It does not consider fallback keys.
+	RemoteSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey) (time.Time, error)
+
 	// GetSnapshot loads the metadata for the snapshot. If the main key is not
 	// found, it tries falling back to one of the fallback keys. It does not
 	// unpack any snapshot artifacts.
@@ -413,6 +421,37 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 		return nil, status.InvalidArgumentError("missing FileCache in env")
 	}
 	return &FileCacheLoader{env: env}, nil
+}
+
+func snapshotLastSavedTime(manifest *fcpb.SnapshotManifest) (time.Time, error) {
+	if manifest.GetVmMetadata() == nil {
+		return time.Time{}, status.FailedPreconditionError("snapshot metadata missing VM metadata")
+	}
+	if manifest.GetVmMetadata().GetLastExecutedTask() == nil {
+		return time.Time{}, status.FailedPreconditionError("snapshot metadata missing last executed task")
+	}
+	completedAt := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+	if completedAt == nil {
+		return time.Time{}, status.FailedPreconditionError("snapshot metadata missing completion timestamp")
+	}
+	return completedAt.AsTime(), nil
+}
+
+func (l *FileCacheLoader) LocalSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteChunks bool) (time.Time, error) {
+	supportsRemoteFallback := supportsRemoteChunks && *snaputil.EnableRemoteSnapshotSharing
+	manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return snapshotLastSavedTime(manifest)
+}
+
+func (l *FileCacheLoader) RemoteSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey) (time.Time, error) {
+	manifest, _, err := l.fetchRemoteManifest(ctx, key)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return snapshotLastSavedTime(manifest)
 }
 
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, opts *GetSnapshotOptions) (*Snapshot, error) {

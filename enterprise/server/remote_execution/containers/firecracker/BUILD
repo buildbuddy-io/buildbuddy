@@ -118,7 +118,10 @@ genrule(
 go_test(
     name = "firecracker_test",
     timeout = "long",
-    srcs = ["firecracker_test.go"],
+    srcs = [
+        "firecracker_internal_test.go",
+        "firecracker_test.go",
+    ],
     args = [
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
