@@ -14,6 +14,7 @@ go_library(
         "//server/environment",
         "//server/http/httpclient",
         "//server/real_environment",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
