@@ -1282,3 +1282,15 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))
 	return cow, nil
 }
+
+func IsLikelyDefaultSnapshot(keys *fcpb.SnapshotKeySet, task *repb.ExecutionTask) bool {
+	defaultBranch := getEnv(task, "GIT_REPO_DEFAULT_BRANCH")
+	if defaultBranch != "" && defaultBranch == keys.GetWriteKey().GetRef() {
+		return true
+	}
+
+	// If there are no fallback keys, it's likely this run is for the master snapshot
+	// (i.e. the default branch), which typically serves as the fallback for runs
+	// on other branches.
+	return len(keys.GetFallbackKeys()) == 0
+}

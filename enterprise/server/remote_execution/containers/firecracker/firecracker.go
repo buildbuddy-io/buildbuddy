@@ -1178,11 +1178,19 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot {
 		return true
-	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+	}
+
+	// We want to more frequently save the default snapshot, because it is used as a fallback for
+	// runs on other branches, so we want it to stay relatively up-to-date.
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		// TODO: Check the age of the last snapshot saved for this key
+		// Fetch the manifest and check the last saved timestamp
+		// Annoying that we have to refetch it. We probably already did, right?
+	}
+
+	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 	}
 
