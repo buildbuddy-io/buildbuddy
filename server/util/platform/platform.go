@@ -79,6 +79,7 @@ const (
 	SnapshotSavePolicyPropertyName          = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
 	MaxStaleFallbackSnapshotAgePropertyName = "max-stale-fallback-snapshot-age"
+	MaxSnapshotWriteIntervalPropertyName    = "max-snapshot-write-interval"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"

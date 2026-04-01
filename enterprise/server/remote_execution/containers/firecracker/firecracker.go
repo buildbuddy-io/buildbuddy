@@ -96,6 +96,7 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
+	sharedSnapshotRefreshInterval         = flag.Duration("executor.shared_snapshot_refresh_interval", time.Hour, "Maximum frequency for refreshing shared default-branch snapshots when remote-snapshot-save-policy is not \"always\".")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -1185,11 +1186,26 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	// We want to more frequently save the default snapshot, because it is used as a fallback for
 	// runs on other branches, so we want it to stay relatively up-to-date.
 	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
-		// TODO: Check the age of the last snapshot saved for this key
-		// Fetch the manifest and check the last saved timestamp
-		// Annoying that we have to refetch it. We probably already did, right?
+		manifest, _, err := c.loader.FetchRemoteManifest(ctx, c.SnapshotKeySet().GetWriteKey())
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to fetch remote manifest for key %+v - writing a remote snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a remote snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
 	}
 
+	// TODO: We should make sure this only checks for remote snapshots
+	// Move to its own PR
 	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
 	}
@@ -1210,10 +1226,26 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
 	// as it should be a good proxy for the user's intent on snapshot behavior.
 	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+	if savePolicy == platform.AlwaysSaveSnapshot {
 		return true
+	}
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		manifest, err := c.loader.GetLocalManifest(ctx, c.SnapshotKeySet().GetWriteKey(), c.supportsRemoteSnapshots)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to get local manifest for key %+v - writing a local snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a local snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
 	}
 	// By default (applies if save policy is unset or invalid) or if
 	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
@@ -3418,7 +3450,7 @@ func (c *FirecrackerContainer) hasFallbackKeys() bool {
 // so if a run does not have a fallback key, it's likely running on
 // the default branch.
 func (c *FirecrackerContainer) isLikelyDefaultSnapshot() bool {
-	return !c.hasFallbackKeys()
+	return snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task)
 }
 
 func isExitErrorSIGTERM(err error) bool {
@@ -3565,4 +3597,17 @@ func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
 	default:
 		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)
 	}
+}
+
+func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.Duration {
+	interval := platform.FindEffectiveValue(task, platform.MaxSnapshotWriteIntervalPropertyName)
+	if interval == "" {
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil {
+		log.CtxErrorf(ctx, "Invalid snapshot write interval %s - using default: %s", interval, err)
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	return d
 }

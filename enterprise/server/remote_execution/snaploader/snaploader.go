@@ -415,6 +415,30 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
+func snapshotLastSavedTime(ctx context.Context, manifest *fcpb.SnapshotManifest) (time.Time, error) {
+	snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+	if snapshotLastSavedTime == nil {
+		return time.Time{}, status.FailedPreconditionError("snapshot metadata missing completion timestamp")
+	}
+	return snapshotLastSavedTime.AsTime(), nil
+}
+
+func (l *FileCacheLoader) LocalSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (time.Time, error) {
+	manifest, err := l.GetLocalManifest(ctx, key, supportsRemoteFallback)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return snapshotLastSavedTime(ctx, manifest)
+}
+
+func (l *FileCacheLoader) RemoteSnapshotLastSavedTime(ctx context.Context, key *fcpb.SnapshotKey) (time.Time, error) {
+	manifest, _, err := l.FetchRemoteManifest(ctx, key)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return snapshotLastSavedTime(ctx, manifest)
+}
+
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, opts *GetSnapshotOptions) (*Snapshot, error) {
 	if opts.ReadPolicy == "" {
 		return nil, status.InvalidArgumentErrorf("read policy is required")
@@ -452,7 +476,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
 		supportsRemoteFallback := opts.SupportsRemoteChunks && *snaputil.EnableRemoteSnapshotSharing
-		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
+		manifest, err := l.GetLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
@@ -476,7 +500,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
-	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
+	manifest, acResult, err := l.FetchRemoteManifest(ctx, key)
 	if err != nil {
 		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
 	}
@@ -498,23 +522,23 @@ func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest,
 	if !isFallback {
 		return true
 	}
-	snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
-	if snapshotLastSavedTime == nil {
-		log.CtxErrorf(ctx, "snapshot last saved timestamp for %+v is unexpectedly nil", manifest.GetVmMetadata().GetSnapshotKey())
+	snapshotLastSavedTime, err := snapshotLastSavedTime(ctx, manifest)
+	if err != nil {
+		log.CtxErrorf(ctx, "Getting snapshot last saved timestamp for %+v failed - considering snapshot invalid: %s", manifest.GetVmMetadata().GetSnapshotKey(), err)
 		return false
 	}
-	if time.Since(snapshotLastSavedTime.AsTime()) > opts.MaxStaleFallbackSnapshotAge {
-		log.CtxInfof(ctx, "local fallback snapshot was created %s ago, which is longer than the max age %s - not using", time.Since(snapshotLastSavedTime.AsTime()), opts.MaxStaleFallbackSnapshotAge)
+	if time.Since(snapshotLastSavedTime) > opts.MaxStaleFallbackSnapshotAge {
+		log.CtxInfof(ctx, "local fallback snapshot was created %s ago, which is longer than the max age %s - not using", time.Since(snapshotLastSavedTime), opts.MaxStaleFallbackSnapshotAge)
 		return false
 	}
 	return true
 }
 
-// fetchRemoteManifest fetches the most recent snapshot manifest from the remote
+// FetchRemoteManifest fetches the most recent snapshot manifest from the remote
 // cache.
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
-func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
+func (l *FileCacheLoader) FetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	manifestKey, err := RemoteManifestKey(key)
@@ -551,7 +575,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 	return acResult, nil
 }
 
-func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) GetLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gid, err := groupID(ctx, l.env)

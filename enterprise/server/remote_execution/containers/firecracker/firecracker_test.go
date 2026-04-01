@@ -927,6 +927,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 }
 
 func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
+	flags.Set(t, "executor.shared_snapshot_refresh_interval", 0)
 	tests := []struct {
 		name               string
 		branch             string
@@ -1470,6 +1471,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
+	flags.Set(t, "executor.shared_snapshot_refresh_interval", 0)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1573,6 +1575,90 @@ cat ./attempts
 	run(mergeQueueTask, mergeQueueBranch+mergeQueueBranch, 1)
 	// PR task should be able to start from the latest PR branch snapshot.
 	run(prTask, mergeQueueBranch+prBranch+prBranch, 2)
+}
+
+func TestFirecracker_SnapshotSharing_MergeQueueBranches_RefreshInterval(t *testing.T) {
+	flags.Set(t, "executor.shared_snapshot_refresh_interval", time.Hour)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	cfg := getExecutorConfig(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+	defaultBranch := "main"
+	mergeQueueBranch := "gh-readonly-queue/main/abc"
+	prBranch := "cool"
+
+	mergeQueueTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_BRANCH", Value: mergeQueueBranch},
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: defaultBranch},
+			},
+		},
+	}
+	prTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_BRANCH", Value: prBranch},
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: defaultBranch},
+			},
+		},
+	}
+
+	workdir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg,
+		ContainerImage: busyboxImage,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			ScratchDiskSizeMb: 100,
+		},
+		ActionWorkingDirectory: workdir,
+	}
+
+	run := func(task *repb.ExecutionTask, expectedLogs string, expectedVersionNumber int64) {
+		branchName := ""
+		for _, ev := range task.Command.EnvironmentVariables {
+			if ev.Name == "GIT_BRANCH" {
+				branchName = ev.Value
+			}
+		}
+		require.NotEmpty(t, branchName)
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+cd /root
+echo -n ` + branchName + ` >> ./attempts
+cat ./attempts
+`}}
+
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+		err = c.Create(ctx, workdir)
+		require.NoError(t, err)
+		res := c.Exec(ctx, cmd, nil)
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.NoError(t, res.Error)
+		assert.Equal(t, expectedLogs, string(res.Stdout))
+		assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
+	}
+
+	run(mergeQueueTask, mergeQueueBranch, 0)
+	run(mergeQueueTask, mergeQueueBranch+mergeQueueBranch, 1)
+	// The second merge queue run should not refresh the shared default-branch
+	// snapshot because it is newer than the refresh interval.
+	run(prTask, mergeQueueBranch+prBranch, 1)
 }
 
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
