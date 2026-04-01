@@ -420,7 +420,7 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.NotContains(t,
 		execReq.Metadata,
-		"x-buildbuddy-platform.env-overrides",
+		"x-buildbuddy-platform.secret-env-overrides",
 		"untrusted workflow should not have remote_header env vars")
 }
 
@@ -463,8 +463,8 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
-		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
-		"API key should be set via env-overrides")
+		execReq.Metadata["x-buildbuddy-platform.secret-env-overrides"],
+		"API key should be set via secret-env-overrides")
 }
 
 func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
@@ -508,8 +508,8 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
-		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
-		"API key should be set via env-overrides")
+		execReq.Metadata["x-buildbuddy-platform.secret-env-overrides"],
+		"API key should be set via secret-env-overrides")
 }
 
 func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
@@ -619,8 +619,8 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
-		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
-		"API key should be set via env-overrides")
+		execReq.Metadata["x-buildbuddy-platform.secret-env-overrides"],
+		"API key should be set via secret-env-overrides")
 }
 
 func TestWebhook_TrustedTagPush_StartsTrustedWorkflow(t *testing.T) {
@@ -702,8 +702,8 @@ func TestWebhook_RespectsVisibility(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
-		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
-		"API key should be set via env-overrides")
+		execReq.Metadata["x-buildbuddy-platform.secret-env-overrides"],
+		"API key should be set via secret-env-overrides")
 }
 
 func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {

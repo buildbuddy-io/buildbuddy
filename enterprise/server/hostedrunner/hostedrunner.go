@@ -423,7 +423,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 		// We must set all env overrides in a single platform property, so add them
 		// to credential-related env overrides that were set above.
-		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName || headerKey == platform.OverrideHeaderPrefix+platform.SecretEnvOverridesPropertyName {
 			envOverrides = append(envOverrides, headerVal)
 			continue
 		}
@@ -432,7 +432,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 
 	execCtx = platform.WithRemoteHeaderOverride(
-		execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
+		execCtx, platform.SecretEnvOverridesPropertyName, strings.Join(envOverrides, ","))
 
 	executionClient := r.env.GetRemoteExecutionClient()
 	if executionClient == nil {

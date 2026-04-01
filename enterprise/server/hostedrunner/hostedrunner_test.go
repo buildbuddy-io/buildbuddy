@@ -150,7 +150,7 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Equal(t, 1, len(execClient.executeRequests))
 	execReq := execClient.executeRequests[0]
-	envOverridesMetadata := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	envOverridesMetadata := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.SecretEnvOverridesPropertyName)
 	require.Greater(t, len(envOverridesMetadata), 0)
 	// If a platform property is specified multiple times, the latest value is applied.
 	// Check that value to simulate what would actually be applied.

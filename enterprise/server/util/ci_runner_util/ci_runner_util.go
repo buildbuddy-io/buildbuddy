@@ -144,7 +144,7 @@ func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
 	}
 	overrides := make(map[string]string)
 	for _, prop := range task.GetPlatformOverrides().GetProperties() {
-		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) {
+		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) || strings.EqualFold(prop.GetName(), platform.SecretEnvOverridesPropertyName) {
 			for override := range strings.SplitSeq(prop.GetValue(), ",") {
 				k, v, ok := strings.Cut(strings.TrimSpace(override), "=")
 				if ok {
@@ -192,7 +192,7 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 	overridesVal := strings.Join(assignments, ",")
 
 	for _, prop := range task.PlatformOverrides.Properties {
-		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) {
+		if strings.EqualFold(prop.GetName(), platform.SecretEnvOverridesPropertyName) {
 			prop.Value = overridesVal
 			return
 		}

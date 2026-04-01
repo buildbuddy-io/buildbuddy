@@ -1137,13 +1137,24 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 			},
 		},
 		{
-			name: "redacts env-overrides property",
+			name: "redacts secret-env-overrides property",
 			inputProperties: []*repb.Platform_Property{
-				{Name: "env-overrides", Value: "SECRET_KEY=abc123"},
+				{Name: "secret-env-overrides", Value: "SECRET_KEY=abc123"},
 			},
 			expectedAuxiliaryMetadata: []*anypb.Any{
 				makeAuxAny(t, []*repb.Platform_Property{
-					{Name: "env-overrides", Value: "<REDACTED>"},
+					{Name: "secret-env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "does not redact plain env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "FOO=bar"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "env-overrides", Value: "FOO=bar"},
 				}),
 			},
 		},
@@ -1152,13 +1163,13 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 			inputProperties: []*repb.Platform_Property{
 				{Name: "PASSWORD", Value: "secret1"},
 				{Name: "UserName", Value: "admin"},
-				{Name: "ENV-OVERRIDES", Value: "KEY=val"},
+				{Name: "SECRET-ENV-OVERRIDES", Value: "KEY=val"},
 			},
 			expectedAuxiliaryMetadata: []*anypb.Any{
 				makeAuxAny(t, []*repb.Platform_Property{
 					{Name: "PASSWORD", Value: "<REDACTED>"},
 					{Name: "UserName", Value: "<REDACTED>"},
-					{Name: "ENV-OVERRIDES", Value: "<REDACTED>"},
+					{Name: "SECRET-ENV-OVERRIDES", Value: "<REDACTED>"},
 				}),
 			},
 		},

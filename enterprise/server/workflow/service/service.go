@@ -1728,5 +1728,5 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 		assignments = append(assignments, e.Name+"="+e.Value)
 	}
 	return platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+		ctx, platform.SecretEnvOverridesPropertyName, strings.Join(assignments, ","))
 }

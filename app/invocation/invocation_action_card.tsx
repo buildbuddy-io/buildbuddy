@@ -1082,7 +1082,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       // TODO: this redaction is also done on the server and can be removed
       // after some time.
       const nameLower = prop.name.toLowerCase();
-      if (nameLower.includes("username") || nameLower.includes("password") || nameLower.includes("env-overrides")) {
+      if (nameLower.includes("username") || nameLower.includes("password") || nameLower.includes("secret-env-overrides")) {
         value = "<REDACTED>";
       }
       overrides.set(prop.name, value);

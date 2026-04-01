@@ -251,6 +251,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
+	additionalEnvVars = append(additionalEnvVars, platformProps.SecretEnvOverrides...)
 	for _, e := range additionalEnvVars {
 		name, value, hasValue := strings.Cut(e, "=")
 		if !hasValue {

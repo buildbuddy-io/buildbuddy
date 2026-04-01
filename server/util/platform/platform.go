@@ -97,6 +97,8 @@ const (
 	extraArgsPropertyName                   = "extra-args"
 	EnvOverridesPropertyName                = "env-overrides"
 	EnvOverridesBase64PropertyName          = "env-overrides-base64"
+	SecretEnvOverridesPropertyName          = "secret-env-overrides"
+	SecretEnvOverridesBase64PropertyName    = "secret-env-overrides-base64"
 	IncludeSecretsPropertyName              = "include-secrets"
 	EnvSecretsPropertyName                  = "env-secrets"
 	DefaultTimeoutPropertyName              = "default-timeout"
@@ -328,6 +330,10 @@ type Properties struct {
 	// applied as overrides to the action.
 	EnvOverrides []string
 
+	// SecretEnvOverrides contains environment variables in the form NAME=VALUE to be
+	// applied as overrides to the action. These are always redacted in logs/UI.
+	SecretEnvOverrides []string
+
 	// OverrideSnapshotKey specifies a snapshot key that the action should start
 	// from.
 	// Only applies to recyclable firecracker actions.
@@ -435,6 +441,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 			return nil, status.InvalidArgumentErrorf("decode env override as base64: %s", err)
 		}
 		envOverrides = append(envOverrides, string(b))
+	}
+
+	secretEnvOverrides := stringListProp(m, SecretEnvOverridesPropertyName)
+	for _, prop := range stringListProp(m, SecretEnvOverridesBase64PropertyName) {
+		b, err := base64.StdEncoding.DecodeString(prop)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("decode secret env override as base64: %s", err)
+		}
+		secretEnvOverrides = append(secretEnvOverrides, string(b))
 	}
 
 	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
@@ -546,6 +561,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
+		SecretEnvOverrides:        secretEnvOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
