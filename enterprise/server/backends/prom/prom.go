@@ -354,6 +354,7 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(2)
 
 	for _, p := range queryParams {
 		p := p
