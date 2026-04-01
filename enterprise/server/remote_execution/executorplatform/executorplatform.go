@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -262,6 +263,39 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Name:  name,
 			Value: value,
 		})
+	}
+
+	// Register secret-env-overrides variable names for log redaction in the
+	// CI runner, by merging them into BUILDBUDDY_SECRET_ENV_VAR_NAMES.
+	if len(platformProps.SecretEnvOverrides) > 0 {
+		var secretNames []string
+		// Parse any existing names already set (e.g. from include-secrets).
+		for _, ev := range command.EnvironmentVariables {
+			if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+				_ = json.Unmarshal([]byte(ev.GetValue()), &secretNames)
+				break
+			}
+		}
+		for _, e := range platformProps.SecretEnvOverrides {
+			name, _, _ := strings.Cut(e, "=")
+			secretNames = append(secretNames, name)
+		}
+		if serialized, err := json.Marshal(secretNames); err == nil {
+			updated := false
+			for _, ev := range command.EnvironmentVariables {
+				if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+					ev.Value = string(serialized)
+					updated = true
+					break
+				}
+			}
+			if !updated {
+				command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+					Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+					Value: string(serialized),
+				})
+			}
+		}
 	}
 
 	// TODO: find a cleaner way to set the origin header, other than by

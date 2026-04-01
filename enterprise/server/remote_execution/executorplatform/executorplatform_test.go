@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -316,6 +317,8 @@ func TestEnvAndArgOverrides(t *testing.T) {
 			// Secret env overrides are appended after regular env overrides.
 			{Name: "SECRET_A", Value: "s1"},
 			{Name: "SECRET_B", Value: `{"key":"val"}`},
+			// Secret env override names are registered for CI runner log redaction.
+			{Name: ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, Value: `["SECRET_A","SECRET_B"]`},
 		},
 	}
 
