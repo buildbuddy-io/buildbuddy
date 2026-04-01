@@ -504,7 +504,7 @@ func key(ctx context.Context, node *repb.FileNode) string {
 
 func (c *fileCache) checkClosed() error {
 	if c.isClosed.Load() {
-		return status.FailedPreconditionError("filecache is closed")
+		return status.UnavailableError("filecache is closed")
 	}
 	return nil
 }
