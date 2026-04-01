@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -75,6 +74,18 @@ func ParseKey(s string) (Key, error) {
 	return NewKey(b)
 }
 
+// ParseHexKey parses a Key from a lowercase hex-encoded string, as produced by
+// the Key.Hex method. This is the format used by the WireGuard UAPI/IPC
+// protocol and by the gateway gRPC API.
+func ParseHexKey(s string) (Key, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return Key{}, fmt.Errorf("wgtypes: failed to parse hex-encoded key: %v", err)
+	}
+
+	return NewKey(b)
+}
+
 // PublicKey computes a public key from the private key k.
 //
 // PublicKey should only be called when k is a private key.
@@ -95,14 +106,11 @@ func (k Key) PublicKey() Key {
 //
 // ParseKey can be used to produce a new Key from this string.
 func (k Key) String() string {
-	return base64ToHex(base64.StdEncoding.EncodeToString(k[:]))
+	return base64.StdEncoding.EncodeToString(k[:])
 }
 
-func base64ToHex(base64Key string) string {
-	decodedKey, err := base64.StdEncoding.DecodeString(base64Key)
-	if err != nil {
-		log.Fatalf("Failed to decode base64 key: %s", err)
-	}
-	hexKey := hex.EncodeToString(decodedKey)
-	return hexKey
+// Hex returns the lowercase hex-encoded representation of a Key.
+// This is the format required by the WireGuard UAPI/IPC protocol.
+func (k Key) Hex() string {
+	return hex.EncodeToString(k[:])
 }

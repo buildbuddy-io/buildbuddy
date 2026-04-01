@@ -1,6 +1,7 @@
 package keys
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"testing"
 
@@ -52,12 +53,21 @@ func TestPublicKey_Deterministic(t *testing.T) {
 	require.Equal(t, pub1, pub2)
 }
 
-func TestKeyString_IsHex(t *testing.T) {
+func TestKeyString_IsBase64(t *testing.T) {
 	k, err := GenerateKey()
 	require.NoError(t, err)
 	s := k.String()
+	decoded, err := base64.StdEncoding.DecodeString(s)
+	require.NoError(t, err, "String() must return valid base64")
+	require.Len(t, decoded, KeyLen)
+}
+
+func TestKeyHex_IsHex(t *testing.T) {
+	k, err := GenerateKey()
+	require.NoError(t, err)
+	s := k.Hex()
 	decoded, err := hex.DecodeString(s)
-	require.NoError(t, err, "String() must return valid hex")
+	require.NoError(t, err, "Hex() must return valid hex")
 	require.Len(t, decoded, KeyLen)
 }
 

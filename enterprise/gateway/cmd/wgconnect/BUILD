@@ -8,7 +8,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/cmd/wgconnect",
     visibility = ["//visibility:private"],
     deps = [
+        "//enterprise/gateway/keys",
         "//proto:gateway_go_proto",
+        "//proto:gateway_service_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",

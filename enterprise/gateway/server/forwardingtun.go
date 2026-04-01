@@ -1,24 +1,19 @@
 package server
 
-// forwardingTUN is a clone of wireguard-go's netstack TUN device with IP
-// forwarding enabled on the gVisor stack. This makes the gateway hub behave
-// like a kernel with ip_forward=1: packets not destined for the hub's own IP
-// are forwarded back out the interface, where WireGuard's AllowedIPs routing
-// delivers them to the correct peer.
+// muxTUN is the single TUN device shared by all group networks.
 //
-// Packet flow for Client1 (fd00:bb::2) -> Client2 (fd00:bb::3) via Hub:
+// Packet flow for intra-network forwarding (Client A → Client B):
 //
-//  1. Client1 WireGuard encrypts, sends UDP to Hub
-//  2. Hub WireGuard decrypts, calls forwardingTUN.Write()
-//  3. gVisor stack sees dst=fd00:bb::3, not local -> IP forward
-//  4. Forwarded packet written to channel endpoint
-//  5. forwardingTUN.WriteNotify() -> incomingPacket channel
-//  6. Hub WireGuard calls Read(), gets packet, sees dst=fd00:bb::3
-//  7. AllowedIPs lookup -> Client2's peer -> encrypt, send UDP
+//  1. Client A's WireGuard encrypts and sends UDP to the gateway
+//  2. Gateway WireGuard decrypts, calls muxTUN.Write()
+//  3. muxTUN looks up src and dst in ipToNetwork — drops if cross-network
+//  4. Packet copied into outbound channel
+//  5. WireGuard calls Read(), gets packet, AllowedIPs lookup → Client B
+//  6. WireGuard encrypts, sends UDP to Client B
 //
-// The hub IP (fd00:bb::1) is local to the gVisor stack, so packets addressed
-// to it are delivered locally rather than forwarded. This is used for the
-// DNS server: peers send queries to fd00:bb::1:53 and the hub answers them.
+// Packets destined for the network's hub IP (fd00:bb:N::1) are injected into
+// that network's private gVisor stack instead, where the DNS server answers
+// them locally rather than forwarding.
 
 import (
 	"fmt"
@@ -26,9 +21,10 @@ import (
 	"net/netip"
 	"os"
 	"strings"
-	"syscall"
+	"sync"
 
 	"github.com/miekg/dns"
+	"golang.zx2c4.com/wireguard/tun"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -40,91 +36,231 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
-	"golang.zx2c4.com/wireguard/tun"
 )
 
-type forwardingTUN struct {
-	ep             *channel.Endpoint
-	stack          *stack.Stack
-	addr           netip.Addr
-	events         chan tun.Event
-	notifyHandle   *channel.NotificationHandle
-	incomingPacket chan *buffer.View
-	mtu            int
+// netStack is a per-network gVisor stack used for local services (DNS).
+type netStack struct {
+	hubIP        netip.Addr
+	ep           *channel.Endpoint
+	stack        *stack.Stack
+	notifyHandle *channel.NotificationHandle
+	outbound     chan *buffer.View // shared with muxTUN
 }
 
-func createForwardingTUN(ip string, mtu int) (*forwardingTUN, error) {
+// WriteNotify implements channel.Notification. Called by gVisor when the stack
+// has a packet to send out. We forward it to WireGuard via the outbound channel.
+func (ns *netStack) WriteNotify() {
+	pkt := ns.ep.Read()
+	if pkt == nil {
+		return
+	}
+	view := pkt.ToView()
+	pkt.DecRef()
+	select {
+	case ns.outbound <- view:
+	default:
+		view.Release()
+	}
+}
+
+func (ns *netStack) injectInbound(pkt []byte) {
+	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(pkt),
+	})
+	switch pkt[0] >> 4 {
+	case 4:
+		ns.ep.InjectInbound(header.IPv4ProtocolNumber, pkb)
+	case 6:
+		ns.ep.InjectInbound(header.IPv6ProtocolNumber, pkb)
+	}
+	pkb.DecRef()
+}
+
+func (ns *netStack) close() {
+	ns.ep.RemoveNotify(ns.notifyHandle)
+	ns.ep.Close()
+	ns.stack.Close()
+}
+
+// muxTUN is the TUN device passed to the single shared WireGuard device.
+type muxTUN struct {
+	outbound    chan *buffer.View
+	ipToNetwork sync.Map // netip.Addr → int (network index)
+	netStacks   sync.Map // int (network index) → *netStack
+	events      chan tun.Event
+	mtu         int
+}
+
+func newMuxTUN(mtu int) *muxTUN {
+	t := &muxTUN{
+		outbound: make(chan *buffer.View, 1024),
+		events:   make(chan tun.Event, 10),
+		mtu:      mtu,
+	}
+	t.events <- tun.EventUp
+	return t
+}
+
+func (t *muxTUN) registerIP(addr netip.Addr, networkIndex int) {
+	t.ipToNetwork.Store(addr, networkIndex)
+}
+
+func (t *muxTUN) unregisterIP(addr netip.Addr) {
+	t.ipToNetwork.Delete(addr)
+}
+
+// startNetworkDNS creates a gVisor stack for the network at index and starts
+// a DNS server bound to its hub IP. networkKey is used for logging only.
+func (t *muxTUN) startNetworkDNS(index int, networkKey string, lookup func(string) (netip.Addr, bool)) error {
+	hubIP := networkHubIP(index)
+
 	opts := stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
 		HandleLocal:        true,
 	}
+	ep := channel.New(64, uint32(t.mtu), "")
+	s := stack.New(opts)
 
-	dev := &forwardingTUN{
-		ep:             channel.New(1024, uint32(mtu), ""),
-		stack:          stack.New(opts),
-		events:         make(chan tun.Event, 10),
-		incomingPacket: make(chan *buffer.View),
-		mtu:            mtu,
-	}
-
-	// Enable IP forwarding — the whole point of this custom TUN.
-	if err := dev.stack.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
-		return nil, fmt.Errorf("SetForwarding(IPv4): %v", err)
-	}
-	if err := dev.stack.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
-		return nil, fmt.Errorf("SetForwarding(IPv6): %v", err)
-	}
-
-	sackOpt := tcpip.TCPSACKEnabled(true)
-	if err := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sackOpt); err != nil {
-		return nil, fmt.Errorf("TCP SACK: %v", err)
-	}
-
-	dev.notifyHandle = dev.ep.AddNotify(dev)
-	if err := dev.stack.CreateNIC(1, dev.ep); err != nil {
-		return nil, fmt.Errorf("CreateNIC: %v", err)
-	}
-
-	addr := netip.MustParseAddr(ip)
-	dev.addr = addr
-	protoNum := tcpip.NetworkProtocolNumber(ipv4.ProtocolNumber)
-	defaultRoute := tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: 1}
-	if addr.Is6() {
-		protoNum = ipv6.ProtocolNumber
-		defaultRoute = tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: 1}
+	if err := s.CreateNIC(1, ep); err != nil {
+		return fmt.Errorf("CreateNIC: %v", err)
 	}
 	protoAddr := tcpip.ProtocolAddress{
-		Protocol:          protoNum,
-		AddressWithPrefix: tcpip.AddrFromSlice(addr.AsSlice()).WithPrefix(),
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddrFromSlice(hubIP.AsSlice()).WithPrefix(),
 	}
-	if err := dev.stack.AddProtocolAddress(1, protoAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("AddProtocolAddress: %v", err)
+	if err := s.AddProtocolAddress(1, protoAddr, stack.AddressProperties{}); err != nil {
+		return fmt.Errorf("AddProtocolAddress: %v", err)
 	}
-	dev.stack.AddRoute(defaultRoute)
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: header.IPv6EmptySubnet,
+		NIC:         1,
+	}})
 
-	dev.events <- tun.EventUp
-	return dev, nil
-}
-
-// StartDNS starts a UDP DNS server on port 53 of the hub's gVisor stack.
-// Peers send queries to the hub IP (fd00:bb::1) which is local to the stack,
-// so they are delivered here rather than forwarded. lookup maps a peer name
-// to its assigned IP; last-write-wins for duplicate names.
-func (t *forwardingTUN) StartDNS(lookup func(name string) (netip.Addr, bool)) error {
-	protoNum := tcpip.NetworkProtocolNumber(ipv4.ProtocolNumber)
-	if t.addr.Is6() {
-		protoNum = ipv6.ProtocolNumber
+	ns := &netStack{
+		hubIP:    hubIP,
+		ep:       ep,
+		stack:    s,
+		outbound: t.outbound,
 	}
-	conn, err := gonet.DialUDP(t.stack, &tcpip.FullAddress{
+	ns.notifyHandle = ep.AddNotify(ns)
+
+	conn, err := gonet.DialUDP(s, &tcpip.FullAddress{
 		NIC:  1,
-		Addr: tcpip.AddrFromSlice(t.addr.AsSlice()),
+		Addr: tcpip.AddrFromSlice(hubIP.AsSlice()),
 		Port: 53,
-	}, nil, protoNum)
+	}, nil, ipv6.ProtocolNumber)
 	if err != nil {
-		return fmt.Errorf("DNS listen on %s:53: %v", t.addr, err)
+		ns.close()
+		return fmt.Errorf("DNS listen on %s:53: %v", hubIP, err)
 	}
 	go serveDNS(conn, lookup)
+
+	// Register the hub IP so Write() routes DNS packets into this stack.
+	t.ipToNetwork.Store(hubIP, index)
+	t.netStacks.Store(index, ns)
+	return nil
+}
+
+// Write receives decrypted packets from WireGuard and dispatches them.
+func (t *muxTUN) Write(bufs [][]byte, offset int) (int, error) {
+	for _, b := range bufs {
+		pkt := b[offset:]
+		if len(pkt) == 0 {
+			continue
+		}
+		switch pkt[0] >> 4 {
+		case 4:
+			t.dispatch(pkt, extractIPv4Addrs)
+		case 6:
+			t.dispatch(pkt, extractIPv6Addrs)
+		}
+	}
+	return len(bufs), nil
+}
+
+func (t *muxTUN) dispatch(pkt []byte, extractAddrs func([]byte) (src, dst netip.Addr, ok bool)) {
+	src, dst, ok := extractAddrs(pkt)
+	if !ok {
+		return
+	}
+
+	srcIdx, srcOk := t.ipToNetwork.Load(src)
+	if !srcOk {
+		return // unknown source, drop
+	}
+	dstIdx, dstOk := t.ipToNetwork.Load(dst)
+	if !dstOk || dstIdx.(int) != srcIdx.(int) {
+		return // unknown dest or cross-network, drop
+	}
+
+	// If dst is the hub, inject into that network's gVisor stack (for DNS etc.).
+	if ns, ok := t.netStacks.Load(srcIdx.(int)); ok {
+		if dst == ns.(*netStack).hubIP {
+			ns.(*netStack).injectInbound(pkt)
+			return
+		}
+	}
+
+	// Intra-network peer-to-peer: put in outbound queue for WireGuard.
+	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(pkt)})
+	view := pkb.ToView()
+	pkb.DecRef()
+	select {
+	case t.outbound <- view:
+	default:
+		view.Release()
+	}
+}
+
+func extractIPv4Addrs(pkt []byte) (src, dst netip.Addr, ok bool) {
+	if len(pkt) < header.IPv4MinimumSize {
+		return netip.Addr{}, netip.Addr{}, false
+	}
+	h := header.IPv4(pkt)
+	s, d := h.SourceAddress(), h.DestinationAddress()
+	src, _ = netip.AddrFromSlice(s.AsSlice())
+	dst, _ = netip.AddrFromSlice(d.AsSlice())
+	return src.Unmap(), dst.Unmap(), true
+}
+
+func extractIPv6Addrs(pkt []byte) (src, dst netip.Addr, ok bool) {
+	if len(pkt) < header.IPv6MinimumSize {
+		return netip.Addr{}, netip.Addr{}, false
+	}
+	h := header.IPv6(pkt)
+	s, d := h.SourceAddress(), h.DestinationAddress()
+	src, _ = netip.AddrFromSlice(s.AsSlice())
+	dst, _ = netip.AddrFromSlice(d.AsSlice())
+	return src, dst, true
+}
+
+func (t *muxTUN) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	view, ok := <-t.outbound
+	if !ok {
+		return 0, os.ErrClosed
+	}
+	n, err := view.Read(bufs[0][offset:])
+	if err != nil {
+		return 0, err
+	}
+	sizes[0] = n
+	return 1, nil
+}
+
+func (t *muxTUN) Name() (string, error)    { return "mux", nil }
+func (t *muxTUN) File() *os.File           { return nil }
+func (t *muxTUN) Events() <-chan tun.Event { return t.events }
+func (t *muxTUN) MTU() (int, error)        { return t.mtu, nil }
+func (t *muxTUN) BatchSize() int           { return 1 }
+
+func (t *muxTUN) Close() error {
+	close(t.events)
+	close(t.outbound)
+	t.netStacks.Range(func(_, v any) bool {
+		v.(*netStack).close()
+		return true
+	})
 	return nil
 }
 
@@ -146,6 +282,7 @@ func serveDNS(conn *gonet.UDPConn, lookup func(string) (netip.Addr, bool)) {
 			name := strings.TrimSuffix(q.Name, ".")
 			ip, ok := lookup(name)
 			if !ok {
+				resp.Rcode = dns.RcodeNameError
 				continue
 			}
 			switch q.Qtype {
@@ -170,64 +307,4 @@ func serveDNS(conn *gonet.UDPConn, lookup func(string) (netip.Addr, bool)) {
 			conn.WriteTo(b, src)
 		}
 	}
-}
-
-func (t *forwardingTUN) Name() (string, error)   { return "fwd", nil }
-func (t *forwardingTUN) File() *os.File           { return nil }
-func (t *forwardingTUN) Events() <-chan tun.Event { return t.events }
-func (t *forwardingTUN) MTU() (int, error)        { return t.mtu, nil }
-func (t *forwardingTUN) BatchSize() int           { return 1 }
-
-func (t *forwardingTUN) Read(buf [][]byte, sizes []int, offset int) (int, error) {
-	view, ok := <-t.incomingPacket
-	if !ok {
-		return 0, os.ErrClosed
-	}
-	n, err := view.Read(buf[0][offset:])
-	if err != nil {
-		return 0, err
-	}
-	sizes[0] = n
-	return 1, nil
-}
-
-func (t *forwardingTUN) Write(buf [][]byte, offset int) (int, error) {
-	for _, b := range buf {
-		packet := b[offset:]
-		if len(packet) == 0 {
-			continue
-		}
-		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(packet)})
-		switch packet[0] >> 4 {
-		case 4:
-			t.ep.InjectInbound(header.IPv4ProtocolNumber, pkb)
-		case 6:
-			t.ep.InjectInbound(header.IPv6ProtocolNumber, pkb)
-		default:
-			return 0, syscall.EAFNOSUPPORT
-		}
-	}
-	return len(buf), nil
-}
-
-// WriteNotify is called by the channel endpoint when the gVisor stack has a
-// packet to send — either locally-originated or forwarded.
-func (t *forwardingTUN) WriteNotify() {
-	pkt := t.ep.Read()
-	if pkt == nil {
-		return
-	}
-	view := pkt.ToView()
-	pkt.DecRef()
-	t.incomingPacket <- view
-}
-
-func (t *forwardingTUN) Close() error {
-	t.stack.RemoveNIC(1)
-	t.stack.Close()
-	t.ep.RemoveNotify(t.notifyHandle)
-	t.ep.Close()
-	close(t.events)
-	close(t.incomingPacket)
-	return nil
 }

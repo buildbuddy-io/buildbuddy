@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"os"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
+	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 )
 
 var (
@@ -49,6 +51,12 @@ func main() {
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 
+	// Generate a local WireGuard keypair — the private key never leaves this process.
+	privKey, err := keys.GeneratePrivateKey()
+	if err != nil {
+		log.Fatalf("generate WireGuard key: %s", err)
+	}
+
 	// Register with the gateway.
 	grpcConn, err := grpc_client.DialSimple(*gatewayTarget)
 	if err != nil {
@@ -56,8 +64,11 @@ func main() {
 	}
 	defer grpcConn.Close()
 
-	gwClient := gwpb.NewGatewayServiceClient(grpcConn)
-	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{NetworkName: *networkName})
+	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
+	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
+		NetworkName: *networkName,
+		PublicKey:   privKey.PublicKey().Hex(),
+	})
 	if err != nil {
 		log.Fatalf("Register: %s", err)
 	}
@@ -81,7 +92,7 @@ func main() {
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), wgLogger)
 	ipc := fmt.Sprintf(
 		"private_key=%s\npublic_key=%s\nallowed_ip=%s\nendpoint=%s\npersistent_keepalive_interval=25\n",
-		rsp.GetPrivateKey(), rsp.GetServerPublicKey(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(),
+		privKey.Hex(), rsp.GetServerPublicKey(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(),
 	)
 	if err := dev.IpcSet(ipc); err != nil {
 		log.Fatalf("configure WireGuard: %s", err)

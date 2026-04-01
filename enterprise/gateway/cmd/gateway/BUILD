@@ -13,7 +13,7 @@ go_library(
         "//enterprise/gateway/server",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/remoteauth",
-        "//proto:gateway_go_proto",
+        "//proto:gateway_service_go_proto",
         "//server/config",
         "//server/real_environment",
         "//server/rpc/interceptors",

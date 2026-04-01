@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/log",
         "@org_golang_x_crypto//curve25519",
     ],
 )

@@ -13,12 +13,14 @@ message RegisterRequest {
   // same network can resolve this name to this peer's assigned IP via the
   // DNS server. The *last* registration with a given name wins.
   string peer_name = 2;
+
+  // Client's WireGuard public key, hex-encoded. The client generates its own
+  // keypair locally and never shares its private key with the server.
+  string public_key = 3;
 }
 
 message RegisterResponse {
-  // Client's WireGuard private key, hex-encoded. Server-generated; not retained
-  // by the gateway after this response is sent.
-  string private_key = 1;
+  reserved 1; // formerly private_key; clients now generate their own keypairs.
 
   // Gateway's WireGuard public key for this network, hex-encoded.
   string server_public_key = 2;
