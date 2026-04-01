@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/util/oci",
         "//enterprise/server/util/ocicache",
         "//proto:ociregistry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -19,7 +18,6 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "//server/util/subdomain",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

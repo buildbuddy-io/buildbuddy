@@ -169,10 +169,11 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 // isRegistryDomainRequest checks if req matches the configured registry domain.
 // If the request host matches, the subdomain portion of the host is returned.
 // e.g. if the domain is foo.com the function will return as follows
-//    bar.foo.com -> ("bar", true)
-//    foo.com -> ("", true)
-//    baz.baz.com -> ("", false)
-//    baz.com -> ("", false)
+//
+//	bar.foo.com -> ("bar", true)
+//	foo.com -> ("", true)
+//	baz.baz.com -> ("", false)
+//	baz.com -> ("", false)
 func isRegistryDomainRequest(req *http.Request) (string, bool) {
 	if *registryDomain == "" {
 		return "", false
