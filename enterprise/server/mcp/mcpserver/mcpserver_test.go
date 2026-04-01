@@ -40,15 +40,15 @@ func TestMCPToolsList_OnlyGetAPIsAreExposed(t *testing.T) {
 		// Intentionally exposing a large set of RPCs here to verify that we
 		// only expose a subset from tools/list.
 		allowedRPCs: []string{
-			"GetInvocation",
-			"GetLog",
-			"GetAuditLog",
-			"GetTarget",
-			"GetAction",
-			"DeleteFile",
-			"ExecuteWorkflow",
-			"Run",
-			"CreateUserApiKey",
+			apiServicePrefix + "GetInvocation",
+			apiServicePrefix + "GetLog",
+			apiServicePrefix + "GetAuditLog",
+			apiServicePrefix + "GetTarget",
+			apiServicePrefix + "GetAction",
+			apiServicePrefix + "DeleteFile",
+			apiServicePrefix + "ExecuteWorkflow",
+			apiServicePrefix + "Run",
+			apiServicePrefix + "CreateUserApiKey",
 		},
 	})
 
@@ -87,7 +87,7 @@ func TestMCPToolsList_GeneratesDescriptionsFromProtoComments(t *testing.T) {
 			testUser("developer-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
 		),
 		apiService:  &fakeAPIService{},
-		allowedRPCs: []string{"GetInvocation"},
+		allowedRPCs: []string{apiServicePrefix + "GetInvocation"},
 	})
 
 	rsp := callJSONRPC[toolListResponse](t, server.URL, "developer-key", "tools/list", nil)
@@ -138,7 +138,7 @@ func TestMCPToolCall_GetInvocation(t *testing.T) {
 				}, nil
 			},
 		},
-		allowedRPCs: []string{"GetInvocation"},
+		allowedRPCs: []string{apiServicePrefix + "GetInvocation"},
 	})
 
 	rsp := callJSONRPC[toolCallResponse](t, server.URL, "developer-key", "tools/call", map[string]any{
