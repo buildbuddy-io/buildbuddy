@@ -282,7 +282,7 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method string, accep
 
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return nil, status.UnavailableErrorf("could not make %s request to upstream registry %q: %s", method, upreq.URL.Hostname(), err)
+		return nil, status.UnavailableErrorf("could not construct %s request for upstream registry %q: %s", method, u, err)
 	}
 	for _, acceptHeader := range acceptHeaders {
 		upreq.Header.Add(headerAccept, acceptHeader)
