@@ -139,8 +139,9 @@ are not subjected to `include-secrets` control documented above.
 :::note
 
 The older `env-overrides` and `env-overrides-base64` headers still work for
-setting environment variables, but their values are **not** redacted in logs
-or the UI. Use `secret-env-overrides` for any sensitive values.
+setting environment variables, but `secret-env-overrides` is recommended for
+sensitive values because it additionally scrubs variable values from workflow
+and remote runner logs.
 
 :::
 

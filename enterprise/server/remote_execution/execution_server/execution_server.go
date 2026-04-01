@@ -1651,7 +1651,7 @@ func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 	overrides := md.GetPlatformOverrides().GetProperties()
 	for _, p := range overrides {
 		name := strings.ToLower(p.GetName())
-		if strings.Contains(name, "password") || strings.Contains(name, "username") || strings.Contains(name, "secret-env-overrides") {
+		if strings.Contains(name, "password") || strings.Contains(name, "username") || strings.Contains(name, "env-overrides") {
 			p.Value = "<REDACTED>"
 		}
 	}
