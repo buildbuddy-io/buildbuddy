@@ -142,7 +142,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
     displayCount: 50,
     filterText: "",
   };
+
+  private getPageTitle() {
+    return "Target Performance";
+  }
+
+  private updateDocumentTitle() {
+    document.title = `${this.getPageTitle()} | BuildBuddy`;
+  }
+
   componentDidMount(): void {
+    this.updateDocumentTitle();
     this.selectedMetric =
       convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
     this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
@@ -150,6 +160,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props, prevState: State): void {
+    this.updateDocumentTitle();
     if (this.props.search !== prevProps.search) {
       this.selectedMetric =
         convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
@@ -296,6 +307,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   render(): React.ReactNode {
+    const pageTitle = this.getPageTitle();
     const chartData = this.getChartData();
     const tableData = this.getTableData();
 
@@ -303,7 +315,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       <div className="targets">
         <div className="container">
           <div className="targets-header">
-            <div className="targets-title">Target Performance</div>
+            <div className="targets-title">{pageTitle}</div>
             <FilterComponent search={this.props.search} />
           </div>
 

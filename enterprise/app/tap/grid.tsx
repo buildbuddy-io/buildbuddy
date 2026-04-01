@@ -107,8 +107,6 @@ export default class TestGridComponent extends React.Component<Props, State> {
   targetsRPC?: CancelablePromise;
 
   componentWillMount() {
-    document.title = `Tests | BuildBuddy`;
-
     this.fetchTargets(/*initial=*/ true);
 
     this.subscription = rpcService.events.subscribe({
