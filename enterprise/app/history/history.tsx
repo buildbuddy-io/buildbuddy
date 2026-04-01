@@ -218,14 +218,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   componentDidMount() {
-    document.title = `${
-      this.props.username ||
-      this.props.hostname ||
-      (this.props.repo && format.formatGitUrl(this.props.repo)) ||
-      this.props.branch ||
-      (this.props.commit && format.formatCommitHash(this.props.commit)) ||
-      this.props.user?.selectedGroupName()
-    } Build History | BuildBuddy`;
+    this.updateDocumentTitle();
 
     this.refreshSubscription.add(
       rpcService.events.subscribe({
@@ -304,6 +297,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
+    this.updateDocumentTitle();
     if (this.props.tab !== prevProps.tab || this.props.search !== prevProps.search) {
       this.fetch();
     }
@@ -423,19 +417,49 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return Boolean(this.props.tab);
   }
 
+  private getViewType() {
+    if (this.props.tab == "#users") return "users";
+    if (this.props.tab == "#repos") return "repos";
+    if (this.props.tab == "#branches") return "branches";
+    if (this.props.tab == "#commits") return "commits";
+    if (this.props.tab == "#hosts") return "hosts";
+    return "build history";
+  }
+
+  private getPageTitle() {
+    if (this.props.username) {
+      return `${this.props.username}'s builds`;
+    }
+    if (this.props.hostname) {
+      return `Builds on ${this.props.hostname}`;
+    }
+    if (this.props.repo && this.isFilteredToWorkflows()) {
+      return `Workflow runs of ${format.formatGitUrl(this.props.repo)}`;
+    }
+    if (this.props.repo) {
+      return `Builds of ${format.formatGitUrl(this.props.repo)}`;
+    }
+    if (this.props.branch) {
+      return `Builds from branch ${this.props.branch}`;
+    }
+    if (this.props.commit) {
+      return `Builds from commit ${format.formatCommitHash(this.props.commit)}`;
+    }
+    return `${this.props.user?.selectedGroupName() || "User"}'s ${this.getViewType()}`;
+  }
+
+  private updateDocumentTitle() {
+    document.title = `${this.getPageTitle()} | BuildBuddy`;
+  }
+
   render() {
+    const pageTitle = this.getPageTitle();
     let scope =
       this.props.username ||
       this.props.hostname ||
       (this.props.commit && format.formatCommitHash(this.props.commit)) ||
       this.props.branch ||
       (this.props.repo && format.formatGitUrl(this.props.repo));
-    let viewType = "build history";
-    if (this.props.tab == "#users") viewType = "users";
-    if (this.props.tab == "#repos") viewType = "repos";
-    if (this.props.tab == "#branches") viewType = "branches";
-    if (this.props.tab == "#commits") viewType = "commits";
-    if (this.props.tab == "#hosts") viewType = "hosts";
 
     // Note: we don't show summary stats for scoped views because the summary stats
     // don't currently get filtered by the scope as well.
@@ -503,7 +527,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               <div className="title">
                 {this.props.username && (
                   <span>
-                    <span className="history-title">{this.props.username}'s builds</span>
+                    <span className="history-title">{pageTitle}</span>
                     <Link className="history-button" href={`/trends/?user=${this.props.username}`}>
                       <BarChart2 /> View trends
                     </Link>
@@ -511,7 +535,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 )}
                 {this.props.hostname && (
                   <span>
-                    <span className="history-title">Builds on {this.props.hostname}</span>
+                    <span className="history-title">{pageTitle}</span>
                     <Link className="history-button" href={`/trends/?host=${this.props.hostname}`}>
                       <BarChart2 /> View trends
                     </Link>
@@ -519,7 +543,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 )}
                 {this.props.repo && !this.isFilteredToWorkflows() && (
                   <>
-                    <span className="history-title">Builds of {format.formatGitUrl(this.props.repo)}</span>
+                    <span className="history-title">{pageTitle}</span>
                     {this.getRepoUrl() && (
                       <a className="history-button" target="_blank" href={this.getRepoUrl()}>
                         <Github /> View repo
@@ -532,7 +556,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 )}
                 {this.props.repo && this.isFilteredToWorkflows() && (
                   <>
-                    <span className="history-title">Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
+                    <span className="history-title">{pageTitle}</span>
                     {this.getRepoUrl() && (
                       <a className="history-button" target="_blank" href={this.getRepoUrl()}>
                         <Github /> View repo
@@ -542,7 +566,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 )}
                 {this.props.branch && (
                   <>
-                    <span className="history-title">Builds from branch {this.props.branch}</span>
+                    <span className="history-title">{pageTitle}</span>
                     {branchLink && (
                       <a className="history-button" target="_blank" href={branchLink}>
                         <GitBranch /> View branch
@@ -555,9 +579,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 )}
                 {this.props.commit && (
                   <span>
-                    <span className="history-title">
-                      Builds from commit {format.formatCommitHash(this.props.commit)}
-                    </span>
+                    <span className="history-title">{pageTitle}</span>
                     {commitLink && (
                       <a className="history-button" target="_blank" href={commitLink}>
                         <GitCommit /> View commit
@@ -573,7 +595,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   !this.props.repo &&
                   !this.props.branch &&
                   !this.props.commit &&
-                  `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
+                  pageTitle}
               </div>
             </div>
             {this.state.loadingSummaryStat && !hideSummaryStats && (
@@ -741,9 +763,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
           !this.state.aggregateStats?.length && (
             <div className="container narrow">
               <div className="empty-state history">
-                <h2>No {viewType} found!</h2>
+                <h2>No {this.getViewType()} found!</h2>
                 <p>
-                  You can associate builds with {viewType} using build metadata.
+                  You can associate builds with {this.getViewType()} using build metadata.
                   <br />
                   <br />
                   <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
