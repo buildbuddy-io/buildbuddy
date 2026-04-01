@@ -6,7 +6,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "gateway_lib",
-    srcs = ["main.go"],
+    srcs = ["gateway.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/cmd/gateway",
     visibility = ["//visibility:private"],
     deps = [
@@ -17,12 +17,15 @@ go_library(
         "//server/config",
         "//server/real_environment",
         "//server/rpc/interceptors",
+        "//server/ssl",
         "//server/util/authutil",
         "//server/util/flag",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
+        "//server/util/tracing",
+        "//server/version",
         "@org_golang_google_grpc//:grpc",
     ],
 )

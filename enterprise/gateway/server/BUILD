@@ -48,7 +48,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
-        "@com_github_miekg_dns//:dns",
         "@com_github_stretchr_testify//require",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",

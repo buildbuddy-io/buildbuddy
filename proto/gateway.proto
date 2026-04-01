@@ -20,7 +20,7 @@ message RegisterRequest {
 }
 
 message RegisterResponse {
-  reserved 1; // formerly private_key; clients now generate their own keypairs.
+  reserved 1;  // formerly private_key; clients now generate their own keypairs.
 
   // Gateway's WireGuard public key for this network, hex-encoded.
   string server_public_key = 2;

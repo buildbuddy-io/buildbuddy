@@ -31,7 +31,7 @@ import (
 
 var (
 	udpListenPort = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
-	publicHost = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
+	publicHost    = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
 )
 
 // networkState holds IP allocation and peer name state for one
@@ -45,14 +45,14 @@ type networkState struct {
 // Gateway manages a single WireGuard device shared across all groups.
 // Network isolation is enforced in the muxTUN layer.
 type Gateway struct {
-	mu         sync.Mutex
-	env        environment.Env
-	dev        *device.Device
-	tun        *muxTUN
-	pubKey     string // server's base64 public key
-	networks   map[string]*networkState
-	nextIndex  int // monotonically increasing network index
-	publicHost string
+	mu            sync.Mutex
+	env           environment.Env
+	dev           *device.Device
+	tun           *muxTUN
+	pubKey        string // server's base64 public key
+	networks      map[string]*networkState
+	nextIndex     int // monotonically increasing network index
+	publicHost    string
 	udpListenPort int
 }
 
@@ -85,12 +85,12 @@ func New(env environment.Env) (*Gateway, error) {
 	log.Infof("gateway: WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
 
 	return &Gateway{
-		env:        env,
-		dev:        dev,
-		tun:        tunDev,
-		pubKey:     pubKey,
-		networks:   make(map[string]*networkState),
-		publicHost: *publicHost,
+		env:           env,
+		dev:           dev,
+		tun:           tunDev,
+		pubKey:        pubKey,
+		networks:      make(map[string]*networkState),
+		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
 	}, nil
 }
