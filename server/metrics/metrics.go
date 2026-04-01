@@ -3903,6 +3903,16 @@ var (
 		CacheEventTypeLabel,
 	})
 
+	OCIRegistryEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "egress_size_bytes",
+		Help:      "The number of bytes served, broken down by destination provider/region inferred from the peer IP.",
+	}, []string{
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+
 	OCIFetcherRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "ocifetcher",
