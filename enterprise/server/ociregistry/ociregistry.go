@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -179,11 +180,17 @@ func isRegistryDomainRequest(req *http.Request) (string, bool) {
 		return "", false
 	}
 
-	if req.Host == *registryDomain {
+	// Strip the port if present. This makes it easier to run the registry locally.
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	if host == *registryDomain {
 		return "", true
 	}
 
-	return strings.CutSuffix(req.Host, "."+*registryDomain)
+	return strings.CutSuffix(host, "."+*registryDomain)
 }
 
 func (r *registry) determineUpstreamRepository(ctx context.Context, req *http.Request, repository string) (string, error) {
