@@ -412,15 +412,17 @@ To access short-lived secrets, you can use remote headers to set environment var
 
 ```bash
 bb remote \
-  --remote_run_header=x-buildbuddy-platform.env-overrides=PWD=supersecret \
+  --remote_run_header=x-buildbuddy-platform.secret-env-overrides=PWD=supersecret \
   # Use --script with a quoted command so your local terminal doesn't try to expand the env var
   --script='bazel run :my_script --password=$PWD'
 ```
 
 To set multiple variables, pass a comma separated list:
-`--remote_run_header=x-buildbuddy-platform.env-overrides=K1=V1,K2=V2`.
+`--remote_run_header=x-buildbuddy-platform.secret-env-overrides=K1=V1,K2=V2`.
 
-**Note**: You should not use `--env` or `--runner_exec_properties=x-buildbuddy-platform.env-overrides`
+Values passed via `secret-env-overrides` are always redacted in logs and the UI.
+
+**Note**: You should not use `--env` or `--runner_exec_properties`
 to set secrets because:
 
 (1) Environment variables and platform properties are stored in plain-text in the

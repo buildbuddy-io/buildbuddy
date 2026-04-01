@@ -418,7 +418,14 @@ The following properties allow modifying the action's command before it is execu
 
 - `env-overrides`: a comma-separated list of environment variable assignments
   (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
-  For example, `"env-overrides": "FOO=bar,BAZ=qux"`.
+  For example, `"env-overrides": "FOO=bar,BAZ=qux"`. Values set via this
+  property are **not** redacted in logs or the UI, so it should only be used
+  for non-sensitive configuration. For secrets, use `secret-env-overrides`.
+
+- `secret-env-overrides`: identical to `env-overrides`, but values are always
+  **redacted** in logs and the UI. Use this for short-lived tokens, passwords,
+  and other sensitive values. Also available in base64 form as
+  `secret-env-overrides-base64`. See [RBE Secrets](secrets) for more details.
 
 - `run-under`: an executable (and optional arguments) to use as a wrapper
   for the action's command. The wrapper tokens are prepended to the
