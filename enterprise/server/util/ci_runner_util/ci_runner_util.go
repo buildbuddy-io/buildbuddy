@@ -191,12 +191,29 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 	}
 	overridesVal := strings.Join(assignments, ",")
 
+	// Clear any existing env-overrides properties and write the merged
+	// result to a single secret-env-overrides property.
+	found := false
+	filtered := task.PlatformOverrides.Properties[:0]
 	for _, prop := range task.PlatformOverrides.Properties {
-		if strings.EqualFold(prop.GetName(), platform.SecretEnvOverridesPropertyName) {
-			prop.Value = overridesVal
-			return
+		name := prop.GetName()
+		if strings.EqualFold(name, platform.EnvOverridesPropertyName) {
+			// Drop plain env-overrides; we'll write to secret-env-overrides.
+			continue
 		}
+		if strings.EqualFold(name, platform.SecretEnvOverridesPropertyName) {
+			prop.Value = overridesVal
+			found = true
+		}
+		filtered = append(filtered, prop)
 	}
+	if !found {
+		filtered = append(filtered, &repb.Platform_Property{
+			Name:  platform.SecretEnvOverridesPropertyName,
+			Value: overridesVal,
+		})
+	}
+	task.PlatformOverrides.Properties = filtered
 }
 
 func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
