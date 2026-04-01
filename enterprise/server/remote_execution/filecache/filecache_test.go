@@ -536,6 +536,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 }
 
 func TestFileCacheUncleanShutdown(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
