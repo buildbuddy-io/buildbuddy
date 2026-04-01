@@ -105,6 +105,8 @@ var (
 		"bes_header",
 	}
 	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
+
+	sensitiveEnvVarTokens = []string{"SECRET", "TOKEN", "PASSWORD", "KEY", "CREDENTIALS"}
 )
 
 func init() {
@@ -924,4 +926,46 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 	}
 
 	return prototext.Unmarshal([]byte(txt), event)
+}
+
+// containsSensitiveEnvToken reports whether token appears as a distinct segment
+// of the env var name, using non-alphanumeric characters as delimiters.
+func containsSensitiveEnvToken(name string, token string) bool {
+	for _, segment := range strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
+		return (r < 'A' || r > 'Z') && (r < '0' || r > '9')
+	}) {
+		if segment == token {
+			return true
+		}
+	}
+	return false
+}
+
+// EnvNameLooksSensitive reports whether an environment variable name contains
+// one of the well-known secret-related tokens (case-insensitive).
+func EnvNameLooksSensitive(name string) bool {
+	for _, token := range sensitiveEnvVarTokens {
+		if containsSensitiveEnvToken(name, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// CollectSensitiveEnvValues scans the provided environment entries (in the
+// "KEY=value" format returned by os.Environ()) and returns the values of any
+// variables whose names look sensitive according to EnvNameLooksSensitive.
+// Empty values are omitted.
+func CollectSensitiveEnvValues(environ []string) []string {
+	var values []string
+	for _, env := range environ {
+		name, val, ok := strings.Cut(env, "=")
+		if !ok || val == "" {
+			continue
+		}
+		if EnvNameLooksSensitive(name) {
+			values = append(values, val)
+		}
+	}
+	return values
 }
