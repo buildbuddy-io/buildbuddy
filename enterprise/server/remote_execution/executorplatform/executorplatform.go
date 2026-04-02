@@ -181,7 +181,7 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	for _, ev := range command.EnvironmentVariables {
 		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
 			if err := json.Unmarshal([]byte(ev.GetValue()), &existing); err != nil {
-				return fmt.Errorf("unmarshal existing %s: %w", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+				return status.InternalErrorf("unmarshal existing %s: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
 			}
 			break
 		}
@@ -190,7 +190,7 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	merged := append(existing, newNames...)
 	serialized, err := json.Marshal(merged)
 	if err != nil {
-		return fmt.Errorf("marshal %s: %w", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+		return status.InternalErrorf("marshal %s: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
 	}
 
 	for _, ev := range command.EnvironmentVariables {
