@@ -562,6 +562,25 @@ func TestMirrorConfig(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
+	t.Run("mirror subdomain with port in Host header routes correctly", func(t *testing.T) {
+		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
+		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+		require.NoError(t, err)
+		// Include a port in the Host header to verify it's stripped before matching.
+		req.Host = "mirror1.registry.test:9999"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		rc, err := layers1[0].Compressed()
+		require.NoError(t, err)
+		expectedBody, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.Equal(t, expectedBody, body)
+	})
+
 	t.Run("unknown subdomain returns not found", func(t *testing.T) {
 		path := "/v2/ns1/myimage/blobs/" + layer1Digest.String()
 		req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)

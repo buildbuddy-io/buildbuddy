@@ -6,9 +6,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 # Default run (3 min per test, 15 min timeout):
 #   bb test //enterprise/server/raft/store/linearizability:linearizability_test
 #
-# Longer run (1 hour):
+# Longer run: change the TEST_DURATION env below and adjust
+# --test_timeout accordingly (e.g. 2 * duration + buffer):
 #   bb test //enterprise/server/raft/store/linearizability:linearizability_test \
-#     --test_timeout=4200 --test_env=TEST_DURATION=1h
+#     --test_timeout=4200
 go_test(
     name = "linearizability_test",
     timeout = "long",

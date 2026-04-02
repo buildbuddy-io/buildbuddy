@@ -152,6 +152,12 @@ func (el *eventLog) logReturn(clientID int, id int, value string, err error) {
 	})
 }
 
+func (el *eventLog) numEvents() int {
+	el.mu.Lock()
+	defer el.mu.Unlock()
+	return len(el.events)
+}
+
 func (el *eventLog) getEvents() []porcupine.Event {
 	el.mu.Lock()
 	defer el.mu.Unlock()
@@ -268,10 +274,12 @@ const defaultTestDuration = 3 * time.Minute
 func getTestDuration(t *testing.T) time.Duration {
 	v := os.Getenv("TEST_DURATION")
 	if v == "" {
+		t.Logf("TEST_DURATION not set, using default %v", defaultTestDuration)
 		return defaultTestDuration
 	}
 	d, err := time.ParseDuration(v)
 	require.NoError(t, err, "invalid TEST_DURATION %q", v)
+	t.Logf("TEST_DURATION=%s (parsed as %v)", v, d)
 	return d
 }
 
@@ -299,6 +307,7 @@ func worker(ctx context.Context, clientID int, stores []*testutil.TestingStore, 
 			cancel()
 			elog.logReturn(clientID, id, val, err)
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -424,6 +433,20 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 		}
 	})
 
+	// Periodically log event count.
+	wg.Go(func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+				log.Infof("Event log size: %d events", elog.numEvents())
+			}
+		}
+	})
+
 	// Start workers.
 	for i := range numWorkers {
 		wg.Go(func() {
@@ -496,6 +519,20 @@ func TestLinearizabilityUnderKillRestart(t *testing.T) {
 	defer workerCancel()
 
 	var wg sync.WaitGroup
+
+	// Periodically log event count.
+	wg.Go(func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+				log.Infof("Event log size: %d events", elog.numEvents())
+			}
+		}
+	})
 
 	// Start workers on all 4 stores. Workers hitting a dead or
 	// replica-less store will get errors (treated as indeterminate).
