@@ -16,7 +16,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_google_go_containerregistry//pkg/name:name",
+        "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
