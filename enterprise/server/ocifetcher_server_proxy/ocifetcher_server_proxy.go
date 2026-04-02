@@ -9,7 +9,6 @@ package ocifetcher_server_proxy
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -44,10 +43,10 @@ func Register(env *real_environment.RealEnv) error {
 
 func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	if env.GetOCIFetcherClient() == nil {
-		return nil, fmt.Errorf("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
 	}
 	if env.GetLocalByteStreamClient() == nil {
-		return nil, fmt.Errorf("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
 	}
 	return &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
