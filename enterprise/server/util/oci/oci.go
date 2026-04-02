@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -51,14 +50,7 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 
 	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
-
-	imageRewriteRules = flag.Slice("executor.container_image_name_rewrites", []ImageRewrite{}, "Configures rules to rewrite matching container image names.")
 )
-
-type ImageRewrite struct {
-	Prefix      string `yaml:"prefix" json:"prefix"`
-	Replacement string `yaml:"replacement" json:"replacement"`
-}
 
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
@@ -233,16 +225,6 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	}, nil
 }
 
-func (r *Resolver) rewriteImageName(imageName string) string {
-	for _, rr := range *imageRewriteRules {
-		if after, ok := strings.CutPrefix(imageName, rr.Prefix); ok {
-			newName := rr.Replacement + after
-			return newName
-		}
-	}
-	return imageName
-}
-
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
@@ -251,8 +233,6 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	if credentials.bypassRegistry {
 		return nil
 	}
-
-	imageName = r.rewriteImageName(imageName)
 
 	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
 
@@ -280,8 +260,6 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 // ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
 // to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
-	imageName = r.rewriteImageName(imageName)
-
 	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
 		return imageRefWithDigest.String(), nil
 	}
@@ -310,8 +288,6 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-
-	imageName = r.rewriteImageName(imageName)
 
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
