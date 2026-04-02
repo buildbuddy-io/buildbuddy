@@ -22,6 +22,7 @@ go_test(
         "test.EstimatedFreeDiskBytes": "10GB",
         "test.workload-isolation-type": "firecracker",
     },
+    gotags = ["dragonboat_monkeytest"],
     tags = [
         "block-network",
         "manual",
@@ -37,6 +38,7 @@ go_test(
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_anishathalye_porcupine//:porcupine",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_stretchr_testify//require",
     ],
 )

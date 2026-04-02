@@ -102,6 +102,11 @@ go_deps.gazelle_override(
     path = "github.com/jhump/protoreflect",
 )
 go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:build_tags dragonboat_monkeytest"],
+    path = "github.com/lni/dragonboat/v4",
+)
+go_deps.gazelle_override(
     directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
     path = "github.com/cncf/xds/go",
 )
