@@ -31,8 +31,7 @@ func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	// Don't set OCIFetcherClient
 
 	_, err := New(env)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
 func TestNew_MissingLocalBSClient(t *testing.T) {
@@ -43,8 +42,7 @@ func TestNew_MissingLocalBSClient(t *testing.T) {
 	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
 
 	_, err := New(env)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "LocalByteStreamClient is required")
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
