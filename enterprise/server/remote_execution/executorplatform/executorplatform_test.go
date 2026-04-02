@@ -421,6 +421,69 @@ func TestExtraEnvVars(t *testing.T) {
 	}
 }
 
+func TestContainerImageNameRewrite(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		rewriteRules  []ImageRewrite
+		input         string
+		expected      string
+	}{
+		{
+			name:     "no rules",
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "gcr.io/my-project/my-image:latest",
+		},
+		{
+			name: "matching prefix is rewritten",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/old-project/", Replacement: "gcr.io/new-project/"},
+			},
+			input:    "docker://gcr.io/old-project/my-image:latest",
+			expected: "gcr.io/new-project/my-image:latest",
+		},
+		{
+			name: "non-matching prefix is not rewritten",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/other-project/", Replacement: "gcr.io/new-project/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "gcr.io/my-project/my-image:latest",
+		},
+		{
+			name: "only first matching rule is applied",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+				{Prefix: "gcr.io/", Replacement: "other-mirror.example.com/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "mirror.example.com/my-project/my-image:latest",
+		},
+		{
+			name: "rewrite without docker prefix",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+			},
+			input:    "gcr.io/my-project/my-image:latest",
+			expected: "mirror.example.com/my-project/my-image:latest",
+		},
+		{
+			name: "rewrite combined with region replacement",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "{{region}}.mirror.example.com/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "us-west1.mirror.example.com/my-project/my-image:latest",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_image_name_rewrites", tc.rewriteRules)
+			flags.Set(t, "executor.container_registry_region", "us-west1")
+			result := containerImageName(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestForceNetworkIsolationType(t *testing.T) {
 	for _, testCase := range []struct {
 		dockerNetworkValue         string
