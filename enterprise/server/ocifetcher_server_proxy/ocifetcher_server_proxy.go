@@ -46,6 +46,9 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	if env.GetOCIFetcherClient() == nil {
 		return nil, fmt.Errorf("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
 	}
+	if env.GetLocalByteStreamClient() == nil {
+		return nil, fmt.Errorf("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
+	}
 	return &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
 		localBSClient: env.GetLocalByteStreamClient(),
@@ -67,17 +70,10 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	// If no local BS client is configured, fall back to simple pass-through.
-	if s.localBSClient == nil {
-		return s.fetchBlobPassthrough(ctx, req, stream)
-	}
-
-	// Parse the ref to extract repo and digest hash.
+	// Parse the ref to extract the digest hash.
 	hash, err := parseBlobDigest(req.GetRef())
 	if err != nil {
-		// If we can't parse, fall back to pass-through.
-		log.CtxWarningf(ctx, "Could not parse blob ref for local cache lookup: %s", err)
-		return s.fetchBlobPassthrough(ctx, req, stream)
+		return status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
 	}
 
 	// Get blob size from upstream metadata (needed for both local cache
@@ -102,27 +98,6 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 
 	// Fetch from upstream and tee to local BS cache.
 	return s.fetchBlobFromUpstreamAndCache(ctx, req, stream, hash, metaResp.GetSize())
-}
-
-// fetchBlobPassthrough relays a FetchBlob stream from upstream without
-// local caching.
-func (s *OCIFetcherServerProxy) fetchBlobPassthrough(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	remoteStream, err := s.remote.FetchBlob(ctx, req)
-	if err != nil {
-		return err
-	}
-	for {
-		resp, err := remoteStream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
-	}
 }
 
 // fetchBlobFromUpstreamAndCache streams a blob from the upstream OCIFetcher,
