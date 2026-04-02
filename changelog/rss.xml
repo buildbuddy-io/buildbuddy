@@ -4,10 +4,17 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 09 Mar 2026 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 31 Mar 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Improved GPU and device support for self-hosted executors]]></title>
+            <link>https://www.buildbuddy.io/changelog/improved-gpu-support</link>
+            <guid>https://www.buildbuddy.io/changelog/improved-gpu-support</guid>
+            <pubDate>Tue, 31 Mar 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[GPU support for self-hosted Linux executors is now easier to set up.]]></description>
+        </item>
         <item>
             <title><![CDATA[Changelog]]></title>
             <link>https://www.buildbuddy.io/changelog/changelog</link>
