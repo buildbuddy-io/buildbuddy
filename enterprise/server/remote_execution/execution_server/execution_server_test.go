@@ -1148,6 +1148,17 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 			},
 		},
 		{
+			name: "redacts secret-env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "secret-env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "secret-env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
 			name: "case insensitive redaction",
 			inputProperties: []*repb.Platform_Property{
 				{Name: "PASSWORD", Value: "secret1"},
