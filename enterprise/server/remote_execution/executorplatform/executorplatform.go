@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -155,6 +156,53 @@ func ValidateIsolationTypes() error {
 	return nil
 }
 
+// secretEnvVarNames extracts the variable names from a list of "NAME=VALUE"
+// secret-env-override entries.
+func secretEnvVarNames(overrides []string) []string {
+	names := make([]string, 0, len(overrides))
+	for _, e := range overrides {
+		name, _, _ := strings.Cut(e, "=")
+		names = append(names, name)
+	}
+	return names
+}
+
+// registerSecretEnvVarNames merges the variable names from secretOverrides into
+// the BUILDBUDDY_SECRET_ENV_VAR_NAMES env var on the command so the CI runner
+// can scrub their values from workflow logs.
+func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) {
+	if len(secretOverrides) == 0 {
+		return
+	}
+	newNames := secretEnvVarNames(secretOverrides)
+
+	// Parse any existing names already set (e.g. from include-secrets).
+	var existing []string
+	for _, ev := range command.EnvironmentVariables {
+		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			_ = json.Unmarshal([]byte(ev.GetValue()), &existing)
+			break
+		}
+	}
+
+	merged := append(existing, newNames...)
+	serialized, err := json.Marshal(merged)
+	if err != nil {
+		return
+	}
+
+	for _, ev := range command.EnvironmentVariables {
+		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			ev.Value = string(serialized)
+			return
+		}
+	}
+	command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+		Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+		Value: string(serialized),
+	})
+}
+
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
 func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, command *repb.Command) error {
@@ -251,6 +299,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
+	additionalEnvVars = append(additionalEnvVars, platformProps.SecretEnvOverrides...)
 	for _, e := range additionalEnvVars {
 		name, value, hasValue := strings.Cut(e, "=")
 		if !hasValue {
@@ -262,6 +311,8 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Value: value,
 		})
 	}
+
+	registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides)
 
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
