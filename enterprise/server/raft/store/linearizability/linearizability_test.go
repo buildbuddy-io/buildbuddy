@@ -26,6 +26,12 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
+func init() {
+	// Shrink dragonboat transport buffers to make replication lag
+	// more likely.
+	dragonboat.ApplyMonkeySettings()
+}
+
 const (
 	opWrite = iota
 	opRead
@@ -361,19 +367,6 @@ func checkLinearizability(t *testing.T, elog *eventLog, vizPath string) {
 	require.Equal(t, porcupine.Ok, result, "linearizability violation detected")
 }
 
-// TestMonkeyTestBuildTag verifies that the dragonboat_monkeytest build
-// tag is active and PartitionNode/RestorePartitionedNode are available.
-func TestMonkeyTestBuildTag(t *testing.T) {
-	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
-	s1 := sf.NewStore(t)
-	nh := s1.NodeHost()
-	// Verify the monkey test APIs compile and run.
-	nh.PartitionNode()
-	require.True(t, nh.IsPartitioned())
-	nh.RestorePartitionedNode()
-	require.False(t, nh.IsPartitioned())
-}
-
 // partitionLoop repeatedly partitions and restores a random store's
 // Raft transport. While partitioned, all Raft replicas on that node
 // fall behind (gossip and gRPC remain active). Safe to call from any
@@ -420,7 +413,6 @@ func partitionLoop(ctx context.Context, stores []*testutil.TestingStore) {
 // backlogs, so the new shard's replica may become leaseholder while
 // the old shard's replica still has stale data (overlapping-range bug).
 func TestLinearizabilityUnderSplits(t *testing.T) {
-	dragonboat.ApplyMonkeySettings()
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
@@ -524,7 +516,6 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 // random intervals. If a node stays dead long enough, the driver
 // may up-replicate to another available node.
 func TestLinearizabilityUnderKillRestart(t *testing.T) {
-	dragonboat.ApplyMonkeySettings()
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
