@@ -70,14 +70,19 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	// Parse the ref to extract the digest hash.
-	hash, err := parseBlobDigest(req.GetRef())
+	blobRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
 	}
+	digestRef, ok := blobRef.(gcrname.Digest)
+	if !ok {
+		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
+	}
+	hash, err := gcr.NewHash(digestRef.DigestStr())
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
+	}
 
-	// Get blob size from upstream metadata (needed for both local cache
-	// read and write).
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
@@ -87,7 +92,6 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
-	// Try local BS cache.
 	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, metaResp.GetSize(), &grpcStreamWriter{stream: stream})
 	if err == nil {
 		return nil // local cache hit
@@ -96,7 +100,6 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		log.CtxWarningf(ctx, "Error reading blob from local cache: %s", err)
 	}
 
-	// Fetch from upstream and tee to local BS cache.
 	return s.fetchBlobFromUpstreamAndCache(ctx, req, stream, hash, metaResp.GetSize())
 }
 
@@ -122,19 +125,19 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamAndCache(ctx context.Contex
 		if err != nil {
 			return err
 		}
-		if _, err := cacheWriter.Write(resp.GetData()); err != nil {
-			if status.IsAlreadyExistsError(err) {
-				// Blob was already cached. Stop writing, keep streaming.
-				cacheWriter.Close()
-				if err := stream.Send(resp); err != nil {
-					return err
-				}
-				return relayStream(remoteStream, stream)
-			}
-			return err
+
+		_, writeErr := cacheWriter.Write(resp.GetData())
+		if writeErr != nil && !status.IsAlreadyExistsError(writeErr) {
+			return writeErr
 		}
 		if err := stream.Send(resp); err != nil {
 			return err
+		}
+		if writeErr != nil {
+			// AlreadyExists: blob was cached by another writer.
+			// Stop writing to cache, relay remaining chunks.
+			cacheWriter.Close()
+			return relayStream(remoteStream, stream)
 		}
 	}
 }
@@ -153,20 +156,6 @@ func relayStream(remoteStream ofpb.OCIFetcher_FetchBlobClient, stream ofpb.OCIFe
 			return err
 		}
 	}
-}
-
-// parseBlobDigest extracts the OCI digest hash from a blob reference string
-// like "gcr.io/repo@sha256:abc123".
-func parseBlobDigest(ref string) (gcr.Hash, error) {
-	blobRef, err := gcrname.ParseReference(ref)
-	if err != nil {
-		return gcr.Hash{}, err
-	}
-	digestRef, ok := blobRef.(gcrname.Digest)
-	if !ok {
-		return gcr.Hash{}, fmt.Errorf("blob reference must be a digest reference, got %q", ref)
-	}
-	return gcr.NewHash(digestRef.DigestStr())
 }
 
 // fetchBlobFromLocalBS reads a blob from the local byte stream cache.
