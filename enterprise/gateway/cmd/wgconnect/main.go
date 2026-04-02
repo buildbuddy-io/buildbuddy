@@ -33,7 +33,7 @@ import (
 )
 
 var (
-	gatewayTarget = flag.String("gateway_target", "grpc://localhost:9473", "gRPC address of the gateway server")
+	gatewayTarget = flag.String("gateway_target", "grpc://localhost:1985", "gRPC address of the gateway server")
 	apiKey        = flag.String("api_key", "", "BuildBuddy API key")
 	networkName   = flag.String("network_name", "", "Network name (must match the target peer)")
 	target        = flag.String("target", "", "Target address as host:port; host may be a peer name or IP")

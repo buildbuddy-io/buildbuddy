@@ -3,7 +3,7 @@
 //
 // Usage:
 //
-//	sshvm --gateway_target=grpc://localhost:9473 --api_key=KEY [--network_name=NAME]
+//	sshvm --gateway_target=grpc://localhost:1985 --api_key=KEY [--network_name=NAME]
 //
 // Then connect from another peer on the same network:
 //
@@ -41,7 +41,7 @@ import (
 )
 
 var (
-	gatewayTarget = flag.String("gateway_target", "grpc://localhost:9473", "gRPC address of the gateway server")
+	gatewayTarget = flag.String("gateway_target", "grpc://localhost:1985", "gRPC address of the gateway server")
 	apiKey        = flag.String("api_key", "", "BuildBuddy API key")
 	networkName   = flag.String("network_name", "", "Optional network name (must match across peers)")
 	peerName      = flag.String("peer_name", "", "Optional DNS name for this peer (last-write-wins)")

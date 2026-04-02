@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/remoteauth",
         "//proto:gateway_service_go_proto",
         "//server/config",
+        "//server/http/interceptors",
         "//server/real_environment",
         "//server/rpc/interceptors",
         "//server/ssl",

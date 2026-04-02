@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 
@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
@@ -61,6 +62,7 @@ func main() {
 	if err := tracing.Configure(env); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
+	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	if err := remoteauth.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -78,39 +80,39 @@ func main() {
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	env.GetMux().Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
+		Handler: env.GetMux(),
+	}
+
+	env.GetHTTPServerWaitGroup().Add(1)
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		defer env.GetHTTPServerWaitGroup().Done()
+		return httpServer.Shutdown(ctx)
+	})
+
 	if env.GetSSLService().IsEnabled() {
-		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)
+		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(httpServer.Handler)
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
-			Handler:   server.Handler,
+			Handler:   httpServer.Handler,
 			TLSConfig: tlsConfig,
-		}
-		sslListener, err := net.Listen("tcp", sslServer.Addr)
-		if err != nil {
-			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
 		}
 		go func() {
 			log.Debugf("Listening for HTTPS traffic on %s", sslServer.Addr)
-			_ = sslServer.ServeTLS(sslListener, "", "")
+			sslServer.ListenAndServeTLS("", "")
 		}()
-		httpListener, err := net.Listen("tcp", server.Addr)
-		if err != nil {
-			log.Fatalf("Failed to listen on port %d: %s", *port, err)
-		}
 		go func() {
-			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
-			_ = http.Serve(httpListener, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			addr := fmt.Sprintf("%s:%d", *listen, *port)
+			log.Debugf("Listening for HTTP traffic on %s", addr)
+			http.ListenAndServe(addr, http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		log.Debug("SSL Disabled")
 		// If no SSL is enabled, we'll just serve things as-is.
-		lis, err := net.Listen("tcp", server.Addr)
-		if err != nil {
-			log.Fatalf("Failed to listen on port %d: %s", *port, err)
-		}
 		go func() {
-			log.Debugf("Listening for HTTP traffic on %s", server.Addr)
-			_ = server.Serve(lis)
+			log.Debugf("Listening for HTTP traffic on %s", httpServer.Addr)
+			httpServer.ListenAndServe()
 		}()
 	}
 	env.GetHealthChecker().WaitForGracefulShutdown()
@@ -136,13 +138,6 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 
-	server := s.GetServer()
-	gwpb.RegisterGatewayServiceServer(server, gw)
-
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server))
-	go func() {
-		_ = server.Serve(lis)
-	}()
-	log.Printf("Gateway server listening on %v", lis.Addr())
-
+	gwpb.RegisterGatewayServiceServer(s.GetServer(), gw)
+	return s.Start()
 }
