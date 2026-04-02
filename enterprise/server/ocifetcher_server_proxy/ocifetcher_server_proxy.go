@@ -108,43 +108,47 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamAndCache(ctx context.Contex
 		return err
 	}
 
-	// Set up local cache writer.
-	cacheWriter, cacheErr := newLocalBSWriter(ctx, s.localBSClient, hash, size)
-	if cacheErr != nil {
-		log.CtxWarningf(ctx, "Could not create local cache writer: %s", cacheErr)
+	cacheWriter, err := newLocalBSWriter(ctx, s.localBSClient, hash, size)
+	if err != nil {
+		return err
 	}
-	defer func() {
-		if cacheWriter != nil {
-			cacheWriter.Close()
-		}
-	}()
+	defer cacheWriter.Close()
 
 	for {
 		resp, err := remoteStream.Recv()
 		if err == io.EOF {
-			if cacheWriter != nil {
-				if commitErr := cacheWriter.Commit(); commitErr != nil {
-					log.CtxWarningf(ctx, "Error committing blob to local cache: %s", commitErr)
+			return cacheWriter.Commit()
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := cacheWriter.Write(resp.GetData()); err != nil {
+			if status.IsAlreadyExistsError(err) {
+				// Blob was already cached. Stop writing, keep streaming.
+				cacheWriter.Close()
+				if err := stream.Send(resp); err != nil {
+					return err
 				}
+				return relayStream(remoteStream, stream)
 			}
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+}
+
+// relayStream drains the remaining responses from upstream to the caller.
+func relayStream(remoteStream ofpb.OCIFetcher_FetchBlobClient, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-
-		// Write to local cache (best-effort).
-		if cacheWriter != nil {
-			if _, writeErr := cacheWriter.Write(resp.GetData()); writeErr != nil {
-				if !status.IsAlreadyExistsError(writeErr) {
-					log.CtxWarningf(ctx, "Error writing blob to local cache: %s", writeErr)
-				}
-				cacheWriter.Close()
-				cacheWriter = nil
-			}
-		}
-
-		// Send to caller.
 		if err := stream.Send(resp); err != nil {
 			return err
 		}
