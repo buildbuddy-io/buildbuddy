@@ -9,9 +9,11 @@ message RegisterRequest {
   // Defaults to "" (the group's default network).
   string network_name = 1;
 
-  // Optional. DNS name for this peer within the network. Other peers on the
-  // same network can resolve this name to this peer's assigned IP via the
-  // DNS server. The *last* registration with a given name wins.
+  // Optional. Requested DNS name for this peer within the network. Other peers
+  // on the same network can resolve this name to this peer's assigned IP via
+  // the DNS server at <name>.internal. If the requested name is already taken,
+  // the server assigns a unique name by appending a numeric suffix (e.g.
+  // "foo-1"). The actual assigned name is returned in RegisterResponse.
   string peer_name = 2;
 
   // Client's WireGuard public key, hex-encoded. The client generates its own
@@ -39,4 +41,9 @@ message RegisterResponse {
 
   // CIDR of the network, e.g. "10.0.0.0/24".
   string network_cidr = 6;
+
+  // The DNS name actually assigned to this peer (may differ from the requested
+  // peer_name if there was a conflict). Reachable at
+  // <assigned_peer_name>.internal. Empty if no peer_name was requested.
+  string assigned_peer_name = 7;
 }

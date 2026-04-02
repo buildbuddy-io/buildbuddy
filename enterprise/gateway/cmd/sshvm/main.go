@@ -44,7 +44,7 @@ var (
 	gatewayTarget = flag.String("gateway_target", "grpc://localhost:1985", "gRPC address of the gateway server")
 	apiKey        = flag.String("api_key", "", "BuildBuddy API key")
 	networkName   = flag.String("network_name", "", "Optional network name (must match across peers)")
-	peerName      = flag.String("peer_name", "", "Optional DNS name for this peer (last-write-wins)")
+	peerName      = flag.String("peer_name", "", "Optional name for this peer; reachable at <name>.internal on the tunnel network (last-write-wins)")
 	sshPort       = flag.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
 	shellPath     = flag.String("shell", "bash", "Shell binary for interactive sessions")
 	hostKeyFile   = flag.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
@@ -143,8 +143,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Register: %s", err)
 	}
-	log.Infof("Registered: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s",
-		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint())
+	log.Infof("Registered: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s",
+		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), rsp.GetAssignedPeerName())
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
@@ -185,11 +185,7 @@ func main() {
 		}
 		sshOpts = append(sshOpts, ssh.HostKeyPEM(pemBytes))
 	}
-	// WireGuard is the auth boundary; accept any password so standard SSH
-	// clients don't need extra configuration.
-	sshOpts = append(sshOpts, ssh.PasswordAuth(func(_ ssh.Context, _ string) bool {
-		return true
-	}))
+	// WireGuard is the auth boundary; do not configure any password handler.
 
 	listener, err := tnet.ListenTCP(&net.TCPAddr{Port: *sshPort})
 	if err != nil {

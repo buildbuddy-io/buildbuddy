@@ -71,9 +71,6 @@ func TestKeyHex_IsHex(t *testing.T) {
 	require.Len(t, decoded, KeyLen)
 }
 
-// TestParseKey_StringRoundTrip documents the inconsistency between String()
-// (which returns hex) and ParseKey() (which expects base64). These should
-// round-trip but currently do not — this test will fail until the bug is fixed.
 func TestParseKey_StringRoundTrip(t *testing.T) {
 	k, err := GenerateKey()
 	require.NoError(t, err)

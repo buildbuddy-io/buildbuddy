@@ -11,9 +11,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		// testenv starts a healthcheck goroutine that is not stopped on cleanup.
+		goleak.IgnoreTopFunction("github.com/buildbuddy-io/buildbuddy/server/util/healthcheck.(*HealthChecker).handleSignals"),
+		// testenv starts a DB stats polling goroutine that sleeps between polls
+		// and is not stopped on cleanup.
+		goleak.IgnoreTopFunction("time.Sleep"),
+	)
+}
 
 func newPubKeyHex(t *testing.T) string {
 	t.Helper()
@@ -40,6 +51,7 @@ func setupGateway(t *testing.T, ta *testauth.TestAuthenticator) *Gateway {
 
 	gw, err := New(env)
 	require.NoError(t, err)
+	t.Cleanup(gw.Close)
 	return gw
 }
 
@@ -165,4 +177,39 @@ func TestRegister_InvalidPublicKey(t *testing.T) {
 
 	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: "notahexkey"})
 	require.Error(t, err)
+}
+
+func TestRegister_PeerNameConflict(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	resp1, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+	require.Equal(t, "foo", resp1.GetAssignedPeerName())
+
+	// Second peer requesting the same name gets a suffixed name.
+	resp2, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+	require.Equal(t, "foo-1", resp2.GetAssignedPeerName())
+
+	// Third peer gets foo-2 since foo-1 is now also taken.
+	resp3, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
+	require.NoError(t, err)
+	require.Equal(t, "foo-2", resp3.GetAssignedPeerName())
+}
+
+func TestRegister_InvalidPeerName(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	for _, name := range []string{"foo.bar", "foo.bar.baz"} {
+		_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: name, PublicKey: newPubKeyHex(t)})
+		require.Errorf(t, err, "expected error for peer_name %q", name)
+	}
 }

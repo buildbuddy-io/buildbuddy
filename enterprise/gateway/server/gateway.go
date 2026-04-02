@@ -16,13 +16,17 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/miekg/dns"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 
@@ -30,8 +34,10 @@ import (
 )
 
 var (
-	udpListenPort = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
-	publicHost    = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
+	udpListenPort    = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
+	publicHost       = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
+	stalePeerTimeout = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
+	cleanupInterval  = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
 )
 
 // networkState holds IP allocation and peer name state for one
@@ -40,6 +46,14 @@ type networkState struct {
 	index    int      // assigned network index; determines the /48 prefix
 	names    sync.Map // peer_name (string) → assigned IP (netip.Addr)
 	nextHost int      // next host number to assign; starts at 2 (.1 is the hub)
+}
+
+// peerInfo tracks per-peer state needed for cleanup.
+type peerInfo struct {
+	ip           netip.Addr
+	ns           *networkState
+	assignedName string    // empty if peer registered without a name
+	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
 }
 
 // Gateway manages a single WireGuard device shared across all groups.
@@ -51,9 +65,11 @@ type Gateway struct {
 	tun           *muxTUN
 	pubKey        string // server's base64 public key
 	networks      map[string]*networkState
-	nextIndex     int // monotonically increasing network index
+	peers         map[string]*peerInfo // WireGuard public key hex → peer info
+	nextIndex     int                  // monotonically increasing network index
 	publicHost    string
 	udpListenPort int
+	done          chan struct{}
 }
 
 // New creates a Gateway with a single shared WireGuard device.
@@ -84,15 +100,19 @@ func New(env environment.Env) (*Gateway, error) {
 	pubKey := serverPrivKey.PublicKey().Hex()
 	log.Infof("gateway: WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
 
-	return &Gateway{
+	gw := &Gateway{
 		env:           env,
 		dev:           dev,
 		tun:           tunDev,
 		pubKey:        pubKey,
 		networks:      make(map[string]*networkState),
+		peers:         make(map[string]*peerInfo),
 		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
-	}, nil
+		done:          make(chan struct{}),
+	}
+	go gw.cleanupLoop()
+	return gw, nil
 }
 
 // Register authenticates the caller, assigns them an IP within their network,
@@ -139,19 +159,40 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 		return nil, status.InternalErrorf("add WireGuard peer: %s", err)
 	}
 
-	if name := req.GetPeerName(); name != "" {
-		ns.names.Store(name, assignedIP)
+	var assignedName string
+	if requested := req.GetPeerName(); requested != "" {
+		if labels, ok := dns.IsDomainName(requested); !ok || labels != 1 {
+			return nil, status.InvalidArgumentErrorf("peer_name %q is not a valid DNS label", requested)
+		}
+		// Find an available name: try the requested name first, then append
+		// numeric suffixes until we find a free slot.
+		assignedName = requested
+		for i := 1; ; i++ {
+			if _, taken := ns.names.Load(assignedName); !taken {
+				break
+			}
+			assignedName = fmt.Sprintf("%s-%d", requested, i)
+		}
+		ns.names.Store(assignedName, assignedIP)
+	}
+
+	g.peers[clientPubKey.Hex()] = &peerInfo{
+		ip:           assignedIP,
+		ns:           ns,
+		assignedName: assignedName,
+		registeredAt: time.Now(),
 	}
 
 	log.Infof("gateway: registered peer %s in group %q network %q, assigned %s (name=%q)",
-		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, req.GetPeerName())
+		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, assignedName)
 
 	return &gwpb.RegisterResponse{
-		ServerPublicKey: g.pubKey,
-		ServerEndpoint:  fmt.Sprintf("%s:%d", g.publicHost, g.udpListenPort),
-		AssignedIp:      assignedIP.String(),
-		GatewayIp:       networkHubIP(ns.index).String(),
-		NetworkCidr:     networkPrefix(ns.index).String(),
+		ServerPublicKey:  g.pubKey,
+		ServerEndpoint:   fmt.Sprintf("%s:%d", g.publicHost, g.udpListenPort),
+		AssignedIp:       assignedIP.String(),
+		GatewayIp:        networkHubIP(ns.index).String(),
+		NetworkCidr:      networkPrefix(ns.index).String(),
+		AssignedPeerName: assignedName,
 	}, nil
 }
 
@@ -185,6 +226,84 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 	g.networks[key] = ns
 	log.Infof("gateway: created network %q at index %d (prefix %s)", key, index, networkPrefix(index))
 	return ns, nil
+}
+
+// Close stops the cleanup goroutine and shuts down the WireGuard device.
+func (g *Gateway) Close() {
+	close(g.done)
+	g.dev.Close()
+}
+
+func (g *Gateway) cleanupLoop() {
+	ticker := time.NewTicker(*cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			g.cleanupStalePeers()
+		case <-g.done:
+			return
+		}
+	}
+}
+
+// cleanupStalePeers removes peers whose last WireGuard handshake (or
+// registration time, if they never completed one) is older than
+// stalePeerTimeout.
+func (g *Gateway) cleanupStalePeers() {
+	ipc, err := g.dev.IpcGet()
+	if err != nil {
+		log.Errorf("gateway: cleanup: IpcGet failed: %s", err)
+		return
+	}
+
+	// Parse last handshake time per peer from the WireGuard IPC output.
+	// Each peer section starts with a "public_key=" line.
+	handshakeTimes := make(map[string]time.Time)
+	var currentKey string
+	for line := range strings.SplitSeq(ipc, "\n") {
+		if k, v, ok := strings.Cut(line, "="); ok {
+			switch k {
+			case "public_key":
+				currentKey = v
+			case "last_handshake_time_sec":
+				if currentKey != "" {
+					if sec, err := strconv.ParseInt(v, 10, 64); err == nil && sec > 0 {
+						handshakeTimes[currentKey] = time.Unix(sec, 0)
+					}
+				}
+			}
+		}
+	}
+
+	now := time.Now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for pubKeyHex, info := range g.peers {
+		lastSeen, ok := handshakeTimes[pubKeyHex]
+		if !ok {
+			// Peer never completed a handshake; use registration time as baseline.
+			lastSeen = info.registeredAt
+		}
+		if now.Sub(lastSeen) >= *stalePeerTimeout {
+			g.removePeerLocked(pubKeyHex, info)
+		}
+	}
+}
+
+// removePeerLocked removes a peer from the WireGuard device, the TUN, and the
+// DNS name map. Must be called with g.mu held.
+func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
+	if err := g.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", pubKeyHex)); err != nil {
+		log.Errorf("gateway: remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
+	}
+	g.tun.unregisterIP(info.ip)
+	if info.assignedName != "" {
+		info.ns.names.Delete(info.assignedName)
+	}
+	delete(g.peers, pubKeyHex)
+	log.Infof("gateway: removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
 }
 
 // ---------------------------------------------------------------------------

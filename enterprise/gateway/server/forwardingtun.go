@@ -280,7 +280,12 @@ func serveDNS(conn *gonet.UDPConn, lookup func(string) (netip.Addr, bool)) {
 		resp.Authoritative = true
 		for _, q := range req.Question {
 			name := strings.TrimSuffix(q.Name, ".")
-			ip, ok := lookup(name)
+			label, ok := strings.CutSuffix(name, ".internal")
+			if !ok {
+				resp.Rcode = dns.RcodeNameError
+				continue
+			}
+			ip, ok := lookup(label)
 			if !ok {
 				resp.Rcode = dns.RcodeNameError
 				continue

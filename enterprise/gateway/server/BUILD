@@ -51,5 +51,6 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
+        "@org_uber_go_goleak//:goleak",
     ],
 )
