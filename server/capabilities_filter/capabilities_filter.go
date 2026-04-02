@@ -55,6 +55,7 @@ var (
 		"GetTarget",
 		"GetAction",
 		"GetFile",
+		"GetFileRange",
 		"DeleteFile",
 
 		// GitHub user-level token management does not require group membership.
