@@ -123,6 +123,10 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		gw.Close()
+		return nil
+	})
 
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -33,7 +35,7 @@ func newPubKeyHex(t *testing.T) string {
 	return priv.PublicKey().Hex()
 }
 
-func freeUDPPort(t *testing.T) int {
+func freeUDPPort(t testing.TB) int {
 	l, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := l.LocalAddr().(*net.UDPAddr).Port
@@ -41,10 +43,10 @@ func freeUDPPort(t *testing.T) int {
 	return port
 }
 
-func setupGateway(t *testing.T, ta *testauth.TestAuthenticator) *Gateway {
+func setupGateway(t testing.TB, ta *testauth.TestAuthenticator) *Gateway {
 	t.Helper()
 	flags.Set(t, "gateway.udp_listen_port", freeUDPPort(t))
-	flags.Set(t, "gateway.public_host", "localhost")
+	flags.Set(t, "gateway.public_host", "127.0.0.1")
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
@@ -212,4 +214,66 @@ func TestRegister_InvalidPeerName(t *testing.T) {
 		_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: name, PublicKey: newPubKeyHex(t)})
 		require.Errorf(t, err, "expected error for peer_name %q", name)
 	}
+}
+
+// TestCleanupStalePeers verifies that cleanupStalePeers removes peers whose
+// registration time (used as a proxy for last-seen when no WireGuard handshake
+// has occurred) exceeds stalePeerTimeout, while leaving recently registered
+// peers alone.
+//
+// WireGuard's handshake interval is hardcoded in the library (~3 min) so we
+// can't drive actual handshakes in a unit test. The cleanup code falls back to
+// registeredAt for peers that have never completed a handshake, which is the
+// path exercised here.
+func TestCleanupStalePeers(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	flags.Set(t, "gateway.stale_peer_timeout", 5*time.Second)
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	// Register two peers in the same network.
+	stalePubKey := newPubKeyHex(t)
+	staleResp, err := gw.Register(ctx, &gwpb.RegisterRequest{
+		NetworkName: "net1",
+		PeerName:    "stale",
+		PublicKey:   stalePubKey,
+	})
+	require.NoError(t, err)
+
+	freshPubKey := newPubKeyHex(t)
+	_, err = gw.Register(ctx, &gwpb.RegisterRequest{
+		NetworkName: "net1",
+		PeerName:    "fresh",
+		PublicKey:   freshPubKey,
+	})
+	require.NoError(t, err)
+
+	// Backdate the stale peer's registration time so it appears old enough to
+	// be reaped.
+	gw.mu.Lock()
+	gw.peers[stalePubKey].registeredAt = time.Now().Add(-10 * time.Second)
+	gw.mu.Unlock()
+
+	gw.cleanupStalePeers()
+
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+
+	// Stale peer must be gone; fresh peer must remain.
+	require.NotContains(t, gw.peers, stalePubKey, "stale peer should have been removed")
+	require.Contains(t, gw.peers, freshPubKey, "fresh peer should not have been removed")
+
+	// Stale peer's IP must be unregistered from the TUN.
+	staleIP := netip.MustParseAddr(staleResp.GetAssignedIp())
+	_, inTUN := gw.tun.ipToNetwork.Load(staleIP)
+	require.False(t, inTUN, "stale peer's IP should be unregistered from the TUN")
+
+	// DNS names: stale name freed, fresh name retained.
+	ns := gw.networks["group1/net1"]
+	_, staleNameExists := ns.names.Load("stale")
+	require.False(t, staleNameExists, "stale peer's DNS name should be removed")
+	_, freshNameExists := ns.names.Load("fresh")
+	require.True(t, freshNameExists, "fresh peer's DNS name should remain")
 }

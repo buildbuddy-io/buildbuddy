@@ -39,6 +39,7 @@ go_test(
     name = "server_test",
     srcs = [
         "forwardingtun_test.go",
+        "gateway_e2e_test.go",
         "gateway_test.go",
     ],
     embed = [":server"],
@@ -49,6 +50,9 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@com_zx2c4_golang_wireguard//conn",
+        "@com_zx2c4_golang_wireguard//device",
+        "@com_zx2c4_golang_wireguard//tun/netstack",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
         "@org_uber_go_goleak//:goleak",
