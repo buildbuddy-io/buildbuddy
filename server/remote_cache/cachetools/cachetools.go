@@ -65,6 +65,10 @@ var (
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
 
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
+
+	// chunkUploadSem is a process-wide semaphore that limits the total number
+	// of concurrent CDC chunk upload RPCs across all concurrent executions.
+	chunkUploadSem = make(chan struct{}, 256)
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -395,7 +399,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 // the blob is large enough. Missing chunks are uploaded and then SpliceBlob
 // is used to tell the server how to reassemble them. Blobs less than the
 // threshold are uploaded normally.
-func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, avgChunkSizeBytes int64, chunkSem chan struct{}) (*repb.Digest, int64, error) {
+func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, avgChunkSizeBytes int64) (*repb.Digest, int64, error) {
 	if !shouldUploadChunked(env, r.GetDigest(), avgChunkSizeBytes) {
 		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
 	}
@@ -459,7 +463,6 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 
 	var uploadedBytes atomic.Int64
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(8)
 	var offset int64
 	for _, d := range chunkDigests {
 		if !missingChunkHashes.Contains(d.GetHash()) {
@@ -470,13 +473,11 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
 		sr := io.NewSectionReader(in, offset, d.GetSizeBytes())
 		eg.Go(func() error {
-			if chunkSem != nil {
-				select {
-				case chunkSem <- struct{}{}:
-					defer func() { <-chunkSem }()
-				case <-egCtx.Done():
-					return egCtx.Err()
-				}
+			select {
+			case chunkUploadSem <- struct{}{}:
+				defer func() { <-chunkUploadSem }()
+			case <-egCtx.Done():
+				return egCtx.Err()
 			}
 			_, uploaded, err := UploadFromReader(egCtx, env.GetByteStreamClient(), chunkRN, sr)
 			uploadedBytes.Add(uploaded)
@@ -738,7 +739,6 @@ type BatchCASUploader struct {
 	ctx               context.Context
 	env               environment.Env
 	eg                *errgroup.Group
-	chunkSem          chan struct{}
 	unsentBatchReq    *repb.BatchUpdateBlobsRequest
 	uploads           map[digest.Key]struct{}
 	instanceName      string
@@ -756,7 +756,6 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		ctx:               ctx,
 		env:               env,
 		eg:                eg,
-		chunkSem:          make(chan struct{}, 64),
 		unsentBatchReq:    &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
 		unsentBatchSize:   0,
 		instanceName:      instanceName,
@@ -800,7 +799,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		if ras, ok := rsc.(readAtSeeker); ok && ul.avgChunkSizeBytes > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
-				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.avgChunkSizeBytes, ul.chunkSem)
+				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.avgChunkSizeBytes)
 				return err
 			})
 			return nil
