@@ -423,10 +423,10 @@ func TestExtraEnvVars(t *testing.T) {
 
 func TestContainerImageNameRewrite(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		rewriteRules  []ImageRewrite
-		input         string
-		expected      string
+		name         string
+		rewriteRules []ImageRewrite
+		input        string
+		expected     string
 	}{
 		{
 			name:     "no rules",
