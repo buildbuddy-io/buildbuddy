@@ -170,9 +170,9 @@ func secretEnvVarNames(overrides []string) []string {
 // registerSecretEnvVarNames merges the variable names from secretOverrides into
 // the BUILDBUDDY_SECRET_ENV_VAR_NAMES env var on the command so the CI runner
 // can scrub their values from workflow logs.
-func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) {
+func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) error {
 	if len(secretOverrides) == 0 {
-		return
+		return nil
 	}
 	newNames := secretEnvVarNames(secretOverrides)
 
@@ -180,7 +180,9 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	var existing []string
 	for _, ev := range command.EnvironmentVariables {
 		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
-			_ = json.Unmarshal([]byte(ev.GetValue()), &existing)
+			if err := json.Unmarshal([]byte(ev.GetValue()), &existing); err != nil {
+				return fmt.Errorf("unmarshal existing %s: %w", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+			}
 			break
 		}
 	}
@@ -188,19 +190,20 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	merged := append(existing, newNames...)
 	serialized, err := json.Marshal(merged)
 	if err != nil {
-		return
+		return fmt.Errorf("marshal %s: %w", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
 	}
 
 	for _, ev := range command.EnvironmentVariables {
 		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
 			ev.Value = string(serialized)
-			return
+			return nil
 		}
 	}
 	command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 		Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
 		Value: string(serialized),
 	})
+	return nil
 }
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
@@ -312,7 +315,9 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		})
 	}
 
-	registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides)
+	if err := registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides); err != nil {
+		return err
+	}
 
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
