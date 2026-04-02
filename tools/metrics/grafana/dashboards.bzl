@@ -18,6 +18,10 @@ DASHBOARD_NAMES = [
     "raft",
     "rbeperf",
     "traffic-stats",
+    "victoriametrics-cluster",
+    "victoriametrics-single",
+    "victoriametrics-vmagent",
+    "victoriametrics-vmalert",
     "workflow",
     "zookeeper",
 ]
