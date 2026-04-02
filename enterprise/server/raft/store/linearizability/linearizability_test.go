@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/lni/dragonboat/v4"
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -360,9 +361,66 @@ func checkLinearizability(t *testing.T, elog *eventLog, vizPath string) {
 	require.Equal(t, porcupine.Ok, result, "linearizability violation detected")
 }
 
+// TestMonkeyTestBuildTag verifies that the dragonboat_monkeytest build
+// tag is active and PartitionNode/RestorePartitionedNode are available.
+func TestMonkeyTestBuildTag(t *testing.T) {
+	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
+	s1 := sf.NewStore(t)
+	nh := s1.NodeHost()
+	// Verify the monkey test APIs compile and run.
+	nh.PartitionNode()
+	require.True(t, nh.IsPartitioned())
+	nh.RestorePartitionedNode()
+	require.False(t, nh.IsPartitioned())
+}
+
+// partitionLoop repeatedly partitions and restores a random store's
+// Raft transport. While partitioned, all Raft replicas on that node
+// fall behind (gossip and gRPC remain active). Safe to call from any
+// goroutine since it doesn't use require.
+func partitionLoop(ctx context.Context, stores []*testutil.TestingStore) {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Wait before first partition to let the cluster stabilize.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(10 * time.Second):
+	}
+	for ctx.Err() == nil {
+		victim := stores[rng.Intn(len(stores))]
+		nh := victim.NodeHost()
+
+		duration := 5*time.Second + time.Duration(rng.Intn(10))*time.Second
+		log.Infof("partitionLoop: partitioning %s for %s", victim.NHID(), duration)
+		nh.PartitionNode()
+
+		select {
+		case <-ctx.Done():
+			nh.RestorePartitionedNode()
+			return
+		case <-time.After(duration):
+		}
+
+		log.Infof("partitionLoop: restoring %s", victim.NHID())
+		nh.RestorePartitionedNode()
+
+		uptime := 5*time.Second + time.Duration(rng.Intn(10))*time.Second
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(uptime):
+		}
+	}
+}
+
 // TestLinearizabilityUnderSplits verifies that read/write operations
-// remain linearizable while ranges are being split.
+// remain linearizable while ranges are being split and nodes are
+// periodically partitioned. The partition creates asymmetric catch-up:
+// new shards from splits have short logs while old shards have large
+// backlogs, so the new shard's replica may become leaseholder while
+// the old shard's replica still has stale data (overlapping-range bug).
 func TestLinearizabilityUnderSplits(t *testing.T) {
+	dragonboat.ApplyMonkeySettings()
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
@@ -390,13 +448,15 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	keys := generateTestKeys(t, numKeys)
 
 	// Seed data so the range has enough data for pebble's
-	// EstimateDiskUsage to trigger splits. Sleep to let the
+	// EstimateDiskUsage to trigger splits. More seed data means a
+	// larger backlog on partitioned nodes, increasing the catch-up
+	// asymmetry between old and new shards after restore.
 	leaseHolder := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 40; i++ {
 		testutil.WriteRecord(ctx, t, leaseHolder, "default", 1000)
 	}
 	leaseHolder.DB().Flush()
-	log.Infof("Seeded 20 records on %s", leaseHolder.NHID())
+	log.Infof("Seeded 40 records on %s", leaseHolder.NHID())
 
 	elog := &eventLog{}
 	var writeCount atomic.Int64
@@ -431,6 +491,12 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 		})
 	}
 
+	// Partition nemesis: periodically partition a random node's
+	// Raft transport so its replicas fall behind during splits.
+	wg.Go(func() {
+		partitionLoop(workerCtx, stores)
+	})
+
 	wg.Wait()
 
 	log.Infof("Collected %d events (%d writes)", len(elog.getEvents()), writeCount.Load())
@@ -458,6 +524,7 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 // random intervals. If a node stays dead long enough, the driver
 // may up-replicate to another available node.
 func TestLinearizabilityUnderKillRestart(t *testing.T) {
+	dragonboat.ApplyMonkeySettings()
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
