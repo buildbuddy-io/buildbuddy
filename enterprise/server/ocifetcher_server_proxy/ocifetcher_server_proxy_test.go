@@ -62,7 +62,7 @@ func TestHappyPath(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 				Ref:         imageName,
@@ -92,7 +92,7 @@ func TestHappyPath(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 				Ref:         imageName,
@@ -128,7 +128,7 @@ func TestHappyPath(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 				Ref:         imageName + "@" + digest.String(),
@@ -163,7 +163,7 @@ func TestHappyPath(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 				Ref:         imageName + "@" + digest.String(),
@@ -175,6 +175,78 @@ func TestHappyPath(t *testing.T) {
 			require.Equal(t, expectedData, data)
 		})
 	}
+}
+
+// TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
+// the blob is written to the proxy's local BS cache and can be served from
+// there on a subsequent request.
+func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	// Set up a separate local BS cache for the proxy.
+	localBSClient := setupLocalBSClient(t)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, localBSClient)
+
+	ref := imageName + "@" + digest.String()
+
+	// First fetch: should go to upstream and write to local cache.
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+
+	// Shut down the test registry so upstream cannot serve blobs.
+	err = reg.Shutdown(ctx)
+	require.NoError(t, err)
+
+	// Second fetch: should be served from local BS cache.
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data2 := collectBlobData(t, stream2)
+	require.Equal(t, expectedData, data2)
+}
+
+// TestFetchBlob_NoLocalBSClient verifies that the proxy falls back to
+// pass-through mode when no local BS client is configured.
+func TestFetchBlob_NoLocalBSClient(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	// No local BS client - pass nil.
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -239,7 +311,7 @@ func TestBypassRegistry(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 				Ref:            imageName,
@@ -280,7 +352,7 @@ func TestBypassRegistry(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 				Ref:            imageName,
@@ -323,7 +395,7 @@ func TestBypassRegistry(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			resp, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 				Ref:            imageName + "@" + digest.String(),
@@ -362,7 +434,7 @@ func TestBypassRegistry(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 				Ref:            imageName + "@" + digest.String(),
@@ -409,7 +481,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			_, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
 				Ref:         imageName,
@@ -430,7 +502,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			_, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
 				Ref:         imageName,
@@ -458,7 +530,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			_, err = proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 				Ref:         imageName + "@" + digest.String(),
@@ -486,7 +558,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 
 			_, bsClient, acClient := setupCacheEnv(t)
 			ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
-			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient, nil)
 
 			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 				Ref:         imageName + "@" + digest.String(),
@@ -538,6 +610,17 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 	return te, te.GetByteStreamClient(), te.GetActionCacheClient()
 }
 
+// setupLocalBSClient creates a standalone local BS cache env and returns
+// a ByteStream client connected to it.
+func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	return te.GetByteStreamClient()
+}
+
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
@@ -560,10 +643,14 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 }
 
 // runOCIFetcherProxy sets up the proxy server connecting to the remote client
-// and returns a client connected to the proxy.
-func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
+// and returns a client connected to the proxy. If localBSClient is non-nil,
+// the proxy will use it for local blob caching.
+func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, localBSClient bspb.ByteStreamClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
+	if localBSClient != nil {
+		env.SetLocalByteStreamClient(localBSClient)
+	}
 
 	proxy, err := New(env)
 	require.NoError(t, err)
