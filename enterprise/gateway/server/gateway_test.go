@@ -32,7 +32,7 @@ func freeUDPPort(t *testing.T) int {
 
 func setupGateway(t *testing.T, ta *testauth.TestAuthenticator) *Gateway {
 	t.Helper()
-	flags.Set(t, "gateway.listen_port", freeUDPPort(t))
+	flags.Set(t, "gateway.udp_listen_port", freeUDPPort(t))
 	flags.Set(t, "gateway.public_host", "localhost")
 
 	env := testenv.GetTestEnv(t)
