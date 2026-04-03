@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -499,6 +499,17 @@ ts_library(
         "//proto:spawn_ts_proto",
         "//proto:suggestion_ts_proto",
         "//proto/api/v1:common_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "invocation_model_test",
+    srcs = ["invocation_model_test.ts"],
+    deps = [
+        ":invocation_model",
+        "//:node_modules/tslib",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:invocation_ts_proto",
     ],
 )
 
