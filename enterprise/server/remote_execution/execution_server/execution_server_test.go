@@ -363,10 +363,10 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
-		name                   string
-		containerImage         string
-		wantContainerImage     string
-		wantExperimentVariant  string
+		name                  string
+		containerImage        string
+		wantContainerImage    string
+		wantExperimentVariant string
 	}{
 		{
 			name:                  "matching prefix is rewritten",
