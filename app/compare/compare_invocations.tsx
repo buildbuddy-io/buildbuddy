@@ -49,7 +49,7 @@ const FACETS = [
     link: (i?: InvocationModel) => `/invocation/${i?.getInvocationId()}`,
   },
   { name: "Command", facet: (i?: InvocationModel) => i?.getCommand() },
-  { name: "Pattern", facet: (i?: InvocationModel) => i?.getPattern() },
+  { name: "Pattern", facet: (i?: InvocationModel) => i?.getTruncatedPatterns() },
   { name: "Exit code", facet: (i?: InvocationModel) => i?.invocation.bazelExitCode.toLowerCase() },
   { name: "Start date", facet: (i?: InvocationModel) => i?.getFormattedStartedDate() },
   { name: "Duration", facet: (i?: InvocationModel) => i?.getHumanReadableDuration() },
