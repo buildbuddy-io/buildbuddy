@@ -52,9 +52,23 @@
 
 .trace-viewer {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: 100vh;
   /* Disable text selection since it conflicts with mouse panning.
      (Also, canvas text isn't selectable.) */
   user-select: none;
+}
+
+.trace-viewer.fit-to-content {
+  max-height: none;
+}
+
+.trace-viewer .trace-viewer-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trace-panel-gap);
+  min-height: 0;
 }
 
 .trace-viewer .panel {
@@ -65,18 +79,19 @@
 }
 
 .trace-viewer canvas {
+  display: block;
   position: sticky;
   top: 0;
   left: 0;
 }
 
-.trace-viewer .panel-container:not(:last-child) {
-  margin-bottom: 16px;
-}
-
 .trace-viewer .panel-container {
+  /* Events get two shares of the available height, charts get one. Each
+     panel is capped at its content height so unused space goes to the other. */
+  flex-basis: 0;
+  min-height: 0;
   border-radius: 2px;
-  border: 2px solid var(--color-trace-border);
+  border: var(--trace-panel-border-width) solid var(--color-trace-border);
   box-sizing: border-box;
   background: var(--color-bg-primary);
 }
@@ -190,7 +205,8 @@
 }
 
 .trace-viewer .filter {
-  margin-bottom: 16px;
+  flex-shrink: 0;
+  margin-bottom: var(--trace-panel-gap);
 }
 
 .trace-viewer .zoom-factor {

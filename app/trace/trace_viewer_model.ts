@@ -12,6 +12,7 @@ export type TraceViewerModel = {
 };
 
 export type PanelModel = {
+  /** Height needed to show all contents, controls, and the horizontal scrollbar. */
   height: number;
   sections: SectionModel[];
 };
@@ -41,8 +42,8 @@ export type LinePlotModel = {
   unit?: string;
 };
 
-export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
-  let panels = [buildEventsPanel(trace, fitToContent), buildLinePlotsPanel(trace, fitToContent)];
+export function buildTraceViewerModel(trace: Profile): TraceViewerModel {
+  let panels = [buildEventsPanel(trace), buildLinePlotsPanel(trace)];
   // If there is no data available (e.g. the executor doesn't have timeseries
   // recording enabled yet) then the panel will be empty - just remove the panel
   // in this case since we don't handle this empty state in a good way yet.
@@ -54,7 +55,7 @@ export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): T
   };
 }
 
-function buildEventsPanel(trace: Profile, fitToContent?: boolean): PanelModel {
+function buildEventsPanel(trace: Profile): PanelModel {
   const sections: SectionModel[] = [];
   let sectionY = 0;
   for (const thread of trace.threads) {
@@ -88,14 +89,12 @@ function buildEventsPanel(trace: Profile, fitToContent?: boolean): PanelModel {
   }
 
   return {
-    height: fitToContent
-      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
-      : constants.EVENTS_PANEL_HEIGHT,
+    height: constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE,
     sections,
   };
 }
 
-function buildLinePlotsPanel(trace: Profile, fitToContent?: boolean): PanelModel {
+function buildLinePlotsPanel(trace: Profile): PanelModel {
   let sectionY = 0;
   let index = 0;
   const sectionHeight =
@@ -105,6 +104,7 @@ function buildLinePlotsPanel(trace: Profile, fitToContent?: boolean): PanelModel
     constants.SECTION_PADDING_BOTTOM;
   const sections: SectionModel[] = [];
   for (const series of trace.timeseries) {
+    if (!series.ts.length) continue;
     let yMax = 0;
     for (let i = 0; i < series.val.length; i++) {
       const y = series.val[i];
@@ -128,9 +128,7 @@ function buildLinePlotsPanel(trace: Profile, fitToContent?: boolean): PanelModel
   }
 
   return {
-    height: fitToContent
-      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
-      : constants.LINE_PLOTS_PANEL_HEIGHT,
+    height: constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE,
     sections,
   };
 }

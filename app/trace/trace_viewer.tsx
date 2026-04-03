@@ -50,7 +50,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
    * uses React state for efficient updates.
    */
 
-  private model = buildTraceViewerModel(this.props.profile, this.props.fitToContent);
+  private model = buildTraceViewerModel(this.props.profile);
   private rootRef = React.createRef<HTMLDivElement>();
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
     React.createRef<HTMLCanvasElement>()
@@ -171,6 +171,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
    * @param dt the time elapsed since the previous animation frame.
    */
   private update(dt = 0) {
+    if (!this.panels.length) {
+      this.animation.stop();
+      return;
+    }
     this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
     // Don't decrease `max` if it has been increased past the default limit as a
     // result of user interaction (e.g. zooming in after a search match). This
@@ -200,6 +204,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       // appropriately.
       const sizer = panel.container.getElementsByClassName("sizer")[0] as HTMLDivElement;
       sizer.style.width = `${this.canvasXPerModelX.value * this.model.xMax}px`;
+      // The flex layout can resize either panel independently of its content
+      // height. Keep every track reachable as the canvas grows or shrinks.
+      sizer.style.height = `${Math.max(0, panelScrollHeight(panel.model) - panel.canvasHeight)}px`;
+      panel.scrollY = panel.container.scrollTop;
 
       panel.scrollX = clamp(
         panel.scrollX,
@@ -240,6 +248,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
   }
 
   private updateMouse(mouse: MouseEvent | React.MouseEvent) {
+    if (!this.panels.length) return;
     this.mouse = { clientX: mouse.clientX, clientY: mouse.clientY };
     // Update the mouse's model X coordinate (i.e. hovered timestamp).
     // When panning, keep mouseModelX fixed.
@@ -603,10 +612,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     return (
       <div
         ref={this.rootRef}
-        className="trace-viewer"
+        className={`trace-viewer ${this.props.fitToContent ? "fit-to-content" : ""}`}
         style={{
           ...({
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
+            "--trace-panel-border-width": `${constants.PANEL_BORDER_WIDTH}px`,
+            "--trace-panel-gap": `${constants.PANEL_GAP}px`,
           } as CSSProperties),
         }}>
         {!this.props.filterHidden && (
@@ -619,16 +630,24 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
             rightElement={counterText} // Read from state
           />
         )}
-        <div className="trace-viewer-panels">
+        <div
+          className="trace-viewer-panels"
+          style={{
+            height:
+              this.model.panels.reduce((sum, panel) => sum + panel.height + 2 * constants.PANEL_BORDER_WIDTH, 0) +
+              Math.max(0, this.model.panels.length - 1) * constants.PANEL_GAP,
+          }}>
           {this.model.panels.map((panel, i) => (
             <div
+              key={i}
               className="panel-container"
               style={{
                 width: "100%",
-                height: `${panel.height}px`,
+                maxHeight: `${panel.height + 2 * constants.PANEL_BORDER_WIDTH}px`,
+                flexGrow: panel.sections[0]?.tracks ? 2 : 1,
                 position: "relative",
               }}>
-              <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
+              <div className="panel" onScroll={(e) => this.onScroll(e, i)}>
                 <canvas
                   ref={this.canvasRefs[i]}
                   onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
@@ -639,12 +658,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
                  * match the size of the panel contents. We can't use a very
                  * large canvas directly due to browser limitations.
                  */}
-                <div
-                  className="sizer"
-                  style={{
-                    height: `${panelScrollHeight(panel) - panel.height + constants.SCROLLBAR_SIZE}px`,
-                  }}
-                />
+                <div className="sizer" />
               </div>
               <div
                 className="panel-controls"
