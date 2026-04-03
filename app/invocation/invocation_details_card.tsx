@@ -114,7 +114,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Pattern</div>
-                  <div title={this.props.model.getAllPatterns()}>{this.props.model.getPattern()}</div>
+                  <div title={this.props.model.getAllPatterns()}>{this.props.model.getTruncatedPatterns()}</div>
                 </div>
               </>
             )}

@@ -10,6 +10,7 @@ ts_library(
         "//:node_modules/date-fns",
         "//:node_modules/long",
         "//:node_modules/moment",
+        "//:node_modules/tslib",
         "//app/util:proto",
         "//proto:duration_ts_proto",
     ],
