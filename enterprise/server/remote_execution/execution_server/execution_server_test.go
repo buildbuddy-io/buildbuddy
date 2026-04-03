@@ -361,6 +361,118 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
 }
 
+func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		containerImage         string
+		wantContainerImage     string
+		wantExperimentVariant  string
+	}{
+		{
+			name:                  "matching prefix is rewritten",
+			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
+			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
+			wantExperimentVariant: "bbcr",
+		},
+		{
+			name:                  "non-matching prefix is not rewritten",
+			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
+			wantContainerImage:    "",
+			wantExperimentVariant: "bbcr",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.container_image_rewrite": {
+      "state": "ENABLED",
+      "variants": {
+        "bbcr": {
+          "prefix": "gcr.io/flame-public/",
+          "replacement": "buildbuddy.bbcr.io/public/"
+        },
+        "default": {}
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          true,
+          "bbcr"
+        ]
+      }
+    }
+  }
+}
+`)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			openfeature.SetProviderAndWait(provider)
+			fp, err := experiments.NewFlagProvider("test")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: iid,
+			})
+			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{
+							Name:  "container-image",
+							Value: tc.containerImage,
+						},
+					},
+				},
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Equal(t, 1, len(sched.scheduleReqs))
+			b := sched.scheduleReqs[0].SerializedTask
+			task := &repb.ExecutionTask{}
+			err = proto.Unmarshal(b, task)
+			require.NoError(t, err)
+
+			// Check that the container image override is present (or absent).
+			var imageOverride string
+			for _, p := range task.GetPlatformOverrides().GetProperties() {
+				if p.GetName() == "container-image" {
+					imageOverride = p.GetValue()
+				}
+			}
+			assert.Equal(t, tc.wantContainerImage, imageOverride)
+
+			// Check experiment tracking.
+			if tc.wantExperimentVariant != "" {
+				assert.Contains(t, task.GetExperiments(), "remote_execution.container_image_rewrite:"+tc.wantExperimentVariant)
+			} else {
+				for _, exp := range task.GetExperiments() {
+					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
+				}
+			}
+		})
+	}
+}
+
 func TestCancel(t *testing.T) {
 	env, _, _ := setupEnv(t)
 	ctx := context.Background()
