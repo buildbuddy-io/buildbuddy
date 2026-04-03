@@ -393,8 +393,9 @@ func isSupportedCommand(command string) bool {
 // and we're running in a tty, this will prompt the user to set it.
 func GetAPIKey() (string, error) {
 	var err error
-	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
+	apiKey := strings.TrimSpace(os.Getenv("BUILDBUDDY_API_KEY"))
 	if apiKey != "" {
+		debugAPIKey("BUILDBUDDY_API_KEY", apiKey)
 		return apiKey, nil
 	}
 	apiKey, err = storage.ReadRepoConfig("api-key")
@@ -404,7 +405,7 @@ func GetAPIKey() (string, error) {
 	} else if apiKey == "" {
 		log.Debugf("API key is empty")
 	} else {
-		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
+		debugAPIKey(".git/config buildbuddy.api-key", apiKey)
 		return apiKey, nil
 	}
 	// If an API key is not set, and we're running in a terminal, start the
@@ -420,8 +421,23 @@ func GetAPIKey() (string, error) {
 		if apiKey == "" {
 			return "", status.NotFoundErrorf("API key not set after login")
 		}
+		debugAPIKey(".git/config buildbuddy.api-key (after login)", apiKey)
 		return apiKey, nil
 	} else {
 		return "", status.NotFoundErrorf("API key not set")
 	}
+}
+
+func debugAPIKey(source, apiKey string) {
+	log.Debugf("Using BuildBuddy API key from %s: %s", source, apiKeyDebugString(apiKey))
+}
+
+func apiKeyDebugString(apiKey string) string {
+	if len(apiKey) > 8 {
+		prefix := apiKey[:1]
+		suffix := apiKey[len(apiKey)-1:]
+		trunc := strings.Repeat("*", len(apiKey)-len(prefix)-len(suffix))
+		return prefix + trunc + suffix
+	}
+	return strings.Repeat("*", len(apiKey))
 }
