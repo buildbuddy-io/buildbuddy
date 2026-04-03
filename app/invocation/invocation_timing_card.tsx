@@ -324,7 +324,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        <TraceViewer profile={this.state.profile} dark={this.props.dark} />
+        <TraceViewer profile={this.state.profile} fitLinePlotsPanelToContent dark={this.props.dark} />
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}

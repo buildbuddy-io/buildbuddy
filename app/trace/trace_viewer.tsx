@@ -17,6 +17,10 @@ export interface TraceViewProps {
   profile: Profile;
   /** Fit each panel's height to exactly match its contents. */
   fitToContent?: boolean;
+  /** Fit the events panel height to exactly match its contents. */
+  fitEventsPanelToContent?: boolean;
+  /** Fit the time-series panel height to exactly match its contents. */
+  fitLinePlotsPanelToContent?: boolean;
   /** Hide the filter bar. */
   filterHidden?: boolean;
   dark: boolean;
@@ -48,7 +52,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
    * uses React state for efficient updates.
    */
 
-  private model = buildTraceViewerModel(this.props.profile, this.props.fitToContent);
+  private model = buildTraceViewerModel(this.props.profile, {
+    eventsPanel: this.props.fitToContent || this.props.fitEventsPanelToContent,
+    linePlotsPanel: this.props.fitToContent || this.props.fitLinePlotsPanelToContent,
+  });
   private rootRef = React.createRef<HTMLDivElement>();
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
     React.createRef<HTMLCanvasElement>()
@@ -372,6 +379,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     document.body.style.cursor = "";
   };
 
+  private isCompactLinePlotsPanel(panel: { sections: { linePlot?: unknown }[] }) {
+    return Boolean(this.props.fitLinePlotsPanelToContent && panel.sections[0]?.linePlot);
+  }
+
   private updateFilter = (value: string, callback?: () => void) => {
     router.setQueryParam(FILTER_URL_PARAM, value);
     this.setState({ filter: value });
@@ -623,54 +634,70 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
           />
         )}
         <div className="trace-viewer-panels">
-          {this.model.panels.map((panel, i) => (
-            <div
-              className="panel-container"
-              style={{
-                width: "100%",
-                height: `${panel.height}px`,
-                position: "relative",
-              }}>
-              <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
-                <canvas
-                  ref={this.canvasRefs[i]}
-                  onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
-                  onClick={(e) => this.onCanvasClick(e, i)}
-                />
-                {/*
-                 * This sizer div is used to make the total scrollable area
-                 * match the size of the panel contents. We can't use a very
-                 * large canvas directly due to browser limitations.
-                 */}
-                <div
-                  className="sizer"
-                  style={{
-                    height: `${panelScrollHeight(panel) - panel.height + constants.SCROLLBAR_SIZE}px`,
-                  }}
-                />
-              </div>
+          {this.model.panels.map((panel, i) => {
+            const compactLinePlotsPanel = this.isCompactLinePlotsPanel(panel);
+            const panelHeight = compactLinePlotsPanel
+              ? panelScrollHeight(panel) -
+                constants.BOTTOM_CONTROLS_HEIGHT +
+                constants.COMPACT_LINE_PLOTS_PANEL_BOTTOM_PADDING
+              : panel.height;
+
+            return (
               <div
-                className="panel-controls"
+                key={i}
+                className="panel-container"
                 style={{
-                  bottom: `${constants.SCROLLBAR_SIZE}px`,
+                  width: "100%",
+                  height: `${panelHeight}px`,
+                  position: "relative",
                 }}>
-                <span ref={this.zoomFactorRefs[i]} className="zoom-factor button" />
-                <button
-                  ref={this.zoomOutButtonRefs[i]}
-                  className="button icon-button"
-                  onClick={(e) => this.onClickZoom(e, -1)}
-                  title={`Zoom out (${modifierKey()}+scroll)`}>
-                  <ZoomOut className="icon" />
-                </button>
-                <button
-                  className="button icon-button"
-                  onClick={(e) => this.onClickZoom(e, +1)}
-                  title={`Zoom in (${modifierKey()}+scroll)`}>
-                  <ZoomIn className="icon" />
-                </button>
+                <div
+                  className={`panel ${compactLinePlotsPanel ? "compact-line-plots-panel" : ""}`}
+                  onScroll={(e) => this.onScroll(e, i)}>
+                  <canvas
+                    ref={this.canvasRefs[i]}
+                    onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
+                    onClick={(e) => this.onCanvasClick(e, i)}
+                  />
+                  {/*
+                   * This sizer div is used to make the total scrollable area
+                   * match the size of the panel contents. We can't use a very
+                   * large canvas directly due to browser limitations.
+                   */}
+                  <div
+                    className="sizer"
+                    style={{
+                      height: compactLinePlotsPanel
+                        ? 0
+                        : `${panelScrollHeight(panel) - panel.height + constants.SCROLLBAR_SIZE}px`,
+                    }}
+                  />
+                </div>
+                {!compactLinePlotsPanel && (
+                  <div
+                    className="panel-controls"
+                    style={{
+                      bottom: `${constants.SCROLLBAR_SIZE}px`,
+                    }}>
+                    <span ref={this.zoomFactorRefs[i]} className="zoom-factor button" />
+                    <button
+                      ref={this.zoomOutButtonRefs[i]}
+                      className="button icon-button"
+                      onClick={(e) => this.onClickZoom(e, -1)}
+                      title={`Zoom out (${modifierKey()}+scroll)`}>
+                      <ZoomOut className="icon" />
+                    </button>
+                    <button
+                      className="button icon-button"
+                      onClick={(e) => this.onClickZoom(e, +1)}
+                      title={`Zoom in (${modifierKey()}+scroll)`}>
+                      <ZoomIn className="icon" />
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <EventHovercard ref={this.hovercardRef} buildDuration={this.model.xMax} />
       </div>

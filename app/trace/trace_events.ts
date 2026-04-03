@@ -84,7 +84,7 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   ["CPU usage (Bazel)", [{ argKey: "cpu", unit: "cores" }]],
   ["Memory usage (Bazel)", [{ argKey: "memory", unit: "MB" }]],
   ["CPU usage (total)", [{ argKey: "system cpu", displayName: "CPU usage (System)", unit: "cores" }]],
-  ["Memory usage (total)", [{ argKey: "system memory", unit: "MB" }]],
+  ["Memory usage (total)", [{ argKey: "system memory", displayName: "Memory usage (System)", unit: "MB" }]],
   ["System load average", [{ argKey: "load" }]],
   [
     "Network Up usage (total)",
