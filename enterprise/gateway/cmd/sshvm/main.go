@@ -162,9 +162,13 @@ func main() {
 		Errorf:   func(format string, args ...any) { log.Errorf("wg: "+format, args...) },
 	}
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), wgLogger)
+	endpoint, err := resolveEndpoint(rsp.GetServerEndpoint())
+	if err != nil {
+		log.Fatalf("resolve WireGuard endpoint: %s", err)
+	}
 	ipc := fmt.Sprintf(
 		"private_key=%s\npublic_key=%s\nallowed_ip=%s\nendpoint=%s\npersistent_keepalive_interval=25\n",
-		privKey.Hex(), rsp.GetServerPublicKey(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(),
+		privKey.Hex(), rsp.GetServerPublicKey(), rsp.GetNetworkCidr(), endpoint,
 	)
 	if err := dev.IpcSet(ipc); err != nil {
 		log.Fatalf("configure WireGuard: %s", err)
@@ -192,10 +196,30 @@ func main() {
 		log.Fatalf("listen on tunnel port %d: %s", *sshPort, err)
 	}
 	log.Infof("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
+	if name := rsp.GetAssignedPeerName(); name != "" {
+		fmt.Printf("Assigned DNS name: %s (connect with: ssh -p %d %s)\n", name, *sshPort, name)
+	}
 
 	if err := ssh.Serve(listener, handleSession, sshOpts...); err != nil {
 		log.Fatalf("ssh serve: %s", err)
 	}
+}
+
+// resolveEndpoint resolves the hostname in a host:port endpoint string to an
+// IP address. WireGuard's IPC parser requires an IP address, not a hostname.
+func resolveEndpoint(endpoint string) (string, error) {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return "", err
+	}
+	if net.ParseIP(host) != nil {
+		return endpoint, nil
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(addrs[0], port), nil
 }
 
 // generateEphemeralHostKeyPEM generates a fresh ed25519 key pair and returns

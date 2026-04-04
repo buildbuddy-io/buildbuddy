@@ -141,7 +141,21 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-
 	gwpb.RegisterGatewayServiceServer(s.GetServer(), gw)
-	return s.Start()
+	if err := s.Start(); err != nil {
+		return err
+	}
+
+	if env.GetSSLService().IsEnabled() {
+		ss, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, grpcServerConfig)
+		if err != nil {
+			return err
+		}
+		gwpb.RegisterGatewayServiceServer(ss.GetServer(), gw)
+		if err := ss.Start(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
