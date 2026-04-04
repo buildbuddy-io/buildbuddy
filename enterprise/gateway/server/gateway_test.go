@@ -216,6 +216,56 @@ func TestRegister_InvalidPeerName(t *testing.T) {
 	}
 }
 
+func TestDeregister(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "mypeer", PublicKey: pubKey})
+	require.NoError(t, err)
+	assignedIP := netip.MustParseAddr(resp.GetAssignedIp())
+
+	_, err = gw.Deregister(ctx, &gwpb.DeregisterRequest{PublicKey: pubKey})
+	require.NoError(t, err)
+
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+
+	// Peer must be gone from the peer map.
+	require.NotContains(t, gw.peers, pubKey)
+
+	// IP must be unregistered from the TUN.
+	_, inTUN := gw.tun.ipToNetwork.Load(assignedIP)
+	require.False(t, inTUN, "IP should be unregistered after deregister")
+
+	// DNS name must be freed.
+	ns := gw.networks["group1/net1"]
+	_, nameExists := ns.names.Load("mypeer")
+	require.False(t, nameExists, "DNS name should be removed after deregister")
+}
+
+func TestDeregister_Unauthenticated(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	_, err := gw.Deregister(context.Background(), &gwpb.DeregisterRequest{PublicKey: newPubKeyHex(t)})
+	require.Error(t, err)
+}
+
+func TestDeregister_UnknownKey(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	_, err = gw.Deregister(ctx, &gwpb.DeregisterRequest{PublicKey: newPubKeyHex(t)})
+	require.Error(t, err)
+}
+
 // TestCleanupStalePeers verifies that cleanupStalePeers removes peers whose
 // registration time (used as a proxy for last-seen when no WireGuard handshake
 // has occurred) exceeds stalePeerTimeout, while leaving recently registered
