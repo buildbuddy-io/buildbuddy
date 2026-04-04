@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -115,6 +116,11 @@ func register() {
 			Name:    "search",
 			Help:    "Searches for code in the remote codesearch index.",
 			Handler: search.HandleSearch,
+		},
+		{
+			Name:    "ssh-server",
+			Help:    "Runs an SSH server on a user-mode wireguard network.",
+			Handler: ssh_server.HandleSSHServer,
 		},
 		{
 			Name:    "index",

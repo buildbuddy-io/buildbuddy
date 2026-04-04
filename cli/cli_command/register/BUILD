@@ -25,6 +25,7 @@ go_library(
         "//cli/remote_download",
         "//cli/remotebazel",
         "//cli/search",
+        "//cli/ssh_server",
         "//cli/ui",
         "//cli/update",
         "//cli/upload",
