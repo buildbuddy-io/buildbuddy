@@ -115,7 +115,6 @@ func hostKeyCallback(knownHostsPath string) gossh.HostKeyCallback {
 	}
 }
 
-
 func HandleSSH(args []string) (int, error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {

@@ -309,7 +309,7 @@ func HandleSSHServer(args []string) (int, error) {
 		listeningMsg += fmt.Sprintf(" (%s.internal)", name)
 	}
 	log.Print(listeningMsg)
-	
+
 	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
 	// no active sessions. The timer starts immediately to cover the case where
 	// no client ever connects.
