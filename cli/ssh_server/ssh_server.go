@@ -6,13 +6,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -88,10 +89,14 @@ func resolveEndpoint(endpoint string) (string, error) {
 	return net.JoinHostPort(addrs[0], port), nil
 }
 
-// generateEphemeralHostKeyPEM generates a fresh ed25519 key pair and returns
-// the private key as an OpenSSH PEM block. The key is not persisted, so clients
-// will see a new host key fingerprint on each restart unless --host_key_file is used.
-func generateEphemeralHostKeyPEM() ([]byte, error) {
+// loadOrCreateHostKey returns the PEM-encoded ed25519 host key at path,
+// generating and persisting a new one if the file does not yet exist.
+// Reusing the same key across restarts prevents SSH clients from seeing a
+// host-key-changed warning when reconnecting to a resumed VM.
+func loadOrCreateHostKey(path string) ([]byte, error) {
+	if data, err := os.ReadFile(path); err == nil {
+		return data, nil
+	}
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -100,7 +105,14 @@ func generateEphemeralHostKeyPEM() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pem.EncodeToMemory(block), nil
+	pemBytes := pem.EncodeToMemory(block)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, pemBytes, 0600); err != nil {
+		return nil, err
+	}
+	return pemBytes, nil
 }
 
 func setWinsize(f *os.File, w, h int) {
@@ -255,31 +267,47 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	defer dev.Close()
 
-	// Configure the SSH server.
-	var sshOpts []ssh.Option
-	if *hostKeyFile != "" {
-		sshOpts = append(sshOpts, ssh.HostKeyFile(*hostKeyFile))
-	} else {
-		pemBytes, err := generateEphemeralHostKeyPEM()
+	// Build the SSH server.
+	sshServer := &ssh.Server{}
+	hostKeyPath := *hostKeyFile
+	if hostKeyPath == "" {
+		cacheDir, err := os.UserCacheDir()
 		if err != nil {
-			return 1, status.WrapError(err, "generating host key")
+			return 1, status.WrapError(err, "getting cache dir for host key")
 		}
-		sshOpts = append(sshOpts, ssh.HostKeyPEM(pemBytes))
+		// Key filename is scoped to the assigned peer name so that a VM
+		// resuming with the same name reuses the same key, preventing SSH warnings.
+		// A different assigned name (e.g. "myvm-1" due to a conflict) gets a
+		// fresh key. Falls back to the assigned IP for peers registered without
+		// a name (unique per peer, though not stable across restarts).
+		keyID := rsp.GetAssignedPeerName()
+		if keyID == "" {
+			keyID = strings.ReplaceAll(rsp.GetAssignedIp(), ":", "_")
+		}
+		hostKeyPath = filepath.Join(cacheDir, "buildbuddy", "ssh_host_key_"+keyID)
+	}
+	pemBytes, err := loadOrCreateHostKey(hostKeyPath)
+	if err != nil {
+		return 1, status.WrapError(err, "loading host key")
+	}
+	if err := sshServer.SetOption(ssh.HostKeyPEM(pemBytes)); err != nil {
+		return 1, status.WrapError(err, "setting host key")
 	}
 
-	// WireGuard is the auth boundary; do not configure any password handler.
 	listener, err := tnet.ListenTCP(&net.TCPAddr{Port: *sshPort})
 	if err != nil {
 		return 1, status.WrapError(err, "listening on tunnel port")
 	}
+	defer listener.Close()
+
 	log.Printf("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
 	if name := rsp.GetAssignedPeerName(); name != "" {
 		fmt.Printf("Assigned DNS name: %s (connect with: ssh -p %d %s)\n", name, *sshPort, name)
 	}
 
-	// Idle-shutdown: close the listener once the grace period elapses with no
-	// active sessions. The timer starts immediately to handle the case where no
-	// client ever connects.
+	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
+	// no active sessions. The timer starts immediately to cover the case where
+	// no client ever connects.
 	var (
 		mu             sync.Mutex
 		activeSessions int
@@ -292,14 +320,16 @@ func HandleSSHServer(args []string) (int, error) {
 		}
 		idleTimer = time.AfterFunc(*gracePeriod, func() {
 			log.Printf("No active sessions for %s; shutting down.", *gracePeriod)
-			listener.Close()
+			shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sshServer.Shutdown(shutCtx)
 		})
 	}
 	mu.Lock()
 	resetIdleTimer()
 	mu.Unlock()
 
-	handler := func(s ssh.Session) {
+	sshServer.Handler = func(s ssh.Session) {
 		mu.Lock()
 		if idleTimer != nil {
 			idleTimer.Stop()
@@ -318,7 +348,7 @@ func HandleSSHServer(args []string) (int, error) {
 		handleSession(s)
 	}
 
-	if err := ssh.Serve(listener, handler, sshOpts...); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err := sshServer.Serve(listener); err != nil && err != ssh.ErrServerClosed {
 		return 1, status.WrapError(err, "ssh server")
 	}
 
