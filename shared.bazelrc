@@ -234,6 +234,8 @@ common:target-linux-x86-exec-multiarch --platforms=@toolchains_buildbuddy//platf
 common:target-linux-x86-exec-multiarch --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
+# Bazel 7+ no longer implies this under --remote_download_minimal.
+common:download-minimal --nobuild_runfile_links
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared

@@ -543,6 +543,83 @@
       ],
       "title": "Image Pull Latency p99 (Not On Disk)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Peak bytes read per second from external registries over the selected time range, inferred from HTTP client metrics. The sparkline shows the historical bytes/sec series in the background. This panel aggregates the two OCI-related HTTP clients (`oci` and `oci_fetcher`); `httpclient` metrics do not carry the `use_oci_fetcher` label, so the existing experiment filter cannot be applied here without adding a separate mapping variable or new metric labels.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 10485760
+              },
+              {
+                "color": "red",
+                "value": 104857600
+              }
+            ]
+          },
+          "unit": "binBps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(buildbuddy_http_client_response_size_bytes_sum{region=\"$region\", client_name=~\"oci|oci_fetcher\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "Registry bytes read / sec",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Peak External Registry Bytes Read / Sec",
+      "type": "stat"
     }
   ],
   "refresh": "1m",
