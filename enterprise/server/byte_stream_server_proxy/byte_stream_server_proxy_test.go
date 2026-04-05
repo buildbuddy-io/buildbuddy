@@ -154,7 +154,6 @@ func requestCountingStreamInterceptor(count *atomic.Int32) grpc.StreamClientInte
 }
 
 func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
-	flags.Set(t, "cache_proxy.chunk_upload_concurrency", 8)
 	ctx := testContext()
 	env := testenv.GetTestEnv(t)
 	rec := &casRPCRecorder{}
@@ -167,9 +166,13 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	conn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
-		remoteCAS: repb.NewContentAddressableStorageClient(conn),
-		bufPool:   bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		remoteCAS:      repb.NewContentAddressableStorageClient(conn),
+		bufPool:        bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		efp:            fp,
+		chunkUploadSem: make(chan struct{}, maxGlobalChunkUploadConcurrency),
 	}
 	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -230,7 +233,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 		}
 	}
 	sort.Ints(fmbSizes)
-	require.Equal(t, []int{1, *chunkUploadConcurrency}, fmbSizes)
+	require.Equal(t, []int{9}, fmbSizes)
 	require.Len(t, fmbDigests, len(uniqueChunks), "expected only unique digests to hit FindMissingBlobs")
 
 	uploadedDigests := make(map[string]struct{})
@@ -1522,7 +1525,6 @@ func TestWriteChunked(t *testing.T) {
 }
 
 func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
-	flags.Set(t, "cache_proxy.chunk_upload_concurrency", 8)
 	flags.Set(t, "cache.avg_chunk_size_bytes", 64*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
@@ -1647,7 +1649,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	})
 	require.NoError(t, err)
-	require.Greater(t, len(splitResp.GetChunkDigests()), *chunkUploadConcurrency)
+	require.Greater(t, len(splitResp.GetChunkDigests()), 32)
 
 	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
@@ -1667,13 +1669,25 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 
+	totalChunks := len(splitResp.GetChunkDigests())
+	expectedFullGroups := totalChunks / 32
+	remainder := totalChunks % 32
+	expectedGroupCount := expectedFullGroups
+	if remainder > 0 {
+		expectedGroupCount++
+	}
+	require.Equal(t, expectedGroupCount, len(rec.fmbGroups))
+
 	var fmbDigestCount int
-	for _, group := range rec.fmbGroups {
-		require.LessOrEqual(t, len(group), *chunkUploadConcurrency)
+	for i, group := range rec.fmbGroups {
+		if i < expectedFullGroups {
+			require.Equal(t, 32, len(group))
+		} else {
+			require.Equal(t, remainder, len(group))
+		}
 		fmbDigestCount += len(group)
 	}
-	require.Greater(t, len(rec.fmbGroups), 1)
-	require.Equal(t, len(splitResp.GetChunkDigests()), fmbDigestCount)
+	require.Equal(t, totalChunks, fmbDigestCount)
 
 	var uploadedDigestCount int
 	for i, group := range rec.uploadGroups {

@@ -47,3 +47,11 @@ message RegisterResponse {
   // <assigned_peer_name>.internal. Empty if no peer_name was requested.
   string assigned_peer_name = 7;
 }
+
+message DeregisterRequest {
+  // The client's WireGuard public key, hex-encoded. Must match the key used
+  // during Register.
+  string public_key = 1;
+}
+
+message DeregisterResponse {}

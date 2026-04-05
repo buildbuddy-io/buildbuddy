@@ -40,8 +40,16 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+const (
+	// maxGlobalChunkUploadConcurrency is set to a ridiculously high number.
+	// If its working fine and safe, we remove the limit. If there's issues,
+	// we lower it.
+	maxGlobalChunkUploadConcurrency = 8192
+	defaultChunkUploadConcurrency   = 32
+)
+
 var (
-	chunkUploadConcurrency = flag.Int("cache_proxy.chunk_upload_concurrency", 8, "Maximum number of concurrent chunk uploads when uploading missing chunks to remote cache.")
+	chunkUploadConcurrency = flag.Int("cache_proxy.chunk_upload_concurrency", 8, "Maximum number of concurrent chunk uploads when uploading missing chunks to remote cache (non-batch path).")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -61,6 +69,7 @@ type ByteStreamServerProxy struct {
 	localCache         interfaces.Cache
 	remoteCAS          repb.ContentAddressableStorageClient
 	bufPool            *bytebufferpool.VariableSizePool
+	chunkUploadSem     chan struct{}
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -93,6 +102,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
+		chunkUploadSem:     make(chan struct{}, maxGlobalChunkUploadConcurrency),
 		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
 	}, nil
 }
@@ -1118,6 +1128,7 @@ type chunkUploader struct {
 	s              *ByteStreamServerProxy
 	instanceName   string
 	digestFunction repb.DigestFunction_Value
+	concurrency    int
 
 	fmbG     *errgroup.Group
 	fmbCtx   context.Context
@@ -1134,22 +1145,22 @@ type chunkUploader struct {
 	dedupedChunkBytes      atomic.Int64
 }
 
-// newChunkUploader batches chunks into FMB groups of up to
-// chunkUploadConcurrency digests and upload requests of up to 2 MiB.
-// With one FMB group in flight and upload concurrency 8, it uses roughly
-// 50 MiB of compressed chunk data, plus overhead.
+// newChunkUploader batches chunks into FMB groups and upload requests of up to 2 MiB.
+// Concurrency is controlled by the cache_proxy.chunk_upload_concurrency experiment flag.
 func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceName string, digestFunction repb.DigestFunction_Value) (*chunkUploader, error) {
-	if *chunkUploadConcurrency <= 0 {
-		return nil, status.FailedPreconditionErrorf("cache_proxy.chunk_upload_concurrency must be > 0")
+	concurrency := int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkUploadConcurrency))
+	if concurrency <= 0 {
+		concurrency = defaultChunkUploadConcurrency
 	}
 	fmbG, fmbCtx := errgroup.WithContext(ctx)
 	fmbG.SetLimit(1)
 	batchG, batchCtx := errgroup.WithContext(ctx)
-	batchG.SetLimit(*chunkUploadConcurrency)
+	batchG.SetLimit(concurrency)
 	return &chunkUploader{
 		s:              s,
 		instanceName:   instanceName,
 		digestFunction: digestFunction,
+		concurrency:    concurrency,
 		fmbG:           fmbG,
 		fmbCtx:         fmbCtx,
 		batchG:         batchG,
@@ -1178,7 +1189,7 @@ func (c *chunkUploader) addChunk(compressedData []byte, poolBuf []byte, d *repb.
 	}
 
 	c.pendingFMB = append(c.pendingFMB, chunk)
-	if len(c.pendingFMB) >= *chunkUploadConcurrency {
+	if len(c.pendingFMB) >= c.concurrency {
 		c.flushPendingFMB()
 	}
 }
@@ -1289,6 +1300,13 @@ func (c *chunkUploader) uploadBatch(batch []pendingChunk) error {
 			c.s.bufPool.Put(chunk.poolBuf)
 		}
 	}()
+
+	select {
+	case c.s.chunkUploadSem <- struct{}{}:
+		defer func() { <-c.s.chunkUploadSem }()
+	case <-c.batchCtx.Done():
+		return c.batchCtx.Err()
+	}
 
 	req := &repb.BatchUpdateBlobsRequest{
 		InstanceName:   c.instanceName,

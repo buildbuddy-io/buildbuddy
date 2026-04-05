@@ -196,6 +196,33 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 	}, nil
 }
 
+// Deregister removes the calling peer from the gateway immediately. Well-behaved
+// clients should call this on clean shutdown rather than waiting for the
+// stale-peer cleanup cycle to reclaim the IP and DNS name.
+func (g *Gateway) Deregister(ctx context.Context, req *gwpb.DeregisterRequest) (*gwpb.DeregisterResponse, error) {
+	if _, err := g.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+
+	if req.GetPublicKey() == "" {
+		return nil, status.InvalidArgumentError("public_key is required")
+	}
+	pubKeyHex := req.GetPublicKey()
+	if _, err := keys.ParseHexKey(pubKeyHex); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid public_key: %s", err)
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	info, ok := g.peers[pubKeyHex]
+	if !ok {
+		return nil, status.NotFoundErrorf("peer %s... not registered", pubKeyHex[:8])
+	}
+	g.removePeerLocked(pubKeyHex, info)
+	return &gwpb.DeregisterResponse{}, nil
+}
+
 // getOrCreateNetwork returns the networkState for (groupID, networkName),
 // creating it if it doesn't exist. Must be called with g.mu held.
 func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState, error) {

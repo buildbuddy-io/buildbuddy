@@ -11,4 +11,9 @@ service GatewayService {
   // WireGuard identity and IP within their group's network, and returns the
   // full configuration needed to bring up the tunnel.
   rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Deregister removes the caller's peer from the gateway. Well-behaved clients
+  // should call this on clean shutdown so that the IP and DNS name are freed
+  // immediately rather than waiting for the stale-peer cleanup cycle.
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
 }

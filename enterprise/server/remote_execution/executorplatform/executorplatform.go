@@ -38,6 +38,8 @@ var (
 	defaultImage               = flag.String("executor.default_image", platform.Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
 	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
+
+	imageRewriteRules = flag.Slice("executor.container_image_name_rewrites", []ImageRewrite{}, "Configures rules to rewrite matching container image names.")
 )
 
 const (
@@ -48,6 +50,11 @@ const (
 	// the value of the [containerRegistryRegion] flag.
 	registryRegionPlaceholder = "{{region}}"
 )
+
+type ImageRewrite struct {
+	Prefix      string `yaml:"prefix" json:"prefix"`
+	Replacement string `yaml:"replacement" json:"replacement"`
+}
 
 func DockerSocket() string {
 	return *dockerSocket
@@ -136,6 +143,14 @@ func GetExecutorProperties() *ExecutorProperties {
 
 func containerImageName(input string) string {
 	withoutDockerPrefix := strings.TrimPrefix(input, platform.DockerPrefix)
+
+	for _, rr := range *imageRewriteRules {
+		if after, ok := strings.CutPrefix(withoutDockerPrefix, rr.Prefix); ok {
+			withoutDockerPrefix = rr.Replacement + after
+			break
+		}
+	}
+
 	if *containerRegistryRegion == "" {
 		return withoutDockerPrefix
 	}
