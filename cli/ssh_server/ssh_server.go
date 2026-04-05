@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -32,7 +33,7 @@ import (
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 	"google.golang.org/grpc/metadata"
-	
+
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 	gossh "golang.org/x/crypto/ssh"
@@ -41,15 +42,16 @@ import (
 var (
 	flags = flag.NewFlagSet("ssh_server", flag.ContinueOnError)
 
-	gateway            = flags.String("gateway", "grpcs://gateway.buildbuddy.dev", "Gateway gRPC target")	
-	network            = flags.String("network", "", "Network name (default is blank)")
-	apiKey             = flags.String("api_key", "", "Optionally override the API key with this value")
-	gracePeriod        = flags.Duration("grace_period", 1 * time.Minute, "How long the VM will remain alive when no users are connected")
+	gateway     = flags.String("gateway", "grpcs://gateway.buildbuddy.dev", "Gateway gRPC target")
+	network     = flags.String("network", "", "Network name (default is blank)")
+	apiKey      = flags.String("api_key", "", "Optionally override the API key with this value")
+	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
+	idleTimeout = flags.Duration("idle_timeout", 0, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
 
-	name               = flags.String("name", "", "Name for this peer; reachable at <name>.internal on the tunnel network (auto-generated if unset)")
-	sshPort            = flags.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
-	shellPath          = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
-	hostKeyFile        = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
+	name        = flags.String("name", "", "Name for this peer; reachable at <name>.internal on the tunnel network (auto-generated if unset)")
+	sshPort     = flags.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
+	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
+	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
 
 	usage = `
 usage: bb ` + flags.Name() + ` [--grace_period=1m]
@@ -185,19 +187,19 @@ func HandleSSHServer(args []string) (int, error) {
 		}
 		return 1, err
 	}
-	
+
 	if *gateway == "" {
-		log.Printf("A non-empty --target must be specified")
+		log.Printf("A non-empty --gateway must be specified")
 		return 1, nil
 	}
 
 	ctx := context.Background()
 	if *apiKey != "" {
-                ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	} else if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
-	        ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-        }
-	
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	}
+
 	// Generate a local WireGuard keypair — the private key never leaves this process.
 	privKey, err := keys.GeneratePrivateKey()
 	if err != nil {
@@ -267,8 +269,10 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	defer dev.Close()
 
-	// Build the SSH server.
-	sshServer := &ssh.Server{}
+	// Build the SSH server. WireGuard membership is the auth boundary; no SSH
+	// credential checking is required. gliderlabs/ssh automatically sets
+	// NoClientAuth=true when no auth handlers are configured.
+	sshServer := &ssh.Server{IdleTimeout: *idleTimeout}
 	hostKeyPath := *hostKeyFile
 	if hostKeyPath == "" {
 		cacheDir, err := os.UserCacheDir()
@@ -300,11 +304,12 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	defer listener.Close()
 
-	log.Printf("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
+	listeningMsg := fmt.Sprintf("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
 	if name := rsp.GetAssignedPeerName(); name != "" {
-		fmt.Printf("Assigned DNS name: %s (connect with: ssh -p %d %s)\n", name, *sshPort, name)
+		listeningMsg += fmt.Sprintf(" (%s.internal)", name)
 	}
-
+	log.Print(listeningMsg)
+	
 	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
 	// no active sessions. The timer starts immediately to cover the case where
 	// no client ever connects.
@@ -347,6 +352,23 @@ func HandleSSHServer(args []string) (int, error) {
 		}()
 		handleSession(s)
 	}
+
+	// Catch SIGINT/SIGTERM so the process shuts down via Shutdown() rather than
+	// being killed abruptly, ensuring deferred cleanup (Deregister, dev.Close)
+	// runs on Ctrl-C or a normal kill signal.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		sig, ok := <-sigCh
+		if !ok {
+			return
+		}
+		log.Printf("Received %s; shutting down.", sig)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		sshServer.Shutdown(shutCtx)
+	}()
 
 	if err := sshServer.Serve(listener); err != nil && err != ssh.ErrServerClosed {
 		return 1, status.WrapError(err, "ssh server")
