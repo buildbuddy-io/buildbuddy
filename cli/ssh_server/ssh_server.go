@@ -6,12 +6,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -198,6 +200,19 @@ func HandleSSHServer(args []string) (int, error) {
 	defer grpcConn.Close()
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
+
+	// Deregister runs before grpcConn.Close() (LIFO), freeing the IP and DNS
+	// name on the gateway immediately rather than waiting for stale-peer cleanup.
+	defer func() {
+		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if _, err := gwClient.Deregister(dctx, &gwpb.DeregisterRequest{PublicKey: privKey.PublicKey().Hex()}); err != nil {
+			log.Warnf("deregister: %v", err)
+		} else {
+			log.Printf("Deregistered from gateway.")
+		}
+	}()
+
 	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
 		NetworkName: *network,
 		PeerName:    *name,
@@ -262,9 +277,50 @@ func HandleSSHServer(args []string) (int, error) {
 		fmt.Printf("Assigned DNS name: %s (connect with: ssh -p %d %s)\n", name, *sshPort, name)
 	}
 
-	if err := ssh.Serve(listener, handleSession, sshOpts...); err != nil {
+	// Idle-shutdown: close the listener once the grace period elapses with no
+	// active sessions. The timer starts immediately to handle the case where no
+	// client ever connects.
+	var (
+		mu             sync.Mutex
+		activeSessions int
+		idleTimer      *time.Timer
+	)
+	resetIdleTimer := func() {
+		// Must be called with mu held.
+		if idleTimer != nil {
+			idleTimer.Stop()
+		}
+		idleTimer = time.AfterFunc(*gracePeriod, func() {
+			log.Printf("No active sessions for %s; shutting down.", *gracePeriod)
+			listener.Close()
+		})
+	}
+	mu.Lock()
+	resetIdleTimer()
+	mu.Unlock()
+
+	handler := func(s ssh.Session) {
+		mu.Lock()
+		if idleTimer != nil {
+			idleTimer.Stop()
+			idleTimer = nil
+		}
+		activeSessions++
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			activeSessions--
+			if activeSessions == 0 {
+				resetIdleTimer()
+			}
+			mu.Unlock()
+		}()
+		handleSession(s)
+	}
+
+	if err := ssh.Serve(listener, handler, sshOpts...); err != nil && !errors.Is(err, net.ErrClosed) {
 		return 1, status.WrapError(err, "ssh server")
 	}
-	
+
 	return 0, nil
 }
