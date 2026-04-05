@@ -46,7 +46,7 @@ var (
 	network     = flags.String("network", "", "Network name (default is blank)")
 	apiKey      = flags.String("api_key", "", "Optionally override the API key with this value")
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
-	idleTimeout = flags.Duration("idle_timeout", 0, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
+	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
 
 	name        = flags.String("name", "", "Name for this peer; reachable at <name>.internal on the tunnel network (auto-generated if unset)")
 	sshPort     = flags.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
