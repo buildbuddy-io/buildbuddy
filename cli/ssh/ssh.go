@@ -42,12 +42,16 @@ var (
 	port          = flags.Int("p", 22, "SSH port to dial on the remote host")
 	user          = flags.String("l", "", "SSH login name (overrides user@host syntax)")
 
-	usage = `
-usage: bb ` + flags.Name() + ` [flags] [user@]<host>
-
-Connect to an SSH server reachable via the BuildBuddy gateway.
-`
+	usage string
 )
+
+func init() {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "usage: bb %s [flags] [user@]<host>\n\nConnect to an SSH server reachable via the BuildBuddy gateway.\n\nFlags:\n", flags.Name())
+	flags.SetOutput(&buf)
+	flags.PrintDefaults()
+	usage = buf.String()
+}
 
 // resolveEndpoint resolves the hostname in a host:port endpoint string to an
 // IP address. WireGuard's IPC parser requires an IP address, not a hostname.
