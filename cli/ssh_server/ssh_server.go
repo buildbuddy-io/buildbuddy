@@ -42,7 +42,7 @@ import (
 var (
 	flags = flag.NewFlagSet("ssh_server", flag.ContinueOnError)
 
-	gateway     = flags.String("gateway", "grpcs://gateway.buildbuddy.dev", "Gateway gRPC target")
+	gateway     = flags.String("gateway", "grpcs://gateway.buildbuddy.io", "Gateway gRPC target")
 	network     = flags.String("network", "", "Network name (default is blank)")
 	apiKey      = flags.String("api_key", "", "Optionally override the API key with this value")
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")

@@ -36,7 +36,7 @@ import (
 var (
 	flags = flag.NewFlagSet("ssh", flag.ContinueOnError)
 
-	gatewayTarget = flags.String("gateway", "grpcs://gateway.buildbuddy.dev", "Gateway gRPC target")
+	gatewayTarget = flags.String("gateway", "grpcs://gateway.buildbuddy.io", "Gateway gRPC target")
 	network       = flags.String("network", "", "Network name (default is blank)")
 	apiKey        = flags.String("api_key", "", "Optionally override the API key with this value")
 	port          = flags.Int("p", 22, "SSH port to dial on the remote host")
