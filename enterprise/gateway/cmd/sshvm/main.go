@@ -24,7 +24,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -122,7 +122,7 @@ func main() {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 
 	// Generate a local WireGuard keypair — the private key never leaves this process.
-	privKey, err := keys.GeneratePrivateKey()
+	privKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		log.Fatalf("generate WireGuard key: %s", err)
 	}
