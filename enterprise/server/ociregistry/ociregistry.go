@@ -3,8 +3,8 @@ package ociregistry
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"crypto/sha256"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
