@@ -82,17 +82,19 @@ var (
 // manifestResolveResult holds the outcome of a tag->digest resolution so it can be
 // shared across concurrent requests via singleflight.
 type manifestResolveResult struct {
-	hash   *gcr.Hash
-	exists bool
+	hash          *gcr.Hash
+	exists        bool
+	contentLength string
+	contentType   string
 }
 
 type registry struct {
 	env     environment.Env
 	client  *http.Client
 	mirrors []Mirror
-	// tagDigestCache caches the mapping from manifest tag to digest to avoid
-	// hitting the upstream registry on every request for the same tag.
-	tagDigestCache lru.LRU[*gcr.Hash]
+	// tagDigestCache caches the result of resolving a manifest tag, including
+	// the digest and response headers from the upstream HEAD request.
+	tagDigestCache lru.LRU[manifestResolveResult]
 	// tagDigestGroup deduplicates concurrent upstream HEAD requests for the
 	// same tag so only one request is made.
 	tagDigestGroup singleflight.Group[string, manifestResolveResult]
@@ -114,9 +116,9 @@ func Register(env *real_environment.RealEnv) error {
 
 func New(env environment.Env) (*registry, error) {
 	client := httpclient.New(nil, "ociregistry")
-	tagDigestCache, err := lru.New[*gcr.Hash](&lru.Config[*gcr.Hash]{
+	tagDigestCache, err := lru.New[manifestResolveResult](&lru.Config[manifestResolveResult]{
 		MaxSize:    int64(tagDigestCacheSize),
-		SizeFn:     func(v *gcr.Hash) int64 { return 1 },
+		SizeFn:     func(v manifestResolveResult) int64 { return 1 },
 		TTL:        tagDigestCacheTTL,
 		ThreadSafe: true,
 	})
@@ -372,25 +374,30 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (manifestResolveResult, error) {
 	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeaders, authorizationHeader, ociResourceType, ref)
 	if err != nil {
-		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
+		return manifestResolveResult{}, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
 	if headresp.StatusCode == http.StatusNotFound {
-		return nil, false, nil
+		return manifestResolveResult{}, nil
 	}
 	if headresp.StatusCode != http.StatusOK {
-		return nil, false, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
+		return manifestResolveResult{}, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
 	}
 	value := headresp.Header.Get(headerDockerContentDigest)
 	hash, err := parseDockerContentDigestHeader(value)
 	if err != nil {
-		return nil, true, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
+		return manifestResolveResult{}, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
 	}
-	return hash, true, nil
+	return manifestResolveResult{
+		hash:          hash,
+		exists:        true,
+		contentLength: headresp.Header.Get(headerContentLength),
+		contentType:   headresp.Header.Get(headerContentType),
+	}, nil
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
@@ -412,14 +419,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	resolvedRef := ref
-	resolvedRefIsDigest := identifierIsDigest
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest {
 		// Fetching a manifest by tag.
 		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
+		// Resolve the tag to a digest via an upstream HEAD request (which may be temporarily cached),
+		// then serve the manifest from CAS if available.
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
-		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, err := r.resolveTagToDigest(ctx, inreq, ociResourceType, ref)
+		resolved, err := r.resolveTagToDigest(ctx, inreq, ociResourceType, ref)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				http.Error(w, err.Error(), http.StatusNotFound)
@@ -428,40 +435,50 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			}
 			return
 		}
-		manifestRef, err := parseReference(repository, hash.String())
+		// For HEAD requests we already have everything we need from the
+		// upstream HEAD that resolved the tag so write headers and return.
+		if inreq.Method == http.MethodHead {
+			if resolved.contentType != "" {
+				w.Header().Set(headerContentType, resolved.contentType)
+			}
+			if resolved.contentLength != "" {
+				w.Header().Set(headerContentLength, resolved.contentLength)
+			}
+			w.Header().Set(headerDockerContentDigest, resolved.hash.String())
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		manifestRef, err := parseReference(repository, resolved.hash.String())
 		if err != nil {
 			log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
-		} else {
-			resolvedRef = manifestRef
-			resolvedRefIsDigest = true
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
 		}
+		resolvedRef = manifestRef
 	}
+
+	// At this point we have a digest so we can check to see if we can serve it from the cache.
 
 	bsClient := r.env.GetByteStreamClient()
 	acClient := r.env.GetActionCacheClient()
 
-	// To fetch a blob or manifest from the AC and CAS, you need a digest.
-	// Blob requests MUST be by digest.
-	// Manifest requests can be by digest or by tag.
-	// If we successfully resolved a manifest tag to a digest above, it's safe
-	// to look up the manifest in the cache.
-	if resolvedRefIsDigest {
-		writeBody := inreq.Method == http.MethodGet
-		hash, err := gcr.NewHash(resolvedRef.Identifier())
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
-			return
-		}
-		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
-		if err == nil {
-			return // Successfully served request from cache.
-		}
-		if !status.IsNotFoundError(err) {
-			log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
-			http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
-			return
-		}
+	writeBody := inreq.Method == http.MethodGet
+	hash, err := gcr.NewHash(resolvedRef.Identifier())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
+		return
 	}
+	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	if err == nil {
+		return // Successfully served request from cache.
+	}
+	if !status.IsNotFoundError(err) {
+		log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
+		http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
+		return
+	}
+
+	// We checked the cache but didn't find it, so let's get it from upstream and cache it.
 
 	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
@@ -492,7 +509,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// In order to cache a blob or manifest, you need a digest,
 	// metadata (content length and content type), and the contents of the blob or manifest
 	// (which will be in the body of an upstream HTTP GET).
-	cacheable := upresp.StatusCode == http.StatusOK && hasLength && resolvedRefIsDigest && hasContentType
+	cacheable := upresp.StatusCode == http.StatusOK && hasLength && hasContentType
 	if !cacheable {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
@@ -501,7 +518,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	hash, err := gcr.NewHash(resolvedRef.Identifier())
+	hash, err = gcr.NewHash(resolvedRef.Identifier())
 	if err != nil {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
@@ -560,7 +577,10 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 
 // resolveTagToDigest resolves a manifest tag to its digest, using an
 // in-memory cache and singleflight deduplication for unauthenticated requests.
-func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, error) {
+// The returned result also includes Content-Length and Content-Type from the
+// upstream HEAD response, which can be used to serve HEAD requests without a
+// second round-trip.
+func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (manifestResolveResult, error) {
 	// Only use the tag->digest cache for unauthenticated requests, since
 	// different auth tokens may have different access to manifests.
 	useTagDigestCache := inreq.Header.Get(headerAuthorization) == ""
@@ -573,11 +593,7 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 	}
 
 	resolve := func(ctx context.Context) (manifestResolveResult, error) {
-		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
-		if err != nil {
-			return manifestResolveResult{}, err
-		}
-		return manifestResolveResult{hash: hash, exists: exists}, nil
+		return r.resolveManifestDigest(ctx, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 	}
 
 	var result manifestResolveResult
@@ -589,18 +605,18 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 		result, err = resolve(ctx)
 	}
 	if err != nil {
-		return nil, status.UnavailableErrorf("could not resolve digest for manifest %q: %s", ref.Context(), err)
+		return manifestResolveResult{}, status.UnavailableErrorf("could not resolve digest for manifest %q: %s", ref.Context(), err)
 	}
 	if !result.exists {
-		return nil, status.NotFoundErrorf("could not find manifest %q", ref.Context())
+		return manifestResolveResult{}, status.NotFoundErrorf("could not find manifest %q", ref.Context())
 	}
 	if result.hash == nil {
-		return nil, status.NotFoundErrorf("could not parse digest from manifest for %q", ref.Context())
+		return manifestResolveResult{}, status.NotFoundErrorf("could not parse digest from manifest for %q", ref.Context())
 	}
 	if useTagDigestCache {
-		r.tagDigestCache.Add(cacheKey, result.hash)
+		r.tagDigestCache.Add(cacheKey, result)
 	}
-	return result.hash, nil
+	return result, nil
 }
 
 // tagDigestCacheKey builds a cache key for the tag->digest cache.
