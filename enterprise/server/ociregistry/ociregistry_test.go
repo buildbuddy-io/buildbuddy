@@ -58,8 +58,7 @@ func TestPull(t *testing.T) {
 		},
 	})
 	t.Cleanup(func() {
-		err := testreg.Shutdown(context.TODO())
-		require.NoError(t, err)
+		require.NoError(t, testreg.Shutdown())
 	})
 
 	nonExistentDigest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -406,7 +405,7 @@ func TestMirrorConfig(t *testing.T) {
 			return true
 		},
 	})
-	t.Cleanup(func() { upstream1.Shutdown(context.TODO()) })
+	t.Cleanup(func() { upstream1.Shutdown() })
 
 	upstream2Counter := atomic.Int32{}
 	upstream2 := testregistry.Run(t, testregistry.Opts{
@@ -415,7 +414,7 @@ func TestMirrorConfig(t *testing.T) {
 			return true
 		},
 	})
-	t.Cleanup(func() { upstream2.Shutdown(context.TODO()) })
+	t.Cleanup(func() { upstream2.Shutdown() })
 
 	// Configure registry domain and two mirrors on different subdomains.
 	flags.Set(t, "ociregistry.domain", "registry.test")

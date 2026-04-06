@@ -127,7 +127,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 			return true
 		},
 	})
-	t.Cleanup(func() { reg.Shutdown(ctx) })
+	t.Cleanup(func() { reg.Shutdown() })
 
 	// Bypass auth while pushing the image.
 	authEnabled = false
