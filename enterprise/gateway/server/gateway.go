@@ -43,15 +43,16 @@ var (
 // networkState holds IP allocation and peer name state for one
 // (groupID, networkName) pair.
 type networkState struct {
-	index    int      // assigned network index; determines the /48 prefix
-	names    sync.Map // peer_name (string) → assigned IP (netip.Addr)
-	nextHost int      // next host number to assign; starts at 2 (.1 is the hub)
+	index    int                   // assigned network index; determines the /48 prefix
+	namesMu  sync.Mutex            // protects names
+	names    map[string]netip.Addr // peer_name → assigned IP
+	nextHost int                   // next host number to assign; starts at 2 (.1 is the hub)
 }
 
 // peerInfo tracks per-peer state needed for cleanup.
 type peerInfo struct {
 	ip           netip.Addr
-	ns           *networkState
+	networkState *networkState
 	assignedName string    // empty if peer registered without a name
 	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
 }
@@ -98,7 +99,7 @@ func New(env environment.Env) (*Gateway, error) {
 	}
 
 	pubKey := serverPrivKey.PublicKey().Hex()
-	log.Infof("gateway: WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
+	log.Infof("WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
 
 	gw := &Gateway{
 		env:           env,
@@ -167,23 +168,25 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 		// Find an available name: try the requested name first, then append
 		// numeric suffixes until we find a free slot.
 		assignedName = requested
+		ns.namesMu.Lock()
 		for i := 1; ; i++ {
-			if _, taken := ns.names.Load(assignedName); !taken {
+			if _, taken := ns.names[assignedName]; !taken {
 				break
 			}
 			assignedName = fmt.Sprintf("%s-%d", requested, i)
 		}
-		ns.names.Store(assignedName, assignedIP)
+		ns.names[assignedName] = assignedIP
+		ns.namesMu.Unlock()
 	}
 
 	g.peers[clientPubKey.Hex()] = &peerInfo{
 		ip:           assignedIP,
-		ns:           ns,
+		networkState: ns,
 		assignedName: assignedName,
 		registeredAt: time.Now(),
 	}
 
-	log.Infof("gateway: registered peer %s in group %q network %q, assigned %s (name=%q)",
+	log.Infof("Registered peer %s in group %q network %q, assigned %s (name=%q)",
 		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, assignedName)
 
 	return &gwpb.RegisterResponse{
@@ -236,22 +239,22 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 
 	ns := &networkState{
 		index:    index,
+		names:    make(map[string]netip.Addr),
 		nextHost: 2,
 	}
 
 	nameLookup := func(name string) (netip.Addr, bool) {
-		v, ok := ns.names.Load(name)
-		if !ok {
-			return netip.Addr{}, false
-		}
-		return v.(netip.Addr), true
+		ns.namesMu.Lock()
+		addr, ok := ns.names[name]
+		ns.namesMu.Unlock()
+		return addr, ok
 	}
 	if err := g.tun.startNetworkDNS(index, key, nameLookup); err != nil {
 		return nil, status.InternalErrorf("start DNS for network %q: %s", key, err)
 	}
 
 	g.networks[key] = ns
-	log.Infof("gateway: created network %q at index %d (prefix %s)", key, index, networkPrefix(index))
+	log.Infof("Created network %q at index %d (prefix %s)", key, index, networkPrefix(index))
 	return ns, nil
 }
 
@@ -280,7 +283,7 @@ func (g *Gateway) cleanupLoop() {
 func (g *Gateway) cleanupStalePeers() {
 	ipc, err := g.dev.IpcGet()
 	if err != nil {
-		log.Errorf("gateway: cleanup: IpcGet failed: %s", err)
+		log.Errorf("Cleanup: IpcGet failed: %s", err)
 		return
 	}
 
@@ -323,14 +326,16 @@ func (g *Gateway) cleanupStalePeers() {
 // DNS name map. Must be called with g.mu held.
 func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 	if err := g.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", pubKeyHex)); err != nil {
-		log.Errorf("gateway: remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
+		log.Errorf("Remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
 	}
 	g.tun.unregisterIP(info.ip)
 	if info.assignedName != "" {
-		info.ns.names.Delete(info.assignedName)
+		info.networkState.namesMu.Lock()
+		delete(info.networkState.names, info.assignedName)
+		info.networkState.namesMu.Unlock()
 	}
 	delete(g.peers, pubKeyHex)
-	log.Infof("gateway: removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
+	log.Infof("Removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
 }
 
 // ---------------------------------------------------------------------------

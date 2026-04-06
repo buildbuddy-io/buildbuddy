@@ -243,7 +243,7 @@ func TestDeregister(t *testing.T) {
 
 	// DNS name must be freed.
 	ns := gw.networks["group1/net1"]
-	_, nameExists := ns.names.Load("mypeer")
+	_, nameExists := ns.names["mypeer"]
 	require.False(t, nameExists, "DNS name should be removed after deregister")
 }
 
@@ -322,8 +322,8 @@ func TestCleanupStalePeers(t *testing.T) {
 
 	// DNS names: stale name freed, fresh name retained.
 	ns := gw.networks["group1/net1"]
-	_, staleNameExists := ns.names.Load("stale")
+	_, staleNameExists := ns.names["stale"]
 	require.False(t, staleNameExists, "stale peer's DNS name should be removed")
-	_, freshNameExists := ns.names.Load("fresh")
+	_, freshNameExists := ns.names["fresh"]
 	require.True(t, freshNameExists, "fresh peer's DNS name should remain")
 }
