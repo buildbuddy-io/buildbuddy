@@ -281,10 +281,10 @@ func TestPull(t *testing.T) {
 			//   1. an upstream HEAD request to resolve the manifest digest
 			//   2. an upstream GET request to fetch the manifest payload (which is then stored in CAS).
 			//
-			// On the second manifest GET, the mirror makes
-			//   3. an upstream HEAD request to resolve the manifest digest
-			//     (which it uses to fetch manifest payload from CAS).
-			expectedUpstreamRequests: 3,
+			// On the second manifest GET, the tag->digest mapping is served from
+			// the in-memory cache (no auth header), so no upstream HEAD is needed.
+			// The manifest payload is served from CAS.
+			expectedUpstreamRequests: 2,
 			repeatRequestToHitCache:  true,
 		},
 	}
@@ -381,6 +381,76 @@ func TestPull(t *testing.T) {
 			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
 		})
 	}
+}
+
+func TestTagDigestCacheBypassedWithAuth(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	upstreamCounter := atomic.Int32{}
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			upstreamCounter.Add(1)
+			return true
+		},
+	})
+	t.Cleanup(func() { testreg.Shutdown() })
+
+	ocireg, err := ociregistry.New(te)
+	require.Nil(t, err)
+	port := testport.FindFree(t)
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+	mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() { mirrorServer.Shutdown(context.TODO()) })
+
+	repository := "test_auth_cache_bypass"
+	testImageName, _ := testreg.PushNamedImage(t, repository, nil)
+	path := "/v2/" + testImageName + "/manifests/latest"
+
+	// First GET without auth: populates the tag->digest cache.
+	upstreamBefore := upstreamCounter.Load()
+	req, err := http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// HEAD to resolve tag + GET to fetch manifest = 2 upstream requests.
+	require.Equal(t, int32(2), upstreamCounter.Load()-upstreamBefore)
+
+	// Second GET without auth: should use cache (no HEAD needed).
+	upstreamBefore = upstreamCounter.Load()
+	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// Manifest served from CAS, no upstream requests.
+	require.Equal(t, int32(0), upstreamCounter.Load()-upstreamBefore)
+
+	// Third GET with auth header: should bypass cache and make upstream HEAD.
+	upstreamBefore = upstreamCounter.Load()
+	req, err = http.NewRequest(http.MethodGet, "http://"+mirrorHostPort+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer some-token")
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// HEAD to resolve tag (cache bypassed) but manifest served from CAS = 1 upstream request.
+	require.Equal(t, int32(1), upstreamCounter.Load()-upstreamBefore)
 }
 
 func TestMirrorConfig(t *testing.T) {
