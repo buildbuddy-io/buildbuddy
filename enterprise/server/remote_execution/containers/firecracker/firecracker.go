@@ -1178,15 +1178,38 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == platform.AlwaysSaveSnapshot || snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot {
 		return true
-	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+	}
+
+	// We want to more frequently save the default snapshot, because it is used as a fallback for
+	// runs on other branches, so we want it to stay relatively up-to-date.
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		// Limit how often we write snapshots on the default branch.
+		manifest, _, err := c.loader.FetchRemoteManifest(ctx, c.SnapshotKeySet().GetWriteKey())
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to fetch remote manifest for key %+v - writing a remote snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a remote snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
+	}
+
+	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
 	}
 
-	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable,
+	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable
 	return !c.hasRemoteSnapshot(ctx, c.loader)
 }
 
@@ -1202,15 +1225,50 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
 	// as it should be a good proxy for the user's intent on snapshot behavior.
 	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == platform.AlwaysSaveSnapshot || snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
-		// We want to always save the default snapshot, because it is used as a fallback for
-		// runs on other branches, so we want it to stay up-to-date.
+
+	if savePolicy == platform.AlwaysSaveSnapshot {
 		return true
 	}
+
+	// We want to more frequently save the default snapshot, because it is used as a fallback for
+	// runs on other branches, so we want it to stay relatively up-to-date.
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		// Limit how often we write snapshots on the default branch.
+		manifest, err := c.loader.GetLocalManifest(ctx, c.SnapshotKeySet().GetWriteKey(), c.supportsRemoteSnapshots)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to get local manifest for key %+v - writing a local snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a local snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
+	}
+
 	// By default (applies if save policy is unset or invalid) or if
 	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
 	// doesn't already exist.
 	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
+}
+
+func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.Duration {
+	interval := platform.FindEffectiveValue(task, platform.MinTimeBetweenSnapshotWritesPropertyName)
+	if interval == "" {
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil {
+		log.CtxErrorf(ctx, "Invalid snapshot write interval %s - using default: %s", interval, err)
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	return d
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
