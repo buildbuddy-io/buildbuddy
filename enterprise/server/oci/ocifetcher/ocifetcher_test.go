@@ -676,7 +676,7 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	require.Equal(t, expectedLayerData, stream.collectData())
 	assertRequests(t, counter, map[string]int{
 		// No /v2/ ping: puller stays cached across metadata failures.
-		http.MethodGet + " " + blobPath: 1,
+		http.MethodGet + " " + blobPath:  1,
 		http.MethodHead + " " + blobPath: 3,
 	})
 }
