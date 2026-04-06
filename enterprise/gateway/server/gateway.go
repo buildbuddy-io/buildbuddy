@@ -342,42 +342,25 @@ func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 // IP helpers — network index N is encoded into bytes [4:6] of fd00:bb::
 // ---------------------------------------------------------------------------
 
-// networkPrefix returns fd00:bb:N::/48 for network index N.
-// Address layout (each pair of bytes = one IPv6 group):
+// networkIP returns the IPv6 address fd00:bb:N::host for network index N and
+// host number host. Address layout (each pair of bytes = one IPv6 group):
 //
 //	[0:2]  = fd00
 //	[2:4]  = 00bb  (printed as "bb")
-//	[4:6]  = index (the network index, printed as hex)
-//	[6:16] = 0
-func networkPrefix(index int) netip.Prefix {
+//	[4:6]  = network index, printed as hex
+//	[6:14] = 0
+//	[14:16] = host, giving 65534 usable addresses per network
+func networkIP(network, host int) netip.Addr {
 	var a [16]byte
 	a[0], a[1] = 0xfd, 0x00
 	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	return netip.PrefixFrom(netip.AddrFrom16(a), 48)
-}
-
-// networkHubIP returns fd00:bb:N::1 for network index N.
-func networkHubIP(index int) netip.Addr {
-	var a [16]byte
-	a[0], a[1] = 0xfd, 0x00
-	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	a[15] = 0x01
+	a[4] = byte(network >> 8)
+	a[5] = byte(network)
+	a[14] = byte(host >> 8)
+	a[15] = byte(host)
 	return netip.AddrFrom16(a)
 }
 
-// networkClientIP returns the address for host hostNum within network index N.
-// hostNum is encoded into bytes [14:16], giving 65534 usable addresses per network.
-func networkClientIP(index, hostNum int) netip.Addr {
-	var a [16]byte
-	a[0], a[1] = 0xfd, 0x00
-	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	a[14] = byte(hostNum >> 8)
-	a[15] = byte(hostNum)
-	return netip.AddrFrom16(a)
-}
+func networkPrefix(index int) netip.Prefix       { return netip.PrefixFrom(networkIP(index, 0), 48) }
+func networkHubIP(index int) netip.Addr          { return networkIP(index, 1) }
+func networkClientIP(index, host int) netip.Addr { return networkIP(index, host) }
