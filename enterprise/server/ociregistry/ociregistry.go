@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"hash/fnv"
+	"crypto/sha256"
 	"io"
 	"net"
 	"net/http"
@@ -601,12 +601,12 @@ func tagDigestCacheKey(ref gcrname.Reference, acceptHeaders []string) string {
 	sorted := make([]string, len(acceptHeaders))
 	copy(sorted, acceptHeaders)
 	sort.Strings(sorted)
-	h := fnv.New64a()
+	h := sha256.New()
 	for _, s := range sorted {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}
-	return fmt.Sprintf("%s:%016x", ref.String(), h.Sum64())
+	return fmt.Sprintf("%s:%x", ref.String(), h.Sum(nil))
 }
 
 func isDigest(identifier string) bool {
