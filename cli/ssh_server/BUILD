@@ -9,7 +9,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/login",
-        "//enterprise/gateway/keys",
+        "//server/util/wgkeys",
         "//proto:gateway_go_proto",
         "//proto:gateway_service_go_proto",
         "//server/util/flag",

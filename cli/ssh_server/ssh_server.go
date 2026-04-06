@@ -23,7 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -201,7 +201,7 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 
 	// Generate a local WireGuard keypair — the private key never leaves this process.
-	privKey, err := keys.GeneratePrivateKey()
+	privKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return 1, status.WrapError(err, "generating wg private key")
 	}
