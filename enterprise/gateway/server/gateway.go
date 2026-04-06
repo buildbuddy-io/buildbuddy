@@ -43,15 +43,16 @@ var (
 // networkState holds IP allocation and peer name state for one
 // (groupID, networkName) pair.
 type networkState struct {
-	index    int      // assigned network index; determines the /48 prefix
-	names    sync.Map // peer_name (string) → assigned IP (netip.Addr)
-	nextHost int      // next host number to assign; starts at 2 (.1 is the hub)
+	index    int                   // assigned network index; determines the /48 prefix
+	namesMu  sync.Mutex            // protects names
+	names    map[string]netip.Addr // peer_name → assigned IP
+	nextHost int                   // next host number to assign; starts at 2 (.1 is the hub)
 }
 
 // peerInfo tracks per-peer state needed for cleanup.
 type peerInfo struct {
 	ip           netip.Addr
-	ns           *networkState
+	networkState *networkState
 	assignedName string    // empty if peer registered without a name
 	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
 }
@@ -98,7 +99,7 @@ func New(env environment.Env) (*Gateway, error) {
 	}
 
 	pubKey := serverPrivKey.PublicKey().Hex()
-	log.Infof("gateway: WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
+	log.Infof("WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
 
 	gw := &Gateway{
 		env:           env,
@@ -167,23 +168,25 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 		// Find an available name: try the requested name first, then append
 		// numeric suffixes until we find a free slot.
 		assignedName = requested
+		ns.namesMu.Lock()
 		for i := 1; ; i++ {
-			if _, taken := ns.names.Load(assignedName); !taken {
+			if _, taken := ns.names[assignedName]; !taken {
 				break
 			}
 			assignedName = fmt.Sprintf("%s-%d", requested, i)
 		}
-		ns.names.Store(assignedName, assignedIP)
+		ns.names[assignedName] = assignedIP
+		ns.namesMu.Unlock()
 	}
 
 	g.peers[clientPubKey.Hex()] = &peerInfo{
 		ip:           assignedIP,
-		ns:           ns,
+		networkState: ns,
 		assignedName: assignedName,
 		registeredAt: time.Now(),
 	}
 
-	log.Infof("gateway: registered peer %s in group %q network %q, assigned %s (name=%q)",
+	log.Infof("Registered peer %s in group %q network %q, assigned %s (name=%q)",
 		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, assignedName)
 
 	return &gwpb.RegisterResponse{
@@ -236,22 +239,22 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 
 	ns := &networkState{
 		index:    index,
+		names:    make(map[string]netip.Addr),
 		nextHost: 2,
 	}
 
 	nameLookup := func(name string) (netip.Addr, bool) {
-		v, ok := ns.names.Load(name)
-		if !ok {
-			return netip.Addr{}, false
-		}
-		return v.(netip.Addr), true
+		ns.namesMu.Lock()
+		addr, ok := ns.names[name]
+		ns.namesMu.Unlock()
+		return addr, ok
 	}
 	if err := g.tun.startNetworkDNS(index, key, nameLookup); err != nil {
 		return nil, status.InternalErrorf("start DNS for network %q: %s", key, err)
 	}
 
 	g.networks[key] = ns
-	log.Infof("gateway: created network %q at index %d (prefix %s)", key, index, networkPrefix(index))
+	log.Infof("Created network %q at index %d (prefix %s)", key, index, networkPrefix(index))
 	return ns, nil
 }
 
@@ -280,7 +283,7 @@ func (g *Gateway) cleanupLoop() {
 func (g *Gateway) cleanupStalePeers() {
 	ipc, err := g.dev.IpcGet()
 	if err != nil {
-		log.Errorf("gateway: cleanup: IpcGet failed: %s", err)
+		log.Errorf("Cleanup: IpcGet failed: %s", err)
 		return
 	}
 
@@ -323,56 +326,41 @@ func (g *Gateway) cleanupStalePeers() {
 // DNS name map. Must be called with g.mu held.
 func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 	if err := g.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", pubKeyHex)); err != nil {
-		log.Errorf("gateway: remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
+		log.Errorf("Remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
 	}
 	g.tun.unregisterIP(info.ip)
 	if info.assignedName != "" {
-		info.ns.names.Delete(info.assignedName)
+		info.networkState.namesMu.Lock()
+		delete(info.networkState.names, info.assignedName)
+		info.networkState.namesMu.Unlock()
 	}
 	delete(g.peers, pubKeyHex)
-	log.Infof("gateway: removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
+	log.Infof("Removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
 }
 
 // ---------------------------------------------------------------------------
 // IP helpers — network index N is encoded into bytes [4:6] of fd00:bb::
 // ---------------------------------------------------------------------------
 
-// networkPrefix returns fd00:bb:N::/48 for network index N.
-// Address layout (each pair of bytes = one IPv6 group):
+// networkIP returns the IPv6 address fd00:bb:N::host for network index N and
+// host number host. Address layout (each pair of bytes = one IPv6 group):
 //
 //	[0:2]  = fd00
 //	[2:4]  = 00bb  (printed as "bb")
-//	[4:6]  = index (the network index, printed as hex)
-//	[6:16] = 0
-func networkPrefix(index int) netip.Prefix {
+//	[4:6]  = network index, printed as hex
+//	[6:14] = 0
+//	[14:16] = host, giving 65534 usable addresses per network
+func networkIP(network, host int) netip.Addr {
 	var a [16]byte
 	a[0], a[1] = 0xfd, 0x00
 	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	return netip.PrefixFrom(netip.AddrFrom16(a), 48)
-}
-
-// networkHubIP returns fd00:bb:N::1 for network index N.
-func networkHubIP(index int) netip.Addr {
-	var a [16]byte
-	a[0], a[1] = 0xfd, 0x00
-	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	a[15] = 0x01
+	a[4] = byte(network >> 8)
+	a[5] = byte(network)
+	a[14] = byte(host >> 8)
+	a[15] = byte(host)
 	return netip.AddrFrom16(a)
 }
 
-// networkClientIP returns the address for host hostNum within network index N.
-// hostNum is encoded into bytes [14:16], giving 65534 usable addresses per network.
-func networkClientIP(index, hostNum int) netip.Addr {
-	var a [16]byte
-	a[0], a[1] = 0xfd, 0x00
-	a[3] = 0xbb
-	a[4] = byte(index >> 8)
-	a[5] = byte(index)
-	a[14] = byte(hostNum >> 8)
-	a[15] = byte(hostNum)
-	return netip.AddrFrom16(a)
-}
+func networkPrefix(index int) netip.Prefix       { return netip.PrefixFrom(networkIP(index, 0), 48) }
+func networkHubIP(index int) netip.Addr          { return networkIP(index, 1) }
+func networkClientIP(index, host int) netip.Addr { return networkIP(index, host) }
