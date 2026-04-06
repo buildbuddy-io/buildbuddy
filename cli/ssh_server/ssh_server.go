@@ -53,13 +53,16 @@ var (
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
 
-	usage = `
-usage: bb ` + flags.Name() + ` [--grace_period=1m]
-
-Run an SSH server on a user-mode wireguard network connected to
-the gateway server.
-`
+	usage string
 )
+
+func init() {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "usage: bb %s [flags]\n\nRun an SSH server on a user-mode wireguard network connected to\nthe gateway server.\n\nFlags:\n", flags.Name())
+	flags.SetOutput(&buf)
+	flags.PrintDefaults()
+	usage = buf.String()
+}
 
 func getShell() string {
 	if *shellPath != "" {
