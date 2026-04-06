@@ -79,6 +79,8 @@ message SetRulesConfigResponse {
 // auth constraints on that path. Rather than risk modifying/disabling those to
 // allow the Cache Proxy to fetch rules, this simple service exists for that
 // use case.
+// This version of the RPC does not return IP rules if they are not being
+// enforced, as this RPC is only used for retrieving rules to enforce.
 service IPRulesService {
   rpc GetIPRules(GetRulesRequest) returns (GetRulesResponse);
 }
