@@ -178,6 +178,23 @@ exec "$BAZEL_REAL" "--bazelrc=${ws}/required.bazelrc" "$@"
 
 }
 
+func TestConfigDefinedInBazeliskWrapperAddedBazelrc(t *testing.T) {
+	ws := newBazelrcWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc":         `common --config=rbe`,
+		"required.bazelrc": `common:rbe --test_env=REQUIRED_RC_VALUE=1`,
+		"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+ws="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$BAZEL_REAL" "--bazelrc=${ws}/required.bazelrc" "$@"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+
+	output, err := runBazelrcTest(t, ws)
+	require.NoErrorf(t, err, "output: %s", output)
+}
+
 // Creates a workspace that verifies --bazelrc=required.bazelrc is applied.
 func newBazelrcWorkspace(t *testing.T) string {
 	ws := testcli.NewWorkspace(t)

@@ -821,7 +821,12 @@ func appendExpansion(
 			}
 			config, ok := namedConfigs[a.GetValue()]
 			if !ok {
-				return nil, fmt.Errorf("config value '%s' is not defined in any .rc file", a.GetValue())
+				// The CLI can only expand configs from rc files it has already
+				// seen. Preserve unresolved configs so Bazel can still resolve
+				// them later if a wrapper or plugin adds more rc files.
+				log.Debugf("Preserving unresolved config %q for Bazel to resolve later", a.GetValue())
+				expanded = append(expanded, a)
+				continue
 			}
 			if slices.Index(configStack, a.GetValue()) != -1 {
 				return nil, fmt.Errorf("circular --config reference detected: %s", strings.Join(append(configStack, a.GetValue()), " -> "))

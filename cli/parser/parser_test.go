@@ -247,8 +247,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"build",
 				"--config=foo",
 			},
-			errorContents: []string{
-				"config value 'foo' is not defined in any .rc file",
+			expectedExpandedArgs: []string{
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				"--ignore_all_rc_files",
+				"build",
+				"--config=foo",
 			},
 		},
 		{
