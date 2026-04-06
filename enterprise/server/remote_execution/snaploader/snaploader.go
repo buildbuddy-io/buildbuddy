@@ -452,7 +452,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
 		supportsRemoteFallback := opts.SupportsRemoteChunks && *snaputil.EnableRemoteSnapshotSharing
-		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
+		manifest, err := l.GetLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest")
@@ -476,7 +476,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
-	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
+	manifest, acResult, err := l.FetchRemoteManifest(ctx, key)
 	if err != nil {
 		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
 	}
@@ -510,11 +510,11 @@ func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest,
 	return true
 }
 
-// fetchRemoteManifest fetches the most recent snapshot manifest from the remote
+// FetchRemoteManifest fetches the most recent snapshot manifest from the remote
 // cache.
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
-func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
+func (l *FileCacheLoader) FetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	manifestKey, err := RemoteManifestKey(key)
@@ -551,7 +551,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 	return acResult, nil
 }
 
-func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) GetLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gid, err := groupID(ctx, l.env)
@@ -1281,4 +1281,16 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))
 	return cow, nil
+}
+
+func IsLikelyDefaultSnapshot(keys *fcpb.SnapshotKeySet, task *repb.ExecutionTask) bool {
+	defaultBranch := getEnv(task, "GIT_REPO_DEFAULT_BRANCH")
+	if defaultBranch != "" && defaultBranch == keys.GetWriteKey().GetRef() {
+		return true
+	}
+
+	// The default snapshot is the fallback key for non-default branches,
+	// so if a run does not have a fallback key, it's likely running on
+	// the default branch.
+	return len(keys.GetFallbackKeys()) == 0
 }

@@ -1178,12 +1178,12 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if remoteSavePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot || snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
 	} else if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
-		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
 	}
 
 	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable,
@@ -1202,7 +1202,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
 	// as it should be a good proxy for the user's intent on snapshot behavior.
 	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
-	if savePolicy == platform.AlwaysSaveSnapshot || c.isLikelyDefaultSnapshot() {
+	if savePolicy == platform.AlwaysSaveSnapshot || snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
 		// We want to always save the default snapshot, because it is used as a fallback for
 		// runs on other branches, so we want it to stay up-to-date.
 		return true
@@ -1210,7 +1210,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 	// By default (applies if save policy is unset or invalid) or if
 	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
 	// doesn't already exist.
-	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetBranchKey())
+	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -3355,12 +3355,17 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 
 // hasRemoteSnapshot returns whether a remote snapshot exists for any
 // valid snapshot keys, including fallback keys.
-func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader snaploader.Loader) bool {
+func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *snaploader.FileCacheLoader) bool {
 	if !c.supportsRemoteSnapshots {
 		return false
 	}
 
-	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetBranchKey()}
+	// We intentionally check the write key here and not the branch key. They only
+	// differ for merge queue runs, where the write key is rewritten to the default
+	// branch. Merge queue snapshots are never written under the
+	// gh-readonly-queue/... ref, so checking the branch key would always miss and
+	// incorrectly make us think no remote snapshot exists yet.
+	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetWriteKey()}
 	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
 
 	for _, k := range allKeys {
@@ -3372,45 +3377,13 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader sna
 	return false
 }
 
-func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
-	readPolicy, err := snapshotReadPolicy(c.task)
-	if err != nil {
-		return false
-	}
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
-		SupportsRemoteManifest: c.supportsRemoteSnapshots,
-		ReadPolicy:             readPolicy,
-	})
+func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
+	_, _, err := loader.FetchRemoteManifest(ctx, key)
 	return err == nil
 }
-func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
-	readPolicy, err := snapshotReadPolicy(c.task)
-	if err != nil {
-		return false
-	}
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
-		SupportsRemoteChunks:   c.supportsRemoteSnapshots,
-		SupportsRemoteManifest: false,
-		ReadPolicy:             readPolicy,
-	})
+func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
+	_, err := loader.GetLocalManifest(ctx, key, c.supportsRemoteSnapshots)
 	return err == nil
-}
-
-// hasFallbackKeys reports whether there are fallback snapshot keys.
-//
-// If none are present, it's likely this run is for the master snapshot
-// (i.e. the default branch), which typically serves as the fallback for runs
-// on other branches.
-func (c *FirecrackerContainer) hasFallbackKeys() bool {
-	return len(c.snapshotKeySet.GetFallbackKeys()) > 0
-}
-
-// The default snapshot is the fallback key for non-default branches,
-// so if a run does not have a fallback key, it's likely running on
-// the default branch.
-func (c *FirecrackerContainer) isLikelyDefaultSnapshot() bool {
-	return !c.hasFallbackKeys()
 }
 
 func isExitErrorSIGTERM(err error) bool {
