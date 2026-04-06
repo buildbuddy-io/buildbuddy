@@ -48,7 +48,7 @@ var (
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
 	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
 
-	name        = flags.String("name", "", "Name for this peer; reachable at <name>.internal on the tunnel network (auto-generated if unset)")
+	name        = flags.String("name", "", "Name for this peer; reachable by this name on the tunnel network (auto-generated if unset)")
 	sshPort     = flags.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
@@ -306,7 +306,7 @@ func HandleSSHServer(args []string) (int, error) {
 
 	listeningMsg := fmt.Sprintf("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
 	if name := rsp.GetAssignedPeerName(); name != "" {
-		listeningMsg += fmt.Sprintf(" (%s.internal)", name)
+		listeningMsg += fmt.Sprintf(" (%s)", name)
 	}
 	log.Print(listeningMsg)
 

@@ -59,7 +59,7 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 	tunDev, tnet, err := netstack.CreateNetTUN(
 		[]netip.Addr{addr},
 		// Use the gateway's hub IP as the DNS resolver so peer names
-		// registered with peer_name are resolvable as <name>.internal.
+		// registered with peer_name are resolvable by name.
 		[]netip.Addr{netip.MustParseAddr(resp.GetGatewayIp())},
 		1420,
 	)
@@ -125,7 +125,7 @@ func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 
 // TestEndToEnd_DNSResolution verifies that a peer can resolve another peer's
 // registered name via the gateway's per-network DNS server and connect using
-// that name (<name>.internal).
+// that name.
 func TestEndToEnd_DNSResolution(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
@@ -148,7 +148,7 @@ func TestEndToEnd_DNSResolution(t *testing.T) {
 	// Dial peer-a by DNS name. The gVisor stack sends a DNS query to the
 	// gateway hub IP (configured as the resolver in CreateNetTUN), which
 	// routes it to serveDNS via injectInbound.
-	connB, err := peerB.net.DialContext(dialCtx, "tcp", fmt.Sprintf("%s.internal:%d", peerA.assignedName, port))
+	connB, err := peerB.net.DialContext(dialCtx, "tcp", fmt.Sprintf("%s:%d", peerA.assignedName, port))
 	require.NoError(t, err)
 	defer connB.Close()
 

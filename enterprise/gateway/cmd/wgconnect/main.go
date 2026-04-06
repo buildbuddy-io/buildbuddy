@@ -4,12 +4,12 @@
 // Peers that registered with a peer_name can be addressed by name directly.
 // Add to ~/.ssh/config:
 //
-//	Host *.internal
+//	Host myvm
 //	    ProxyCommand wg-connect --api_key=KEY --network_name=NAME --target=%h:%p
 //
 // Then connect normally:
 //
-//	ssh myvm.internal
+//	ssh myvm
 package main
 
 import (
