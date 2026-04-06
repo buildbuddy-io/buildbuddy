@@ -8,12 +8,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/cmd/sshvm",
     visibility = ["//visibility:private"],
     deps = [
-        "//server/util/wgkeys",
         "//proto:gateway_go_proto",
         "//proto:gateway_service_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/wgkeys",
         "@com_github_creack_pty//:pty",
         "@com_github_gliderlabs_ssh//:ssh",
         "@com_zx2c4_golang_wireguard//conn",
