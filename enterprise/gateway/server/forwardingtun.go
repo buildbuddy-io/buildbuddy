@@ -89,6 +89,8 @@ type muxTUN struct {
 	netStacks   sync.Map // int (network index) → *netStack
 	events      chan tun.Event
 	mtu         int
+	done        chan struct{}
+	closeOnce   sync.Once
 }
 
 func newMuxTUN(mtu int) *muxTUN {
@@ -96,6 +98,7 @@ func newMuxTUN(mtu int) *muxTUN {
 		outbound: make(chan *buffer.View, 1024),
 		events:   make(chan tun.Event, 10),
 		mtu:      mtu,
+		done:     make(chan struct{}),
 	}
 	t.events <- tun.EventUp
 	return t
@@ -236,16 +239,17 @@ func extractIPv6Addrs(pkt []byte) (src, dst netip.Addr, ok bool) {
 }
 
 func (t *muxTUN) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
-	view, ok := <-t.outbound
-	if !ok {
+	select {
+	case view := <-t.outbound:
+		n, err := view.Read(bufs[0][offset:])
+		if err != nil {
+			return 0, err
+		}
+		sizes[0] = n
+		return 1, nil
+	case <-t.done:
 		return 0, os.ErrClosed
 	}
-	n, err := view.Read(bufs[0][offset:])
-	if err != nil {
-		return 0, err
-	}
-	sizes[0] = n
-	return 1, nil
 }
 
 func (t *muxTUN) Name() (string, error)    { return "mux", nil }
@@ -255,11 +259,13 @@ func (t *muxTUN) MTU() (int, error)        { return t.mtu, nil }
 func (t *muxTUN) BatchSize() int           { return 1 }
 
 func (t *muxTUN) Close() error {
-	close(t.events)
-	close(t.outbound)
-	t.netStacks.Range(func(_, v any) bool {
-		v.(*netStack).close()
-		return true
+	t.closeOnce.Do(func() {
+		close(t.done)
+		close(t.events)
+		t.netStacks.Range(func(_, v any) bool {
+			v.(*netStack).close()
+			return true
+		})
 	})
 	return nil
 }
