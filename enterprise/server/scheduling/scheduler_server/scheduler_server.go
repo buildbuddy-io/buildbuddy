@@ -2383,6 +2383,10 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
 		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
+	if ci_runner_util.IsRemoteRunnerTask(task) {
+		plat := platform.GetProto(task.GetAction(), task.GetCommand())
+		emitRemoteRunnerMetric(task, metadata, plat, "initial")
+	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
 		return nil, err
 	}
@@ -2471,6 +2475,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		// Proceed despite error - it's fine if it's already unclaimed.
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
+
+	if ci_runner_util.IsRemoteRunnerTask(task) {
+		plat := platform.GetProto(task.GetAction(), task.GetCommand())
+		emitRemoteRunnerMetric(task, scheduledTask.metadata, plat, "retry")
+	}
+
 	delay := time.Duration(0)
 	if reconnectToken != "" {
 		delay = *leaseReconnectGracePeriod
@@ -2496,6 +2506,65 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	log.CtxDebugf(ctx, "ReEnqueueTask succeeded for task %q", taskID)
 	return nil
+}
+
+func emitRemoteRunnerMetric(task *repb.ExecutionTask, md *scpb.SchedulingMetadata, plat *repb.Platform, stage string) {
+	opLabel := ""
+	switch task.GetRequestMetadata().GetActionMnemonic() {
+	case "BuildBuddyWorkflowRun":
+		opLabel = metrics.WorkflowLabel
+	case "RemoteBazelRun":
+		opLabel = metrics.RemoteBazelLabel
+	default:
+		return
+	}
+
+	os := platform.LinuxOperatingSystemName
+	arch := platform.AMD64ArchitectureName
+	if md.GetOs() != "" {
+		os = md.GetOs()
+	}
+	if md.GetArch() != "" {
+		arch = md.GetArch()
+	}
+
+	switch os {
+	case platform.LinuxOperatingSystemName:
+	case platform.DarwinOperatingSystemName:
+	case platform.WindowsOperatingSystemName:
+		break
+	default:
+		os = "unknown"
+	}
+
+	switch arch {
+	case platform.AMD64ArchitectureName:
+	case platform.ARM64ArchitectureName:
+		break
+	default:
+		arch = "unknown"
+	}
+
+	selfHosted := platform.FindValue(plat, platform.UseSelfHostedExecutorsPropertyName)
+	if selfHosted == "" {
+		selfHosted = "false"
+	}
+	switch selfHosted {
+	case "true":
+	case "false":
+		break
+	default:
+		selfHosted = "unknown"
+	}
+
+	metrics.RemoteRunnerRequests.With(prometheus.Labels{
+		metrics.GroupID:    md.GetTaskGroupId(),
+		metrics.OpLabel:    opLabel,
+		metrics.Stage:      stage,
+		metrics.OS:         os,
+		metrics.Arch:       arch,
+		metrics.SelfHosted: selfHosted,
+	}).Inc()
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
