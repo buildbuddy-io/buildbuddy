@@ -159,6 +159,16 @@ func (s *Service) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*i
 
 	for _, client := range *permittedClients {
 		if identity.Client == client {
+			// Check if IP rules are currently being enforced for this group. If
+			// not, return an empty rule set.
+			groupID := req.GetRequestContext().GetGroupId()
+			g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
+			if err != nil {
+				return nil, err
+			}
+			if !g.EnforceIPRules {
+				return &irpb.GetRulesResponse{}, nil
+			}
 			return s.GetRules(ctx, req)
 		}
 	}
