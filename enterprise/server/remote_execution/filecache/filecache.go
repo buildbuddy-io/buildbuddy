@@ -503,6 +503,11 @@ func key(ctx context.Context, node *repb.FileNode) string {
 }
 
 func (c *fileCache) checkClosed() error {
+	// Close() functionality was added in unclean shutdown detection CL, so disable
+	// any checking of closed filecache when this feature is disabled.
+	if !*deleteFilecacheOnUncleanShutdown {
+		return nil
+	}
 	if c.isClosed.Load() {
 		return status.FailedPreconditionError("filecache is closed")
 	}
