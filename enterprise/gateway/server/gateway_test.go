@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 
 func newPubKeyHex(t *testing.T) string {
 	t.Helper()
-	priv, err := keys.GeneratePrivateKey()
+	priv, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 	return priv.PublicKey().Hex()
 }

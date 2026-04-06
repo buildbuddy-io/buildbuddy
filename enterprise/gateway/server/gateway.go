@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -74,7 +74,7 @@ type Gateway struct {
 
 // New creates a Gateway with a single shared WireGuard device.
 func New(env environment.Env) (*Gateway, error) {
-	serverPrivKey, err := keys.GeneratePrivateKey()
+	serverPrivKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return nil, status.InternalErrorf("generate server private key: %s", err)
 	}
@@ -129,7 +129,7 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 	if req.GetPublicKey() == "" {
 		return nil, status.InvalidArgumentError("public_key is required")
 	}
-	clientPubKey, err := keys.ParseHexKey(req.GetPublicKey())
+	clientPubKey, err := wgkeys.ParseHexKey(req.GetPublicKey())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid public_key: %s", err)
 	}
@@ -208,7 +208,7 @@ func (g *Gateway) Deregister(ctx context.Context, req *gwpb.DeregisterRequest) (
 		return nil, status.InvalidArgumentError("public_key is required")
 	}
 	pubKeyHex := req.GetPublicKey()
-	if _, err := keys.ParseHexKey(pubKeyHex); err != nil {
+	if _, err := wgkeys.ParseHexKey(pubKeyHex); err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid public_key: %s", err)
 	}
 

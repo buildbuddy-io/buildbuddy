@@ -11,7 +11,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/gateway/keys",
+        "//server/util/wgkeys",
         "//proto:gateway_go_proto",
         "//server/environment",
         "//server/util/flag",
@@ -44,7 +44,7 @@ go_test(
     ],
     embed = [":server"],
     deps = [
-        "//enterprise/gateway/keys",
+        "//server/util/wgkeys",
         "//proto:gateway_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

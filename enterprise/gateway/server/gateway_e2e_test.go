@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/stretchr/testify/require"
 	"golang.zx2c4.com/wireguard/conn"
@@ -45,7 +45,7 @@ type tunnelPeer struct {
 // gateway to initiate one.
 func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName string) tunnelPeer {
 	t.Helper()
-	privKey, err := keys.GeneratePrivateKey()
+	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 
 	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{
