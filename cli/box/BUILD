@@ -15,7 +15,6 @@ go_library(
         "//proto:eventlog_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
-        "//server/remote_cache/digest",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/platform",

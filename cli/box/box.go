@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -62,7 +61,6 @@ If a name is given, the runner is recycled after the session ends so
 that the next invocation resumes the same VM. Without a name the VM
 is ephemeral.
 
-Options:
 `
 )
 
@@ -115,8 +113,8 @@ func handleCreate(args []string) (int, error) {
 		*idleTimeout = maxIdleTimeout
 	}
 
-	// Determine the box name. If the user didn't provide one, generate a
-	// random name; the VM will be ephemeral (no runner recycling).
+	// Determine the name. If the user didn't provide one, the VM will
+	// be ephemeral (no runner recycling).
 	var boxName string
 	if positional := createFlags.Args(); len(positional) > 0 {
 		boxName = positional[0]
@@ -133,8 +131,7 @@ func handleCreate(args []string) (int, error) {
 		}
 	}
 
-	// Get a linux/amd64 bb binary to use as the action input. Firecracker VMs
-	// always run linux/amd64 regardless of the host.
+	// Get a linux/amd64 bb binary to use as the action input.
 	bbPath, cleanupBB, err := getBBBinary()
 	if err != nil {
 		return -1, fmt.Errorf("getting bb binary: %w", err)
@@ -166,11 +163,6 @@ func handleCreate(args []string) (int, error) {
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-
-	df, err := digest.ParseFunction("blake3")
-	if err != nil {
-		return -1, err
-	}
 
 	// Build platform exec properties.
 	execProps := []string{
@@ -224,13 +216,12 @@ func handleCreate(args []string) (int, error) {
 		Timeout:    durationpb.New(actionTimeout),
 	}
 
-	arn, err := rexec.Prepare(ctx, env, "bb-cli-box", df, action, cmd, inputDir)
+	arn, err := rexec.Prepare(ctx, env, "bb-cli-box", digestFunction, action, cmd, inputDir)
 	if err != nil {
 		return -1, fmt.Errorf("preparing action: %w", err)
 	}
 
-	// Use a 10-minute timeout for the whole startup sequence.
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(true))
@@ -258,24 +249,6 @@ func handleCreate(args []string) (int, error) {
 				result := msg.ExecuteResponse.GetResult()
 				exitCode := result.GetExitCode()
 				errMsg := fmt.Sprintf("VM exited before becoming ready (exit code %d)", exitCode)
-
-				// Fetch stdout+stderr with a fresh context so cancel() below
-				// doesn't race with the download.
-				fetchCtx, fetchCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-				defer fetchCancel()
-				// The executor may have stored outputs under sha256 regardless
-				// of the digest function we used for the action itself.
-				sha256df, _ := digest.ParseFunction("sha256")
-				if res, err := rexec.GetResult(fetchCtx, env, "bb-cli-box", sha256df, result); err != nil {
-					errMsg += fmt.Sprintf("\n(could not fetch output: %v)", err)
-				} else {
-					if len(res.Stdout) > 0 {
-						errMsg += "\nstdout:\n" + string(res.Stdout)
-					}
-					if len(res.Stderr) > 0 {
-						errMsg += "\nstderr:\n" + string(res.Stderr)
-					}
-				}
 				streamErrCh <- fmt.Errorf("%s", errMsg)
 				cancel()
 				return
@@ -313,11 +286,8 @@ func handleCreate(args []string) (int, error) {
 		if nameOrIP == "" {
 			nameOrIP = r.Hostname()
 		}
-		if recycleable {
-			fmt.Printf("Box %q is ready (recycled).\n", nameOrIP)
-		} else {
-			fmt.Printf("Box %q is ready.\n", nameOrIP)
-		}
+
+		fmt.Printf("Box %q is ready.\n", nameOrIP)
 		fmt.Printf("  URL:     %s\n", r.URL)
 		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
 		return 0, nil
@@ -343,7 +313,7 @@ func waitForReady(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 		})
 		if err != nil {
 			// Invocation likely doesn't exist yet; keep polling.
-			time.Sleep(time.Second)
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
@@ -353,7 +323,7 @@ func waitForReady(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 
 		nextID := resp.GetNextChunkId()
 		if nextID == "" || nextID == chunkID {
-			time.Sleep(time.Second)
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		chunkID = nextID
