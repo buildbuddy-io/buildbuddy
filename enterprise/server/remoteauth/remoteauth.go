@@ -42,6 +42,7 @@ var (
 	authHeaders = []string{authutil.APIKeyHeader}
 
 	target                   = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
+	jwtCacheTTL              = flag.Duration("auth.remote.jwt_cache_ttl", time.Minute, "TTL for locally cached JWTs.")
 	jwtExpirationBuffer      = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", false, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
 	keyRefreshInterval       = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
@@ -64,8 +65,10 @@ func Register(env *real_environment.RealEnv) error {
 func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize:    jwtCacheSize,
+		TTL:        *jwtCacheTTL,
 		SizeFn:     func(v string) int64 { return 1 },
 		ThreadSafe: true,
+		Clock:      env.GetClock(),
 	}
 	cache, err := lru.New(config)
 	if err != nil {
