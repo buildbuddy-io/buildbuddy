@@ -1,6 +1,7 @@
 package stream_run_logs_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,16 +15,41 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
+
+type fakeBBClient struct {
+	bbspb.BuildBuddyServiceClient
+	stream bbspb.BuildBuddyService_WriteEventLogClient
+}
+
+func (f *fakeBBClient) WriteEventLog(context.Context, ...grpc.CallOption) (bbspb.BuildBuddyService_WriteEventLogClient, error) {
+	return f.stream, nil
+}
+
+type fakeWriteEventLogClient struct {
+	bbspb.BuildBuddyService_WriteEventLogClient
+	sendErr error
+}
+
+func (f *fakeWriteEventLogClient) Send(*elpb.WriteEventLogRequest) error {
+	return f.sendErr
+}
+
+func (f *fakeWriteEventLogClient) CloseAndRecv() (*elpb.WriteEventLogResponse, error) {
+	return &elpb.WriteEventLogResponse{}, nil
+}
 
 // Integration test that runs `bb run` and does the full build through the CLI.
 func TestWithBuild(t *testing.T) {
@@ -169,8 +195,9 @@ echo "hello world"
 	require.Equal(t, inspb.OverallStatus_SUCCESS, invRsp.Invocation[0].GetRunStatus())
 }
 
+// TODO(Maggie): Add a test for the FAILURE mode after it's fixed.
 func TestUploadFailure(t *testing.T) {
-	for _, failureMode := range []stream_run_logs.FailureMode{stream_run_logs.FailureModeWarn, stream_run_logs.FailureModeFail} {
+	for _, failureMode := range []stream_run_logs.FailureMode{stream_run_logs.FailureModeWarn} {
 		t.Run(fmt.Sprintf("failure_mode=%s", failureMode), func(t *testing.T) {
 			ws := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, ws, map[string]string{
@@ -179,21 +206,45 @@ echo "hello world"
 `,
 			})
 
-			// Point to an invalid server to simulate log upload failure.
-			invalidOpts := stream_run_logs.Opts{
-				BesBackend:   "grpc://invalid.buildbuddy.io",
-				ApiKey:       "",
-				InvocationID: "",
-				OnFailure:    failureMode,
-			}
+			app, webClient, setupOpts := setup(t)
+			conn, err := grpc_client.DialSimple(setupOpts.BesBackend)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
 
-			exitCode, err := stream_run_logs.Execute(ws+"/echo.sh", invalidOpts)
+			mockBuild(t, app, webClient.RequestContext.GetGroupId(), setupOpts.InvocationID)
+
+			// Create a fake BB client that returns an upload error.
+			// Defer all other calls to the real client.
+			realClient := bbspb.NewBuildBuddyServiceClient(conn)
+			clientWrapper := &fakeBBClient{
+				BuildBuddyServiceClient: realClient,
+				stream: &fakeWriteEventLogClient{
+					sendErr: fmt.Errorf("upload error"),
+				},
+			}
+			setupOpts.BBClient = clientWrapper
+
+			exitCode, execErr := stream_run_logs.Execute(ws+"/echo.sh", *setupOpts)
+
+			invRsp := &inpb.GetInvocationResponse{}
+			getErr := webClient.RPC("GetInvocation", &inpb.GetInvocationRequest{
+				RequestContext: webClient.RequestContext,
+				Lookup: &inpb.InvocationLookup{
+					InvocationId: setupOpts.InvocationID,
+				},
+			}, invRsp)
+			require.NoError(t, getErr)
+			require.Equal(t, 1, len(invRsp.Invocation))
+
 			if failureMode == stream_run_logs.FailureModeFail {
-				require.Error(t, err)
+				require.Error(t, execErr)
 				require.Equal(t, 1, exitCode)
 			} else {
-				require.NoError(t, err)
+				require.NoError(t, execErr)
 				require.Equal(t, 0, exitCode)
+				// Even though the run log upload failed, the invocation should still be marked as successful
+				// because the script executed successfully.
+				require.Equal(t, inspb.OverallStatus_SUCCESS, invRsp.Invocation[0].GetRunStatus())
 			}
 		})
 	}

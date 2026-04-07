@@ -52,6 +52,7 @@ type Opts struct {
 	InvocationID string
 	ApiKey       string
 	OnFailure    FailureMode
+	BBClient     bbspb.BuildBuddyServiceClient
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
@@ -152,12 +153,17 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
-	conn, err := grpc_client.DialSimple(opts.BesBackend)
-	if err != nil {
-		return handleStreamingFailure(runScriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err))
+	var bbClient bbspb.BuildBuddyServiceClient
+	if opts.BBClient == nil {
+		conn, err := grpc_client.DialSimple(opts.BesBackend)
+		if err != nil {
+			return handleStreamingFailure(runScriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err))
+		}
+		defer conn.Close()
+		bbClient = bbspb.NewBuildBuddyServiceClient(conn)
+	} else {
+		bbClient = opts.BBClient
 	}
-	defer conn.Close()
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
 		InvocationId: opts.InvocationID,
@@ -371,12 +377,6 @@ func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		Data: data,
 	}); err != nil {
 		log.Warnf("Failed to stream run logs: %s", err)
-		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-			InvocationId: invocationID,
-			Status:       inspb.OverallStatus_DISCONNECTED,
-		}); err != nil {
-			log.Warnf("Failed to update run status: %s", err)
-		}
 		return err
 	}
 	return nil
