@@ -103,6 +103,22 @@ func TestGetRepositoryInstallationToken(t *testing.T) {
 	require.Equal(t, 1, client.createTokenCalls)
 }
 
+func TestGetRepositoryInstallationToken_NormalizesRepoURL(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
+		t:                  t,
+		wantInstallationID: testInstallationID,
+	}
+	app := newTestApp(te, client)
+
+	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL+".git")
+	require.NoError(t, err)
+	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 1, client.createTokenCalls)
+}
+
 func TestGetRepositoryInstallationToken_Unauthorized(t *testing.T) {
 	te, _ := setupEnv(t)
 

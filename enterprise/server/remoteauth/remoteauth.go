@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -42,6 +43,7 @@ var (
 	authHeaders = []string{authutil.APIKeyHeader}
 
 	target                   = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
+	jwtCacheTTL              = flag.Duration("auth.remote.jwt_cache_ttl", time.Minute, "TTL for locally cached JWTs. If this is <= 0, TTL-based expiry is disabled and cached JWTs are only evicted by LRU size limits.")
 	jwtExpirationBuffer      = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
 	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", false, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
 	keyRefreshInterval       = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
@@ -64,8 +66,10 @@ func Register(env *real_environment.RealEnv) error {
 func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize:    jwtCacheSize,
+		TTL:        *jwtCacheTTL,
 		SizeFn:     func(v string) int64 { return 1 },
 		ThreadSafe: true,
+		Clock:      env.GetClock(),
 	}
 	cache, err := lru.New(config)
 	if err != nil {
@@ -80,6 +84,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		ctx:    env.GetServerContext(),
 		env:    env,
 		client: client,
+		clock:  env.GetClock(),
 		quit:   make(chan struct{}),
 	}
 
@@ -115,6 +120,7 @@ type keyProvider struct {
 	ctx    context.Context
 	env    environment.Env
 	client authpb.AuthServiceClient
+	clock  clockwork.Clock
 	mu     sync.RWMutex
 	keys   []string
 	quit   chan struct{}
@@ -152,13 +158,13 @@ func (kp *keyProvider) stop() {
 
 // Periodically refreshes ES256 public keys in the background.
 func (kp *keyProvider) refreshLoop(refreshInterval time.Duration) {
-	ticker := time.NewTicker(refreshInterval)
+	ticker := kp.clock.NewTicker(refreshInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-kp.quit:
 			return
-		case <-ticker.C:
+		case <-ticker.Chan():
 			if err := kp.refreshES256PublicKeys(); err != nil {
 				log.Warningf("Error asynchronously refreshing ES256 public keys: %v", err)
 			}
@@ -456,7 +462,7 @@ func (a *RemoteAuthenticator) jwtIsValid(ctx context.Context, jwt string) (*clai
 	if err != nil {
 		return nil, err
 	}
-	if claims.ExpiresAt < time.Now().Add(a.jwtExpirationBuffer).Unix() {
+	if claims.ExpiresAt < a.env.GetClock().Now().Add(a.jwtExpirationBuffer).Unix() {
 		return nil, status.NotFoundError("JWT will expire soon")
 	}
 	return claims, nil

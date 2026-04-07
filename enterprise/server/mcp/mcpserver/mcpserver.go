@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcptools"
@@ -30,6 +31,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	_ "embed"
+
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 )
 
 var (
@@ -62,6 +65,8 @@ var supportedProtocolVersions = []string{
 	"2025-03-26",
 	"2024-11-05",
 }
+
+var apiServicePrefix = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 
 // init loads the embedded API tool manifest and indexes tools by name.
 func init() {
@@ -330,7 +335,7 @@ func (s *Service) toolsForUser(ctx context.Context, groupID string) []tool {
 	allowed := s.allowedRPCs(ctx, groupID)
 	tools := make([]tool, 0, len(apiToolsManifest.Tools))
 	for _, generatedTool := range apiToolsManifest.Tools {
-		if _, ok := allowed[generatedTool.RPCName]; !ok {
+		if _, ok := allowed[apiServicePrefix+generatedTool.RPCName]; !ok {
 			continue
 		}
 		tools = append(tools, tool{
@@ -356,7 +361,7 @@ func (s *Service) handleToolCall(ctx context.Context, groupID string, request *j
 	if !ok {
 		return jsonrpc.Failure(request.ID, jsonrpc.InvalidParamsCode, "unknown tool"), http.StatusOK
 	}
-	if _, ok := s.allowedRPCs(ctx, groupID)[generatedTool.RPCName]; !ok {
+	if _, ok := s.allowedRPCs(ctx, groupID)[apiServicePrefix+generatedTool.RPCName]; !ok {
 		return jsonrpc.Success(request.ID, toolErrorResult(status.PermissionDeniedError("permission denied"))), http.StatusOK
 	}
 	messageType, err := protoregistry.GlobalTypes.FindMessageByName(protoreflect.FullName(generatedTool.RequestType))
@@ -417,7 +422,10 @@ func (s *Service) invokeAPITool(ctx context.Context, generatedTool mcptools.Tool
 func (s *Service) allowedRPCs(ctx context.Context, groupID string) map[string]struct{} {
 	allowed := make(map[string]struct{})
 	for _, rpcName := range s.allowedAPIRPCNames(ctx, groupID) {
-		if !mcptools.AllowsRPC(rpcName) {
+		if !strings.HasPrefix(rpcName, apiServicePrefix) {
+			continue
+		}
+		if !mcptools.AllowsRPC(strings.TrimPrefix(rpcName, apiServicePrefix)) {
 			continue
 		}
 		allowed[rpcName] = struct{}{}

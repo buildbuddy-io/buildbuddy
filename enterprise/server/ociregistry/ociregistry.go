@@ -419,50 +419,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-
-		// Only use the tag->digest cache for unauthenticated requests, since
-		// different auth tokens may have different access to manifests.
-		useTagDigestCache := inreq.Header.Get(headerAuthorization) == ""
-		cacheKey := tagDigestCacheKey(ref, inreq.Header.Values(headerAccept))
-		var hash *gcr.Hash
-		if useTagDigestCache {
-			if cached, ok := r.tagDigestCache.Get(cacheKey); ok {
-				hash = cached
-			}
-		}
-		if hash == nil {
-			resolve := func(ctx context.Context) (manifestResolveResult, error) {
-				hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
-				if err != nil {
-					return manifestResolveResult{}, err
-				}
-				return manifestResolveResult{hash: hash, exists: exists}, nil
-			}
-
-			var result manifestResolveResult
-			var err error
-			if useTagDigestCache {
-				// Deduplicate concurrent upstream requests for the same tag.
-				result, _, err = r.tagDigestGroup.Do(ctx, cacheKey, resolve)
+		hash, err := r.resolveTagToDigest(ctx, inreq, ociResourceType, ref)
+		if err != nil {
+			if status.IsNotFoundError(err) {
+				http.Error(w, err.Error(), http.StatusNotFound)
 			} else {
-				result, err = resolve(ctx)
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			}
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
-				return
-			}
-			if !result.exists {
-				http.Error(w, fmt.Sprintf("Could not find manifest %q", ref.Context()), http.StatusNotFound)
-				return
-			}
-			hash = result.hash
-			if hash == nil {
-				http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
-				return
-			}
-			if useTagDigestCache {
-				r.tagDigestCache.Add(cacheKey, hash)
-			}
+			return
 		}
 		manifestRef, err := parseReference(repository, hash.String())
 		if err != nil {
@@ -592,6 +556,51 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		return nil
 	}
 	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+}
+
+// resolveTagToDigest resolves a manifest tag to its digest, using an
+// in-memory cache and singleflight deduplication for unauthenticated requests.
+func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, error) {
+	// Only use the tag->digest cache for unauthenticated requests, since
+	// different auth tokens may have different access to manifests.
+	useTagDigestCache := inreq.Header.Get(headerAuthorization) == ""
+	cacheKey := tagDigestCacheKey(ref, inreq.Header.Values(headerAccept))
+
+	if useTagDigestCache {
+		if cached, ok := r.tagDigestCache.Get(cacheKey); ok {
+			return cached, nil
+		}
+	}
+
+	resolve := func(ctx context.Context) (manifestResolveResult, error) {
+		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		if err != nil {
+			return manifestResolveResult{}, err
+		}
+		return manifestResolveResult{hash: hash, exists: exists}, nil
+	}
+
+	var result manifestResolveResult
+	var err error
+	if useTagDigestCache {
+		// Deduplicate concurrent upstream requests for the same tag.
+		result, _, err = r.tagDigestGroup.Do(ctx, cacheKey, resolve)
+	} else {
+		result, err = resolve(ctx)
+	}
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not resolve digest for manifest %q: %s", ref.Context(), err)
+	}
+	if !result.exists {
+		return nil, status.NotFoundErrorf("could not find manifest %q", ref.Context())
+	}
+	if result.hash == nil {
+		return nil, status.NotFoundErrorf("could not parse digest from manifest for %q", ref.Context())
+	}
+	if useTagDigestCache {
+		r.tagDigestCache.Add(cacheKey, result.hash)
+	}
+	return result.hash, nil
 }
 
 // tagDigestCacheKey builds a cache key for the tag->digest cache.

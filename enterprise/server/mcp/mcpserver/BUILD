@@ -18,6 +18,7 @@ go_library(
     deps = [
         "//enterprise/server/mcp/jsonrpc",
         "//enterprise/server/mcp/mcptools",
+        "//proto/api/v1:api_v1_go_proto",
         "//server/capabilities_filter",
         "//server/http/interceptors",
         "//server/interfaces",
