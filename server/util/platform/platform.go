@@ -92,7 +92,7 @@ const (
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
 	enableVFSPropertyName                    = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName       = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName       = "use-self-hosted-executors"
+	UseSelfHostedExecutorsPropertyName       = "use-self-hosted-executors"
 	disableMeasuredTaskSizePropertyName      = "debug-disable-measured-task-size"
 	disablePredictedTaskSizePropertyName     = "debug-disable-predicted-task-size"
 	extraArgsPropertyName                    = "extra-args"
@@ -483,7 +483,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	poolType := PoolTypeDefault
-	if val, ok := m[strings.ToLower(useSelfHostedExecutorsPropertyName)]; ok {
+	if val, ok := m[strings.ToLower(UseSelfHostedExecutorsPropertyName)]; ok {
 		if strings.EqualFold(val, "true") {
 			poolType = PoolTypeSelfHosted
 		} else {
