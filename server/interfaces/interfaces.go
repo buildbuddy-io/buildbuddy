@@ -1238,6 +1238,10 @@ type CommandResult struct {
 	// VfsStats holds VFS-specific stats if VFS workspaces are enabled.
 	VfsStats *repb.VfsStats
 
+	// InputFetchMetadata describes which action inputs were fetched from
+	// remote CAS while preparing or serving the workspace.
+	InputFetchMetadata *espb.InputFetchMetadata
+
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
 }

@@ -299,6 +299,13 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 		r.task.GetExecuteRequest().GetDigestFunction())
+	// NOTE: If we switch this code path to download inputs incrementally from
+	// GetTree instead of buffering the full GetTree response from the server,
+	// the downloadsBitmap implementation will probably break. The
+	// implementation currently depends on the tree being fully buffered in
+	// memory, in order for the bitmap indexes to be
+	// deterministic (so that they can be interpreted properly by both clients
+	// and servers)
 	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
 		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {
@@ -402,6 +409,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
+			if dirtools.InputFetchMetadataEnabled() {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
