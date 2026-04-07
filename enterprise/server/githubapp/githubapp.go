@@ -589,14 +589,19 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID,
 		return "", err
 	}
 
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
+	}
+
 	// Validate that the repo was imported to BB.
 	gitRepository := &tables.GitRepository{}
-	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_token").Raw(`
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_token").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, groupID, repoURL).Take(gitRepository)
+	`, groupID, parsedRepoURL.String()).Take(gitRepository)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("repo %s not found", repoURL)
@@ -604,10 +609,6 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID,
 		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
 	}
 
-	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
-	if err != nil {
-		return "", err
-	}
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token").Raw(`
 		SELECT *
@@ -645,7 +646,7 @@ func GetRepositoryInstallationToken(ctx context.Context, env environment.Env, gr
 	if err != nil {
 		return "", status.WrapError(err, "get GitHub app for owner")
 	}
-	return app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	return app.GetRepositoryInstallationToken(ctx, groupID, parsedRepoURL.String())
 }
 
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.
