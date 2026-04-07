@@ -137,6 +137,9 @@ const (
 	// CPU architecture associated with the request.
 	Arch = "arch"
 
+	// Whether the request is targeting self-hosted executors.
+	SelfHosted = "self_hosted"
+
 	// The name used to identify the type of an unexpected event.
 	EventName = "name"
 
@@ -413,6 +416,9 @@ const (
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
+
+	WorkflowLabel    = "workflow"
+	RemoteBazelLabel = "remote_bazel"
 )
 
 // Other constants
@@ -1522,6 +1528,20 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "vfs_cas_files_accessed_bytes",
 		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
+	RemoteRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_runner",
+		Name:      "requests",
+		Help:      "Number of remote runner executions initiated.",
+	}, []string{
+		GroupID,
+		OpLabel,
+		Stage,
+		OS,
+		Arch,
+		SelfHosted,
 	})
 
 	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
