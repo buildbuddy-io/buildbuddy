@@ -2519,40 +2519,29 @@ func emitRemoteRunnerMetric(task *repb.ExecutionTask, md *scpb.SchedulingMetadat
 		return
 	}
 
-	os := platform.LinuxOperatingSystemName
-	arch := platform.AMD64ArchitectureName
-	if md.GetOs() != "" {
-		os = md.GetOs()
-	}
-	if md.GetArch() != "" {
-		arch = md.GetArch()
-	}
-
+	os := md.GetOs()
 	switch os {
-	case platform.LinuxOperatingSystemName:
-	case platform.DarwinOperatingSystemName:
-	case platform.WindowsOperatingSystemName:
-		break
+	case "":
+		os = platform.LinuxOperatingSystemName
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
 	default:
 		os = "unknown"
 	}
 
+	arch := md.GetArch()
 	switch arch {
-	case platform.AMD64ArchitectureName:
-	case platform.ARM64ArchitectureName:
-		break
+	case "":
+		arch = platform.AMD64ArchitectureName
+	case platform.AMD64ArchitectureName, platform.ARM64ArchitectureName:
 	default:
 		arch = "unknown"
 	}
 
 	selfHosted := platform.FindValue(plat, platform.UseSelfHostedExecutorsPropertyName)
-	if selfHosted == "" {
-		selfHosted = "false"
-	}
 	switch selfHosted {
-	case "true":
-	case "false":
-		break
+	case "":
+		selfHosted = "false"
+	case "true", "false":
 	default:
 		selfHosted = "unknown"
 	}
