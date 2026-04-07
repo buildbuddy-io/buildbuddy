@@ -2384,8 +2384,7 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
 	if ci_runner_util.IsRemoteRunnerTask(task) {
-		plat := platform.GetProto(task.GetAction(), task.GetCommand())
-		emitRemoteRunnerMetric(task, metadata, plat, "initial")
+		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
 		return nil, err
@@ -2477,8 +2476,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	log.CtxDebugf(ctx, "Re-enqueueing task")
 
 	if ci_runner_util.IsRemoteRunnerTask(task) {
-		plat := platform.GetProto(task.GetAction(), task.GetCommand())
-		emitRemoteRunnerMetric(task, scheduledTask.metadata, plat, "retry")
+		emitRemoteRunnerMetric(ctx, task, scheduledTask.metadata, "retry")
 	}
 
 	delay := time.Duration(0)
@@ -2508,7 +2506,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	return nil
 }
 
-func emitRemoteRunnerMetric(task *repb.ExecutionTask, md *scpb.SchedulingMetadata, plat *repb.Platform, stage string) {
+func emitRemoteRunnerMetric(ctx context.Context, task *repb.ExecutionTask, md *scpb.SchedulingMetadata, stage string) {
 	opLabel := ""
 	switch task.GetRequestMetadata().GetActionMnemonic() {
 	case "BuildBuddyWorkflowRun":
@@ -2516,6 +2514,7 @@ func emitRemoteRunnerMetric(task *repb.ExecutionTask, md *scpb.SchedulingMetadat
 	case "RemoteBazelRun":
 		opLabel = metrics.RemoteBazelLabel
 	default:
+		log.CtxWarningf(ctx, "Unknown action mnemonic when emitting remote runner metric: %s", task.GetRequestMetadata().GetActionMnemonic())
 		return
 	}
 
@@ -2537,6 +2536,7 @@ func emitRemoteRunnerMetric(task *repb.ExecutionTask, md *scpb.SchedulingMetadat
 		arch = "unknown"
 	}
 
+	plat := platform.GetProto(task.GetAction(), task.GetCommand())
 	selfHosted := platform.FindValue(plat, platform.UseSelfHostedExecutorsPropertyName)
 	switch selfHosted {
 	case "":
