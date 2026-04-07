@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -83,6 +84,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		ctx:    env.GetServerContext(),
 		env:    env,
 		client: client,
+		clock:  env.GetClock(),
 		quit:   make(chan struct{}),
 	}
 
@@ -118,6 +120,7 @@ type keyProvider struct {
 	ctx    context.Context
 	env    environment.Env
 	client authpb.AuthServiceClient
+	clock  clockwork.Clock
 	mu     sync.RWMutex
 	keys   []string
 	quit   chan struct{}
@@ -155,13 +158,13 @@ func (kp *keyProvider) stop() {
 
 // Periodically refreshes ES256 public keys in the background.
 func (kp *keyProvider) refreshLoop(refreshInterval time.Duration) {
-	ticker := time.NewTicker(refreshInterval)
+	ticker := kp.clock.NewTicker(refreshInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-kp.quit:
 			return
-		case <-ticker.C:
+		case <-ticker.Chan():
 			if err := kp.refreshES256PublicKeys(); err != nil {
 				log.Warningf("Error asynchronously refreshing ES256 public keys: %v", err)
 			}
@@ -459,7 +462,7 @@ func (a *RemoteAuthenticator) jwtIsValid(ctx context.Context, jwt string) (*clai
 	if err != nil {
 		return nil, err
 	}
-	if claims.ExpiresAt < time.Now().Add(a.jwtExpirationBuffer).Unix() {
+	if claims.ExpiresAt < a.env.GetClock().Now().Add(a.jwtExpirationBuffer).Unix() {
 		return nil, status.NotFoundError("JWT will expire soon")
 	}
 	return claims, nil
