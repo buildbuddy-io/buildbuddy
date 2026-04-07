@@ -131,8 +131,10 @@ func handleCreate(args []string) (int, error) {
 		}
 	}
 
+	ctx := context.Background()
+
 	// Get a linux/amd64 bb binary to use as the action input.
-	bbPath, cleanupBB, err := getBBBinary()
+	bbPath, cleanupBB, err := getBBBinary(ctx)
 	if err != nil {
 		return -1, fmt.Errorf("getting bb binary: %w", err)
 	}
@@ -149,7 +151,6 @@ func handleCreate(args []string) (int, error) {
 		return -1, fmt.Errorf("staging bb binary: %w", err)
 	}
 
-	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 
 	conn, err := grpc_client.DialSimple(*targetFlag)
@@ -248,8 +249,7 @@ func handleCreate(args []string) (int, error) {
 			if msg.Done {
 				result := msg.ExecuteResponse.GetResult()
 				exitCode := result.GetExitCode()
-				errMsg := fmt.Sprintf("VM exited before becoming ready (exit code %d)", exitCode)
-				streamErrCh <- fmt.Errorf("%s", errMsg)
+				streamErrCh <- fmt.Errorf("VM exited before becoming ready (exit code %d)", exitCode)
 				cancel()
 				return
 			}
@@ -362,7 +362,7 @@ func ensureDockerPrefix(image string) string {
 // cleanup function to remove any temp files. On a linux/amd64 host the
 // current executable is used directly; on other platforms the release binary
 // is downloaded from GitHub.
-func getBBBinary() (path string, cleanup func(), err error) {
+func getBBBinary(ctx context.Context) (path string, cleanup func(), err error) {
 	noop := func() {}
 	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
 		path, err = os.Executable()
@@ -379,7 +379,12 @@ func getBBBinary() (path string, cleanup func(), err error) {
 	}
 	cleanup = func() { os.Remove(f.Name()) }
 
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("downloading bb: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		cleanup()
 		return "", noop, fmt.Errorf("downloading bb: %w", err)

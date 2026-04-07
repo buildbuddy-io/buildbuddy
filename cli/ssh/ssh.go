@@ -198,7 +198,11 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	sshConfig := &gossh.ClientConfig{
-		User:            loginUser,
+		User: loginUser,
+		// Host key verification is intentionally skipped: the WireGuard tunnel
+		// provides mutual authentication (only a peer that registered the correct
+		// public key with the gateway can receive traffic), so the SSH layer does
+		// not need an additional TOFU/known_hosts check.
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 		Timeout:         15 * time.Second,
 	}
