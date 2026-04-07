@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -467,6 +468,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	if cmdResult.Error != nil {
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
+	}
+	if dirtools.InputFetchMetadataEnabled() {
+		auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
 	}
 
 	// Note: we continue to upload outputs, stderr, etc. below even if

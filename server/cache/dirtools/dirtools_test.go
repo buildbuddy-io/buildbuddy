@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,11 +23,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1045,6 +1048,203 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+}
+
+func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	fileCacheTmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+
+	linkedAContents := "linked-a"
+	downloadedCContents := "downloaded-c"
+	downloadedDContents := "downloaded-d"
+	linkedBContents := "linked-b"
+	downloadedMContents := "downloaded-m"
+	linkedZContents := "linked-z"
+
+	linkedADigest := setFile(t, env, ctx, instanceName, linkedAContents)
+	downloadedCDigest := setFile(t, env, ctx, instanceName, downloadedCContents)
+	downloadedDDigest := setFile(t, env, ctx, instanceName, downloadedDContents)
+	linkedBDigest := setFile(t, env, ctx, instanceName, linkedBContents)
+	downloadedMDigest := setFile(t, env, ctx, instanceName, downloadedMContents)
+	linkedZDigest := setFile(t, env, ctx, instanceName, linkedZContents)
+	emptyDigest := &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
+
+	addToFileCache(t, ctx, env, fileCacheTmpDir, linkedAContents)
+	addToFileCache(t, ctx, env, fileCacheTmpDir, linkedBContents)
+	addToFileCache(t, ctx, env, fileCacheTmpDir, linkedZContents)
+
+	subDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "d.txt", Digest: downloadedDDigest},
+		},
+	}
+	subDigest, err := digest.ComputeForMessage(subDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	aDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "a.txt", Digest: linkedADigest},
+			{Name: "c.txt", Digest: downloadedCDigest},
+		},
+		Directories: []*repb.DirectoryNode{
+			{Name: "sub", Digest: subDigest},
+		},
+	}
+	aDigest, err := digest.ComputeForMessage(aDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	zDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "z.txt", Digest: linkedZDigest},
+		},
+	}
+	zDigest, err := digest.ComputeForMessage(zDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "b.txt", Digest: linkedBDigest},
+				{Name: "empty.txt", Digest: emptyDigest},
+				{Name: "m.txt", Digest: downloadedMDigest},
+			},
+			Directories: []*repb.DirectoryNode{
+				{Name: "a-dir", Digest: aDigest},
+				{Name: "z-dir", Digest: zDigest},
+			},
+		},
+		Children: []*repb.Directory{
+			zDir,
+			aDir,
+			subDir,
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.NotNil(t, info.InputFetchMetadata)
+
+	bitmap := roaring.New()
+	err = bitmap.UnmarshalBinary(info.InputFetchMetadata.GetDownloadedFileIndicesBitmap())
+	require.NoError(t, err)
+
+	// Deterministic depth-first leaf order with files visited before
+	// subdirectories at each level:
+	// 0: b.txt
+	// 1: empty.txt
+	// 2: m.txt
+	// 3: a-dir/a.txt
+	// 4: a-dir/c.txt
+	// 5: a-dir/sub/d.txt
+	// 6: z-dir/z.txt
+	require.Equal(t, []uint32{2, 4, 5}, bitmap.ToArray())
+}
+
+func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	largeRN, largeFileContent := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
+	err := env.GetCache().Set(ctx, largeRN, largeFileContent)
+	require.NoError(t, err)
+
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{
+					Name:   "large-file.txt",
+					Digest: largeRN.GetDigest(),
+				},
+			},
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.NotNil(t, info.InputFetchMetadata)
+
+	bitmap := roaring.New()
+	err = bitmap.UnmarshalBinary(info.InputFetchMetadata.GetDownloadedFileIndicesBitmap())
+	require.NoError(t, err)
+
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
+}
+
+func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	fileCacheTmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+
+	cachedContents := "cached"
+	preservedContents := "preserved"
+	downloadedRootContents := "downloaded-root"
+	downloadedChildContents := "downloaded-child"
+
+	cachedDigest := setFile(t, env, ctx, instanceName, cachedContents)
+	preservedDigest := setFile(t, env, ctx, instanceName, preservedContents)
+	downloadedRootDigest := setFile(t, env, ctx, instanceName, downloadedRootContents)
+	downloadedChildDigest := setFile(t, env, ctx, instanceName, downloadedChildContents)
+	emptyDigest := &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
+
+	addToFileCache(t, ctx, env, fileCacheTmpDir, cachedContents)
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "preserved.txt"), []byte(preservedContents), 0644))
+
+	childDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "downloaded-child.txt", Digest: downloadedChildDigest},
+		},
+	}
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	preservedNode := &repb.FileNode{Name: "preserved.txt", Digest: preservedDigest}
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "cached.txt", Digest: cachedDigest},
+				{Name: "empty.txt", Digest: emptyDigest},
+				preservedNode,
+				{Name: "downloaded-root.txt", Digest: downloadedRootDigest},
+			},
+			Directories: []*repb.DirectoryNode{
+				{Name: "subdir", Digest: childDigest},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		RootDir: tmpDir,
+		Skip: map[fspath.Key]*repb.FileNode{
+			fspath.NewKey("preserved.txt", false): preservedNode,
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.NotNil(t, info.InputFetchMetadata)
+
+	bitmap := roaring.New()
+	err = bitmap.UnmarshalBinary(info.InputFetchMetadata.GetDownloadedFileIndicesBitmap())
+	require.NoError(t, err)
+
+	// Deterministic depth-first leaf order with files visited before
+	// subdirectories at each level:
+	// 0: cached.txt
+	// 1: empty.txt
+	// 2: preserved.txt
+	// 3: downloaded-root.txt
+	// 4: subdir/downloaded-child.txt
+	require.Equal(t, []uint32{3, 4}, bitmap.ToArray())
 }
 
 func TestDownloadTreeEmptyDigest(t *testing.T) {
