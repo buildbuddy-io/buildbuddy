@@ -195,7 +195,7 @@ echo "hello world"
 	require.Equal(t, inspb.OverallStatus_SUCCESS, invRsp.Invocation[0].GetRunStatus())
 }
 
-// TODO(Maggie): Add a test for the FAILURE mode after it's fixed.
+// TODO(#7049): Add a test for the FAILURE mode after it's fixed.
 func TestUploadFailure(t *testing.T) {
 	for _, failureMode := range []stream_run_logs.FailureMode{stream_run_logs.FailureModeWarn} {
 		t.Run(fmt.Sprintf("failure_mode=%s", failureMode), func(t *testing.T) {
@@ -223,6 +223,7 @@ echo "hello world"
 				},
 			}
 			setupOpts.BBClient = clientWrapper
+			setupOpts.OnFailure = failureMode
 
 			exitCode, execErr := stream_run_logs.Execute(ws+"/echo.sh", *setupOpts)
 

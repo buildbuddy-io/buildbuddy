@@ -52,7 +52,9 @@ type Opts struct {
 	InvocationID string
 	ApiKey       string
 	OnFailure    FailureMode
-	BBClient     bbspb.BuildBuddyServiceClient
+
+	// If set, use this BB client instead of initializing a new one. This is intended for testing.
+	BBClient bbspb.BuildBuddyServiceClient
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
@@ -303,7 +305,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	// Send a final log message with timestamp and exit code.
 	exitMsg := fmt.Sprintf("\n%s (command exited with code %d)\n", time.Now().UTC().Format("2006-01-02 15:04:05.000 MST"), exitCode)
-	if err := uploadLogs(ctx, bbClient, opts.InvocationID, stream, []byte(exitMsg)); err != nil {
+	if err := uploadLogs(opts.InvocationID, stream, []byte(exitMsg)); err != nil {
 		log.Warnf("Failed to upload exit code log: %s", err)
 	}
 
@@ -323,7 +325,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 		// When a PTY is closed, it returns EIO.
 		if err == io.EOF || errors.Is(err, syscall.EIO) {
 			if len(writeBuf) > 0 {
-				_ = uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf)
+				_ = uploadLogs(invocationID, writeStream, writeBuf)
 			}
 			return nil
 		}
@@ -346,7 +348,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 
 		// Flush writes to the server once we've accumulated enough data.
 		if len(writeBuf) > 0 && (len(writeBuf)+n > UploadBufferSize || forceFlush) {
-			if err := uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf); err != nil {
+			if err := uploadLogs(invocationID, writeStream, writeBuf); err != nil {
 				uploadRunLogs = false
 				continue
 			}
@@ -367,7 +369,8 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 	}
 }
 
-func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
+// TODO(#7049): If FailureModeFail, upload failures should kill the running executable.
+func uploadLogs(invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
 	// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
 	if err := stream.Send(&elpb.WriteEventLogRequest{
 		Type: elpb.LogType_RUN_LOG,
