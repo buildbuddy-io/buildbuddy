@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
-	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/term"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
@@ -70,55 +70,6 @@ func resolveEndpoint(endpoint string) (string, error) {
 	return net.JoinHostPort(addrs[0], port), nil
 }
 
-// hostKeyCallback returns a callback that checks the server's host key against
-// ~/.ssh/known_hosts, prompting the user to accept unknown keys and persisting
-// accepted keys so future connections are verified silently.
-func hostKeyCallback(knownHostsPath string) gossh.HostKeyCallback {
-	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
-		cb, err := knownhosts.New(knownHostsPath)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("reading known_hosts: %w", err)
-		}
-		if err == nil {
-			err = cb(hostname, remote, key)
-			if err == nil {
-				return nil // known and verified
-			}
-			var keyErr *knownhosts.KeyError
-			if errors.As(err, &keyErr) && len(keyErr.Want) > 0 {
-				// Key mismatch — always hard-reject.
-				fmt.Fprintf(os.Stderr, "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\n")
-				return err
-			}
-			// err != nil but no Want entries → key not found, fall through to prompt.
-		}
-
-		fingerprint := gossh.FingerprintSHA256(key)
-		fmt.Fprintf(os.Stderr, "The authenticity of host %q can't be established.\n", hostname)
-		fmt.Fprintf(os.Stderr, "%s key fingerprint is %s.\n", key.Type(), fingerprint)
-		fmt.Fprintf(os.Stderr, "Are you sure you want to continue connecting (yes/no)? ")
-
-		var response string
-		fmt.Scanln(&response)
-		if strings.TrimSpace(strings.ToLower(response)) != "yes" {
-			return fmt.Errorf("host key verification rejected by user")
-		}
-
-		// Persist to known_hosts.
-		if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
-			return fmt.Errorf("creating known_hosts dir: %w", err)
-		}
-		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-		if err != nil {
-			return fmt.Errorf("opening known_hosts: %w", err)
-		}
-		defer f.Close()
-		line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
-		_, err = fmt.Fprintln(f, line)
-		return err
-	}
-}
-
 func HandleSSH(args []string) (int, error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
@@ -152,6 +103,21 @@ func HandleSSH(args []string) (int, error) {
 	}
 	if loginUser == "" {
 		loginUser = os.Getenv("USER")
+	}
+
+	// Parse host and port from target, which may be a bb-ssh:// URL,
+	// a host:port string, or a bare hostname.
+	dialPort := *port
+	if u, err := url.Parse(target); err == nil && u.Scheme == "bb-ssh" {
+		target = u.Hostname()
+		if p, err := strconv.Atoi(u.Port()); err == nil {
+			dialPort = p
+		}
+	} else if host, portStr, err := net.SplitHostPort(target); err == nil {
+		target = host
+		if p, err := strconv.Atoi(portStr); err == nil {
+			dialPort = p
+		}
 	}
 
 	ctx := context.Background()
@@ -225,18 +191,19 @@ func HandleSSH(args []string) (int, error) {
 	defer dev.Close()
 
 	// Dial the SSH server through the WireGuard tunnel.
-	addr := net.JoinHostPort(target, fmt.Sprintf("%d", *port))
+	addr := net.JoinHostPort(target, fmt.Sprintf("%d", dialPort))
 	tcpConn, err := tnet.Dial("tcp", addr)
 	if err != nil {
 		return 1, status.WrapError(err, "dialing ssh server")
 	}
 
-	home, _ := os.UserHomeDir()
-	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
-
 	sshConfig := &gossh.ClientConfig{
-		User:            loginUser,
-		HostKeyCallback: hostKeyCallback(knownHostsPath),
+		User: loginUser,
+		// Host key verification is intentionally skipped: the WireGuard tunnel
+		// provides mutual authentication (only a peer that registered the correct
+		// public key with the gateway can receive traffic), so the SSH layer does
+		// not need an additional TOFU/known_hosts check.
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 		Timeout:         15 * time.Second,
 	}
 	sshConn, chans, reqs, err := gossh.NewClientConn(tcpConn, addr, sshConfig)

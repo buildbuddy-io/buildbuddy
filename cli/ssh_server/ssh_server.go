@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -48,8 +49,7 @@ var (
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
 	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
 
-	name        = flags.String("name", "", "Name for this peer; reachable by this name on the tunnel network (auto-generated if unset)")
-	sshPort     = flags.Int("ssh_port", 22, "SSH listen port on the tunnel interface")
+	sshPort     = flags.Int("port", 22, "SSH listen port on the tunnel interface")
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
 
@@ -58,7 +58,7 @@ var (
 
 func init() {
 	var buf strings.Builder
-	fmt.Fprintf(&buf, "usage: bb %s [flags]\n\nRun an SSH server on a user-mode wireguard network connected to\nthe gateway server.\n\nFlags:\n", flags.Name())
+	fmt.Fprintf(&buf, "usage: bb %s [flags] [name]\n\nRun an SSH server on a user-mode wireguard network connected to\nthe gateway server.\n\nFlags:\n", flags.Name())
 	flags.SetOutput(&buf)
 	flags.PrintDefaults()
 	usage = buf.String()
@@ -191,6 +191,11 @@ func HandleSSHServer(args []string) (int, error) {
 		return 1, err
 	}
 
+	var name string
+	if positional := flags.Args(); len(positional) > 0 {
+		name = positional[0]
+	}
+
 	if *gateway == "" {
 		log.Printf("A non-empty --gateway must be specified")
 		return 1, nil
@@ -232,7 +237,7 @@ func HandleSSHServer(args []string) (int, error) {
 
 	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
 		NetworkName: *network,
-		PeerName:    *name,
+		PeerName:    name,
 		PublicKey:   privKey.PublicKey().Hex(),
 	})
 	if err != nil {
@@ -307,11 +312,22 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	defer listener.Close()
 
-	listeningMsg := fmt.Sprintf("SSH server listening on %s:%d", rsp.GetAssignedIp(), *sshPort)
-	if name := rsp.GetAssignedPeerName(); name != "" {
-		listeningMsg += fmt.Sprintf(" (%s)", name)
+	hostPort := net.JoinHostPort(rsp.GetAssignedIp(), fmt.Sprintf("%d", *sshPort))
+	q := url.Values{}
+	if label := rsp.GetAssignedPeerName(); label != "" {
+		q.Set("name", label)
 	}
-	log.Print(listeningMsg)
+	sshURL := &url.URL{Scheme: "bb-ssh", Host: hostPort, RawQuery: q.Encode()}
+	log.Printf("Listening on %s", sshURL)
+	connectTarget := rsp.GetAssignedPeerName()
+	if connectTarget == "" {
+		connectTarget = rsp.GetAssignedIp()
+	}
+	if *sshPort != 22 {
+		log.Printf("Connect with: bb ssh -p %d %s", *sshPort, connectTarget)
+	} else {
+		log.Printf("Connect with: bb ssh %s", connectTarget)
+	}
 
 	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
 	// no active sessions. The timer starts immediately to cover the case where

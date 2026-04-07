@@ -11,6 +11,7 @@ go_library(
         "//cli/add",
         "//cli/analyze",
         "//cli/ask",
+        "//cli/box",
         "//cli/cli_command",
         "//cli/download",
         "//cli/execute",

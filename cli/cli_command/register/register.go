@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
@@ -55,6 +56,11 @@ func register() {
 			Help:    "Asks for suggestions about your last invocation.",
 			Handler: ask.HandleAsk,
 			Aliases: []string{"wtf", "huh"},
+		},
+		{
+			Name:    "box",
+			Help:    "Manages remote Firecracker VM boxes.",
+			Handler: box.HandleBox,
 		},
 		{
 			Name:    "download",
