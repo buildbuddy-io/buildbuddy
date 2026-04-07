@@ -39,6 +39,7 @@ var (
 		buildBuddyServicePrefix + "GetEventLog",
 		buildBuddyServicePrefix + "GetCacheScoreCard",
 		buildBuddyServicePrefix + "GetCacheMetadata",
+		buildBuddyServicePrefix + "GetTree",
 		buildBuddyServicePrefix + "GetTreeDirectorySizes",
 		buildBuddyServicePrefix + "GetTarget",
 		buildBuddyServicePrefix + "GetTargetHistory",
