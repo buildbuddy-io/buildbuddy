@@ -442,6 +442,13 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		}
 		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 	}
+	allowedRPCs := capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID)
+	// Keep GetUserResponse.allowed_rpc in its legacy bare-method format so the
+	// existing web auth flow can keep treating these values as BuildBuddyService
+	// method names.
+	for i, rpc := range allowedRPCs {
+		allowedRPCs[i] = path.Base(rpc)
+	}
 
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
@@ -451,7 +458,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			GroupId: selectedGroupID,
 			Access:  selectedGroupAccess,
 		},
-		AllowedRpc:       capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID),
+		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
