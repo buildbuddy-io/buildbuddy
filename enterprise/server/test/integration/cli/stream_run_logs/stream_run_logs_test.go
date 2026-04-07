@@ -248,7 +248,7 @@ echo "Should never get here"
 	require.Equal(t, inspb.OverallStatus_DISCONNECTED, invRsp.Invocation[0].GetRunStatus())
 }
 
-func TestIdleStreamTimeoutStillReportsFinalRunStatus(t *testing.T) {
+func TestStreamClosureStillReportsFinalRunStatus(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"echo.sh": `#!/bin/bash
@@ -256,6 +256,9 @@ sleep 1
 `,
 	})
 
+	// Use a short server timeout to force the log stream to close before the
+	// script exits, then verify the final run status still comes from the
+	// process exit rather than a premature DISCONNECTED update.
 	originalTimeout := buildbuddy_server.WriteEventLogTimeout
 	buildbuddy_server.WriteEventLogTimeout = 500 * time.Millisecond
 	t.Cleanup(func() { buildbuddy_server.WriteEventLogTimeout = originalTimeout })

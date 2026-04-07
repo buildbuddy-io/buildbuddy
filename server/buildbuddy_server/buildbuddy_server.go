@@ -99,7 +99,6 @@ const (
 )
 
 var (
-	// Maximum amount of time a write-event-log stream may remain idle between messages.
 	WriteEventLogTimeout = 1 * time.Hour
 )
 
@@ -1588,14 +1587,16 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 }
 
 func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
-	ctx, cancel := context.WithCancel(stream.Context())
-	defer cancel()
+	ctx := stream.Context()
 
 	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
 	gid := authenticatedUser.GetGroupID()
+
+	ctx, cancel := context.WithTimeout(ctx, WriteEventLogTimeout)
+	defer cancel()
 
 	// Stream requests from the client in the background to ensure we don't block if the client stops sending requests.
 	type recvResult struct {
@@ -1618,17 +1619,12 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 		}
 	}()
 
-	idleTimer := time.NewTimer(WriteEventLogTimeout)
-	defer idleTimer.Stop()
-
 	var eventLogWriter *eventlog.EventLogWriter
 	for {
 		var req *elpb.WriteEventLogRequest
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-idleTimer.C:
-			return status.DeadlineExceededErrorf("event log stream timed out after %s of inactivity", WriteEventLogTimeout)
+			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
 		case result, ok := <-recvCh:
 			if !ok {
 				return status.InternalErrorf("unexpected channel close")
@@ -1640,14 +1636,6 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			}
 			req = result.req
 		}
-
-		if !idleTimer.Stop() {
-			select {
-			case <-idleTimer.C:
-			default:
-			}
-		}
-		idleTimer.Reset(WriteEventLogTimeout)
 
 		if eventLogWriter == nil {
 			var pubsubChannel string
