@@ -20,7 +20,6 @@ go_library(
         "@com_zx2c4_golang_wireguard//tun/netstack",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_crypto//ssh",
-        "@org_golang_x_crypto//ssh/knownhosts",
         "@org_golang_x_term//:term",
     ],
 )
