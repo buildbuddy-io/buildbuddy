@@ -680,6 +680,7 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
+        "//app/trace:timing_profile_drop_target",
         "//app/trace:trace_events",
         "//app/trace:trace_viewer",
         "//proto:build_event_stream_ts_proto",
