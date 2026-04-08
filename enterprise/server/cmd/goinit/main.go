@@ -115,7 +115,9 @@ func reapChildren(ctx context.Context) {
 			// just reap once - reap all zombie processes in a loop until there
 			// is nothing left to reap.
 			for {
-				if _, err := syscall.Wait4(-1, &status, unix.WNOHANG, nil); err != nil {
+				// pid > 0 is the only case where Wait4 successfully reaped a
+				// zombie, so stop reaping on any non-positive pid.
+				if pid, err := syscall.Wait4(-1, &status, unix.WNOHANG, nil); err != nil || pid <= 0 {
 					break
 				}
 			}
