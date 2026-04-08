@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -283,6 +284,41 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			},
 		}, olapUsages)
 	}
+}
+
+func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {
+	clock := clockwork.NewFakeClockAt(period1Start)
+	te := setupEnv(t)
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
+	require.NoError(t, err)
+
+	// Create an impersonating user context.
+	impersonatingUser := &claims.Claims{
+		UserID:        "US1",
+		GroupID:       "GR1",
+		AllowedGroups: []string{"GR1"},
+		Impersonating: true,
+	}
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), impersonatingUser)
+
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
+	require.NoError(t, err)
+
+	// Flush redis buffer and verify no usage keys were written.
+	err = te.GetMetricsCollector().Flush(context.Background())
+	require.NoError(t, err)
+	rdb := te.GetDefaultRedisClient()
+	keys, err := rdb.Keys(context.Background(), "usage/*").Result()
+	require.NoError(t, err)
+	assert.Empty(t, keys, "no usage data should be written for impersonation requests")
+
+	// Advance clock and flush to DB to confirm nothing is persisted.
+	clock.Advance(2 * periodDuration)
+	err = ut.FlushToDB(context.Background())
+	require.NoError(t, err)
+	usages := queryAllUsages(t, te)
+	assert.Empty(t, usages, "no usage rows should be flushed for impersonation requests")
 }
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {

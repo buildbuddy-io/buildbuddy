@@ -227,6 +227,9 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		}
 		return err
 	}
+	if u.IsImpersonating() {
+		return nil
+	}
 	groupID := u.GetGroupID()
 
 	counts, err := countsToMap(uc)
