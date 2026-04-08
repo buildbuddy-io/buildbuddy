@@ -402,6 +402,8 @@ BuildBuddy-managed Macs.
 
 ## Optimal usage of remote runners
 
+### Remote execution
+
 While our remote runners support running arbitrary bash code, they were specifically
 designed and optimized to run the Bazel client server and power Bazel commands with
 remote execution (RBE).
@@ -412,6 +414,32 @@ on disks for remote runners.
 
 It's more effective when a smaller remote runner is used to orchestrate farming out most computation to
 traditional Bazel remote executors.
+
+### Reducing disk snapshot size
+
+On Linux, snapshot upload and download is billed. Reducing snapshot size is important to keeping costs down.
+
+The disk and memory of remote runners is serialized and downloaded/uploaded to our cache, so decreasing the memory and disk usage of the runners will decrease snapshot-related cache transfer.
+
+Here are a few practical ways to reduce the size of your disk snapshots:
+
+- Use remote execution whenever possible, so builds and tests run remotely instead of producing data locally on the runner.
+- Enable `--remote_download_minimal` to avoid downloading build outputs that are not needed locally.
+- Size runners to the minimum resources your workflow actually needs.
+  - If you open an invocation URL and go to the Executions tab, you can see peak memory and disk usage. If your workload is consistently using fewer resources than it requested, you can scale the runner down accordingly.
+  - Remote runners can be configured with the platform properties `EstimatedFreeDiskBytes` and `EstimatedMemory`.
+- Disable the repository cache on builds with `--repository_cache=`.
+
+  - On snapshot hits, Bazel's output base is preserved and should contain previously fetched external repositories. Keeping a duplicate copy in the repository cache is often unnecessary.
+  - If you disable the repository cache, you may want to enable `--experimental_remote_downloader=grpcs://remote.buildbuddy.io`. This will cache external repository assets in our cache, speeding up fetches and reducing upstream requests that may be billed or hit rate limits.
+
+- Disable Bazel’s local disk cache with `--disk_cache=`. Similarly to the repository cache recommendation above, the warm output base should contain cached action outputs without the need for a duplicate copy.
+- Disable runfiles symlink generation with `--nobuild_runfile_links`.
+  - If set, Bazel only creates runfile links when they are actually required by a local action. This can reduce unnecessary disk usage for workloads that primarily use remote execution.
+- Python dependencies are often a significant source of disk usage. Disabling or cleaning up pip's local cache can reduce the size of the snapshot.
+  - When using rules_python, pip_parse may cause pip to cache large HTTP and wheel caches. To modify local caching behavior, you can configure pip_parse with `extra_pip_args`.
+  - Setting `extra_pip_args = ["--no-cache-dir"]` disables pip’s local cache entirely.
+  - If you still want caching between multiple builds in the same Workflow, you can leave local caching enabled during the run and clean it up before snapshotting with `pip cache purge`.
 
 ## Getting started
 
