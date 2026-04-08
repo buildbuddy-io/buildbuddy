@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
@@ -682,5 +684,212 @@ func TestMirrorConfig(t *testing.T) {
 		require.Equal(t, expectedBody, body)
 
 		require.Greater(t, upstream1Counter.Load()-u1Before, int32(0))
+	})
+}
+
+func TestFetchDeduplication(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	port := testport.FindFree(t)
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+	mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() { mirrorServer.Shutdown(context.TODO()) })
+
+	t.Run("concurrent unauthenticated blob fetches are deduplicated", func(t *testing.T) {
+		var upstreamGetCount atomic.Int32
+		var mu sync.Mutex
+		var upstreamGetPaths []string
+		firstGetReceived := make(chan struct{}, 1)
+		releaseGets := make(chan struct{})
+		var releaseOnce sync.Once
+		closeRelease := func() { releaseOnce.Do(func() { close(releaseGets) }) }
+		t.Cleanup(closeRelease)
+
+		testreg := testregistry.Run(t, testregistry.Opts{
+			HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+				if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+					upstreamGetCount.Add(1)
+					mu.Lock()
+					upstreamGetPaths = append(upstreamGetPaths, r.URL.Path)
+					mu.Unlock()
+					select {
+					case firstGetReceived <- struct{}{}:
+					default:
+					}
+					<-releaseGets
+				}
+				return true
+			},
+		})
+		t.Cleanup(func() { testreg.Shutdown() })
+
+		repository := "test_dedup_unauth"
+		testImageName, testImage := testreg.PushNamedImage(t, repository, nil)
+		layers, err := testImage.Layers()
+		require.NoError(t, err)
+		require.Greater(t, len(layers), 0)
+		blobDigest, err := layers[0].Digest()
+		require.NoError(t, err)
+
+		blobURL := fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorHostPort, testImageName, blobDigest.String())
+
+		numConcurrent := 5
+		type result struct {
+			statusCode int
+			bodyLen    int
+			err        error
+		}
+		results := make([]result, numConcurrent)
+		var wg sync.WaitGroup
+		for i := 0; i < numConcurrent; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				req, err := http.NewRequest(http.MethodGet, blobURL, nil)
+				if err != nil {
+					results[idx] = result{err: err}
+					return
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					results[idx] = result{err: err}
+					return
+				}
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					results[idx] = result{err: err}
+					return
+				}
+				results[idx] = result{statusCode: resp.StatusCode, bodyLen: len(body)}
+			}(i)
+		}
+
+		// Wait for the first upstream GET to start.
+		select {
+		case <-firstGetReceived:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for first upstream GET")
+		}
+		// Give other requests time to reach the singleflight.
+		time.Sleep(100 * time.Millisecond)
+		// Only 1 upstream GET should have been initiated.
+		require.Equal(t, int32(1), upstreamGetCount.Load())
+
+		// Release the blocked GET to complete all requests.
+		closeRelease()
+		wg.Wait()
+
+		for i, r := range results {
+			require.NoErrorf(t, r.err, "request %d", i)
+			require.Equalf(t, http.StatusOK, r.statusCode, "request %d", i)
+			require.Greaterf(t, r.bodyLen, 0, "request %d", i)
+		}
+		// The single upstream GET should have been for the correct digest.
+		require.Len(t, upstreamGetPaths, 1)
+		require.Contains(t, upstreamGetPaths[0], blobDigest.String())
+	})
+
+	t.Run("concurrent authenticated blob fetches bypass deduplication", func(t *testing.T) {
+		numConcurrent := int32(3)
+		var upstreamGetCount atomic.Int32
+		var upstreamGetPaths []string
+		var mu sync.Mutex
+		allGetsReceived := make(chan struct{})
+		releaseGets := make(chan struct{})
+		var releaseOnce sync.Once
+		closeRelease := func() { releaseOnce.Do(func() { close(releaseGets) }) }
+		t.Cleanup(closeRelease)
+
+		testreg := testregistry.Run(t, testregistry.Opts{
+			HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+				if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+					mu.Lock()
+					upstreamGetPaths = append(upstreamGetPaths, r.URL.Path)
+					mu.Unlock()
+					if upstreamGetCount.Add(1) == numConcurrent {
+						close(allGetsReceived)
+					}
+					<-releaseGets
+				}
+				return true
+			},
+		})
+		t.Cleanup(func() { testreg.Shutdown() })
+
+		repository := "test_dedup_auth"
+		testImageName, testImage := testreg.PushNamedImage(t, repository, nil)
+		layers, err := testImage.Layers()
+		require.NoError(t, err)
+		require.Greater(t, len(layers), 0)
+		blobDigest, err := layers[0].Digest()
+		require.NoError(t, err)
+
+		blobURL := fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorHostPort, testImageName, blobDigest.String())
+
+		type result struct {
+			statusCode int
+			err        error
+		}
+		results := make([]result, numConcurrent)
+		var wg sync.WaitGroup
+		for i := int32(0); i < numConcurrent; i++ {
+			wg.Add(1)
+			go func(idx int32) {
+				defer wg.Done()
+				req, err := http.NewRequest(http.MethodGet, blobURL, nil)
+				if err != nil {
+					results[idx] = result{err: err}
+					return
+				}
+				req.Header.Set("Authorization", "Bearer some-token")
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					results[idx] = result{err: err}
+					return
+				}
+				io.ReadAll(resp.Body)
+				resp.Body.Close()
+				results[idx] = result{statusCode: resp.StatusCode}
+			}(i)
+		}
+
+		// All requests should reach upstream independently (no dedup with auth).
+		select {
+		case <-allGetsReceived:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for %d upstream GETs, got %d", numConcurrent, upstreamGetCount.Load())
+		}
+		require.Equal(t, numConcurrent, upstreamGetCount.Load())
+
+		closeRelease()
+		wg.Wait()
+
+		for i := int32(0); i < numConcurrent; i++ {
+			require.NoErrorf(t, results[i].err, "request %d", i)
+			require.Equalf(t, http.StatusOK, results[i].statusCode, "request %d", i)
+		}
+		// All upstream GETs should have been for the correct digest.
+		require.Len(t, upstreamGetPaths, int(numConcurrent))
+		for i, p := range upstreamGetPaths {
+			require.Containsf(t, p, blobDigest.String(), "upstream GET %d", i)
+		}
 	})
 }
