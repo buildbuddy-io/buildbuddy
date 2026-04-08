@@ -60,6 +60,7 @@ message VMConfiguration {
   CPUID host_cpuid = 14;
 
   bool enable_vfs = 16;
+  bool enable_pci = 20;
 
   // TODO: add container_image here?
 }

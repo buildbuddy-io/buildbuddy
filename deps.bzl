@@ -219,8 +219,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be"],
+        sha256 = "59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81"],
         executable = True,
     )
     http_file(
