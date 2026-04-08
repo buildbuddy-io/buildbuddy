@@ -386,7 +386,7 @@ func (t *TestTargetStatus) TableName() string {
 
 func (t *TestTargetStatus) TableOptions(clickhouseVersion string) string {
 	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine()) +
-		" PARTITION BY toYYYYMM(toDateTime(intDiv(invocation_start_time_usec, 1000000)))"
+		" PARTITION BY toYYYYMM(fromUnixTimestamp64Micro(invocation_start_time_usec, 'UTC'))"
 	if clickhouseVersion > "24.8" {
 		// Clickhouse 24.8 added a table setting, deduplicate_merge_projection_mode,
 		// that is required when adding projections with on tables with merge engines.
