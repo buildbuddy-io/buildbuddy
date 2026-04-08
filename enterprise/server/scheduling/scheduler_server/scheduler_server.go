@@ -2056,6 +2056,10 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 
 	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, taskProto)
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
+		if status.IsNotFoundError(err) {
+			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
+			return task
+		}
 		log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
 	}
 
