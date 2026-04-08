@@ -85,6 +85,7 @@ class Router {
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
+      !path.startsWith(Path.profilePath) &&
       !path.startsWith(Path.joinOrgPath) &&
       !path.startsWith(Path.orgAccessDeniedPath)
     ) {
@@ -524,7 +525,7 @@ class Router {
     // Require the user to create an org if they are logged in but not part of
     // an org. Set the return_url param so that they are redirected back to the
     // desired URL once they've created an org.
-    if (user && !user.groups?.length) {
+    if (user && !user.groups?.length && !window.location.pathname.startsWith(Path.profilePath)) {
       const url = new URL(Path.createOrgPath, window.location.href);
       url.search = new URLSearchParams({ return_url: originRelativeHref() }).toString();
       return url;
@@ -604,6 +605,7 @@ function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?
 
 export class Path {
   static home = "/";
+  static profilePath = "/profile";
   static comparePath = "/compare/";
   static compareActionsPath = "/action/compare/";
   static invocationPath = "/invocation/";

@@ -9,6 +9,7 @@ import faviconService from "../favicon/favicon";
 import FooterComponent from "../footer/footer";
 import InvocationComponent from "../invocation/invocation";
 import MenuComponent from "../menu/menu";
+import TimingProfilePageComponent from "../profile/profile";
 import UserPreferences from "../preferences/preferences";
 import router, { Path } from "../router/router";
 
@@ -22,7 +23,7 @@ interface State {
   preferences: UserPreferences;
 }
 
-capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
+capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath, Path.profilePath]);
 
 export default class RootComponent extends React.Component {
   state: State = {
@@ -69,7 +70,8 @@ export default class RootComponent extends React.Component {
   render() {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
-    let showSetup = !invocationId && !compareInvocationIds;
+    let profile = this.state.path.startsWith(Path.profilePath);
+    let showSetup = !profile && !invocationId && !compareInvocationIds;
     const classNames = ["root"];
     if (this.state.preferences.denseModeEnabled) classNames.push("dense");
     const darkMode = this.state.preferences.darkModeEnabled;
@@ -99,6 +101,7 @@ export default class RootComponent extends React.Component {
                 user={undefined}
               />
             )}
+            {profile && <TimingProfilePageComponent dark={darkMode} />}
             {showSetup && <SetupComponent user={this.state.user} />}
           </div>
           <FooterComponent />
