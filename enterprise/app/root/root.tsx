@@ -170,7 +170,7 @@ export default class EnterpriseRootComponent extends React.Component {
   };
 
   componentWillMount() {
-    if (!capabilities.auth || window.location.pathname.startsWith(Path.profilePath)) {
+    if (!capabilities.auth) {
       this.setState({ user: undefined, loading: false });
     }
     authService.userStream.subscribe({
@@ -294,7 +294,7 @@ export default class EnterpriseRootComponent extends React.Component {
               <MenuComponent
                 light={login || cliLogin}
                 user={this.state.user}
-                showHamburger={profile || (!this.state.user && !!invocationId)}
+                showHamburger={!this.state.user && !!invocationId}
                 preferences={this.state.preferences}>
                 <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
               </MenuComponent>

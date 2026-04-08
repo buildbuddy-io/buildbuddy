@@ -525,7 +525,7 @@ class Router {
     // Require the user to create an org if they are logged in but not part of
     // an org. Set the return_url param so that they are redirected back to the
     // desired URL once they've created an org.
-    if (user && !user.groups?.length && !window.location.pathname.startsWith(Path.profilePath)) {
+    if (user && !user.groups?.length) {
       const url = new URL(Path.createOrgPath, window.location.href);
       url.search = new URLSearchParams({ return_url: originRelativeHref() }).toString();
       return url;
