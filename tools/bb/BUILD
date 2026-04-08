@@ -9,14 +9,23 @@ load("@rules_python//python:defs.bzl", "py_binary")
 # or run the script directly:
 #   python3 tools/bb/update_version.py <version>
 # where <version> is a tag from https://github.com/buildbuddy-io/bazel/releases
-alias(
+#
+# NOTE: We use a genrule wrapper (instead of a plain alias) so that the
+# binary becomes a proper build output. A plain alias to the http_file
+# source stays as a repo-rule artifact that Bazel may skip fetching
+# locally under RBE + lazy repo materialization, causing "no such file"
+# errors at `bazel run` time.
+genrule(
     name = "bb",
-    actual = select({
-        "//platforms/configs:macos_arm64": "@io_buildbuddy_bb_cli-darwin-arm64//file:downloaded",
-        "//platforms/configs:macos_x86_64": "@io_buildbuddy_bb_cli-darwin-x86_64//file:downloaded",
-        "//platforms/configs:linux_arm64": "@io_buildbuddy_bb_cli-linux-arm64//file:downloaded",
-        "//platforms/configs:linux_x86_64": "@io_buildbuddy_bb_cli-linux-x86_64//file:downloaded",
+    srcs = select({
+        "//platforms/configs:macos_arm64": ["@io_buildbuddy_bb_cli-darwin-arm64//file:downloaded"],
+        "//platforms/configs:macos_x86_64": ["@io_buildbuddy_bb_cli-darwin-x86_64//file:downloaded"],
+        "//platforms/configs:linux_arm64": ["@io_buildbuddy_bb_cli-linux-arm64//file:downloaded"],
+        "//platforms/configs:linux_x86_64": ["@io_buildbuddy_bb_cli-linux-x86_64//file:downloaded"],
     }),
+    outs = ["bb_bin"],
+    cmd = "cp $< $@",
+    executable = True,
     visibility = ["//tools/lint:__pkg__"],
 )
 
