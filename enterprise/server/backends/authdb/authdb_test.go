@@ -872,6 +872,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, key.Impersonation)
 		require.NotEqualValues(t, 0, key.ExpiryUsec)
+		require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
 
 		// Verify "list" operation does not include the impersonation key.
 		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
