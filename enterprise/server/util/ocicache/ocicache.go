@@ -33,7 +33,7 @@ var (
 const (
 	blobOutputFilePath          = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
+	blobInstanceName            = interfaces.OCIImageInstanceNamePrefix
 	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 
 	maxManifestSize = 10000000
@@ -167,7 +167,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -194,7 +194,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
@@ -224,7 +224,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -248,7 +248,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, blobInstanceName, cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -286,7 +286,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
@@ -299,7 +299,7 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -321,7 +321,7 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
