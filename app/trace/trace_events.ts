@@ -112,6 +112,24 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
 ]);
 
 const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
+const GZIP_MAGIC_BYTE_0 = 0x1f;
+const GZIP_MAGIC_BYTE_1 = 0x8b;
+
+async function isGzipCompressed(blob: Blob): Promise<boolean> {
+  const header = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+  return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
+}
+
+export async function readProfileFile(file: Blob, progress?: (numBytesLoaded: number) => void): Promise<Profile> {
+  let stream = file.stream() as ReadableStream<Uint8Array>;
+  if (await isGzipCompressed(file)) {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("This browser can't read gzipped timing profiles from local files.");
+    }
+    stream = stream.pipeThrough(new DecompressionStream("gzip"));
+  }
+  return readProfile(stream, progress);
+}
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
