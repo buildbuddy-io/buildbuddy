@@ -68,7 +68,8 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -1476,6 +1477,31 @@ func (s *BuildBuddyServer) WaitExecution(req *espb.WaitExecutionRequest, stream 
 	return status.UnimplementedError("Not implemented")
 }
 
+type getTreeStreamAdapter struct {
+	bbspb.BuildBuddyService_GetTreeServer
+}
+
+func (s *getTreeStreamAdapter) Send(rsp *repb.GetTreeResponse) error {
+	return s.BuildBuddyService_GetTreeServer.Send(&capb.GetTreeResponse{
+		Directories:   rsp.GetDirectories(),
+		NextPageToken: rsp.GetNextPageToken(),
+	})
+}
+
+func (s *BuildBuddyServer) GetTree(req *capb.GetTreeRequest, stream bbspb.BuildBuddyService_GetTreeServer) error {
+	casServer := s.env.GetCASServer()
+	if casServer == nil {
+		return status.UnimplementedError("Not implemented")
+	}
+	return casServer.GetTree(&repb.GetTreeRequest{
+		InstanceName:   req.GetInstanceName(),
+		RootDigest:     req.GetRootDigest(),
+		PageSize:       req.GetPageSize(),
+		PageToken:      req.GetPageToken(),
+		DigestFunction: req.GetDigestFunction(),
+	}, &getTreeStreamAdapter{BuildBuddyService_GetTreeServer: stream})
+}
+
 func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
 	return directory_size.GetTreeDirectorySizes(ctx, s.env, req)
 }
@@ -2483,7 +2509,7 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 	return al.GetLogs(ctx, request)
 }
 
-func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
