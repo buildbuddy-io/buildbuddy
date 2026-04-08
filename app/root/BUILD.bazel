@@ -24,7 +24,6 @@ ts_library(
         "//app/invocation",
         "//app/menu",
         "//app/preferences",
-        "//app/profile",
         "//app/router",
     ],
 )
