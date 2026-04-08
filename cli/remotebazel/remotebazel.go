@@ -433,12 +433,17 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 	// If the current branch or commit does not exist remotely, the remote runner will
 	// not be able to fetch it. In this case, use the default branch for the repo.
 	// Your local changes will be applied as a patchset to the remote runner.
+	//
+	// We resolve the commit from the remote tracking ref (e.g. origin/main) rather
+	// than the local branch, because the local branch may have unpushed commits
+	// that the runner won't be able to fetch.
 	if branch == "" || commit == "" {
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
+		remoteBranch := fmt.Sprintf("%s/%s", remoteName, defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(remoteBranch)
 		if err != nil {
-			return "", "", fmt.Errorf("get head commit for local branch %q: %w", defaultBranch, err)
+			return "", "", fmt.Errorf("get head commit for remote branch %q: %w", remoteBranch, err)
 		}
 		commit = defaultBranchCommitHash
 	}
