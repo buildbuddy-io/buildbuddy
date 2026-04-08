@@ -40,11 +40,7 @@ import (
 )
 
 const (
-	// maxGlobalChunkUploadConcurrency is set to a ridiculously high number.
-	// If its working fine and safe, we remove the limit. If there's issues,
-	// we lower it.
-	maxGlobalChunkUploadConcurrency = 8192
-	defaultChunkUploadConcurrency   = 32
+	defaultChunkUploadConcurrency = 32
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -64,7 +60,6 @@ type ByteStreamServerProxy struct {
 	localCache         interfaces.Cache
 	remoteCAS          repb.ContentAddressableStorageClient
 	bufPool            *bytebufferpool.VariableSizePool
-	chunkUploadSem     chan struct{}
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -97,7 +92,6 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		chunkUploadSem:     make(chan struct{}, maxGlobalChunkUploadConcurrency),
 		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
 	}, nil
 }
@@ -1219,13 +1213,6 @@ func (c *chunkUploader) uploadBatch(batch []pendingChunk) error {
 			c.s.bufPool.Put(chunk.poolBuf)
 		}
 	}()
-
-	select {
-	case c.s.chunkUploadSem <- struct{}{}:
-		defer func() { <-c.s.chunkUploadSem }()
-	case <-c.batchCtx.Done():
-		return c.batchCtx.Err()
-	}
 
 	req := &repb.BatchUpdateBlobsRequest{
 		InstanceName:   c.instanceName,

@@ -168,10 +168,9 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
-		remoteCAS:      repb.NewContentAddressableStorageClient(conn),
-		bufPool:        bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
-		efp:            fp,
-		chunkUploadSem: make(chan struct{}, maxGlobalChunkUploadConcurrency),
+		remoteCAS: repb.NewContentAddressableStorageClient(conn),
+		bufPool:   bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		efp:       fp,
 	}
 	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
