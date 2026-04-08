@@ -10,6 +10,11 @@ export type TraceViewerModel = {
   xMax: number;
 };
 
+export type FitToContentPanels = {
+  eventsPanel?: boolean;
+  linePlotsPanel?: boolean;
+};
+
 export type PanelModel = {
   height: number;
   sections: SectionModel[];
@@ -42,10 +47,10 @@ export type LinePlotModel = {
   unit?: string;
 };
 
-export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
+export function buildTraceViewerModel(trace: Profile, fitPanelsToContent?: FitToContentPanels): TraceViewerModel {
   let panels = [
-    buildEventsPanel(trace.traceEvents, fitToContent),
-    buildLinePlotsPanel(trace.traceEvents, fitToContent),
+    buildEventsPanel(trace.traceEvents, fitPanelsToContent?.eventsPanel),
+    buildLinePlotsPanel(trace.traceEvents, fitPanelsToContent?.linePlotsPanel),
   ];
   // If there is no data available (e.g. the executor doesn't have timeseries
   // recording enabled yet) then the panel will be empty - just remove the panel
@@ -128,6 +133,7 @@ function buildLinePlotsPanel(events: TraceEvent[], fitToContent?: boolean): Pane
       ys.push(y);
       if (y > yMax) yMax = y;
     }
+    if (!xs.length) continue;
     sections.push({
       name: name,
       y: sectionY,
@@ -181,7 +187,8 @@ function computeXMax(panels: PanelModel[]): number {
  * header and footer.
  */
 export function panelScrollHeight(panel: PanelModel): number {
-  let height = constants.TIMESTAMP_HEADER_SIZE + constants.BOTTOM_CONTROLS_HEIGHT;
+  let height =
+    constants.TIMESTAMP_HEADER_SIZE + constants.BOTTOM_CONTROLS_HEIGHT + constants.TRACE_PANEL_BOTTOM_PADDING;
   if (!panel.sections.length) height;
 
   const lastSection = panel.sections[panel.sections.length - 1];
