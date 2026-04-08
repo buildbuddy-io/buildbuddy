@@ -98,6 +98,9 @@ type registry struct {
 	// tagDigestGroup deduplicates concurrent upstream HEAD requests for the
 	// same tag so only one request is made.
 	tagDigestGroup singleflight.Group[string, manifestResolveResult]
+	// fetchGroup deduplicates concurrent upstream GET requests for the same
+	// digest.
+	fetchGroup singleflight.Group[string, struct{}]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -478,59 +481,60 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	// We checked the cache but didn't find it, so let's get it from upstream and cache it.
-
-	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
+	// We can only dedupe upstream requests when no auth is involved.
+	dedupFetches := inreq.Header.Get(headerAuthorization) == ""
+	if dedupFetches {
+		fetchKey := resolvedRef.String()
+		_, _, err = r.fetchGroup.Do(ctx, fetchKey, func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, r.fetchAndCache(ctx, inreq, bsClient, acClient, ociResourceType, resolvedRef, hash, ref)
+		})
+	} else {
+		err = r.fetchAndCache(ctx, inreq, bsClient, acClient, ociResourceType, resolvedRef, hash, ref)
+	}
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
+		if status.IsNotFoundError(err) {
+			http.Error(w, fmt.Sprintf("Could not find %q", resolvedRef.Context()), http.StatusNotFound)
+		} else {
+			log.CtxErrorf(ctx, "error fetching %q from upstream: %s", resolvedRef.Context(), err)
+			http.Error(w, fmt.Sprintf("Error fetching %q from upstream: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
+		}
 		return
+	}
+
+	// The blob should now be in the cache, serve it from there.
+	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	if err != nil {
+		log.CtxErrorf(ctx, "error serving %q from cache after fetch: %s", resolvedRef.Context(), err)
+		http.Error(w, fmt.Sprintf("Error serving %q: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
+	}
+}
+
+// fetchAndCache fetches a blob or manifest from the upstream registry and
+// writes it to the cache. The response body is not written to any client.
+func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ociResourceType ocipb.OCIResourceType, resolvedRef gcrname.Reference, hash gcr.Hash, originalRef gcrname.Reference) error {
+	upresp, err := r.makeUpstreamRequest(ctx, http.MethodGet, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
+	if err != nil {
+		return status.UnavailableErrorf("error making GET request to upstream registry: %s", err)
 	}
 	defer upresp.Body.Close()
 
-	for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
-		if upresp.Header.Get(header) != "" {
-			w.Header().Add(header, upresp.Header.Get(header))
-		}
+	if upresp.StatusCode == http.StatusNotFound {
+		return status.NotFoundErrorf("could not find %s", resolvedRef.Context())
 	}
-	w.WriteHeader(upresp.StatusCode)
-	if inreq.Method == http.MethodHead {
-		return
+	if upresp.StatusCode != http.StatusOK {
+		return status.UnavailableErrorf("upstream returned HTTP %d for %s", upresp.StatusCode, resolvedRef.Context())
 	}
 
-	hasLength := upresp.Header.Get(headerContentLength) != ""
 	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
 	if err != nil {
-		hasLength = false
+		return status.UnavailableErrorf("missing or invalid Content-Length from upstream for %s", resolvedRef.Context())
 	}
-
-	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
-
-	// In order to cache a blob or manifest, you need a digest,
-	// metadata (content length and content type), and the contents of the blob or manifest
-	// (which will be in the body of an upstream HTTP GET).
-	cacheable := upresp.StatusCode == http.StatusOK && hasLength && hasContentType
-	if !cacheable {
-		_, err = io.Copy(w, upresp.Body)
-		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "Error writing response body for %q: %s", resolvedRef.Context(), err)
-		}
-		return
+	if contentType == "" {
+		return status.UnavailableErrorf("missing Content-Type from upstream for %s", resolvedRef.Context())
 	}
 
-	hash, err = gcr.NewHash(resolvedRef.Identifier())
-	if err != nil {
-		_, err = io.Copy(w, upresp.Body)
-		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "Error writing non-cacheable response body for %q (digest parse failed): %s", resolvedRef.Context(), err)
-		}
-		return
-	}
-
-	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength, ref)
-	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
-	}
+	return ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, io.Discard, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength, originalRef)
 }
 
 func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
