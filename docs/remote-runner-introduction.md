@@ -417,8 +417,6 @@ traditional Bazel remote executors.
 
 ### Reducing disk snapshot size
 
-On Linux, snapshot upload and download is billed. Reducing snapshot size is important to keeping costs down.
-
 The disk and memory of remote runners is serialized and downloaded/uploaded to our cache, so decreasing the memory and disk usage of the runners will decrease snapshot-related cache transfer.
 
 Here are a few practical ways to reduce the size of your disk snapshots:
@@ -437,8 +435,7 @@ Here are a few practical ways to reduce the size of your disk snapshots:
 - Disable runfiles symlink generation with `--nobuild_runfile_links`.
   - If set, Bazel only creates runfile links when they are actually required by a local action. This can reduce unnecessary disk usage for workloads that primarily use remote execution.
 - Python dependencies are often a significant source of disk usage. Disabling or cleaning up pip's local cache can reduce the size of the snapshot.
-  - When using rules_python, pip_parse may cause pip to cache large HTTP and wheel caches. To modify local caching behavior, you can configure pip_parse with `extra_pip_args`.
-  - Setting `extra_pip_args = ["--no-cache-dir"]` disables pip’s local cache entirely.
+  - When using rules_python, pip_parse may cause pip to cache large HTTP and wheel caches. To modify local caching behavior, you can configure pip_parse with `extra_pip_args`. Setting `extra_pip_args = ["--no-cache-dir"]` disables pip’s local cache entirely.
   - If you still want caching between multiple builds in the same Workflow, you can leave local caching enabled during the run and clean it up before snapshotting with `pip cache purge`.
 
 ## Getting started
