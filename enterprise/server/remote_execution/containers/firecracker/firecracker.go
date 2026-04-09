@@ -1252,17 +1252,19 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		return false
 	}
 
-	// By default (applies if save policy is unset or invalid) or if
-	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
-	// doesn't already exist.
-
 	if savePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 		return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
 	}
 
-	// By default or if savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable, don't save local snapshots
-	// on non-default refs.
-	return false
+	// By default or if savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable, only save a snapshot if no others already exist.
+	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetWriteKey()}
+	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
+	for _, k := range allKeys {
+		if c.hasLocalSnapshotForKey(ctx, c.loader, k) {
+			return false
+		}
+	}
+	return true
 }
 
 func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.Duration {
