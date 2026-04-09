@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -95,8 +94,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	if err == nil {
 		return nil // local cache hit
 	}
-	if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "Error reading blob from local cache: %s", err)
+	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound
+	// cache misses as FailedPrecondition via MissingDigestError.
+	if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
+		return err
 	}
 
 	return s.fetchBlobFromUpstreamAndCache(ctx, req, stream, hash, metaResp.GetSize())

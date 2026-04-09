@@ -219,7 +219,7 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	require.Equal(t, expectedData, data)
 
 	// Shut down the test registry so upstream cannot serve blobs.
-	err = reg.Shutdown(ctx)
+	err = reg.Shutdown()
 	require.NoError(t, err)
 
 	// Second fetch: should be served from local BS cache.
