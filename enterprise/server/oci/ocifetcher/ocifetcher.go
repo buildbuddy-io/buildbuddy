@@ -50,30 +50,6 @@ var (
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
 
-// blobFetchKey identifies a blob fetch for deduplication.
-// Includes registry, repository, digest, and credentials hash.
-type blobFetchKey struct {
-	registry   string
-	repository string
-	digest     string
-	credsHash  string
-}
-
-func makeBlobFetchKey(repo gcrname.Repository, h gcr.Hash, creds *rgpb.Credentials) blobFetchKey {
-	var credsHash string
-	if creds == nil {
-		credsHash = hash.Strings("", "")
-	} else {
-		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
-	}
-	return blobFetchKey{
-		registry:   repo.RegistryStr(),
-		repository: repo.RepositoryStr(),
-		digest:     h.String(),
-		credsHash:  credsHash,
-	}
-}
-
 type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
@@ -87,7 +63,7 @@ type ociFetcherServer struct {
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache.
-	blobFetchGroup singleflight.Group[blobFetchKey, struct{}]
+	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -188,7 +164,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	start := time.Now()
-	key := makeBlobFetchKey(repo, hash, req.GetCredentials())
+	key := ocicache.NewBlobFetchKey(repo, hash, req.GetCredentials())
 	isLeader := false
 	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
