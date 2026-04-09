@@ -805,7 +805,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand())) || *forceRemoteSnapshotting)
+	isCICommand := platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
+	isDevboxCommand := strings.HasPrefix(task.GetExecuteRequest().GetInstanceName(), snaputil.DevboxPartitionPrefix)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (isCICommand || isDevboxCommand || *forceRemoteSnapshotting)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
