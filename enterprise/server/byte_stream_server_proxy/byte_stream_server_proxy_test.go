@@ -55,9 +55,8 @@ import (
 )
 
 var (
-	benchRTT                  = flag.Duration("bench_rtt", 8*time.Millisecond, "Simulated network RTT for benchmark remote RPCs (e.g. FindMissingBlobs, SpliceBlob)")
-	benchUploadDelay          = flag.Duration("bench_upload_delay", 16*time.Millisecond, "Simulated time to upload 1MB to the remote cache")
-	benchBatchParallelUploads = flag.Bool("bench_batch_parallel_uploads", true, "Whether chunked write benchmarks enable cache_proxy.enable_batch_parallel_uploads")
+	benchRTT         = flag.Duration("bench_rtt", 8*time.Millisecond, "Simulated network RTT for benchmark remote RPCs (e.g. FindMissingBlobs, SpliceBlob)")
+	benchUploadDelay = flag.Duration("bench_upload_delay", 16*time.Millisecond, "Simulated time to upload 1MB to the remote cache")
 )
 
 type remoteReadExpectation int
@@ -169,10 +168,9 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
-		remoteCAS:      repb.NewContentAddressableStorageClient(conn),
-		bufPool:        bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
-		efp:            fp,
-		chunkUploadSem: make(chan struct{}, maxGlobalChunkUploadConcurrency),
+		remoteCAS: repb.NewContentAddressableStorageClient(conn),
+		bufPool:   bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		efp:       fp,
 	}
 	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -1545,14 +1543,6 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache_proxy.enable_batch_parallel_uploads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
@@ -1859,10 +1849,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	*log.LogLevel = "error"
 	log.Configure()
 
-	defaultVariant := "false"
-	if *benchBatchParallelUploads {
-		defaultVariant = "true"
-	}
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
 			State:          memprovider.Enabled,
@@ -1875,14 +1861,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.enable_batch_parallel_uploads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: defaultVariant,
 			Variants: map[string]any{
 				"true":  true,
 				"false": false,
