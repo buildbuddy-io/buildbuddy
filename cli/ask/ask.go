@@ -16,6 +16,7 @@ import (
 
 var (
 	flags  = flag.NewFlagSet("ask", flag.ContinueOnError)
+	Flags  = flags
 	openai = flags.Bool("openai", false, "If true, use openai endpoint")
 )
 

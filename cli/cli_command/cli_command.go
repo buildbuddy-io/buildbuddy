@@ -1,10 +1,14 @@
 package cli_command
 
+import "flag"
+
 type Command struct {
 	Name    string
 	Help    string
 	Handler func(args []string) (exitCode int, err error)
 	Aliases []string
+	// Flags used for `bb help <command>`
+	Flags *flag.FlagSet
 }
 
 var (

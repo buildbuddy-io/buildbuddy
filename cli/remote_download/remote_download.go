@@ -23,6 +23,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("remote-download", flag.ContinueOnError)
+	Flags = flags
 
 	target             = flags.String("target", login.DefaultApiTarget, "Remote gRPC target. Must support bytestream and remote asset APIs.")
 	remoteInstanceName = flags.String("remote_instance_name", "", "Remote instance name - typically acts as a cache namespace.")
