@@ -233,6 +233,52 @@
   margin-top: 24px;
 }
 
+.invocation .timing-profile-drop-target {
+  margin-top: 24px;
+  position: relative;
+}
+
+.invocation .timing-profile-drop-target .trace-viewer {
+  margin-top: 0;
+}
+
+.invocation .timing-profile-drop-target.drag-active .trace-viewer,
+.invocation .timing-profile-drop-target.profile-loading .trace-viewer {
+  opacity: 0.5;
+}
+
+.invocation .timing-profile-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border: 2px dashed var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.invocation .timing-profile-drop-overlay-text {
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 1px 3px var(--color-shadow-lg);
+  font-weight: 600;
+}
+
+.invocation .timing-profile-local-banner {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+}
+
 .cache-requests-card.card {
   /* 'overflow: hidden' styling prevents sticky spinner from working properly. */
   overflow: initial;
