@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/stretchr/testify/require"
@@ -142,6 +143,24 @@ func TestHelpForBBCommands(t *testing.T) {
 			testBBCommandAllPatterns(t, cmdName, cmdName)
 		})
 	}
+}
+
+func TestHelpForBBCommandWithInjectedOptions(t *testing.T) {
+	register.Register()
+
+	helpParser, err := parser.GetHelpParser()
+	require.NoError(t, err)
+	orderedArgs, err := helpParser.ParseArgs([]string{
+		"help",
+		"--module_mirrors=https://example.com",
+		"--check_direct_dependencies=error",
+		"remote",
+	})
+	require.NoError(t, err)
+
+	testHelpWithArgs(t, orderedArgs.Args, true, "Usage: bb remote", "bb help remote with injected rc options")
+
+	require.Equal(t, "remote", help.FindTargetCommandFromHelpArgs(orderedArgs))
 }
 
 func TestHelpAliases(t *testing.T) {
