@@ -168,6 +168,8 @@ type Store struct {
 	stopped bool
 
 	maxSingleOpTimeout time.Duration
+
+	zone string
 }
 
 type registryHolder struct {
@@ -243,6 +245,7 @@ type options struct {
 	getNodehostConfigFn func(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig
 	getPebbleOptsFn     func(mc *pebble.MetricsCollector) *pebble.Options
 	getRegistryFn       func() registry.NodeRegistry
+	zone                string
 }
 
 type Option func(*options)
@@ -268,6 +271,14 @@ func WithNodeRegistryFactory(nrf dbConfig.NodeRegistryFactory) Option {
 func WithRegistryGetter(getter func() registry.NodeRegistry) Option {
 	return func(o *options) {
 		o.getRegistryFn = getter
+	}
+}
+
+// Override the zone for this store. If not set or empty, defaults to
+// resources.GetZone() or "local" if that returns empty.
+func WithZone(zone string) Option {
+	return func(o *options) {
+		o.zone = zone
 	}
 }
 
@@ -326,10 +337,18 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	shardStarterSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
 
+	zone := o.zone
+	if zone == "" {
+		zone = resources.GetZone()
+		if zone == "" {
+			zone = "local"
+		}
+	}
 	s := &Store{
 		env:                 env,
 		rootDir:             cfg.RootDir,
 		grpcAddr:            cfg.GRPCAddr,
+		zone:                zone,
 		nodeHost:            nodeHost,
 		partitions:          cfg.Partitions,
 		gossipManager:       cfg.GossipManager,
@@ -1495,7 +1514,7 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 		Nhid:        s.nodeHost.ID(),
 		RaftAddress: s.nodeHost.RaftAddress(),
 		GrpcAddress: s.grpcAddr,
-		Zone:        getZone(),
+		Zone:        s.zone,
 	}
 }
 
@@ -2796,18 +2815,10 @@ func (w *updateTagsWorker) handleTask(task *updateTagsTask) {
 	w.updateTags()
 }
 
-var getZone func() string = sync.OnceValue(func() string {
-	zone := resources.GetZone()
-	if zone == "" {
-		return "local"
-	}
-	return zone
-})
-
 func (w *updateTagsWorker) updateTags() error {
 	storeTags := make(map[string]string, 4)
 
-	storeTags[constants.ZoneTag] = getZone()
+	storeTags[constants.ZoneTag] = w.store.zone
 
 	if podIndex := os.Getenv("MY_POD_INDEX"); podIndex != "" {
 		storeTags[constants.PodIndexTag] = podIndex

@@ -153,7 +153,9 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		store.WithNodeRegistryFactory(nrf),
 		store.WithPebbleOptsGetter(pebbleOptionsGetter),
 		store.WithTestNodeHostConfig(),
-		store.WithRegistryGetter(registryGetter))
+		store.WithRegistryGetter(registryGetter),
+		store.WithZone(ts.Zone),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -163,6 +165,10 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
+	return sf.NewStoreWithZone(t, "")
+}
+
+func (sf *StoreFactory) NewStoreWithZone(t *testing.T, zone string) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
@@ -178,6 +184,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 		GossipAddress: nodeAddr,
 		RootDir:       filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
 		nhid:          id.String(),
+		Zone:          zone,
 	}
 	sf.RecreateStore(t, ts)
 	t.Cleanup(func() {
@@ -204,6 +211,7 @@ type TestingStore struct {
 
 	leaser pebble.Leaser
 	nhid   string
+	Zone   string
 
 	gm            *gossip.GossipManager
 	Registry      registry.NodeRegistry
