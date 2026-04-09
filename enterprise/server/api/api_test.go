@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -279,6 +280,61 @@ func TestGetLogAuth(t *testing.T) {
 	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
+}
+
+func TestGetFileRange(t *testing.T) {
+	var err error
+	env, authCtx := getEnvAndCtx(t, "user1")
+	prefixedCtx := authCtx
+	if prefixedCtx, err = prefix.AttachUserPrefixToContext(prefixedCtx, env.GetAuthenticator()); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, env.GetCache().Set(prefixedCtx, r, buf))
+	downloadString, err := digest.CASDownloadString(r)
+	require.NoError(t, err)
+
+	for _, testCase := range []struct {
+		name     string
+		req      *apipb.GetFileRangeRequest
+		wantData []byte
+		wantErr  func(error) bool
+	}{
+		{
+			name: "returns requested bytes",
+			req: &apipb.GetFileRangeRequest{
+				Uri:   "bytestream://localhost/" + downloadString,
+				Start: 7,
+				End:   31,
+			},
+			wantData: buf[7:31],
+		},
+		{
+			name: "rejects oversized range",
+			req: &apipb.GetFileRangeRequest{
+				Uri:   fmt.Sprintf("bytestream://localhost/blobs/%s/%d", strings.Repeat("a", 64), maxGetFileRangeBytes+1),
+				Start: 0,
+				End:   maxGetFileRangeBytes + 1,
+			},
+			wantErr: status.IsInvalidArgumentError,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			rsp, err := s.GetFileRange(authCtx, testCase.req)
+			if testCase.wantErr != nil {
+				require.Error(t, err)
+				require.True(t, testCase.wantErr(err))
+				require.Nil(t, rsp)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.wantData, rsp.GetData())
+		})
+	}
 }
 
 func TestDeleteFile_CAS(t *testing.T) {

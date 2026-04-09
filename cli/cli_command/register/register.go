@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
@@ -20,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -53,6 +56,11 @@ func register() {
 			Help:    "Asks for suggestions about your last invocation.",
 			Handler: ask.HandleAsk,
 			Aliases: []string{"wtf", "huh"},
+		},
+		{
+			Name:    "box",
+			Help:    "Manages remote Firecracker VM boxes.",
+			Handler: box.HandleBox,
 		},
 		{
 			Name:    "download",
@@ -115,6 +123,16 @@ func register() {
 			Name:    "search",
 			Help:    "Searches for code in the remote codesearch index.",
 			Handler: search.HandleSearch,
+		},
+		{
+			Name:    "ssh",
+			Help:    "Runs an SSH client on a user-mode wireguard network.",
+			Handler: ssh.HandleSSH,
+		},
+		{
+			Name:    "ssh-server",
+			Help:    "Runs an SSH server on a user-mode wireguard network.",
+			Handler: ssh_server.HandleSSHServer,
 		},
 		{
 			Name:    "index",

@@ -5,9 +5,13 @@ import (
 	_ "embed"
 	"flag"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -99,4 +103,103 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 		return cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, dir)
 	}
 	return digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
+}
+
+// SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
+// It mutates the original task.
+func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
+	if !(IsRemoteRunnerTask(task)) {
+		return nil
+	}
+	if groupID == "" {
+		return status.FailedPreconditionError("missing group ID")
+	}
+
+	envOverrides := envOverridesHeader(task)
+
+	// Untrusted workflows won't have repo credentials. Trusted
+	// workflows have BUILDBUDDY_API_KEY set by the workflow service.
+	apiKey := envOverrides[ci_runner_env.BuildBuddyAPIKeyEnvVarName]
+	if apiKey == "" {
+		return nil
+	}
+
+	repoURL, err := remoteRunBaseRepoURL(task.GetCommand().GetArguments())
+	if err != nil {
+		return err
+	}
+	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
+	token, err := githubapp.GetRepositoryInstallationToken(authCtx, env, groupID, repoURL)
+	if err != nil {
+		return status.WrapError(err, "failed to refresh remote runner git token")
+	}
+	envOverrides["REPO_TOKEN"] = token
+	applyEnvOverrides(task, envOverrides)
+	return nil
+}
+
+func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
+	if task.GetPlatformOverrides() == nil {
+		return nil
+	}
+	overrides := make(map[string]string)
+	for _, prop := range task.GetPlatformOverrides().GetProperties() {
+		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) {
+			for override := range strings.SplitSeq(prop.GetValue(), ",") {
+				k, v, ok := strings.Cut(strings.TrimSpace(override), "=")
+				if ok {
+					overrides[k] = v
+				}
+			}
+		}
+	}
+	return overrides
+}
+
+func remoteRunBaseRepoURL(args []string) (string, error) {
+	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
+	targetRepoURL, _ := commandArgValue(args, "--target_repo_url")
+	if targetRepoURL != "" && targetRepoURL != pushedRepoURL {
+		return targetRepoURL, nil
+	}
+	if pushedRepoURL != "" {
+		return pushedRepoURL, nil
+	}
+	if targetRepoURL != "" {
+		return targetRepoURL, nil
+	}
+	return "", status.FailedPreconditionError("could not parse repo URL from command arguments")
+}
+
+func commandArgValue(args []string, name string) (string, bool) {
+	for i, arg := range args {
+		if arg == name && i+1 < len(args) {
+			return args[i+1], true
+		}
+		prefix := name + "="
+		if trimmed, hasPrefix := strings.CutPrefix(arg, prefix); hasPrefix {
+			return trimmed, true
+		}
+	}
+	return "", false
+}
+
+func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string) {
+	assignments := make([]string, 0, len(envOverrides))
+	for k, v := range envOverrides {
+		assignments = append(assignments, k+"="+v)
+	}
+	overridesVal := strings.Join(assignments, ",")
+
+	for _, prop := range task.PlatformOverrides.Properties {
+		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) {
+			prop.Value = overridesVal
+			return
+		}
+	}
+}
+
+func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
+	args := task.GetCommand().GetArguments()
+	return len(args) > 0 && args[0] == "./"+ExecutableName
 }

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -34,19 +35,27 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
-	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	enableDownloadCompression   = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	recordInputDownloadMetadata = flag.Bool("executor.record_input_download_metadata", false, "If true, record and report metadata describing which action inputs were fetched from remote CAS.")
+	linkParallelism             = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism   = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
 )
+
+// InputFetchMetadataEnabled reports whether executors should record and publish
+// input fetch metadata.
+func InputFetchMetadataEnabled() bool {
+	return *recordInputDownloadMetadata
+}
 
 const (
 	// Size of the queue for input tree structure manipulation ops.
@@ -83,6 +92,10 @@ type TransferInfo struct {
 
 	LinkCount    int64
 	LinkDuration time.Duration
+
+	// InputFetchMetadata describes which input files were fetched from
+	// remote CAS while materializing the input tree.
+	InputFetchMetadata *espb.InputFetchMetadata
 }
 
 // DirHelper is a poor mans trie that helps us check if a partial path like
@@ -628,6 +641,11 @@ type FilePointer struct {
 	// ex: some/package/some_input.go
 	RelativePath string
 	FileNode     *repb.FileNode
+	// BitsetIndex is the index of this file in a deterministic leaf-file order:
+	// files first, in the order they are listed in each Directory message, then
+	// leaf files from each child directory, recursively, in the order the child
+	// directories are listed in each Directory message.
+	BitsetIndex uint32
 }
 
 // removeExisting removes any existing file pointed to by the FilePointer if
@@ -729,6 +747,9 @@ type BatchFileFetcher struct {
 	remainingFetches map[fetchKey]struct{}
 	fetchWaiters     map[fetchKey][]chan struct{}
 
+	bitmapMu        sync.Mutex
+	downloadsBitmap *roaring.Bitmap
+
 	statsMu sync.Mutex
 	stats   repb.IOStats
 }
@@ -757,6 +778,12 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		doneErr:                 make(chan error, 1),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
+		downloadsBitmap: func() *roaring.Bitmap {
+			if InputFetchMetadataEnabled() {
+				return roaring.New()
+			}
+			return nil
+		}(),
 	}, nil
 }
 
@@ -768,6 +795,39 @@ func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
 		w <- struct{}{}
 	}
 	delete(ff.fetchWaiters, fk)
+}
+
+// completeRemoteFetch records a successful remote CAS download and notifies any
+// waiters blocked on the fetch key.
+func (ff *BatchFileFetcher) completeRemoteFetch(fk fetchKey, filePointers []*FilePointer) {
+	ff.markFilesDownloaded(filePointers)
+	ff.notifyFetchCompleted(fk)
+}
+
+// markFilesDownloaded records leaf-file indices for files that were fetched
+// from remote CAS. Files linked from the local file cache are not marked.
+func (ff *BatchFileFetcher) markFilesDownloaded(filePointers []*FilePointer) {
+	if len(filePointers) == 0 || ff.downloadsBitmap == nil {
+		return
+	}
+	indices := make([]uint32, 0, len(filePointers))
+	for _, fp := range filePointers {
+		indices = append(indices, fp.BitsetIndex)
+	}
+	ff.bitmapMu.Lock()
+	defer ff.bitmapMu.Unlock()
+	ff.downloadsBitmap.AddMany(indices)
+}
+
+// downloadedFileIndicesBitmap serializes the set of remotely downloaded leaf
+// file indices for inclusion in execution auxiliary metadata.
+func (ff *BatchFileFetcher) downloadedFileIndicesBitmap() ([]byte, error) {
+	if ff.downloadsBitmap == nil {
+		return nil, nil
+	}
+	ff.bitmapMu.Lock()
+	defer ff.bitmapMu.Unlock()
+	return ff.downloadsBitmap.MarshalBinary()
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, opts *DownloadTreeOpts) error {
@@ -826,7 +886,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 					}
 				}
 			}
-			ff.notifyFetchCompleted(fetchKey)
+			ff.completeRemoteFetch(fetchKey, ptrs)
 		}
 	}
 	return nil
@@ -1079,7 +1139,7 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		}
 	}
 
-	ff.notifyFetchCompleted(dedupeKey.fetchKey)
+	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)
 
 	return nil
 }
@@ -1104,7 +1164,7 @@ func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsCli
 		return err
 	}
 
-	ff.notifyFetchCompleted(dedupeKey.fetchKey)
+	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)
 
 	return nil
 }
@@ -1411,6 +1471,7 @@ func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName strin
 func (f *TreeFetcher) Start() (*InputsState, error) {
 	ctx := f.ctx
 	treeWrangler := getInputTreeWrangler(f.env)
+	recordInputDownloadMetadata := InputFetchMetadataEnabled()
 
 	f.fetchStartTime = time.Now()
 
@@ -1437,13 +1498,24 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	onlyDownloadToFileCache := f.opts.RootDir == ""
 	dirPerms := fs.FileMode(0777)
 	f.filesToFetch = make(map[fetchKey][]*FilePointer, 0)
+	nextBitsetIndex := uint32(0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
+		// NOTE: the traversal order here is load-bearing. We assign bitmap
+		// indexes in a deterministic way - files first, then directories
+		// recursively. Note that files and directories are required by the spec
+		// to be sorted lexicographically.
 		for _, fileNode := range dir.GetFiles() {
 			func(node *repb.FileNode, location string) {
 				d := node.GetDigest()
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, f.opts.RootDir)
+				bitsetIndex := uint32(0)
+				if recordInputDownloadMetadata {
+					bitsetIndex = nextBitsetIndex
+					nextBitsetIndex++
+				}
+
 				pathKey := fspath.NewKey(relPath, f.opts.CaseInsensitive)
 				skippedNode, ok := f.opts.Skip[pathKey]
 				if ok {
@@ -1457,6 +1529,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 					FileNode:     node,
 					FullPath:     fullPath,
 					RelativePath: relPath,
+					BitsetIndex:  bitsetIndex,
 				})
 				trackTransfersFn(relPath, node)
 			}(fileNode, parentDir)
@@ -1530,6 +1603,15 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	f.txInfo.LinkCount = stats.GetLocalCacheHits()
 	f.txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
 	f.txInfo.TransferDuration = time.Since(f.fetchStartTime)
+	if InputFetchMetadataEnabled() {
+		bitmap, bitmapErr := f.ff.downloadedFileIndicesBitmap()
+		if bitmapErr != nil && err == nil {
+			err = status.WrapError(bitmapErr, "marshal input download bitmap")
+		}
+		f.txInfo.InputFetchMetadata = &espb.InputFetchMetadata{
+			DownloadedFileIndicesBitmap: bitmap,
+		}
+	}
 	return f.txInfo, err
 }
 

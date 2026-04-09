@@ -1000,6 +1000,9 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	if err != nil {
 		return nil, err
 	}
+	if fileMetadata.GetFileRecord() == nil {
+		log.Warningf("stored FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), fileMetadata)
+	}
 	return &rfpb.GetResponse{
 		FileMetadata: fileMetadata,
 	}, nil
@@ -1014,6 +1017,9 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 	// Check that value is non-nil.
 	if req.GetFileMetadata() == nil {
 		return nil, status.InvalidArgumentErrorf("Invalid (nil) FileMetadata for key %q", req.GetKey())
+	}
+	if req.GetFileMetadata().GetFileRecord() == nil {
+		log.Warningf("incoming FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), req.GetFileMetadata())
 	}
 	buf, err := proto.Marshal(req.GetFileMetadata())
 	if err != nil {

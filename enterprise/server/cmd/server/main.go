@@ -193,6 +193,15 @@ func main() {
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	// Register KMS and crypter before caches because distributed.Register()
+	// starts a gRPC listener that can receive peer requests immediately,
+	// and those requests need the crypter to be available.
+	if err := kms.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -275,16 +284,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := kms.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := suggestion.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := crypter_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := dsingleflight.Register(realEnv); err != nil {

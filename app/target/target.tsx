@@ -38,7 +38,7 @@ interface Props {
 
 export default class TargetComponent extends React.Component<Props> {
   componentWillMount() {
-    document.title = `Target ${this.props.invocationId} | BuildBuddy`;
+    document.title = `Target ${this.props.targetLabel} | BuildBuddy`;
   }
 
   renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {

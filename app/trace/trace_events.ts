@@ -55,14 +55,15 @@ type SeriesMetadata = {
   unit?: string;
 };
 
-// A list of names of events that contain a timestamp and a value in args.
+// Per-series overrides for counter events that contain a timestamp and a value
+// in args.
 //
 // The names from Bazel profiles will be displayed as-is, unless a displayName
 // is provided in the seriesMetadata object.
 //
-// We only render timeseries which are defined in this list. The order of the
-// entries in this list determines the order in which the timeseries are
-// displayed in the trace viewer panel.
+// Unknown counter events with numeric args are also rendered automatically.
+// The order of the entries in this list determines the order in which known
+// timeseries are displayed in the trace viewer panel.
 //
 // An example event for Bazel CPU usage looks like this:
 // {
@@ -112,6 +113,24 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
 ]);
 
 const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
+const GZIP_MAGIC_BYTE_0 = 0x1f;
+const GZIP_MAGIC_BYTE_1 = 0x8b;
+
+async function isGzipCompressed(blob: Blob): Promise<boolean> {
+  const header = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+  return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
+}
+
+export async function readProfileFile(file: Blob, progress?: (numBytesLoaded: number) => void): Promise<Profile> {
+  let stream = file.stream() as ReadableStream<Uint8Array>;
+  if (await isGzipCompressed(file)) {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("This browser can't read gzipped timing profiles from local files.");
+    }
+    stream = stream.pipeThrough(new DecompressionStream("gzip"));
+  }
+  return readProfile(stream, progress);
+}
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
@@ -217,14 +236,52 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
 
 function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by name, respecting sort order if defined.
-  const orderDiff = (TIME_SERIES_EVENT_ORDER.get(a.name) ?? 0) - (TIME_SERIES_EVENT_ORDER.get(b.name) ?? 0);
-  if (orderDiff !== 0) return orderDiff;
+  const aOrder = TIME_SERIES_EVENT_ORDER.get(a.name);
+  const bOrder = TIME_SERIES_EVENT_ORDER.get(b.name);
+  if (aOrder !== undefined || bOrder !== undefined) {
+    if (aOrder === undefined) return 1;
+    if (bOrder === undefined) return -1;
+    const orderDiff = aOrder - bOrder;
+    if (orderDiff !== 0) return orderDiff;
+  }
   const nameDiff = a.name.localeCompare(b.name);
   if (nameDiff !== 0) return nameDiff;
 
   // Sort in increasing order of start time.
   const tsDiff = a.ts - b.ts;
   return tsDiff;
+}
+
+function isNumericTimeSeriesValue(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function inferTimeSeriesMetadata(events: TraceEvent[]): Map<string, SeriesMetadata[]> {
+  const numericArgKeysByName = new Map<string, Set<string>>();
+  for (const event of events) {
+    if (TIME_SERIES_METADATA.has(event.name) || event.ph !== "C") continue;
+
+    const numericArgKeys = Object.entries(event.args ?? {})
+      .filter(([, value]) => isNumericTimeSeriesValue(value))
+      .map(([key]) => key);
+    if (!numericArgKeys.length) continue;
+
+    const keys = numericArgKeysByName.get(event.name) ?? new Set<string>();
+    numericArgKeys.forEach((key) => keys.add(key));
+    numericArgKeysByName.set(event.name, keys);
+  }
+
+  return new Map(
+    Array.from(numericArgKeysByName.entries()).map(([name, argKeys]) => {
+      const keys = Array.from(argKeys).sort((a, b) => a.localeCompare(b));
+      return [
+        name,
+        keys.length === 1
+          ? [{ argKey: keys[0] }]
+          : keys.map((argKey) => ({ argKey, displayName: `${name}: ${argKey}` })),
+      ];
+    })
+  );
 }
 
 function getThreadNames(events: TraceEvent[]) {
@@ -249,7 +306,8 @@ function normalizeThreadNames(events: TraceEvent[]) {
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
-  events = events.filter((event) => TIME_SERIES_METADATA.has(event.name));
+  const inferredMetadata = inferTimeSeriesMetadata(events);
+  events = events.filter((event) => TIME_SERIES_METADATA.has(event.name) || inferredMetadata.has(event.name));
   events.sort(timeSeriesEventComparator);
 
   const timelines: TimeSeries[] = [];
@@ -262,7 +320,7 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
       name = event.name;
       currentSeries.clear();
 
-      currentMetadata = TIME_SERIES_METADATA.get(name) || [];
+      currentMetadata = TIME_SERIES_METADATA.get(name) || inferredMetadata.get(name) || [];
       if (!currentMetadata.length) {
         // Should not happen because we already filtered events above.
         continue;
@@ -283,7 +341,7 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
         continue; // Skip events that don't have the expected argKey
       }
       const timeSeries = currentSeries.get(m.argKey);
-      if (event.value) {
+      if (event.value !== undefined) {
         // If the event already has a value, clone it to avoid modifying the original event.
         const tsEvent = {
           ...event,

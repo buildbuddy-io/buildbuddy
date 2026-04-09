@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
     deps = [
         "//enterprise/server/experiments",
+        "//enterprise/server/githubapp",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_env",
@@ -23,9 +24,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/tables",
         "//server/util/bazel_request",
-        "//server/util/db",
         "//server/util/git",
         "//server/util/log",
         "//server/util/platform",

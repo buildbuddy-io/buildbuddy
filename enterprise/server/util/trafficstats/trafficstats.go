@@ -46,19 +46,19 @@ const (
 	cacheMaxSize   = 100_000
 )
 
-type destination struct {
-	provider string
-	region   string
+type Destination struct {
+	Provider string
+	Region   string
 }
 
 type ipRange struct {
 	prefix      netip.Prefix
-	destination destination
+	destination Destination
 }
 
 type classifier struct {
 	ipRanges          []ipRange
-	cache             lru.LRU[destination]
+	cache             lru.LRU[Destination]
 	occasionallLogger log.Logger
 }
 
@@ -70,7 +70,7 @@ type rpcCountersKey struct{}
 
 type rpcCounters struct {
 	groupID                   string
-	dest                      destination
+	dest                      Destination
 	ingressBytes, egressBytes int
 	method                    string
 }
@@ -116,7 +116,7 @@ func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) con
 func (*StatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", dest: destination{provider: "unset", region: "unset"}, method: info.FullMethodName})
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", dest: Destination{Provider: "unset", Region: "unset"}, method: info.FullMethodName})
 }
 
 func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
@@ -147,7 +147,7 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			// Exporting metrics has to happen at the end of the RPC to make
 			// that the interceptor populated the dimensions. For unary RPCs,
 			// intercetors run after InPayload.
-			if c.groupID == "unset" || c.dest.provider == "unset" {
+			if c.groupID == "unset" || c.dest.Provider == "unset" {
 				if endErr == nil {
 					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
 				} else {
@@ -155,10 +155,10 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 				}
 			}
 			if c.ingressBytes > 0 {
-				metrics.GRPCServerIngressBytes.WithLabelValues(c.groupID, c.dest.provider, c.dest.region).Add(float64(c.ingressBytes))
+				metrics.GRPCServerIngressBytes.WithLabelValues(c.groupID, c.dest.Provider, c.dest.Region).Add(float64(c.ingressBytes))
 			}
 			if c.egressBytes > 0 {
-				metrics.GRPCServerEgressBytes.WithLabelValues(c.groupID, c.dest.provider, c.dest.region).Add(float64(c.egressBytes))
+				metrics.GRPCServerEgressBytes.WithLabelValues(c.groupID, c.dest.Provider, c.dest.Region).Add(float64(c.egressBytes))
 			}
 		}
 	}
@@ -219,9 +219,9 @@ func newClassifier() (*classifier, error) {
 		})
 		ranges = append(ranges, entries...)
 	}
-	cache, err := lru.New(&lru.Config[destination]{
+	cache, err := lru.New(&lru.Config[Destination]{
 		MaxSize:    cacheMaxSize,
-		SizeFn:     func(destination) int64 { return 1 },
+		SizeFn:     func(Destination) int64 { return 1 },
 		ThreadSafe: true,
 	})
 	if err != nil {
@@ -256,31 +256,31 @@ func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
 		}
 		entries = append(entries, ipRange{
 			prefix: prefix.Masked(),
-			destination: destination{
-				provider: provider,
-				region:   region,
+			destination: Destination{
+				Provider: provider,
+				Region:   region,
 			},
 		})
 	}
 	return entries, nil
 }
 
-func (c *classifier) classify(ipStr string) destination {
+func (c *classifier) classify(ipStr string) Destination {
 	ip, err := netip.ParseAddr(ipStr)
 	if err != nil {
 		// Try host:port format.
 		if addrPort, err := netip.ParseAddrPort(ipStr); err == nil {
 			ip = addrPort.Addr()
 		} else {
-			return destination{provider: otherProvider, region: unknownRegion}
+			return Destination{Provider: otherProvider, Region: unknownRegion}
 		}
 	}
 	ip = ip.Unmap()
 	if ip.IsLoopback() {
-		return destination{provider: "loopback", region: ""}
+		return Destination{Provider: "loopback", Region: ""}
 	}
 	if ip.IsPrivate() {
-		return destination{provider: "internal", region: ""}
+		return Destination{Provider: "internal", Region: ""}
 	}
 	cacheKey := ip.String()
 	value, ok := c.cache.Get(cacheKey)
@@ -294,7 +294,15 @@ func (c *classifier) classify(ipStr string) destination {
 		}
 	}
 	c.occasionallLogger.Infof("traffic classifier didn't find IP: %s", ip)
-	unknown := destination{provider: otherProvider, region: unknownRegion}
+	unknown := Destination{Provider: otherProvider, Region: unknownRegion}
 	c.cache.Add(cacheKey, unknown)
 	return unknown
+}
+
+func Classify(ip string) (Destination, error) {
+	c, err := classifierOnce()
+	if err != nil {
+		return Destination{}, err
+	}
+	return c.classify(ip), nil
 }

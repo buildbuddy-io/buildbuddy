@@ -400,23 +400,37 @@ bb remote \
   --script='bazel run :my_script --password=$PWD'
 ```
 
-To access short-lived secrets, you can use remote headers to set environment variables:
+To inject only specific secrets, use `env-secrets` with a comma-separated list of secret names:
 
 ```bash
 bb remote \
-  --remote_run_header=x-buildbuddy-platform.env-overrides=PWD=supersecret \
+  --runner_exec_properties=env-secrets=API_KEY,DB_PASSWORD \
+  --script='bazel run :my_script --password=$DB_PASSWORD'
+```
+
+To access short-lived secrets, use `secret-env-overrides` via remote headers.
+Values passed this way are automatically **redacted** from the action cache
+and workflow logs:
+
+```bash
+bb remote \
+  --remote_run_header=x-buildbuddy-platform.secret-env-overrides=PWD=supersecret \
   # Use --script with a quoted command so your local terminal doesn't try to expand the env var
   --script='bazel run :my_script --password=$PWD'
 ```
 
 To set multiple variables, pass a comma separated list:
-`--remote_run_header=x-buildbuddy-platform.env-overrides=K1=V1,K2=V2`.
+`--remote_run_header=x-buildbuddy-platform.secret-env-overrides=K1=V1,K2=V2`.
 
-**Note**: You should not use `--env` or `--runner_exec_properties=x-buildbuddy-platform.env-overrides`
-to set secrets because:
+For values containing commas or special characters, use
+`secret-env-overrides-base64` with base64-encoded `KEY=VALUE` pairs.
 
-(1) Environment variables and platform properties are stored in plain-text in the
-Action Cache, and may be displayed in the UI.
+**Note**: You should not use `--env` or `--runner_exec_properties` to set secrets
+because:
+
+(1) Environment variables and platform properties set via `--runner_exec_properties`
+are stored in plain-text in the Action Cache, and may be displayed in the UI.
+(`secret-env-overrides` avoids this by redacting the values.)
 
 (2) Platform properties are incorporated into the snapshot key.
 If they change, you will not be able to reuse a snapshot. Especially for short-lived

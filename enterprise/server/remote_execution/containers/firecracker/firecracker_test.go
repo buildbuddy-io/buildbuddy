@@ -153,8 +153,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "8cdc0a30ab7f5a85b90cfc5fa06c6c0339b79110ecf7f0d9789a4653a39b660c"
-		expectedVersion = "18"
+		expectedHash    = "ad1ee8b3e46bd30aad04812636a56672497225182305ea2860efc5a93cd0bb62"
+		expectedVersion = "19"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -472,6 +472,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				// Note: platform must match in order to share snapshots
 				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: "recycle-runner", Value: "true"},
+					{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
 				}},
 				Arguments: []string{"./buildbuddy_ci_runner"},
 			},
@@ -993,6 +994,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 						{Name: "recycle-runner", Value: "true"},
 						{Name: platform.SnapshotSavePolicyPropertyName, Value: tc.snapshotSavePolicy},
+						{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
 					}},
 					Arguments: []string{"./buildbuddy_ci_runner"},
 					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -1400,6 +1402,129 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 	}
 }
 
+func TestFirecracker_SnapshotSharing_MinWriteInterval(t *testing.T) {
+	tests := []struct {
+		name                      string
+		branch                    string
+		snapshotWritePolicy       string
+		expectedOutputAfterResume string
+	}{
+		{
+			name:                "Always save snapshot, main branch",
+			branch:              "main",
+			snapshotWritePolicy: platform.AlwaysSaveSnapshot,
+			// Even though the second write was within the min write interval, the snapshot
+			// write policy should take precedence.
+			expectedOutputAfterResume: "Run1\nRun2\nRun3\n",
+		},
+		{
+			name:                "Default write policy, main branch",
+			branch:              "main",
+			snapshotWritePolicy: "",
+			// By default, because the min write interval has not passed, we shouldn't
+			// save a snapshot on the second run.
+			expectedOutputAfterResume: "Run1\nRun3\n",
+		},
+		{
+			name:                "Always save snapshot, merge queue branch",
+			branch:              "gh-readonly-queue/main/",
+			snapshotWritePolicy: platform.AlwaysSaveSnapshot,
+			// Even though the second write was within the min write interval, the snapshot
+			// write policy should take precedence.
+			expectedOutputAfterResume: "Run1\nRun2\nRun3\n",
+		},
+		{
+			name:                "Default write policy, merge queue branch",
+			branch:              "gh-readonly-queue/main/",
+			snapshotWritePolicy: "",
+			// By default, because the min write interval has not passed, we shouldn't
+			// save a snapshot on the second run.
+			expectedOutputAfterResume: "Run1\nRun3\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			env := getTestEnv(ctx, t, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					require.NoError(t, err)
+				}
+			})
+
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: tc.snapshotWritePolicy},
+						// Set a long min write interval. Unless something else overrides it,
+						// duplicate snapshots on the same branch should not be saved.
+						{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "10h"},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_BRANCH", Value: tc.branch},
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+					},
+				},
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+
+			count := 0
+			runAndSnapshotVM := func(env *testenv.TestEnv, taskTemplate *repb.ExecutionTask, stringToLog string, expectedOutput string) {
+				task := taskTemplate.CloneVT()
+
+				// If it's a merge queue branch, create a task with a new branch name for each run, simulating realistic
+				// merge queue behavior.
+				for _, ev := range task.Command.EnvironmentVariables {
+					if ev.Name == "GIT_BRANCH" {
+						if strings.HasPrefix(ev.Value, "gh-readonly-queue") {
+							ev.Value += fmt.Sprintf("%d", count)
+							break
+						}
+					}
+				}
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+				count++
+			}
+
+			// Run the same workload 3X. The first run should always save a snapshot.
+			// The second run will only save a snapshot based on its min write interval + platform properties.
+			runAndSnapshotVM(env, task, "Run1", "Run1\n")
+			runAndSnapshotVM(env, task, "Run2", "Run1\nRun2\n")
+			runAndSnapshotVM(env, task, "Run3", tc.expectedOutputAfterResume)
+		})
+	}
+}
+
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
@@ -1786,6 +1911,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
 			}},
 			Arguments: []string{"./buildbuddy_ci_runner"},
 		},
@@ -2136,6 +2262,39 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	// Note: some bytes are sent (the ping request) and received (ICMP reject).
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+}
+
+func TestFirecrackerResolvConf(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// Read the host's resolv.conf to verify the VM receives the same content.
+	hostResolvConf, err := os.ReadFile("/etc/resolv.conf")
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"cat", "/etc/resolv.conf"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+		HostResolvConf: string(hostResolvConf),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, string(hostResolvConf), string(res.Stdout))
 }
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {

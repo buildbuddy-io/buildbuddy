@@ -102,6 +102,11 @@ go_deps.gazelle_override(
     path = "github.com/jhump/protoreflect",
 )
 go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:build_tags dragonboat_monkeytest"],
+    path = "github.com/lni/dragonboat/v4",
+)
+go_deps.gazelle_override(
     directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
     path = "github.com/cncf/xds/go",
 )
@@ -151,6 +156,7 @@ use_repo(
     go_deps,
     "co_honnef_go_tools",
     "com_github_alecaivazis_survey_v2",
+    "com_github_anishathalye_porcupine",
     "com_github_armon_circbuf",
     "com_github_aws_aws_sdk_go",
     "com_github_aws_aws_sdk_go_v2",
@@ -189,6 +195,7 @@ use_repo(
     "com_github_elastic_gosigar",
     "com_github_firecracker_microvm_firecracker_go_sdk",
     "com_github_gabriel_vasile_mimetype",
+    "com_github_gliderlabs_ssh",
     "com_github_go_enry_go_enry_v2",
     "com_github_go_faker_faker_v4",
     "com_github_go_git_go_git_v5",
@@ -268,6 +275,8 @@ use_repo(
     "com_google_cloud_go_longrunning",
     "com_google_cloud_go_secretmanager",
     "com_google_cloud_go_storage",
+    "com_zx2c4_golang_wireguard",
+    "dev_gvisor_gvisor",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
     "io_cncf_tags_container_device_interface",
@@ -306,6 +315,7 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_sys",
     "org_golang_x_telemetry",
+    "org_golang_x_term",
     "org_golang_x_text",
     "org_golang_x_time",
     "org_golang_x_tools",

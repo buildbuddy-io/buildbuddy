@@ -462,7 +462,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -507,7 +507,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -618,7 +618,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -701,7 +701,7 @@ func TestWebhook_RespectsVisibility(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -882,6 +882,49 @@ func TestWebhook_LegacyWorkflow_UseDefaultWorkflowConfig(t *testing.T) {
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+}
+
+func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+
+	// Set up a workflow for one group.
+	_, _, gid1 := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid1, true /*useDefaultWorkflowConfig*/)
+	_ = setupFakeGitProvider(t, te)
+
+	// Authenticate as a user from a different org.
+	ctx2, uid2, gid2 := authenticateAsUser(t, ctx, te, "US2")
+	reqCtx := testauth.RequestContext(uid2, gid2)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	for _, tc := range []struct {
+		name    string
+		repoURL string
+	}{
+		{
+			name:    "existing repo",
+			repoURL: repoURL,
+		},
+		{
+			name:    "nonexistent repo",
+			repoURL: "file:///nonexistent",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid1, tc.repoURL)
+			_, err := bbClient.ExecuteWorkflow(ctx2, &wfpb.ExecuteWorkflowRequest{
+				RequestContext: reqCtx,
+				WorkflowId:     workflowID,
+				PushedRepoUrl:  tc.repoURL,
+				PushedBranch:   "main",
+			})
+			assert.True(t, status.IsPermissionDeniedError(err))
+		})
+	}
 }
 
 func TestAPIDispatch_ActionFiltering(t *testing.T) {

@@ -25,6 +25,7 @@ go_test(
     srcs = ["executorplatform_test.go"],
     embed = [":executorplatform"],
     deps = [
+        "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
         "//server/util/platform",

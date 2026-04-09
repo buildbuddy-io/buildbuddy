@@ -30,9 +30,9 @@ jobs:
         run: |
           bazelisk build \
             --config=untrusted-ci \
-            --remote_cache=grpcs://proxy.metal.buildbuddy.dev \
-            --remote_executor=grpcs://proxy.metal.buildbuddy.dev \
-            --bes_backend=grpcs://proxy.metal.buildbuddy.dev \
+            --remote_cache=grpcs://proxy.us-sjc.buildbuddy.dev \
+            --remote_executor=grpcs://proxy.us-sjc.buildbuddy.dev \
+            --bes_backend=grpcs://proxy.us-sjc.buildbuddy.dev \
             --bes_results_url=https://app.buildbuddy.dev/invocation/ \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BB_CHUNKING_TEST_DEV_API_KEY }} \
             --remote_upload_local_results \

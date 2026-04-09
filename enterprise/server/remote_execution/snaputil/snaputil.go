@@ -46,7 +46,13 @@ const (
 	// change!
 	MemoryFileName = "memory"
 
+	// DefaultMaxStaleFallbackSnapshotAge is the max age of a valid fallback snapshot.
+	// This is used to prevent using very stale local snapshots that may cause performance degradation.
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
+
+	// DefaultSnapshotWriteInterval is the default interval between snapshot writes.
+	// This is used to prevent writing snapshots too frequently.
+	DefaultSnapshotWriteInterval = 1 * time.Hour
 
 	ConvertToCOWConcurrency = 8
 )

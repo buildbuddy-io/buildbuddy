@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service",
     deps = [
         "//enterprise/server/experiments",
+        "//enterprise/server/githubapp",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_env",

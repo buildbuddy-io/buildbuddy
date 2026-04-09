@@ -137,6 +137,9 @@ const (
 	// CPU architecture associated with the request.
 	Arch = "arch"
 
+	// Whether the request is targeting self-hosted executors.
+	SelfHosted = "self_hosted"
+
 	// The name used to identify the type of an unexpected event.
 	EventName = "name"
 
@@ -413,6 +416,9 @@ const (
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
+
+	WorkflowLabel    = "workflow"
+	RemoteBazelLabel = "remote_bazel"
 )
 
 // Other constants
@@ -1522,6 +1528,20 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "vfs_cas_files_accessed_bytes",
 		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
+	RemoteRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_runner",
+		Name:      "requests",
+		Help:      "Number of remote runner executions initiated.",
+	}, []string{
+		GroupID,
+		OpLabel,
+		Stage,
+		OS,
+		Arch,
+		SelfHosted,
 	})
 
 	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -3660,6 +3680,31 @@ var (
 		CompressionType,
 		GroupID,
 	})
+	CacheClientChunkedUploadChunkBytesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunk_bytes_total",
+		Help:      "Total uncompressed chunk bytes produced during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunkBytesDeduped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunk_bytes_deduped",
+		Help:      "Uncompressed chunk bytes deduplicated (already existed on remote) during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunksTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunks_total",
+		Help:      "Total number of chunks produced during chunked uploads.",
+	})
+	CacheClientChunkedUploadChunksDeduped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_chunks_deduped",
+		Help:      "Number of chunks deduplicated (already existed on remote) during chunked uploads.",
+	})
+
 	ByteStreamChunkedWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3876,6 +3921,16 @@ var (
 	}, []string{
 		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
+	})
+
+	OCIRegistryEgressBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "egress_size_bytes",
+		Help:      "The number of bytes served, broken down by destination provider/region inferred from the peer IP.",
+	}, []string{
+		DestinationProviderLabel,
+		DestinationRegionLabel,
 	})
 
 	OCIFetcherRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{

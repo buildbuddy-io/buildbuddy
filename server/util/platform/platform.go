@@ -72,38 +72,42 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                      = "runner-recycling-key"
-	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
-	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
-	transientErrorExitCodes                 = "transient-error-exit-codes"
-	SnapshotSavePolicyPropertyName          = "remote-snapshot-save-policy"
-	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
-	MaxStaleFallbackSnapshotAgePropertyName = "max-stale-fallback-snapshot-age"
-	PreserveWorkspacePropertyName           = "preserve-workspace"
-	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
-	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
-	persistentWorkerPropertyName            = "persistent-workers"
-	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
-	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
-	WorkflowIDPropertyName                  = "workflow-id"
-	WorkloadIsolationPropertyName           = "workload-isolation-type"
-	initDockerdPropertyName                 = "init-dockerd"
-	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
-	enableVFSPropertyName                   = "enable-vfs"
-	HostedBazelAffinityKeyPropertyName      = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName      = "use-self-hosted-executors"
-	disableMeasuredTaskSizePropertyName     = "debug-disable-measured-task-size"
-	disablePredictedTaskSizePropertyName    = "debug-disable-predicted-task-size"
-	extraArgsPropertyName                   = "extra-args"
-	EnvOverridesPropertyName                = "env-overrides"
-	EnvOverridesBase64PropertyName          = "env-overrides-base64"
-	IncludeSecretsPropertyName              = "include-secrets"
-	DefaultTimeoutPropertyName              = "default-timeout"
-	TerminationGracePeriodPropertyName      = "termination-grace-period"
-	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
-	RetryPropertyName                       = "retry"
-	PersistentVolumesPropertyName           = "persistent-volumes"
-	execrootPathPropertyName                = "execroot-path"
+	RunnerRecyclingKey                       = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
+	transientErrorExitCodes                  = "transient-error-exit-codes"
+	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
+	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
+	MinTimeBetweenSnapshotWritesPropertyName = "min-time-between-snapshot-writes"
+	PreserveWorkspacePropertyName            = "preserve-workspace"
+	overlayfsWorkspacePropertyName           = "overlayfs-workspace"
+	cleanWorkspaceInputsPropertyName         = "clean-workspace-inputs"
+	persistentWorkerPropertyName             = "persistent-workers"
+	PersistentWorkerKeyPropertyName          = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
+	WorkflowIDPropertyName                   = "workflow-id"
+	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	initDockerdPropertyName                  = "init-dockerd"
+	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
+	enableVFSPropertyName                    = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName       = "hosted-bazel-affinity-key"
+	UseSelfHostedExecutorsPropertyName       = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName      = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName     = "debug-disable-predicted-task-size"
+	extraArgsPropertyName                    = "extra-args"
+	EnvOverridesPropertyName                 = "env-overrides"
+	EnvOverridesBase64PropertyName           = "env-overrides-base64"
+	SecretEnvOverridesPropertyName           = "secret-env-overrides"
+	SecretEnvOverridesBase64PropertyName     = "secret-env-overrides-base64"
+	IncludeSecretsPropertyName               = "include-secrets"
+	EnvSecretsPropertyName                   = "env-secrets"
+	DefaultTimeoutPropertyName               = "default-timeout"
+	TerminationGracePeriodPropertyName       = "termination-grace-period"
+	SnapshotKeyOverridePropertyName          = "snapshot-key-override"
+	RetryPropertyName                        = "retry"
+	PersistentVolumesPropertyName            = "persistent-volumes"
+	execrootPathPropertyName                 = "execroot-path"
 	// RunUnderPropertyName specifies a wrapper command to run the action
 	// under. The value is shell-tokenized and the resulting tokens are
 	// prepended to the command arguments, so the original executable becomes
@@ -259,6 +263,9 @@ type Properties struct {
 
 	EnableVFS      bool
 	IncludeSecrets bool
+	// EnvSecrets is a list of specific secret names to inject as env vars.
+	// Takes precedence over IncludeSecrets for targeted injection.
+	EnvSecrets []string
 
 	// OriginalPool can be set to inform BuildBuddy about the original pool name
 	// from another remote execution platform. This allows configuring task
@@ -323,6 +330,10 @@ type Properties struct {
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action.
 	EnvOverrides []string
+
+	// SecretEnvOverrides contains environment variables in the form NAME=VALUE to be
+	// applied as overrides to the action. These are always redacted in logs/UI.
+	SecretEnvOverrides []string
 
 	// OverrideSnapshotKey specifies a snapshot key that the action should start
 	// from.
@@ -433,6 +444,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		envOverrides = append(envOverrides, string(b))
 	}
 
+	secretEnvOverrides := stringListProp(m, SecretEnvOverridesPropertyName)
+	for _, prop := range stringListProp(m, SecretEnvOverridesBase64PropertyName) {
+		b, err := base64.StdEncoding.DecodeString(prop)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("decode secret env override as base64: %s", err)
+		}
+		secretEnvOverrides = append(secretEnvOverrides, string(b))
+	}
+
 	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
 	if err != nil {
 		return nil, err
@@ -463,7 +483,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	poolType := PoolTypeDefault
-	if val, ok := m[strings.ToLower(useSelfHostedExecutorsPropertyName)]; ok {
+	if val, ok := m[strings.ToLower(UseSelfHostedExecutorsPropertyName)]; ok {
 		if strings.EqualFold(val, "true") {
 			poolType = PoolTypeSelfHosted
 		} else {
@@ -529,6 +549,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
+		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
@@ -541,6 +562,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
+		SecretEnvOverrides:        secretEnvOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,

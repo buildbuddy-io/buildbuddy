@@ -332,6 +332,15 @@ type GitHubApp struct {
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
+
+	// newAppClient returns an authenticated GitHub client.
+	newAppClient func(context.Context) (githubAppClient, error)
+}
+
+type githubAppClient interface {
+	CreateInstallationToken(ctx context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error)
+	GetInstallation(ctx context.Context, id int64) (*github.Installation, *github.Response, error)
+	FindRepositoryInstallation(ctx context.Context, owner, repo string) (*github.Installation, *github.Response, error)
 }
 
 // NewReadWriteApp returns a new GitHubApp handle for the read-write BuildBuddy Github app.
@@ -369,6 +378,7 @@ func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 		webhookSecret: *readWriteAppWebhookSecret,
 		appID:         int64(appIDParsed),
 	}
+	app.newAppClient = app.newAuthenticatedAppClient
 	oauth := gh_oauth.NewOAuthHandler(env, *readWriteAppClientID, *readWriteAppClientSecret, readWriteOauthPath)
 	oauth.HandleInstall = app.handleInstall
 	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readWriteAppPublicLink)
@@ -414,6 +424,7 @@ func NewReadOnlyApp(env environment.Env) (*GitHubApp, error) {
 		webhookSecret: *readOnlyAppWebhookSecret,
 		appID:         int64(appIDParsed),
 	}
+	app.newAppClient = app.newAuthenticatedAppClient
 	oauth := gh_oauth.NewOAuthHandler(env, *readOnlyAppClientID, *readOnlyAppClientSecret, readOnlyOauthPath)
 	oauth.HandleInstall = app.handleInstall
 	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readOnlyAppPublicLink)
@@ -543,10 +554,16 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 	if err != nil {
 		return err
 	}
+
 	return a.env.GetWorkflowService().HandleRepositoryEvent(
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
+// GetInstallationTokenForStatusReportingOnly returns an installation token for the given owner.
+// It does not authorize the user, because we don't have an authenticated context when handling
+// webhooks, so should be used for status reporting only.
+//
+// Use GetRepositoryInstallationToken in other cases that should authorize the user.
 func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
 	var installation tables.GitHubAppInstallation
 	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
@@ -567,21 +584,38 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 	return tok, nil
 }
 
-func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
-	if err := authutil.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
+func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
+	if err := authutil.AuthorizeGroupAccess(ctx, a.env, groupID); err != nil {
 		return "", err
 	}
-	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
 	if err != nil {
-		return "", err
+		return "", status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
 	}
+
+	// Validate that the repo was imported to BB.
+	gitRepository := &tables.GitRepository{}
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_token").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, parsedRepoURL.String()).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("repo %s not found", repoURL)
+		}
+		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, repo.GroupID, repoURL.Owner).Take(&installation)
+	`, groupID, parsedRepoURL.Owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
@@ -593,6 +627,26 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 		return "", err
 	}
 	return tok.GetToken(), nil
+}
+
+// GetRepositoryInstallationToken is a convenience function that wraps the interface method on GitHubApp.
+func GetRepositoryInstallationToken(ctx context.Context, env environment.Env, groupID, repoURL string) (string, error) {
+	gh := env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %q: %s", repoURL, err)
+	}
+	// If the request was authenticated with a group API key, there will
+	// not be a UserID in the authenticated context, so we cannot use
+	// `GetGitHubAppForAuthenticatedUser`.
+	app, err := gh.GetGitHubAppForOwner(ctx, parsedRepoURL.Owner)
+	if err != nil {
+		return "", status.WrapError(err, "get GitHub app for owner")
+	}
+	return app.GetRepositoryInstallationToken(ctx, groupID, parsedRepoURL.String())
 }
 
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.
@@ -1197,7 +1251,7 @@ func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installa
 	if err != nil {
 		return nil, err
 	}
-	_, _, err = appClient.Apps.FindRepositoryInstallation(ctx, owner, repo)
+	_, _, err = appClient.FindRepositoryInstallation(ctx, owner, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -1213,7 +1267,7 @@ func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Inst
 	if err != nil {
 		return nil, status.WrapError(err, "failed to get installation")
 	}
-	inst, res, err := client.Apps.GetInstallation(ctx, id)
+	inst, res, err := client.GetInstallation(ctx, id)
 	if err := checkResponse(res, err); err != nil {
 		return nil, status.WrapError(err, "failed to get installation")
 	}
@@ -1225,7 +1279,7 @@ func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID 
 	if err != nil {
 		return nil, err
 	}
-	t, res, err := client.Apps.CreateInstallationToken(ctx, installationID, nil)
+	t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
 	if err := checkResponse(res, err); err != nil {
 		return nil, status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
 	}
@@ -1296,8 +1350,9 @@ func (a *GitHubApp) waitForInstallation(ctx context.Context, installationID int6
 	return nil, status.DeadlineExceededErrorf("timed out waiting for installation %d to exist: %s", installationID, lastErr)
 }
 
-// newAppClient returns a GitHub client authenticated as the app.
-func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
+// newAuthenticatedAppClient returns a GitHub Apps client authenticated as the
+// GitHub app itself.
+func (a *GitHubApp) newAuthenticatedAppClient(ctx context.Context) (githubAppClient, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
 	t.Claims = &jwt.StandardClaims{
@@ -1310,7 +1365,11 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 		log.Errorf("Failed to sign JWT: %s", err)
 		return nil, status.InternalErrorf("failed to sign JWT")
 	}
-	return a.newAuthenticatedClient(ctx, jwtStr)
+	client, err := a.newAuthenticatedClient(ctx, jwtStr)
+	if err != nil {
+		return nil, err
+	}
+	return client.Apps, nil
 }
 
 func (a *GitHubApp) newInstallationClient(ctx context.Context, userToken string, installationID int64) (*github.Client, string, error) {

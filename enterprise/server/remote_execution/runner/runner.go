@@ -64,6 +64,7 @@ var (
 	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupDefaultImages    = flag.Bool("executor.warmup_default_images", false, "Whether to warm up default container images on executor startup.")
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
@@ -76,8 +77,8 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
-	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
-	ociWarmupDefaultImages    = flag.Bool("executor.oci.warmup_default_images", true, "Whether to warmup the default oci images or not.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", false, "Whether to warmup the default podman images or not.")
+	ociWarmupDefaultImages    = flag.Bool("executor.oci.warmup_default_images", false, "Whether to warmup the default oci images or not.")
 	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
@@ -298,6 +299,13 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 		r.task.GetExecuteRequest().GetDigestFunction())
+	// NOTE: If we switch this code path to download inputs incrementally from
+	// GetTree instead of buffering the full GetTree response from the server,
+	// the downloadsBitmap implementation will probably break. The
+	// implementation currently depends on the tree being fully buffered in
+	// memory, in order for the bitmap indexes to be
+	// deterministic (so that they can be interpreted properly by both clients
+	// and servers)
 	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
 		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {
@@ -401,6 +409,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
+			if dirtools.InputFetchMetadataEnabled() {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
@@ -1029,6 +1040,9 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			continue
 		}
 		if (isolation == platform.PodmanContainerType) && !*podmanWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.DockerContainerType || isolation == platform.FirecrackerContainerType) && !*warmupDefaultImages {
 			continue
 		}
 

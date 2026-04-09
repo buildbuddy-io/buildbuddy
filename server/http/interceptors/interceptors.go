@@ -34,6 +34,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -44,6 +46,14 @@ var (
 )
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
+
+var (
+	rpcNameContextKey       = struct{}{}
+	buildBuddyHTTPPrefix    = "/rpc/BuildBuddyService/"
+	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	apiHTTPPrefix           = "/api/v1/"
+	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+)
 
 func getContentSecurityPolicyHeaderValue(nonce string) string {
 	var regionConnectSrcs []string
@@ -276,10 +286,40 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	})
 }
 
+// parseProtoletRPCName converts a protolet HTTP route to the canonical full RPC
+// name and stores it in the request context for later interceptors (e.g. quota,
+// capabilities filter).
+//
+// Examples:
+//
+//	/rpc/BuildBuddyService/SearchInvocation -> /buildbuddy.service.BuildBuddyService/SearchInvocation
+//	/api/v1/Run -> /api.v1.ApiService/Run
+func parseProtoletRPCName(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, buildBuddyHTTPPrefix):
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, buildBuddyServicePrefix+strings.TrimPrefix(r.URL.Path, buildBuddyHTTPPrefix)))
+		case strings.HasPrefix(r.URL.Path, apiHTTPPrefix):
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, apiServicePrefix+strings.TrimPrefix(r.URL.Path, apiHTTPPrefix)))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func rpcNameFromContext(ctx context.Context) (string, bool) {
+	rpcName, ok := ctx.Value(rpcNameContextKey).(string)
+	return rpcName, ok
+}
+
 func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if err := capabilities_filter.AuthorizeRPC(ctx, env, r.URL.Path); err != nil {
+		rpcName, ok := rpcNameFromContext(ctx)
+		if !ok {
+			http.Error(w, "unsupported RPC path", http.StatusForbidden)
+			return
+		}
+		if err := capabilities_filter.AuthorizeRPC(ctx, env, rpcName); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -508,6 +548,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeSelectedGroupRole(env, h) },
+		parseProtoletRPCName,
 		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		// The request message is parsed before authentication since the request_context

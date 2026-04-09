@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -37,6 +38,8 @@ var (
 	defaultImage               = flag.String("executor.default_image", platform.Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
 	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
+
+	imageRewriteRules = flag.Slice("executor.container_image_name_rewrites", []ImageRewrite{}, "Configures rules to rewrite matching container image names.")
 )
 
 const (
@@ -47,6 +50,11 @@ const (
 	// the value of the [containerRegistryRegion] flag.
 	registryRegionPlaceholder = "{{region}}"
 )
+
+type ImageRewrite struct {
+	Prefix      string `yaml:"prefix" json:"prefix"`
+	Replacement string `yaml:"replacement" json:"replacement"`
+}
 
 func DockerSocket() string {
 	return *dockerSocket
@@ -135,6 +143,14 @@ func GetExecutorProperties() *ExecutorProperties {
 
 func containerImageName(input string) string {
 	withoutDockerPrefix := strings.TrimPrefix(input, platform.DockerPrefix)
+
+	for _, rr := range *imageRewriteRules {
+		if after, ok := strings.CutPrefix(withoutDockerPrefix, rr.Prefix); ok {
+			withoutDockerPrefix = rr.Replacement + after
+			break
+		}
+	}
+
 	if *containerRegistryRegion == "" {
 		return withoutDockerPrefix
 	}
@@ -152,6 +168,56 @@ func ValidateIsolationTypes() error {
 	if !executorProps.SupportsIsolation(platform.ContainerType(*defaultIsolationType)) {
 		return status.InvalidArgumentErrorf("the configured 'default_isolation_type' %q is not enabled for this executor. Enabled isolation types: %v", *defaultIsolationType, executorProps.SupportedIsolationTypes)
 	}
+	return nil
+}
+
+// secretEnvVarNames extracts the variable names from a list of "NAME=VALUE"
+// secret-env-override entries.
+func secretEnvVarNames(overrides []string) []string {
+	names := make([]string, 0, len(overrides))
+	for _, e := range overrides {
+		name, _, _ := strings.Cut(e, "=")
+		names = append(names, name)
+	}
+	return names
+}
+
+// registerSecretEnvVarNames merges the variable names from secretOverrides into
+// the BUILDBUDDY_SECRET_ENV_VAR_NAMES env var on the command so the CI runner
+// can scrub their values from workflow logs.
+func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) error {
+	if len(secretOverrides) == 0 {
+		return nil
+	}
+	newNames := secretEnvVarNames(secretOverrides)
+
+	// Parse any existing names already set (e.g. from include-secrets).
+	var existing []string
+	for _, ev := range command.EnvironmentVariables {
+		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			if err := json.Unmarshal([]byte(ev.GetValue()), &existing); err != nil {
+				return status.InternalErrorf("unmarshal existing %s: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+			}
+			break
+		}
+	}
+
+	merged := append(existing, newNames...)
+	serialized, err := json.Marshal(merged)
+	if err != nil {
+		return status.InternalErrorf("marshal %s: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+	}
+
+	for _, ev := range command.EnvironmentVariables {
+		if ev.GetName() == ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			ev.Value = string(serialized)
+			return nil
+		}
+	}
+	command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+		Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+		Value: string(serialized),
+	})
 	return nil
 }
 
@@ -251,6 +317,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
+	additionalEnvVars = append(additionalEnvVars, platformProps.SecretEnvOverrides...)
 	for _, e := range additionalEnvVars {
 		name, value, hasValue := strings.Cut(e, "=")
 		if !hasValue {
@@ -261,6 +328,10 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Name:  name,
 			Value: value,
 		})
+	}
+
+	if err := registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides); err != nil {
+		return err
 	}
 
 	// TODO: find a cleaner way to set the origin header, other than by

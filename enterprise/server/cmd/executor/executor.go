@@ -253,6 +253,9 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
 		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
 			realEnv.SetFileCache(fc)
+			realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+				return fc.Close()
+			})
 		}
 	}
 

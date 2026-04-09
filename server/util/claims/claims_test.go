@@ -409,8 +409,8 @@ func TestParseClaims_ES256(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)
@@ -423,8 +423,8 @@ func TestParseClaims_ES256(t *testing.T) {
 
 func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)
@@ -479,10 +479,40 @@ func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
 	}
 }
 
+func TestClaimsFromContext_ReparseError(t *testing.T) {
+	flags.Set(t, "auth.reparse_jwts", true)
+
+	// Build a context with a valid JWT token string and an auth error.
+	c := &claims.Claims{UserID: "US123"}
+	ctx := contextWithUnverifiedJWT(c)
+	ctx = authutil.AuthContextWithError(ctx, status.UnauthenticatedError("bad token"))
+
+	// Even though there's a valid JWT and reparseJWTs is true,
+	// ClaimsFromContext should skip re-parsing because an auth error is
+	// already set, and should return the original auth error.
+	_, err := claims.ClaimsFromContext(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err))
+	require.Contains(t, err.Error(), "bad token")
+}
+
+func TestClaimsFromContext_ReparseNoError(t *testing.T) {
+	flags.Set(t, "auth.reparse_jwts", true)
+
+	// Build a context with a valid JWT but no auth error.
+	c := &claims.Claims{UserID: "US123"}
+	ctx := contextWithUnverifiedJWT(c)
+
+	// With no auth error set, re-parsing should proceed and succeed.
+	parsedClaims, err := claims.ClaimsFromContext(ctx)
+	require.NoError(t, err)
+	requireClaimsEqual(t, c, parsedClaims)
+}
+
 func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
-	keyProvider := func(ctx context.Context) ([]string, error) {
-		return []string{keyPair.PublicKeyPEM}, nil
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
 	}
 	parser, err := claims.NewClaimsParser(keyProvider)
 	require.NoError(t, err)

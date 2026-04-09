@@ -275,9 +275,6 @@ func TestAtimeUpdateAuth(t *testing.T) {
 }
 
 func TestIPRules(t *testing.T) {
-	// TODO(http://go/b/6797): enable this test.
-	t.Skip()
-
 	flags.Set(t, "auth.ip_rules.enable", true)
 	flags.Set(t, "auth.trust_xforwardedfor_header", true)
 	flags.Set(t, "app.client_identity.client", "cache-proxy")

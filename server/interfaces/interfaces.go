@@ -714,9 +714,9 @@ type GitHubApp interface {
 	// so should be used for status reporting only.
 	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
-	// GetRepositoryInstallationToken returns an installation token for the given
-	// GitRepository.
-	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+	// GetRepositoryInstallationToken returns an installation token for the given repo.
+	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
+	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler
@@ -1238,6 +1238,10 @@ type CommandResult struct {
 	// VfsStats holds VFS-specific stats if VFS workspaces are enabled.
 	VfsStats *repb.VfsStats
 
+	// InputFetchMetadata describes which action inputs were fetched from
+	// remote CAS while preparing or serving the workspace.
+	InputFetchMetadata *espb.InputFetchMetadata
+
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
 }
@@ -1464,7 +1468,8 @@ type SecretService interface {
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
-	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+	// If secretNames is non-empty, only secrets whose names appear in the list are returned.
+	GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error)
 }
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.

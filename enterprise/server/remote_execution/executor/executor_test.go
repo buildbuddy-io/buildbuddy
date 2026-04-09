@@ -30,6 +30,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gstatus "google.golang.org/grpc/status"
@@ -220,6 +221,67 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
 		})
 	}
+}
+
+func TestExecuteTaskAndStreamResults_InputFetchMetadata(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+
+	ctx := context.Background()
+	expected := &espb.InputFetchMetadata{
+		DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+	}
+	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
+		InputFetchMetadata: expected,
+	})
+	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, expected.GetDownloadedFileIndicesBitmap(), auxMeta.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap())
+}
+
+func TestExecuteTaskAndStreamResults_InputFetchMetadataDisabled(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", false)
+
+	ctx := context.Background()
+	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
+		InputFetchMetadata: &espb.InputFetchMetadata{
+			DownloadedFileIndicesBitmap: []byte{9, 9, 9},
+		},
+	})
+	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Nil(t, auxMeta.GetInputFetchDetailedStats())
 }
 
 func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {

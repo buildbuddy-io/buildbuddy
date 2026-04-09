@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -64,6 +65,10 @@ var (
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
 
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
+
+	// chunkUploadSem is a process-wide semaphore that limits the total number
+	// of concurrent CDC chunk upload RPCs across all concurrent executions.
+	chunkUploadSem = make(chan struct{}, 256)
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -442,7 +447,22 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		missingChunkHashes.Add(d.GetHash())
 	}
 
-	var uploadedBytes int64
+	var totalChunkBytes int64
+	for _, d := range chunkDigests {
+		totalChunkBytes += d.GetSizeBytes()
+	}
+	dedupedChunks := int64(len(chunkDigests)) - int64(len(missingChunkHashes))
+	dedupedBytes := totalChunkBytes
+	for _, d := range missingRsp.GetMissingBlobDigests() {
+		dedupedBytes -= d.GetSizeBytes()
+	}
+	metrics.CacheClientChunkedUploadChunksTotal.Add(float64(len(chunkDigests)))
+	metrics.CacheClientChunkedUploadChunksDeduped.Add(float64(dedupedChunks))
+	metrics.CacheClientChunkedUploadChunkBytesTotal.Add(float64(totalChunkBytes))
+	metrics.CacheClientChunkedUploadChunkBytesDeduped.Add(float64(dedupedBytes))
+
+	var uploadedBytes atomic.Int64
+	eg, egCtx := errgroup.WithContext(ctx)
 	var offset int64
 	for _, d := range chunkDigests {
 		if !missingChunkHashes.Contains(d.GetHash()) {
@@ -452,20 +472,28 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		chunkRN := digest.NewCASResourceName(d, r.GetInstanceName(), r.GetDigestFunction())
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
 		sr := io.NewSectionReader(in, offset, d.GetSizeBytes())
-		_, uploaded, err := UploadFromReader(ctx, env.GetByteStreamClient(), chunkRN, sr)
-		uploadedBytes += uploaded
-		if err != nil {
-			return nil, uploadedBytes, err
-		}
-		missingChunkHashes.Remove(d.GetHash())
+		eg.Go(func() error {
+			select {
+			case chunkUploadSem <- struct{}{}:
+				defer func() { <-chunkUploadSem }()
+			case <-egCtx.Done():
+				return egCtx.Err()
+			}
+			_, uploaded, err := UploadFromReader(egCtx, env.GetByteStreamClient(), chunkRN, sr)
+			uploadedBytes.Add(uploaded)
+			return err
+		})
 		offset += d.GetSizeBytes()
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, uploadedBytes.Load(), err
 	}
 
 	spliceStart := time.Now()
 	if err := spliceBlobWithRetries(ctx, casClient, manifest.ToSpliceBlobRequest()); err != nil {
-		return nil, uploadedBytes, status.WrapErrorf(err, "splice chunked blob with %d total bytes failed after %v", r.GetDigest().GetSizeBytes(), time.Since(spliceStart))
+		return nil, uploadedBytes.Load(), status.WrapErrorf(err, "splice chunked blob with %d total bytes failed after %v", r.GetDigest().GetSizeBytes(), time.Since(spliceStart))
 	}
-	return r.GetDigest(), uploadedBytes, nil
+	return r.GetDigest(), uploadedBytes.Load(), nil
 }
 
 func shouldUploadChunked(env environment.Env, d *repb.Digest, avgChunkSizeBytes int64) bool {
@@ -724,8 +752,6 @@ type BatchCASUploader struct {
 // context (it should not be used outside the lifecycle of the request).
 func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, avgChunkSizeBytes int64) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
-	// TODO(tyler-french): Set a concurrency limit on ul.eg so total uploader
-	// file operations are globally bounded.
 	return &BatchCASUploader{
 		ctx:               ctx,
 		env:               env,
@@ -773,10 +799,6 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		if ras, ok := rsc.(readAtSeeker); ok && ul.avgChunkSizeBytes > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
-				// BatchCASUploader already controls per-file concurrency, so keep
-				// per-file chunk uploads serialized to avoid multiplicative fanout.
-				// TODO(tyler-french): Support parallel chunk uploads while
-				// respecting the parent ul.eg concurrency budget.
 				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.avgChunkSizeBytes)
 				return err
 			})

@@ -571,6 +571,116 @@ func TestServerRetryOnHTTPErrors(t *testing.T) {
 	require.GreaterOrEqual(t, blobAttempts.Load(), int32(2), "expected at least 2 blob attempts")
 }
 
+// TestFetchBlobRetryOnCompressedError verifies that when the initial
+// layer.Compressed() call fails (e.g. because of an expired ECR token),
+// the OCI fetcher retries with a fresh puller and succeeds.
+//
+// This specifically tests the fix where layer.Compressed() is called inside
+// the withPullerRetry scope. Previously, only puller.Layer() was inside the
+// retry, but that call is lazy and doesn't make the actual HTTP request to
+// download blob data — the HTTP request happens in layer.Compressed().
+func TestFetchBlobRetryOnCompressedError(t *testing.T) {
+	var blobGetAttempts atomic.Int32
+
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		// Only intercept blob GET requests (the actual data download).
+		// Let all other requests (v2 ping, manifest, blob HEAD) pass through.
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			if blobGetAttempts.Add(1) == 1 {
+				// Simulate an expired token on the first blob download,
+				// similar to what ECR returns when a Bearer token expires.
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-retry-compressed", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedLayerData := layerData(t, layer)
+
+	server := newTestServer(t)
+	counter.Reset()
+
+	blobRef := imageName + "@" + layerDigest.String()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err, "FetchBlob should succeed after retrying with a fresh puller")
+	require.Equal(t, expectedLayerData, stream.collectData())
+
+	blobPath := "/v2/test-retry-compressed/blobs/" + layerDigest.String()
+	assertRequests(t, counter, map[string]int{
+		// Two /v2/ pings: one for the initial puller, one for the retry puller
+		// after the first attempt's Compressed() call fails with 401.
+		http.MethodGet + " /v2/": 2,
+		// Two blob GETs: first fails with 401 (simulating expired token),
+		// second succeeds after puller eviction and retry.
+		http.MethodGet + " " + blobPath: 2,
+		// Two blob HEADs for layer.Size(): one per attempt (Size is
+		// fetched before Compressed to avoid leaking the reader on
+		// retry).
+		http.MethodHead + " " + blobPath: 2,
+	})
+}
+
+func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
+	var failBlobHead atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-metadata-fallback", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedLayerData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	failBlobHead.Store(true)
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	counter.Reset()
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err, "FetchBlob should fall back to direct streaming when metadata lookups fail")
+	require.Equal(t, expectedLayerData, stream.collectData())
+
+	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/": 1,
+		// Blob data is streamed despite metadata failures.
+		http.MethodGet + " " + blobPath: 1,
+		// Three blob HEADs: MediaType() HEAD (500), Size() HEAD (500),
+		// plus one internal HEAD from go-containerregistry during
+		// Compressed() to determine content length.
+		http.MethodHead + " " + blobPath: 3,
+	})
+
+	// Metadata lookup failures should skip read-through caching, so a subsequent
+	// fetch still needs to hit the upstream registry.
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	counter.Reset()
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedLayerData, stream.collectData())
+	assertRequests(t, counter, map[string]int{
+		// No /v2/ ping: puller stays cached across metadata failures.
+		http.MethodGet + " " + blobPath:  1,
+		http.MethodHead + " " + blobPath: 3,
+	})
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool
@@ -701,6 +811,7 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 }
 
 func TestServerBypassRegistry(t *testing.T) {
+	// TODO(dan): https://github.com/buildbuddy-io/buildbuddy-internal/issues/6877
 	quarantine.SkipQuarantinedTest(t)
 	const adminGroupID = "GR123"
 
@@ -1454,6 +1565,7 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		Credentials: creds2,
 	}
 
+	counter.Reset()
 	blocker.enable()
 
 	var wg sync.WaitGroup
@@ -1485,6 +1597,17 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 
 	require.Error(t, result2Err, "request with invalid creds should fail")
 
-	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-	require.Equal(t, 2, counter.Snapshot()[blobPath], "different credentials should result in separate requests")
+	blobPath := "/v2/test-image/blobs/" + digest.String()
+	assertRequests(t, counter, map[string]int{
+		// Three /v2/ pings: one for each initial puller (creds1, creds2),
+		// plus one more when creds2 retries with a fresh puller after 401.
+		http.MethodGet + " /v2/": 3,
+		// Three blob GETs: one for creds1 (succeeds), two for creds2
+		// (first attempt 401, retry 401).
+		http.MethodGet + " " + blobPath: 3,
+		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
+		// two for creds2 (Size is fetched before Compressed, so each
+		// attempt calls it before the blob GET fails).
+		http.MethodHead + " " + blobPath: 3,
+	})
 }

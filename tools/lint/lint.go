@@ -29,10 +29,8 @@ var (
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
 
-const (
-	// Version of the bb CLI to use for 'bb fix' commands.
-	bbCLIVersion = "5.0.266"
-)
+// BB CLI version is now pinned in deps.bzl (BB_CLI_VERSION) and downloaded
+// as a prebuilt binary via //tools/bb.
 
 // Set via x_defs in BUILD file.
 var (
@@ -92,8 +90,6 @@ type Tool struct {
 }
 
 func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// TODO: use a static build of 'bb' here so that we can use this tool to fix
-	// problems with the CLI itself.
 	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get bb command: %w", err)
@@ -105,6 +101,12 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 	stdoutCounter := &ioutil.Counter{}
 	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
+	// bb fix runs gazelle, which needs 'go' in PATH to resolve imports.
+	goPath, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run bb fix: %w", err)
 	}
@@ -254,6 +256,12 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	// bb mod deps may need 'go' in PATH.
+	goPath, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run bb mod deps: %w", err)
 	}

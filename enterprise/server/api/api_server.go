@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -63,6 +64,9 @@ const (
 	minAuditLogPageSize     = 1
 	defaultAuditLogPageSize = 100
 	maxAuditLogPageSize     = 1_000
+	// Max allowed size for GetFileRange. Must be less than the gRPC max
+	// response size. Keep this value in sync with API proto comments.
+	maxGetFileRangeBytes = 16 * 1024 * 1024
 )
 
 type APIServer struct {
@@ -556,6 +560,21 @@ func (gfs *getFileWriter) Write(data []byte) (int, error) {
 	return len(data), err
 }
 
+func parseBytestreamCASURI(uri string) (*url.URL, *digest.CASResourceName, error) {
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+	if parsedURL.Scheme != "bytestream" {
+		return nil, nil, status.InvalidArgumentError("only bytestream:// URIs are supported")
+	}
+	rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(parsedURL.RequestURI(), "/"))
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+	return parsedURL, rn, nil
+}
+
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
 	ctx := server.Context()
 	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
@@ -570,6 +589,59 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 	writer := &getFileWriter{s: server}
 
 	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURL, writer)
+}
+
+func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeRequest) (*apipb.GetFileRangeResponse, error) {
+	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+	if s.env.GetCache() == nil {
+		return nil, status.FailedPreconditionError("Cache not configured")
+	}
+
+	start := req.GetStart()
+	end := req.GetEnd()
+	if start < 0 {
+		return nil, status.InvalidArgumentError("start must be non-negative")
+	}
+	if end <= start {
+		return nil, status.InvalidArgumentError("end must be greater than start")
+	}
+
+	_, rn, err := parseBytestreamCASURI(req.GetUri())
+	if err != nil {
+		return nil, err
+	}
+	if end > rn.GetDigest().GetSizeBytes() {
+		return nil, status.InvalidArgumentError("end must not exceed digest size_bytes")
+	}
+
+	limit := end - start
+	if limit > maxGetFileRangeBytes {
+		return nil, status.InvalidArgumentErrorf("requested range exceeds %d bytes", maxGetFileRangeBytes)
+	}
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := s.env.GetCache().Reader(ctx, rn.ToProto(), start, limit)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if int64(len(data)) != limit {
+		return nil, status.DataLossErrorf("short read: got %d bytes, want %d", len(data), limit)
+	}
+	return &apipb.GetFileRangeResponse{Data: data}, nil
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {

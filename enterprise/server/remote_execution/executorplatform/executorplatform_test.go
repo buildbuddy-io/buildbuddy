@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -286,6 +287,8 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{
 		{Name: "env-overrides", Value: "A=1,B=2,A=3"},
 		{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`))},
+		{Name: "secret-env-overrides", Value: "SECRET_A=s1"},
+		{Name: "secret-env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte(`SECRET_B={"key":"val"}`))},
 		{Name: "extra-args", Value: "--foo,--bar=baz"},
 	}}
 	platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
@@ -311,6 +314,11 @@ func TestEnvAndArgOverrides(t *testing.T) {
 			{Name: "B", Value: "2"},
 			{Name: "A", Value: "3"},
 			{Name: "C", Value: `{"some":1,"value":2}`},
+			// Secret env overrides are appended after regular env overrides.
+			{Name: "SECRET_A", Value: "s1"},
+			{Name: "SECRET_B", Value: `{"key":"val"}`},
+			// Secret env override names are registered for CI runner log redaction.
+			{Name: ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, Value: `["SECRET_A","SECRET_B"]`},
 		},
 	}
 
@@ -409,6 +417,69 @@ func TestExtraEnvVars(t *testing.T) {
 				cmd.EnvironmentVariables,
 				protocmp.Transform(),
 			))
+		})
+	}
+}
+
+func TestContainerImageNameRewrite(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		rewriteRules []ImageRewrite
+		input        string
+		expected     string
+	}{
+		{
+			name:     "no rules",
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "gcr.io/my-project/my-image:latest",
+		},
+		{
+			name: "matching prefix is rewritten",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/old-project/", Replacement: "gcr.io/new-project/"},
+			},
+			input:    "docker://gcr.io/old-project/my-image:latest",
+			expected: "gcr.io/new-project/my-image:latest",
+		},
+		{
+			name: "non-matching prefix is not rewritten",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/other-project/", Replacement: "gcr.io/new-project/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "gcr.io/my-project/my-image:latest",
+		},
+		{
+			name: "only first matching rule is applied",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+				{Prefix: "gcr.io/", Replacement: "other-mirror.example.com/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "mirror.example.com/my-project/my-image:latest",
+		},
+		{
+			name: "rewrite without docker prefix",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+			},
+			input:    "gcr.io/my-project/my-image:latest",
+			expected: "mirror.example.com/my-project/my-image:latest",
+		},
+		{
+			name: "rewrite combined with region replacement",
+			rewriteRules: []ImageRewrite{
+				{Prefix: "gcr.io/", Replacement: "{{region}}.mirror.example.com/"},
+			},
+			input:    "docker://gcr.io/my-project/my-image:latest",
+			expected: "us-west1.mirror.example.com/my-project/my-image:latest",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_image_name_rewrites", tc.rewriteRules)
+			flags.Set(t, "executor.container_registry_region", "us-west1")
+			result := containerImageName(tc.input)
+			assert.Equal(t, tc.expected, result)
 		})
 	}
 }

@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -828,6 +829,30 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Rewrite container image name via experiment.
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		const containerImageRewriteExperiment = "remote_execution.container_image_rewrite"
+		rewriteConfig, details := fp.ObjectDetails(ctx, containerImageRewriteExperiment, nil)
+		if rewriteConfig != nil {
+			prefix, _ := rewriteConfig["prefix"].(string)
+			replacement, _ := rewriteConfig["replacement"].(string)
+			imageName := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
+			if prefix != "" && replacement != "" {
+				if after, ok := strings.CutPrefix(imageName, prefix); ok {
+					executionTask.PlatformOverrides.Properties = append(
+						executionTask.PlatformOverrides.Properties,
+						&repb.Platform_Property{
+							Name:  "container-image",
+							Value: "docker://" + replacement + after,
+						})
+				}
+			}
+		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, containerImageRewriteExperiment+":"+details.Variant())
+		}
+	}
+
 	// Inject use-oci-fetcher platform property via experiment.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
@@ -846,18 +871,18 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false)) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCParams()
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets {
+	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
 		if secretService == nil {
 			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
-		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID, props.EnvSecrets...)
 		if err != nil {
 			return nil, err
 		}
