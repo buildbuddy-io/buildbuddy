@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/stretchr/testify/require"
@@ -145,21 +144,24 @@ func TestHelpForBBCommands(t *testing.T) {
 	}
 }
 
+type fakeNonPositionalArg struct{ value string }
+
+func (f *fakeNonPositionalArg) GetValue() string { return f.value }
+func (f *fakeNonPositionalArg) Format() []string { return []string{f.value} }
+
 func TestHelpForBBCommandWithInjectedOptions(t *testing.T) {
 	register.Register()
 
-	helpParser, err := parser.GetHelpParser()
-	require.NoError(t, err)
-	orderedArgs, err := helpParser.ParseArgs([]string{
-		"help",
-		"--module_mirrors=https://example.com",
-		"--check_direct_dependencies=error",
-		"remote",
-	})
-	require.NoError(t, err)
+	args := []arguments.Argument{
+		&arguments.PositionalArgument{Value: "help"},
+		&fakeNonPositionalArg{value: "--module_mirrors=https://example.com"},
+		&fakeNonPositionalArg{value: "--check_direct_dependencies=error"},
+		&arguments.PositionalArgument{Value: "remote"},
+	}
 
-	testHelpWithArgs(t, orderedArgs.Args, true, "Usage: bb remote", "bb help remote with injected rc options")
+	testHelpWithArgs(t, args, true, "Usage: bb remote", "bb help remote with injected rc options")
 
+	orderedArgs := &parsed.OrderedArgs{Args: args}
 	require.Equal(t, "remote", help.FindTargetCommandFromHelpArgs(orderedArgs))
 }
 
