@@ -321,6 +321,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
+		Impersonating:              akg.IsImpersonating(),
 		GroupStatus:                akg.GetGroupStatus(),
 	}, nil
 }
