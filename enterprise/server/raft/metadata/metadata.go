@@ -557,6 +557,9 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 			r, err := batchRsp.GetResponse(i)
 			if err == nil {
 				fr := k.Meta.(*sgpb.FileRecord)
+				if r.GetFileMetadata().GetFileRecord() == nil {
+					log.CtxWarningf(ctx, "replica returned FileMetadata with no FileRecord for key %q (requested %+v): %+v", k.Key, fr, r.GetFileMetadata())
+				}
 				res.found[fr] = r.GetFileMetadata()
 				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
@@ -708,6 +711,9 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	groupID := rc.userGroupID(ctx)
 
 	for _, op := range req.GetSetOperations() {
+		if op.GetFileMetadata().GetFileRecord() == nil {
+			log.CtxWarningf(ctx, "incoming SetOperation has no FileRecord: %+v", op)
+		}
 		if op.GetFileMetadata().GetFileRecord().GetIsolation().GetGroupId() != groupID {
 			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
 		}
