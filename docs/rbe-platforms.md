@@ -418,7 +418,18 @@ The following properties allow modifying the action's command before it is execu
 
 - `env-overrides`: a comma-separated list of environment variable assignments
   (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
-  For example, `"env-overrides": "FOO=bar,BAZ=qux"`.
+  For example, `"env-overrides": "FOO=bar,BAZ=qux"`. For sensitive values,
+  use `secret-env-overrides` instead (see below).
+
+- `secret-env-overrides`: like `env-overrides`, but the property value is
+  automatically **redacted** from action cache entries and workflow logs.
+  Use this for any environment variables containing secrets or credentials.
+  For example, `"secret-env-overrides": "API_KEY=sk-abc123"`.
+
+- `secret-env-overrides-base64`: like `secret-env-overrides`, but accepts
+  base64-encoded `NAME=VALUE` pairs (comma-separated). Useful when values
+  contain commas or special characters. Values are redacted from the action
+  cache and workflow logs just like `secret-env-overrides`.
 
 - `run-under`: an executable (and optional arguments) to use as a wrapper
   for the action's command. The wrapper tokens are prepended to the
