@@ -25,13 +25,24 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func TestNew_MissingClient(t *testing.T) {
+func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
+	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 	// Don't set OCIFetcherClient
 
 	_, err := New(env)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+}
+
+func TestNew_MissingLocalBSClient(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	// Set a dummy OCIFetcherClient but no LocalByteStreamClient
+	ctx := context.Background()
+	_, bsClient, acClient := setupCacheEnv(t)
+	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
+
+	_, err := New(env)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
@@ -175,6 +186,47 @@ func TestHappyPath(t *testing.T) {
 			require.Equal(t, expectedData, data)
 		})
 	}
+}
+
+// TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
+// the blob is written to the proxy's local BS cache and can be served from
+// there on a subsequent request.
+func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	ref := imageName + "@" + digest.String()
+
+	// First fetch: should go to upstream and write to local cache.
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+
+	// Shut down the test registry so upstream cannot serve blobs.
+	err = reg.Shutdown()
+	require.NoError(t, err)
+
+	// Second fetch: should be served from local BS cache.
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data2 := collectBlobData(t, stream2)
+	require.Equal(t, expectedData, data2)
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -538,6 +590,17 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 	return te, te.GetByteStreamClient(), te.GetActionCacheClient()
 }
 
+// setupLocalBSClient creates a standalone local BS cache env and returns
+// a ByteStream client connected to it.
+func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	return te.GetByteStreamClient()
+}
+
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
@@ -564,6 +627,7 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
+	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
 	proxy, err := New(env)
 	require.NoError(t, err)
