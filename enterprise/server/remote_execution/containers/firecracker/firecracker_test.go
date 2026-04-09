@@ -1594,6 +1594,92 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	run("A", "2", 1) // Should resume from previous, and increment the counter
 }
 
+func TestFirecracker_RemoteSnapshotSharing_DevboxInstanceName(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	cfg := getExecutorConfig(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+	// Manage our own filecache so we can clear it between runs to force
+	// remote snapshot lookups.
+	filecacheRoot := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	// Set up a non-CI task with a devbox instance name. The devbox instance
+	// name prefix should enable remote snapshotting independently of
+	// isCICommand.
+	devboxInstanceName := snaputil.DevboxPartitionPrefix + "/my-devbox"
+	task := &repb.ExecutionTask{
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: devboxInstanceName,
+		},
+		Command: &repb.Command{
+			// Intentionally not ./buildbuddy_ci_runner.
+			Arguments: []string{"sh"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	workdir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg,
+		ContainerImage: busyboxImage,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ActionWorkingDirectory: workdir,
+	}
+
+	// Increments /root/attempts and prints the new value.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+cd /root
+ATTEMPT_NUMBER=$(cat ./attempts 2>/dev/null || echo 0)
+ATTEMPT_NUMBER=$(( ATTEMPT_NUMBER + 1 ))
+printf '%s' $ATTEMPT_NUMBER | tee ./attempts
+`}}
+
+	run := func(expectedOut string, expectedVersionNumber int64) {
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { c.Remove(ctx) })
+		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+		err = c.Create(ctx, workdir)
+		require.NoError(t, err)
+		res := c.Exec(ctx, cmd, nil)
+		{
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+		}
+		require.NoError(t, res.Error)
+		require.Equal(t, 0, res.ExitCode)
+		assert.Equal(t, expectedOut, string(res.Stdout))
+		assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
+	}
+
+	// First run: fresh start, snapshot saved to remote cache.
+	run("1", 0)
+
+	// Clear the local filecache to force the next run to fetch from remote.
+	err = os.RemoveAll(filecacheRoot)
+	require.NoError(t, err)
+	filecacheRoot2 := testfs.MakeTempDir(t)
+	fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
+	require.NoError(t, err)
+	fc2.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc2)
+
+	// Second run: resumes from the remote snapshot despite empty local cache,
+	// proving the devbox instance name enabled remote snapshotting.
+	run("2", 1)
+}
+
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
