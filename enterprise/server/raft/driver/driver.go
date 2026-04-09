@@ -595,7 +595,6 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
-	storesWithStats := rq.storeMap.GetStoresWithStats()
 	// Do not split when there is a store that's unavailable and a replica is
 	// in the middle of a removal.
 	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
@@ -622,6 +621,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 	// unavailable because it can make the system more unstable.
 	if isClusterHealthy {
 		// For DriverConsiderRebalance check if there are rebalance opportunities.
+		storesWithStats := rq.storeMap.GetStoresWithStats()
 		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
 		if op != nil {
 			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
@@ -1286,7 +1286,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	if rd.GetRangeId() == constants.MetaRangeID {
 		minReplicas = rq.minMetaRangeReplicas
 	}
-	// Figure out if replicas are well distributed accross zones. Examples:
+	// Figure out if replicas are well distributed across zones. Examples:
 	// 5 replicas, 3 zones, ideal distribution is 2-2-1, targetMaxReplicasPerZone = 2, targetMinReplicasPerZone = 1
 	// 3 replicas, 3 zones, ideal distribution is 1-1-1, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 1
 	// 3 replicas, 4 zones, ideal distribution is 1-1-1-0, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 0
