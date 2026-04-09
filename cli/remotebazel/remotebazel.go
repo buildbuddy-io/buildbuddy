@@ -436,9 +436,12 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 	if branch == "" || commit == "" {
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(branch + "@{upstream}")
 		if err != nil {
-			return "", "", fmt.Errorf("get head commit for local branch %q: %w", defaultBranch, err)
+			defaultBranchCommitHash, err = getHeadCommitForLocalBranch(branch)
+			if err != nil {
+				return "", "", fmt.Errorf("get head commit for local branch %q: %w", branch, err)
+			}
 		}
 		commit = defaultBranchCommitHash
 	}
