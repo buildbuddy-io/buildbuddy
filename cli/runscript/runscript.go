@@ -10,13 +10,13 @@ import (
 
 // Configure adds `--script_path` to a bazel run command so that we can
 // invoke the build and the run separately.
-func Configure(args []string) (newArgs []string, scriptPath string, err error) {
-	if arg.GetCommand(args) != "run" {
+func Configure(args []string, effectiveArgs []string) (newArgs []string, scriptPath string, err error) {
+	if arg.GetCommand(effectiveArgs) != "run" {
 		return args, "", nil
 	}
 	// If --script_path is already set, don't create a run script ourselves,
 	// since the caller probably has the intention to invoke it on their own.
-	existingScript := arg.Get(args, "script_path")
+	existingScript := arg.Get(effectiveArgs, "script_path")
 	if existingScript != "" {
 		return args, "", nil
 	}

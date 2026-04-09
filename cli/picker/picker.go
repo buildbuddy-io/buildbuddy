@@ -12,22 +12,22 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
-func HandlePicker(args []string) []string {
+func HandlePicker(args []string, effectiveArgs []string) []string {
 	// If targets are already specified, don't do anything.
-	if len(arg.GetTargets(args)) > 0 {
+	if len(arg.GetTargets(effectiveArgs)) > 0 {
 		return args
 	}
 
 	// If the command is build, test, or query without a specified target - apply to all targets.
-	command := arg.GetCommand(args)
+	command := arg.GetCommand(effectiveArgs)
 
 	// Skip using the picker if the user has specified a query file.
-	if strings.Contains(command, "query") && arg.Has(args, "query_file") {
+	if strings.Contains(command, "query") && arg.Has(effectiveArgs, "query_file") {
 		return args
 	}
 
 	// Skip using the picker if the user has specified a target pattern file.
-	if (command == "build" || command == "test") && arg.Has(args, "target_pattern_file") {
+	if (command == "build" || command == "test") && arg.Has(effectiveArgs, "target_pattern_file") {
 		return args
 	}
 

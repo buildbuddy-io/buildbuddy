@@ -236,6 +236,36 @@ func TestParsePluginSpec(t *testing.T) {
 	}
 }
 
+func TestPreBazel_ExposesEffectiveArgsSeparately(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"buildbuddy.yaml": "",
+		"plugin/pre_bazel.sh": `#!/usr/bin/env bash
+set -euo pipefail
+grep -qx -- '--config=foo' "$1"
+grep -qx -- '--build_metadata=FROM_EFFECTIVE=1' "$EFFECTIVE_ARGS_FILE"
+echo '--remote_upload_local_results' >> "$1"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "plugin/pre_bazel.sh")
+
+	p := &Plugin{
+		config: &config.PluginConfig{Path: "./plugin"},
+		configFile: &config.File{
+			Path: filepath.Join(ws, "buildbuddy.yaml"),
+		},
+	}
+	args, execArgs, err := p.PreBazel(
+		[]string{"build", "--config=foo"},
+		[]string{"build", "--build_metadata=FROM_EFFECTIVE=1"},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"build", "--config=foo", "--remote_upload_local_results"}, args)
+	require.Nil(t, execArgs)
+}
+
 func setup(t *testing.T) (ws, home string) {
 	root := testfs.MakeTempDir(t)
 	ws = testfs.MakeDirAll(t, root, "workspace")

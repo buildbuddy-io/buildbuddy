@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
@@ -55,13 +56,17 @@ type Opts struct {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string, besBackend string) ([]string, *Opts, error) {
+func Configure(args, effectiveArgs []string, besBackend string) ([]string, *Opts, error) {
 	parsedArgs, err := parser.ParseArgs(args)
 	if err != nil {
 		return args, nil, status.WrapErrorf(err, "failed to parse args")
 	}
+	effectiveParsedArgs, err := parser.ParseArgs(effectiveArgs)
+	if err != nil {
+		return args, nil, status.WrapErrorf(err, "failed to parse effective args")
+	}
 
-	enabled, onFailure, err := parseFlags(parsedArgs)
+	enabled, onFailure, err := parseFlags(effectiveParsedArgs)
 	if err != nil {
 		return parsedArgs.Format(), nil, err
 	} else if !enabled {
@@ -74,7 +79,7 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 		return parsedArgs.Format(), nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
 	}
 
-	apiKey := parser.GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")
+	apiKey := parser.GetRemoteHeaderVal(effectiveParsedArgs, "x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
@@ -87,7 +92,7 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid, _ := parser.GetBazelCommandOptionVal(parsedArgs, "invocation_id")
+	iid := arg.Get(effectiveArgs, "invocation_id")
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {

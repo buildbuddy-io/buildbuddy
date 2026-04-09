@@ -616,6 +616,20 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 	return p.canonicalizeArgs(args)
 }
 
+// ResolveAndCanonicalizeArgs expands rc / config settings for internal
+// consumption, then canonicalizes the resulting argument list.
+func ResolveAndCanonicalizeArgs(args []string) ([]string, error) {
+	parsedArgs, err := ParseArgs(args)
+	if err != nil {
+		return nil, err
+	}
+	parsedArgs, err = ResolveArgs(parsedArgs)
+	if err != nil {
+		return nil, err
+	}
+	return parsedArgs.Canonicalized().Format(), nil
+}
+
 func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if !p.StartupOptionParser.Subcommands.Contains(args[0]) {
