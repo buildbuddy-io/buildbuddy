@@ -483,7 +483,6 @@ func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
 
 // computeActionForRangeTask computes the drive action needed for range task and its priority.
 func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64) {
-	log.Infof("VANJAAAAAAAAAA: computeActionForRangeTask %v", task)
 	// Handle range tasks
 	repl := task.repl
 	rangeID := repl.RangeID()
@@ -779,7 +778,6 @@ func (bq *baseQueue) processQueue() {
 	if task == nil {
 		return
 	}
-	bq.log.Infof("VANJAAAAAAAAAAAA: processQueue - popped task with key %+v", task.key)
 	requeueType := bq.process(bq.egCtx, task)
 	bq.postProcess(bq.egCtx, task, requeueType)
 }
@@ -920,11 +918,21 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 		}
 	}
 	numZones := len(replicasByZone)
-	targetMax := int(math.Ceil(float64(minReplicas) / float64(numZones)))
+	targetMin := minReplicas / numZones
+	// First try: prefer zones below the minimum target.
 	filtered := candidates[:0]
 	for _, c := range candidates {
-		if replicasByZone[c.usage.GetNode().GetZone()] < targetMax {
+		if replicasByZone[c.usage.GetNode().GetZone()] < targetMin {
 			filtered = append(filtered, c)
+		}
+	}
+	// Second try: allow any zone below the maximum target.
+	if len(filtered) == 0 {
+		targetMax := int(math.Ceil(float64(minReplicas) / float64(numZones)))
+		for _, c := range candidates {
+			if replicasByZone[c.usage.GetNode().GetZone()] < targetMax {
+				filtered = append(filtered, c)
+			}
 		}
 	}
 	if len(filtered) > 0 {

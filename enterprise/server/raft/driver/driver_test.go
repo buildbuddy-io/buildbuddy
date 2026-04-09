@@ -423,10 +423,11 @@ func TestFindNodeForAllocation(t *testing.T) {
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
 		},
 		{
-			// 2 zones, 1 existing replica in zone-a. targetMax = ceil(3/2) = 2.
-			// zone-a has 1 replica < 2, so all candidates pass filtering.
-			// Best candidate by score wins.
-			desc:                "zone-aware-balanced-allows-same-zone",
+			// 2 zones, 1 existing replica in zone-a, 0 in zone-b.
+			// targetMin = 3/2 = 1, targetMax = ceil(3/2) = 2.
+			// zone-b has 0 replicas < targetMin=1, so zone-b is preferred
+			// even though zone-a also has room (1 < targetMax=2).
+			desc:                "zone-aware-prefer-empty-zone",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
 				{
@@ -454,7 +455,53 @@ func TestFindNodeForAllocation(t *testing.T) {
 					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
 				},
 			},
-			// Both zones are under targetMax=2. nhid-2 (replicaCount=1) wins.
+			// zone-b (0 replicas) is below targetMin=1, so only zone-b
+			// candidates are considered. nhid-3 is the only option.
+			expected: &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
+		},
+		{
+			// 2 zones, both at targetMin=1. targetMax=2.
+			// First filter (< targetMin=1) finds nothing.
+			// Second filter (< targetMax=2) passes both zones.
+			// Best candidate by score wins.
+			desc:                "zone-aware-both-at-min-falls-through-to-max",
+			minReplicasPerRange: 3,
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   1,
+					TotalBytesUsed: 10,
+					TotalBytesFree: 990,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
+					ReplicaCount:   5,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-4")},
+				},
+			},
+			// Both zones at 1 replica (= targetMin). First filter empty.
+			// Second filter (< targetMax=2) passes nhid-2 (zone-a) and
+			// nhid-3 (zone-b). nhid-2 wins by score (replicaCount=1).
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
 		},
 		{
