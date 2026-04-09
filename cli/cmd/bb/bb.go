@@ -169,15 +169,10 @@ func run() (exitCode int, err error) {
 	}
 	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 	StartupDebug(start)
-	parsedArgs, err = parser.ResolveArgs(parsedArgs)
-	if err != nil {
-		return -1, err
-	}
-	canonicalizedArgs := parsedArgs.Canonicalized()
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return handleBazelCommand(start, canonicalizedArgs.Format(), originalArgs)
+	return handleBazelCommand(start, parsedArgs.Format(), originalArgs)
 }
 
 // interpretAsBBCliCommand strips the bb options from the beginning of a bb
