@@ -838,7 +838,7 @@ func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStat
 		zoneCounts[c.usage.GetNode().GetZone()] = 0
 	}
 	numZones := len(zoneCounts)
-	targetMax := int(math.Ceil(float64(rq.minReplicasPerRange) / float64(numZones)))
+	targetMax := maxReplicasPerZone(rq.minReplicasPerRange, numZones)
 
 	res := make([]*rfpb.NodeDescriptor, 0, rq.minReplicasPerRange)
 	// First pass: accept candidates whose zone is under targetMax.
@@ -928,7 +928,7 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 	}
 	// Second try: allow any zone below the maximum target.
 	if len(filtered) == 0 {
-		targetMax := int(math.Ceil(float64(minReplicas) / float64(numZones)))
+		targetMax := maxReplicasPerZone(minReplicas, numZones)
 		for _, c := range candidates {
 			if replicasByZone[c.usage.GetNode().GetZone()] < targetMax {
 				filtered = append(filtered, c)
@@ -1291,7 +1291,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	// 3 replicas, 3 zones, ideal distribution is 1-1-1, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 1
 	// 3 replicas, 4 zones, ideal distribution is 1-1-1-0, targetMaxReplicasPerZone = 1, targetMinReplicasPerZone = 0
 	// 3 replicas, 2 zones, ideal distribution is 2-1, targetMaxReplicasPerZone = 2, targetMinReplicasPerZone = 1
-	targetMaxReplicasPerZone := int(math.Ceil(float64(minReplicas) / float64(len(replicasByZone))))
+	targetMaxReplicasPerZone := maxReplicasPerZone(minReplicas, len(replicasByZone))
 	targetMinReplicasPerZone := minReplicas / len(replicasByZone)
 	replicaCounts := slices.Collect(maps.Values(replicasByZone))
 	minReplicasPerZone, maxReplicasPerZone := slices.Min(replicaCounts), slices.Max(replicaCounts)
@@ -1450,7 +1450,7 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 		replicasByZone[su.GetNode().GetZone()]++
 	}
 	if numZones := len(replicasByZone); numZones > 0 {
-		targetMax := int(math.Ceil(float64(minReplicas) / float64(numZones)))
+		targetMax := maxReplicasPerZone(minReplicas, numZones)
 		filtered := candidates[:0]
 		for _, c := range candidates {
 			if replicasByZone[c.usage.GetNode().GetZone()] > targetMax {
@@ -1807,4 +1807,8 @@ func leaseCountMeanLevel(mean float64, su *rfpb.StoreUsage) meanLevel {
 		return aboveMean
 	}
 	return aroundMean
+}
+
+func maxReplicasPerZone(numReplicas, numZones int) int {
+	return int(math.Ceil(float64(numReplicas) / float64(numZones)))
 }
