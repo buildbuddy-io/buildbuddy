@@ -232,6 +232,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		localBranchExistsRemotely bool
 		localCommitExistsRemotely bool
+		unpushedLocalCommit       bool
 
 		expectedBranch  string
 		expectedCommit  string
@@ -263,6 +264,13 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
+		{
+			name:                "On master with an unpushed commit",
+			unpushedLocalCommit: true,
+			expectedBranch:      "master",
+			expectedCommit:      originalMasterHeadCommit,
+			expectedPatches:     []string{"local_only_commited_file.txt"},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -272,7 +280,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		require.NoError(t, err, tc.name)
 		resetRepoRootPathForTest(t)
 
-		if tc.localBranchExistsRemotely {
+		if tc.unpushedLocalCommit {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+		} else if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
@@ -291,9 +301,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
 		require.Equal(t, tc.expectedCommit, config.CommitSHA, tc.name)
-		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
+		require.Equal(t, len(tc.expectedPatches), len(config.Patches), tc.name)
 		if len(tc.expectedPatches) > 0 {
-			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
+			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0], tc.name)
 		}
 
 		// Reset remote repo for future test cases
