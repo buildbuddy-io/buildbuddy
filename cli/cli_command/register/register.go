@@ -64,6 +64,7 @@ func register() {
 			Name:    "box",
 			Help:    "Manages remote Firecracker VM boxes.",
 			Handler: box.HandleBox,
+			Flags:   box.Flags,
 		},
 		{
 			Name:    "download",
@@ -81,6 +82,7 @@ func register() {
 			Name:    "execution",
 			Help:    "Remote execution tools",
 			Handler: execution.HandleExecution,
+			Flags:   execution.Flags,
 		},
 		{
 			Name:    "fix",
@@ -94,6 +96,7 @@ func register() {
 			Name:    "install",
 			Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
 			Handler: plugin.HandleInstall,
+			Flags:   plugin.Flags,
 		},
 		{
 			Name:    "login",

@@ -70,9 +70,9 @@ Examples:
 )
 
 var (
-	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
-	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
-	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
+	Flags          = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath    = Flags.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installForUser = Flags.Bool("user", false, "Whether to install globally for the user.")
 
 	repoPattern = regexp.MustCompile(`` +
 		`^` + // Start marker
@@ -87,19 +87,19 @@ var (
 // HandleInstall handles the "bb install" subcommand, which allows adding
 // plugins to buildbuddy.yaml.
 func HandleInstall(args []string) (exitCode int, err error) {
-	if err := arg.ParseFlagSet(installCmd, args); err != nil {
+	if err := arg.ParseFlagSet(Flags, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) == 0 && *installPath == "" {
+	if len(Flags.Args()) == 0 && *installPath == "" {
 		log.Print("Error: either a repo or a --path= is expected.")
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) > 1 {
+	if len(Flags.Args()) > 1 {
 		log.Print("Error: unexpected positional arguments")
 		log.Print(installCommandUsage)
 		return 1, nil
@@ -108,8 +108,8 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		Repo: "",
 		Path: *installPath,
 	}
-	if len(installCmd.Args()) == 1 {
-		repo := installCmd.Args()[0]
+	if len(Flags.Args()) == 1 {
+		repo := Flags.Args()[0]
 		cfg, err := parsePluginSpec(repo, *installPath)
 		if err != nil {
 			log.Printf("Failed to parse repo: %s", repo)
