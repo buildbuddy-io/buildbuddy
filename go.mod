@@ -86,6 +86,7 @@ require (
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.4-0.20250606160555-44388520074d
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-20241028184712-f74f43bb036d
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gabriel-vasile/mimetype v1.4.4
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-enry/go-enry/v2 v2.8.7
@@ -102,6 +103,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
+	github.com/grafana/grafana-foundation-sdk/go v0.0.12
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1
 	github.com/hanwen/go-fuse/v2 v2.7.2
@@ -291,7 +293,6 @@ require (
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/getsentry/sentry-go v0.28.1 // indirect
 	github.com/go-chi/chi/v5 v5.2.2 // indirect
