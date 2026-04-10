@@ -2427,29 +2427,19 @@ func TestZoneAwareRebalance(t *testing.T) {
 	allStores := []*testutil.TestingStore{s1, s2, s3, s4, s5}
 	// Wait for the driver to rebalance replicas across zones.
 	// With 3 replicas and 3 zones, the ideal distribution is 1-1-1.
-	deadline := time.After(2 * time.Minute)
-	for {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for zone-aware rebalancing")
-		default:
-		}
-		clock.Advance(61 * time.Second)
+	require.Eventually(t,
+		func() bool {
+			clock.Advance(61 * time.Second)
 
-		// Check that data range (range 2) has replicas in at least 2
-		// distinct zones.
-		zonesWithReplica := make(map[string]bool)
-		for _, s := range allStores {
-			if s.GetRange(2) != nil {
-				zonesWithReplica[s.NodeDescriptor().GetZone()] = true
+			zonesWithReplica := make(map[string]bool)
+			for _, s := range allStores {
+				if s.GetRange(2) != nil {
+					zonesWithReplica[s.NodeDescriptor().GetZone()] = true
+				}
 			}
-		}
-		if len(zonesWithReplica) >= 3 {
-			log.Infof("==== zone-aware rebalance complete: replicas in zones %v ====", zonesWithReplica)
-			return
-		}
-		log.Infof("==== zones with replicas: %v (waiting for 3) ====", zonesWithReplica)
-	}
+			return len(zonesWithReplica) >= 3
+		},
+		30*time.Second, 10*time.Millisecond, "timed out waiting for zone-aware rebalancing")
 }
 
 func TestBringupSetRanges(t *testing.T) {
