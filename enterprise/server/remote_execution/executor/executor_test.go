@@ -229,6 +229,13 @@ func TestExecuteTaskAndStreamResults_InputFetchMetadata(t *testing.T) {
 	ctx := context.Background()
 	expected := &espb.InputFetchMetadata{
 		DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+		CdcEnabled:                  true,
+		ChunkFetchMetadata: []*espb.ChunkFetchMetadata{
+			{
+				LeafIndex:       7,
+				BytesDownloaded: 123,
+			},
+		},
 	}
 	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
 		InputFetchMetadata: expected,
@@ -252,6 +259,10 @@ func TestExecuteTaskAndStreamResults_InputFetchMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, expected.GetDownloadedFileIndicesBitmap(), auxMeta.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap())
+	require.Equal(t, expected.GetCdcEnabled(), auxMeta.GetInputFetchDetailedStats().GetCdcEnabled())
+	require.Len(t, auxMeta.GetInputFetchDetailedStats().GetChunkFetchMetadata(), 1)
+	require.Equal(t, expected.GetChunkFetchMetadata()[0].GetLeafIndex(), auxMeta.GetInputFetchDetailedStats().GetChunkFetchMetadata()[0].GetLeafIndex())
+	require.Equal(t, expected.GetChunkFetchMetadata()[0].GetBytesDownloaded(), auxMeta.GetInputFetchDetailedStats().GetChunkFetchMetadata()[0].GetBytesDownloaded())
 }
 
 func TestExecuteTaskAndStreamResults_InputFetchMetadataDisabled(t *testing.T) {

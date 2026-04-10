@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -39,10 +40,12 @@ var (
 const (
 	// When adding a new manifest scheme, update legacyManifestPrefix to
 	// point to the current prefix, then add the new one as the active prefix.
-	legacyManifestPrefix         = "_bb_chunked_manifest_v2_/"
-	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
-	chunkOutputFilePrefix        = "chunk_"
-	sharedValidationMarkerDomain = "cas-validation-marker-v1"
+	legacyManifestPrefix          = "_bb_chunked_manifest_v2_/"
+	chunkedManifestPrefix         = "_bb_chunked_manifest_v3_/"
+	chunkOutputFilePrefix         = "chunk_"
+	sharedValidationMarkerDomain  = "cas-validation-marker-v1"
+	chunkedReadTotalBytesKey      = "x-buildbuddy-chunked-read-total-bytes"
+	chunkedReadDownloadedBytesKey = "x-buildbuddy-chunked-read-downloaded-bytes"
 )
 
 func AvgChunkSizeBytes() int64 {
@@ -94,6 +97,60 @@ func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlag
 		limit == 0 &&
 		(cdc.EnabledViaHeader(ctx) ||
 			(efp != nil && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", false)))
+}
+
+// ChunkedReadMetadata describes how much of a chunked blob had to be
+// downloaded while serving a ByteStream read.
+type ChunkedReadMetadata struct {
+	// TotalBytes is the total uncompressed blob data served to the client.
+	TotalBytes int64
+	// DownloadedBytes is the portion of TotalBytes that had to be fetched
+	// remotely while serving the read.
+	DownloadedBytes int64
+}
+
+// ChunkedReadMetadataToTrailer serializes chunked read metadata into gRPC
+// trailer metadata.
+func ChunkedReadMetadataToTrailer(m *ChunkedReadMetadata) metadata.MD {
+	if m == nil {
+		return nil
+	}
+	return metadata.Pairs(
+		chunkedReadTotalBytesKey, strconv.FormatInt(m.TotalBytes, 10),
+		chunkedReadDownloadedBytesKey, strconv.FormatInt(m.DownloadedBytes, 10),
+	)
+}
+
+// ChunkedReadMetadataFromTrailer parses chunked read metadata from gRPC
+// trailer metadata. It returns nil if the trailer does not contain chunked
+// read metadata.
+func ChunkedReadMetadataFromTrailer(md metadata.MD) (*ChunkedReadMetadata, error) {
+	totalVals := md.Get(chunkedReadTotalBytesKey)
+	downloadedVals := md.Get(chunkedReadDownloadedBytesKey)
+	if len(totalVals) == 0 && len(downloadedVals) == 0 {
+		return nil, nil
+	}
+	if len(totalVals) != 1 || len(downloadedVals) != 1 {
+		return nil, status.InvalidArgumentError("invalid chunked read trailer")
+	}
+	totalBytes, err := strconv.ParseInt(totalVals[0], 10, 64)
+	if err != nil {
+		return nil, status.WrapError(err, "parse chunked read total bytes")
+	}
+	downloadedBytes, err := strconv.ParseInt(downloadedVals[0], 10, 64)
+	if err != nil {
+		return nil, status.WrapError(err, "parse chunked read downloaded bytes")
+	}
+	if totalBytes <= 0 {
+		return nil, status.InvalidArgumentErrorf("invalid chunked read total bytes %d", totalBytes)
+	}
+	if downloadedBytes < 0 || downloadedBytes > totalBytes {
+		return nil, status.InvalidArgumentErrorf("invalid chunked read downloaded bytes %d for total %d", downloadedBytes, totalBytes)
+	}
+	return &ChunkedReadMetadata{
+		TotalBytes:      totalBytes,
+		DownloadedBytes: downloadedBytes,
+	}, nil
 }
 
 type WriteFunc func([]byte) error

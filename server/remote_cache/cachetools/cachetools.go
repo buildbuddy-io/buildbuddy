@@ -115,12 +115,12 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
+func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) (*chunking.ChunkedReadMetadata, error) {
 	if bsClient == nil {
-		return status.FailedPreconditionError("ByteStreamClient not configured")
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	if r.IsEmpty() {
-		return nil
+		return nil, nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -131,13 +131,13 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
+			return nil, digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
 		}
-		return err
+		return nil, err
 	}
 	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	w := io.MultiWriter(checksum, out)
 
@@ -145,7 +145,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		w = decompressor
 		close = sync.OnceValue(decompressor.Close)
@@ -153,6 +153,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	defer close()
 
 	receiver := rpcutil.NewReceiver[*bspb.ReadResponse](ctx, stream)
+	var chunkedReadMetadata *chunking.ChunkedReadMetadata
 	for {
 		rsp, err := receiver.RecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("timed out waiting for Read response"))
 		if err == io.EOF {
@@ -161,41 +162,58 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			// Note: this is safe even though we also defer close() above, since we
 			// wrap decompressor.Close with sync.OnceValue.
 			if err := close(); err != nil {
-				return err
+				return nil, err
+			}
+			chunkedReadMetadata, err = chunking.ChunkedReadMetadataFromTrailer(stream.Trailer())
+			if err != nil {
+				log.CtxWarningf(ctx, "Ignoring malformed chunked read trailer for %s: %s", r.DownloadString(), err)
+				chunkedReadMetadata = nil
 			}
 			break
 		}
 		if err != nil {
 			if gstatus.Code(err) == gcodes.NotFound {
-				return digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
+				return nil, digest.MissingDigestErrorf(r.GetDigest(), "read %s: %s", digest.String(r.GetDigest()), err)
 			}
-			return err
+			return nil, err
 		}
 		if _, err := w.Write(rsp.Data); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	computedDigest := hex.EncodeToString(checksum.Sum(nil))
 	if computedDigest != r.GetDigest().GetHash() {
-		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
+		return nil, status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
-	return nil
+	return chunkedReadMetadata, nil
 }
 
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
+	_, err := GetBlobWithMetadata(ctx, bsClient, r, out)
+	return err
+}
+
+type getBlobRetryResult struct {
+	metadata *chunking.ChunkedReadMetadata
+}
+
+// GetBlobWithMetadata downloads a CAS blob and returns any chunked read
+// metadata surfaced by the server in gRPC trailers.
+func GetBlobWithMetadata(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) (*chunking.ChunkedReadMetadata, error) {
 	// We can only retry if we can rewind the writer back to the beginning.
 	seeker, retryable := out.(io.Seeker)
 	if retryable {
-		return retry.DoVoid(ctx, retryOptions("ByteStream.Read"), func(ctx context.Context) error {
+		result, err := retry.Do(ctx, retryOptions("ByteStream.Read"), func(ctx context.Context) (getBlobRetryResult, error) {
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-				return retry.NonRetryableError(err)
+				return getBlobRetryResult{}, retry.NonRetryableError(err)
 			}
-			err := getBlob(ctx, bsClient, r, out)
+			metadata, err := getBlob(ctx, bsClient, r, out)
 			if status.IsNotFoundError(err) || status.IsFailedPreconditionError(err) {
-				return retry.NonRetryableError(err)
+				return getBlobRetryResult{}, retry.NonRetryableError(err)
 			}
-			return err
+			return getBlobRetryResult{metadata: metadata}, err
 		})
+		return result.metadata, err
 	} else {
 		return getBlob(ctx, bsClient, r, out)
 	}

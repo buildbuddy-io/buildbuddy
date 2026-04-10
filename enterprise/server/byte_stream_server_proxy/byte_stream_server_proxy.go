@@ -195,6 +195,10 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 			chunkMetrics, err := s.readChunked(ctx, req, stream, rn)
 			chunkedErr = err
 			if chunkedErr == nil {
+				stream.SetTrailer(chunking.ChunkedReadMetadataToTrailer(&chunking.ChunkedReadMetadata{
+					TotalBytes:      chunkMetrics.bytesTotal,
+					DownloadedBytes: chunkMetrics.bytesRemote,
+				}))
 				return readMetrics{
 					cacheStatus:  metrics.MissStatusLabel,
 					compressor:   rn.GetCompressor().String(),
@@ -243,6 +247,8 @@ func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb
 type chunkedReadMetrics struct {
 	chunksLocal  int
 	chunksRemote int
+	bytesTotal   int64
+	bytesRemote  int64
 }
 
 func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName) (chunkedReadMetrics, error) {
@@ -290,6 +296,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		chunkRN.SetCompressor(rn.GetCompressor())
 		intraChunkOffset := offset
 		offset = 0
+		m.bytesTotal += chunkSize - intraChunkOffset
 
 		// If we're midway through a chunk (non-zero offset),
 		// read remote only, since we can't cache a partial chunk locally.
@@ -306,6 +313,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				return m, err
 			}
 			m.chunksRemote++
+			m.bytesRemote += chunkSize - intraChunkOffset
 			continue
 		}
 
@@ -340,6 +348,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				return m, err
 			}
 			m.chunksRemote++
+			m.bytesRemote += chunkSize - chunkOffset
 			continue
 		}
 
@@ -355,6 +364,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			return m, err
 		}
 		m.chunksRemote++
+		m.bytesRemote += chunkSize
 	}
 	return m, nil
 }

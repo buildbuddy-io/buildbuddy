@@ -111,6 +111,23 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 	}
 }
 
+func TestChunkedReadMetadataRoundTrip(t *testing.T) {
+	chunkedReadMetadata := &chunking.ChunkedReadMetadata{
+		TotalBytes:      1024,
+		DownloadedBytes: 384,
+	}
+
+	parsed, err := chunking.ChunkedReadMetadataFromTrailer(chunking.ChunkedReadMetadataToTrailer(chunkedReadMetadata))
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	assert.Equal(t, chunkedReadMetadata.TotalBytes, parsed.TotalBytes)
+	assert.Equal(t, chunkedReadMetadata.DownloadedBytes, parsed.DownloadedBytes)
+
+	parsed, err = chunking.ChunkedReadMetadataFromTrailer(metadata.MD{})
+	require.NoError(t, err)
+	assert.Nil(t, parsed)
+}
+
 func TestChunker_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 

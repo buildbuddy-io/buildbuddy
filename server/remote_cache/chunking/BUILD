@@ -18,6 +18,7 @@ go_library(
         "//server/util/tracing",
         "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],

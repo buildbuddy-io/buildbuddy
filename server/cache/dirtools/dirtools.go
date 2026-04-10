@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -83,7 +84,12 @@ type downloadDedupeKey struct {
 	fetchKey fetchKey
 }
 
-var DownloadDeduper = singleflight.Group[downloadDedupeKey, *FilePointer]{}
+type downloadResult struct {
+	fp                  *FilePointer
+	chunkedReadMetadata *chunking.ChunkedReadMetadata
+}
+
+var DownloadDeduper = singleflight.Group[downloadDedupeKey, *downloadResult]{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -747,8 +753,10 @@ type BatchFileFetcher struct {
 	remainingFetches map[fetchKey]struct{}
 	fetchWaiters     map[fetchKey][]chan struct{}
 
-	bitmapMu        sync.Mutex
-	downloadsBitmap *roaring.Bitmap
+	downloadMetadataMu   sync.Mutex
+	downloadsBitmap      *roaring.Bitmap
+	cdcEnabled           bool
+	chunkDownloadedBytes map[uint32]int64
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -784,6 +792,12 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 			}
 			return nil
 		}(),
+		chunkDownloadedBytes: func() map[uint32]int64 {
+			if InputFetchMetadataEnabled() {
+				return make(map[uint32]int64)
+			}
+			return nil
+		}(),
 	}, nil
 }
 
@@ -799,14 +813,14 @@ func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
 
 // completeRemoteFetch records a successful remote CAS download and notifies any
 // waiters blocked on the fetch key.
-func (ff *BatchFileFetcher) completeRemoteFetch(fk fetchKey, filePointers []*FilePointer) {
-	ff.markFilesDownloaded(filePointers)
+func (ff *BatchFileFetcher) completeRemoteFetch(fk fetchKey, filePointers []*FilePointer, chunkedReadMetadata *chunking.ChunkedReadMetadata) {
+	ff.markFilesDownloaded(filePointers, chunkedReadMetadata)
 	ff.notifyFetchCompleted(fk)
 }
 
 // markFilesDownloaded records leaf-file indices for files that were fetched
 // from remote CAS. Files linked from the local file cache are not marked.
-func (ff *BatchFileFetcher) markFilesDownloaded(filePointers []*FilePointer) {
+func (ff *BatchFileFetcher) markFilesDownloaded(filePointers []*FilePointer, chunkedReadMetadata *chunking.ChunkedReadMetadata) {
 	if len(filePointers) == 0 || ff.downloadsBitmap == nil {
 		return
 	}
@@ -814,20 +828,51 @@ func (ff *BatchFileFetcher) markFilesDownloaded(filePointers []*FilePointer) {
 	for _, fp := range filePointers {
 		indices = append(indices, fp.BitsetIndex)
 	}
-	ff.bitmapMu.Lock()
-	defer ff.bitmapMu.Unlock()
+	ff.downloadMetadataMu.Lock()
+	defer ff.downloadMetadataMu.Unlock()
 	ff.downloadsBitmap.AddMany(indices)
+	if chunkedReadMetadata == nil {
+		return
+	}
+	ff.cdcEnabled = true
+	if ff.chunkDownloadedBytes == nil || chunkedReadMetadata.DownloadedBytes == chunkedReadMetadata.TotalBytes {
+		return
+	}
+	for _, fp := range filePointers {
+		ff.chunkDownloadedBytes[fp.BitsetIndex] = chunkedReadMetadata.DownloadedBytes
+	}
 }
 
-// downloadedFileIndicesBitmap serializes the set of remotely downloaded leaf
-// file indices for inclusion in execution auxiliary metadata.
-func (ff *BatchFileFetcher) downloadedFileIndicesBitmap() ([]byte, error) {
+func (ff *BatchFileFetcher) inputFetchMetadata() (*espb.InputFetchMetadata, error) {
 	if ff.downloadsBitmap == nil {
 		return nil, nil
 	}
-	ff.bitmapMu.Lock()
-	defer ff.bitmapMu.Unlock()
-	return ff.downloadsBitmap.MarshalBinary()
+	ff.downloadMetadataMu.Lock()
+	defer ff.downloadMetadataMu.Unlock()
+
+	bitmap, err := ff.downloadsBitmap.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	chunkFetchMetadata := make([]*espb.ChunkFetchMetadata, 0, len(ff.chunkDownloadedBytes))
+	if len(ff.chunkDownloadedBytes) > 0 {
+		indices := make([]uint32, 0, len(ff.chunkDownloadedBytes))
+		for index := range ff.chunkDownloadedBytes {
+			indices = append(indices, index)
+		}
+		slices.Sort(indices)
+		for _, index := range indices {
+			chunkFetchMetadata = append(chunkFetchMetadata, &espb.ChunkFetchMetadata{
+				LeafIndex:       int32(index),
+				BytesDownloaded: ff.chunkDownloadedBytes[index],
+			})
+		}
+	}
+	return &espb.InputFetchMetadata{
+		DownloadedFileIndicesBitmap: bitmap,
+		CdcEnabled:                  ff.cdcEnabled,
+		ChunkFetchMetadata:          chunkFetchMetadata,
+	}, nil
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, opts *DownloadTreeOpts) error {
@@ -886,7 +931,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 					}
 				}
 			}
-			ff.completeRemoteFetch(fetchKey, ptrs)
+			ff.completeRemoteFetch(fetchKey, ptrs, nil)
 		}
 	}
 	return nil
@@ -1062,23 +1107,24 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 	return ff.stats.CloneVT()
 }
 
-func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) error {
+func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) (*chunking.ChunkedReadMetadata, error) {
 	resourceName := digest.NewCASResourceName(fileNode.Digest, ff.instanceName, ff.digestFunction)
 	if *enableDownloadCompression {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 
-	if err := cachetools.GetBlob(ctx, bsClient, resourceName, w); err != nil {
+	chunkedReadMetadata, err := cachetools.GetBlobWithMetadata(ctx, bsClient, resourceName, w)
+	if err != nil {
 		_ = w.Close()
-		return err
+		return nil, err
 	}
 
 	if err := w.Commit(); err != nil {
-		return status.WrapError(err, "could not commit byte stream writer")
+		return nil, status.WrapError(err, "could not commit byte stream writer")
 	}
 
 	if err := w.Close(); err != nil {
-		return status.WrapError(err, "could not close byte stream writer")
+		return nil, status.WrapError(err, "could not close byte stream writer")
 	}
 
 	ff.statsMu.Lock()
@@ -1086,7 +1132,7 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 	ff.stats.FileDownloadCount += 1
 	ff.statsMu.Unlock()
 
-	return nil
+	return chunkedReadMetadata, nil
 }
 
 // bytestreamReadToFilesystem streams a blob to the filesystem locations
@@ -1095,7 +1141,7 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 // The blob is optionally added to the file cache, if the file cache
 // is enabled.
 func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
-	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+	result, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*downloadResult, error) {
 		fp0 := fps[0]
 
 		var mode os.FileMode = 0644
@@ -1108,7 +1154,8 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		}
 		w := ioutil.NewCustomCommitWriteCloser(f)
 
-		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
+		chunkedReadMetadata, err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w)
+		if err != nil {
 			return nil, err
 		}
 
@@ -1119,7 +1166,10 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 			}
 		}
 
-		return fp0, nil
+		return &downloadResult{
+			fp:                  fp0,
+			chunkedReadMetadata: chunkedReadMetadata,
+		}, nil
 	})
 	if err != nil {
 		return err
@@ -1131,22 +1181,22 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 	// Check for that case, to avoid copying a file over itself, and copy fp
 	// to all of the destination fps.
 	for _, dest := range fps {
-		if fp == dest {
+		if result.fp == dest {
 			continue
 		}
-		if err := copyFile(fp, dest, opts); err != nil {
+		if err := copyFile(result.fp, dest, opts); err != nil {
 			return err
 		}
 	}
 
-	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)
+	ff.completeRemoteFetch(dedupeKey.fetchKey, fps, result.chunkedReadMetadata)
 
 	return nil
 }
 
 // bytestreamReadToFilecache streams a blob directly into the filecache.
 func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
-	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+	result, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*downloadResult, error) {
 		fp0 := fps[0]
 
 		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
@@ -1154,17 +1204,21 @@ func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsCli
 			return nil, status.WrapError(err, "could not create filecache writer")
 		}
 
-		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
+		chunkedReadMetadata, err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w)
+		if err != nil {
 			return nil, err
 		}
 
-		return fp0, nil
+		return &downloadResult{
+			fp:                  fp0,
+			chunkedReadMetadata: chunkedReadMetadata,
+		}, nil
 	})
 	if err != nil {
 		return err
 	}
 
-	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)
+	ff.completeRemoteFetch(dedupeKey.fetchKey, fps, result.chunkedReadMetadata)
 
 	return nil
 }
@@ -1604,13 +1658,11 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	f.txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
 	f.txInfo.TransferDuration = time.Since(f.fetchStartTime)
 	if InputFetchMetadataEnabled() {
-		bitmap, bitmapErr := f.ff.downloadedFileIndicesBitmap()
-		if bitmapErr != nil && err == nil {
-			err = status.WrapError(bitmapErr, "marshal input download bitmap")
+		inputFetchMetadata, inputFetchMetadataErr := f.ff.inputFetchMetadata()
+		if inputFetchMetadataErr != nil && err == nil {
+			err = status.WrapError(inputFetchMetadataErr, "marshal input download metadata")
 		}
-		f.txInfo.InputFetchMetadata = &espb.InputFetchMetadata{
-			DownloadedFileIndicesBitmap: bitmap,
-		}
+		f.txInfo.InputFetchMetadata = inputFetchMetadata
 	}
 	return f.txInfo, err
 }

@@ -1034,6 +1034,30 @@ func TestReadChunked(t *testing.T) {
 	}
 
 	require.Equal(t, originalData, reconstructedData)
+	chunkedReadMetadata, err := chunking.ChunkedReadMetadataFromTrailer(downloadStream.Trailer())
+	require.NoError(t, err)
+	require.NotNil(t, chunkedReadMetadata)
+	require.Equal(t, int64(len(originalData)), chunkedReadMetadata.TotalBytes)
+	require.Equal(t, int64(len(originalData)), chunkedReadMetadata.DownloadedBytes)
+
+	downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
+	require.NoError(t, err)
+
+	reconstructedData = reconstructedData[:0]
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		reconstructedData = append(reconstructedData, res.Data...)
+	}
+	require.Equal(t, originalData, reconstructedData)
+	chunkedReadMetadata, err = chunking.ChunkedReadMetadataFromTrailer(downloadStream.Trailer())
+	require.NoError(t, err)
+	require.NotNil(t, chunkedReadMetadata)
+	require.Equal(t, int64(len(originalData)), chunkedReadMetadata.TotalBytes)
+	require.Equal(t, int64(0), chunkedReadMetadata.DownloadedBytes)
 
 	readRequestsAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readBlobBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
@@ -1041,10 +1065,10 @@ func TestReadChunked(t *testing.T) {
 	readChunksLocalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
 
-	require.Equal(t, float64(1), readRequestsAfter-readRequestsBefore, "one chunked read request for the blob")
-	require.Equal(t, float64(len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "blob bytes = original uncompressed size")
-	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
-	require.Equal(t, float64(0), readChunksLocalAfter-readChunksLocalBefore, "first read: no chunks in local cache yet")
+	require.Equal(t, float64(2), readRequestsAfter-readRequestsBefore, "two chunked read requests for the blob")
+	require.Equal(t, float64(2*len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "blob bytes = two full blob reads")
+	require.Equal(t, float64(2*len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = chunks across both reads")
+	require.Equal(t, float64(len(chunkDigests)), readChunksLocalAfter-readChunksLocalBefore, "second read: all chunks served from local cache")
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
 }
 

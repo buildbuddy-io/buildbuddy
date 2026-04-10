@@ -1,6 +1,7 @@
 package dirtools_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -29,10 +31,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1176,6 +1181,102 @@ func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) 
 	require.Equal(t, []uint32{0}, bitmap.ToArray())
 }
 
+func TestDownloadTree_InputFetchMetadataTracksChunkedDownloadBytes(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+	flags.Set(t, "cache.client.enable_download_compression", false)
+
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	largeBlobData := make([]byte, dirtools.BatchReadLimitBytes+1)
+	for i := range largeBlobData {
+		largeBlobData[i] = byte(i % 251)
+	}
+	blobDigest, err := digest.Compute(bytes.NewReader(largeBlobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+
+	env.SetByteStreamClient(&fakeBytestreamClient{
+		data: map[string][]byte{
+			blobRN.DownloadString(): largeBlobData,
+		},
+		trailer: chunking.ChunkedReadMetadataToTrailer(&chunking.ChunkedReadMetadata{
+			TotalBytes:      blobDigest.GetSizeBytes(),
+			DownloadedBytes: blobDigest.GetSizeBytes() * 3 / 8,
+		}),
+	})
+
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{
+					Name:   "large-file.txt",
+					Digest: blobDigest,
+				},
+			},
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.NotNil(t, info.InputFetchMetadata)
+
+	bitmap := roaring.New()
+	err = bitmap.UnmarshalBinary(info.InputFetchMetadata.GetDownloadedFileIndicesBitmap())
+	require.NoError(t, err)
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
+
+	require.True(t, info.InputFetchMetadata.GetCdcEnabled())
+	require.Len(t, info.InputFetchMetadata.GetChunkFetchMetadata(), 1)
+	chunkFetchMetadata := info.InputFetchMetadata.GetChunkFetchMetadata()[0]
+	require.Equal(t, int32(0), chunkFetchMetadata.GetLeafIndex())
+	require.Equal(t, blobDigest.GetSizeBytes()*3/8, chunkFetchMetadata.GetBytesDownloaded())
+}
+
+func TestDownloadTree_InputFetchMetadataOmitsFullChunkedDownloadEntries(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+	flags.Set(t, "cache.client.enable_download_compression", false)
+
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	largeBlobData := make([]byte, dirtools.BatchReadLimitBytes+1)
+	for i := range largeBlobData {
+		largeBlobData[i] = byte(i % 251)
+	}
+	blobDigest, err := digest.Compute(bytes.NewReader(largeBlobData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+
+	env.SetByteStreamClient(&fakeBytestreamClient{
+		data: map[string][]byte{
+			blobRN.DownloadString(): largeBlobData,
+		},
+		trailer: chunking.ChunkedReadMetadataToTrailer(&chunking.ChunkedReadMetadata{
+			TotalBytes:      blobDigest.GetSizeBytes(),
+			DownloadedBytes: blobDigest.GetSizeBytes(),
+		}),
+	})
+
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{
+					Name:   "large-file.txt",
+					Digest: blobDigest,
+				},
+			},
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.NotNil(t, info.InputFetchMetadata)
+
+	require.True(t, info.InputFetchMetadata.GetCdcEnabled())
+	require.Empty(t, info.InputFetchMetadata.GetChunkFetchMetadata())
+}
+
 func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) {
 	flags.Set(t, "executor.record_input_download_metadata", true)
 
@@ -1664,6 +1765,70 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 	return env, ctx
+}
+
+type fakeBytestreamClient struct {
+	data    map[string][]byte
+	trailer metadata.MD
+}
+
+func (f *fakeBytestreamClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	return &fakeBytestreamReadClient{
+		req:     in,
+		data:    f.data,
+		trailer: f.trailer,
+	}, nil
+}
+
+func (f *fakeBytestreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	panic("unimplemented")
+}
+
+func (f *fakeBytestreamClient) QueryWriteStatus(ctx context.Context, in *bspb.QueryWriteStatusRequest, opts ...grpc.CallOption) (*bspb.QueryWriteStatusResponse, error) {
+	panic("unimplemented")
+}
+
+type fakeBytestreamReadClient struct {
+	req     *bspb.ReadRequest
+	data    map[string][]byte
+	trailer metadata.MD
+	done    bool
+}
+
+func (c *fakeBytestreamReadClient) Recv() (*bspb.ReadResponse, error) {
+	data, ok := c.data[c.req.GetResourceName()]
+	if !ok {
+		return nil, status.NotFoundErrorf("not found: %s", c.req.GetResourceName())
+	}
+	if c.done {
+		return nil, io.EOF
+	}
+	c.done = true
+	return &bspb.ReadResponse{Data: data}, nil
+}
+
+func (c *fakeBytestreamReadClient) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (c *fakeBytestreamReadClient) Trailer() metadata.MD {
+	return c.trailer
+}
+
+func (c *fakeBytestreamReadClient) CloseSend() error {
+	panic("unimplemented")
+}
+
+func (c *fakeBytestreamReadClient) Context() context.Context {
+	return context.Background()
+}
+
+func (c *fakeBytestreamReadClient) SendMsg(m any) error {
+	panic("unimplemented")
+}
+
+func (c *fakeBytestreamReadClient) RecvMsg(m any) error {
+	panic("unimplemented")
 }
 
 func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceName, data string) *repb.Digest {

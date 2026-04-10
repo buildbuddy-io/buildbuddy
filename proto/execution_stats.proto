@@ -204,6 +204,17 @@ message RunnerMetadata {
   string persistent_worker_key = 4;
 }
 
+message ChunkFetchMetadata {
+  // The leaf file index in the same deterministic traversal order used by
+  // downloaded_file_indices_bitmap.
+  int32 leaf_index = 1;
+
+  // The number of bytes that had to be downloaded while materializing this
+  // leaf file. This is only set for large blobs where CDC chunked reads were
+  // used and fewer than the full blob bytes had to be fetched.
+  int64 bytes_downloaded = 2;
+}
+
 message InputFetchMetadata {
   // Serialized roaring bitmap. Set bits correspond to leaf file indices in a
   // deterministic order: files first, in the order they are listed in each
@@ -211,6 +222,14 @@ message InputFetchMetadata {
   // recursively, in the order the child directories are listed in each
   // Directory message.
   bytes downloaded_file_indices_bitmap = 1;
+
+  // Whether any input downloads for this action used CDC chunked reads.
+  bool cdc_enabled = 3;
+
+  // Per-leaf chunked download metadata for large blobs where CDC chunked reads
+  // were used while materializing the input tree. Entries are omitted when the
+  // full blob had to be downloaded.
+  repeated ChunkFetchMetadata chunk_fetch_metadata = 2;
 }
 
 message ExecutionLookup {

@@ -144,10 +144,11 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
+	var chunkedReadMetadata *chunking.ChunkedReadMetadata
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
 		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
-			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
+			reader, chunkedReadMetadata, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
 		if err != nil {
 			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
@@ -157,6 +158,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		}
 	}
 	defer reader.Close()
+	if chunkedReadMetadata != nil {
+		stream.SetTrailer(chunking.ChunkedReadMetadataToTrailer(chunkedReadMetadata))
+	}
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), *remote_cache_config.ReadBufSizeBytes))
 
@@ -204,10 +208,10 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, *chunking.ChunkedReadMetadata, error) {
 	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	offsetRead := strconv.FormatBool(offset > 0)
@@ -220,7 +224,7 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 		chunkDigests = chunkDigests[1:]
 	}
 	if len(chunkDigests) == 0 {
-		return io.NopCloser(bytes.NewReader(nil)), nil
+		return io.NopCloser(bytes.NewReader(nil)), nil, nil
 	}
 
 	rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
@@ -235,14 +239,14 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
-		return nil, err
+		return nil, nil, err
 	} else if len(missing) > 0 {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunks_missing",
 			metrics.StatusHumanReadableLabel:  "NotFound",
 			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
-		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
+		return nil, nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
 	}
 
 	rcs := make([]io.ReadCloser, 0, len(rns))
@@ -258,12 +262,19 @@ func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CA
 			for _, openCloser := range rcs {
 				openCloser.Close()
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		rcs = append(rcs, rc)
 	}
 
-	return ioutil.NewMultiReadCloser(rcs...), nil
+	totalBytes := rn.GetDigest().GetSizeBytes() - offset
+	if totalBytes < 0 {
+		totalBytes = 0
+	}
+	return ioutil.NewMultiReadCloser(rcs...), &chunking.ChunkedReadMetadata{
+		TotalBytes:      totalBytes,
+		DownloadedBytes: totalBytes,
+	}, nil
 }
 
 // writeHandler enapsulates an on-going ByteStream write to a cache,
