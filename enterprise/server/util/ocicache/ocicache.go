@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
@@ -466,4 +467,36 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
+}
+
+// BlobFetchKey identifies a unique OCI blob fetch for singleflight
+// deduplication. Two requests that resolve to the same BlobFetchKey
+// are safe to coalesce: one fetches from upstream while the others wait.
+type BlobFetchKey struct {
+	// repo is the string form of the gcrname.Repository
+	// (e.g. "index.docker.io/library/alpine").
+	repo string
+	// digest is the string form of the gcr.Hash
+	// (e.g. "sha256:abc123").
+	digest string
+	// credsHash is a hash of the credentials used to fetch the blob.
+	// Requests with different credentials must not be coalesced to
+	// prevent cross-auth piggybacking.
+	credsHash string
+}
+
+// NewBlobFetchKey creates a BlobFetchKey from strongly-typed
+// go-containerregistry values and optional proto credentials.
+func NewBlobFetchKey(repo gcrname.Repository, digest gcr.Hash, creds *rgpb.Credentials) BlobFetchKey {
+	var credsHash string
+	if creds == nil {
+		credsHash = hash.Strings("", "")
+	} else {
+		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
+	}
+	return BlobFetchKey{
+		repo:      repo.Name(),
+		digest:    digest.String(),
+		credsHash: credsHash,
+	}
 }
