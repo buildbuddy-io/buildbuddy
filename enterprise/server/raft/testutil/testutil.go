@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -153,7 +154,8 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		store.WithNodeRegistryFactory(nrf),
 		store.WithPebbleOptsGetter(pebbleOptionsGetter),
 		store.WithTestNodeHostConfig(),
-		store.WithRegistryGetter(registryGetter))
+		store.WithRegistryGetter(registryGetter),
+		store.WithGRPCServerConfig(ts.GRPCServerConfig))
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -163,6 +165,10 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
+	return sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{})
+}
+
+func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerConfig grpc_server.GRPCServerConfig) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
@@ -171,13 +177,14 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	require.NoError(t, err)
 
 	ts := &TestingStore{
-		t:             t,
-		gm:            gm,
-		RaftAddress:   localAddr(t),
-		GRPCAddress:   localAddr(t),
-		GossipAddress: nodeAddr,
-		RootDir:       filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
-		nhid:          id.String(),
+		t:                t,
+		gm:               gm,
+		RaftAddress:      localAddr(t),
+		GRPCAddress:      localAddr(t),
+		GossipAddress:    nodeAddr,
+		RootDir:          filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+		nhid:             id.String(),
+		GRPCServerConfig: grpcServerConfig,
 	}
 	sf.RecreateStore(t, ts)
 	t.Cleanup(func() {
@@ -205,13 +212,14 @@ type TestingStore struct {
 	leaser pebble.Leaser
 	nhid   string
 
-	gm            *gossip.GossipManager
-	Registry      registry.NodeRegistry
-	RootDir       string
-	RaftAddress   string
-	GRPCAddress   string
-	GossipAddress string
-	closed        bool
+	gm               *gossip.GossipManager
+	Registry         registry.NodeRegistry
+	RootDir          string
+	RaftAddress      string
+	GRPCAddress      string
+	GRPCServerConfig grpc_server.GRPCServerConfig
+	GossipAddress    string
+	closed           bool
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {

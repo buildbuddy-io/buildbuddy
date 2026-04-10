@@ -2,13 +2,22 @@ package sender_test
 
 import (
 	"context"
+	"encoding/binary"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func requireProtoEqual(t *testing.T, expected, actual proto.Message) {
@@ -151,4 +160,55 @@ func TestFetchPartitionDescriptors(t *testing.T) {
 	require.Equal(t, "foo", pd2.GetId())
 	require.Equal(t, int64(1), pd2.GetInitialNumRanges())
 	require.Equal(t, uint64(4), pd2.GetFirstRangeId())
+}
+
+func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	key := []byte("PTdefault/dup-apply")
+	var faultInjected atomic.Bool
+	interceptor := func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		rsp, err := handler(ctx, req)
+		syncReq, ok := req.(*rfpb.SyncProposeRequest)
+		shouldFault := ok &&
+			len(syncReq.GetBatch().GetUnion()) == 1 &&
+			syncReq.GetBatch().GetUnion()[0].GetIncrement() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetIncrement().GetKey()) == string(key)
+		if err == nil &&
+			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
+			shouldFault &&
+			faultInjected.CompareAndSwap(false, true) {
+			return nil, gstatus.Error(codes.Unavailable, "injected fault after apply")
+		}
+		return rsp, err
+	}
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+	})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, s1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	value, err := s1.Sender().Increment(ctx, key, 1)
+	require.NoError(t, err)
+	// This asserts the current buggy behavior: the retried Increment is applied
+	// twice after the interceptor returns Unavailable post-apply.
+	require.Equal(t, uint64(2), value)
+
+	buf, err := s1.Sender().DirectRead(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), binary.LittleEndian.Uint64(buf))
 }
