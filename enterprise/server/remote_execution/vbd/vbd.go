@@ -41,6 +41,47 @@ type BlockDevice interface {
 	SizeBytes() (int64, error)
 }
 
+type truncater interface {
+	Truncate(size int64) error
+}
+
+type syncer interface {
+	Sync() error
+}
+
+// FixedSizeBlockDevice wraps a BlockDevice with fixed logical size semantics.
+// It treats truncation to 0 as opening a fresh output file and does not mutate
+// the wrapped device's logical size.
+type FixedSizeBlockDevice struct {
+	BlockDevice
+	sizeBytes int64
+}
+
+func NewFixedSizeBlockDevice(device BlockDevice, sizeBytes int64) *FixedSizeBlockDevice {
+	return &FixedSizeBlockDevice{
+		BlockDevice: device,
+		sizeBytes:   sizeBytes,
+	}
+}
+
+func (d *FixedSizeBlockDevice) SizeBytes() (int64, error) {
+	return d.sizeBytes, nil
+}
+
+func (d *FixedSizeBlockDevice) Truncate(size int64) error {
+	if size == 0 || size == d.sizeBytes {
+		return nil
+	}
+	return status.InvalidArgumentErrorf("cannot truncate fixed-size block device from %d to %d bytes", d.sizeBytes, size)
+}
+
+func (d *FixedSizeBlockDevice) Sync() error {
+	if s, ok := d.BlockDevice.(syncer); ok {
+		return s.Sync()
+	}
+	return nil
+}
+
 // FS represents a handle on a VBD FS. Once mounted, the mounted directory
 // exposes a single file. The file name is the const FileName. IO operations on
 // the file are backed by the wrapped BlockDevice.
@@ -190,11 +231,17 @@ type Node struct {
 
 var _ fusefs.NodeOpener = (*Node)(nil)
 var _ fusefs.NodeGetattrer = (*Node)(nil)
+var _ fusefs.NodeSetattrer = (*Node)(nil)
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if n.file == nil {
 		log.CtxErrorf(ctx, "open root dir: not supported")
 		return nil, 0, syscall.EOPNOTSUPP
+	}
+	if int(flags)&os.O_TRUNC != 0 {
+		if errno := n.truncate(ctx, 0); errno != 0 {
+			return nil, 0, errno
+		}
 	}
 	return &fileHandle{file: n.file}, 0, 0
 }
@@ -209,6 +256,39 @@ func (n *Node) Getattr(ctx context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 		out.Size = uint64(size)
 	}
 	return fusefs.OK
+}
+
+func (n *Node) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	if n.file == nil {
+		log.CtxErrorf(ctx, "setattr root dir: not supported")
+		return syscall.EOPNOTSUPP
+	}
+	if size, ok := in.GetSize(); ok {
+		if errno := n.truncate(ctx, int64(size)); errno != 0 {
+			return errno
+		}
+	}
+	return n.Getattr(ctx, f, out)
+}
+
+func (n *Node) truncate(ctx context.Context, size int64) syscall.Errno {
+	if t, ok := n.file.(truncater); ok {
+		if err := t.Truncate(size); err != nil {
+			log.CtxErrorf(ctx, "VBD truncate to %d failed: %s", size, err)
+			return syscall.EIO
+		}
+		return 0
+	}
+	currentSize, err := n.file.SizeBytes()
+	if err != nil {
+		log.CtxErrorf(ctx, "VBD size failed: %s", err)
+		return syscall.EIO
+	}
+	if currentSize != size {
+		log.CtxErrorf(ctx, "VBD truncate to %d failed: backing store does not support truncation", size)
+		return syscall.EOPNOTSUPP
+	}
+	return 0
 }
 
 type fileHandle struct {
@@ -233,7 +313,12 @@ func (h *fileHandle) Write(ctx context.Context, p []byte, off int64) (uint32, sy
 }
 
 func (h *fileHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
-	// Do nothing for now; snaploader will sync contents to disk before adding to cache.
+	if s, ok := h.file.(syncer); ok {
+		if err := s.Sync(); err != nil {
+			log.CtxErrorf(ctx, "VBD sync failed: %s", err)
+			return syscall.EIO
+		}
+	}
 	return fusefs.OK
 }
 

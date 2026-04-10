@@ -45,7 +45,8 @@ func TestVBD(t *testing.T) {
 	})
 
 	// Try stat() on the virtual file
-	s, err := os.Stat(filepath.Join(dir, vbd.FileName))
+	vbdFilePath := filepath.Join(dir, vbd.FileName)
+	s, err := os.Stat(vbdFilePath)
 	require.NoError(t, err)
 	require.Equal(t, int64(fSize), s.Size())
 
@@ -54,14 +55,39 @@ func TestVBD(t *testing.T) {
 	err = vbd.CleanStaleMounts()
 	require.NoError(t, err)
 
+	f, err = os.OpenFile(vbdFilePath, os.O_RDWR|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	err = f.Close()
+	require.NoError(t, err)
+	s, err = os.Stat(vbdFilePath)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), s.Size())
+	err = os.Truncate(vbdFilePath, fSize)
+	require.NoError(t, err)
+	f, err = os.OpenFile(vbdFilePath, os.O_RDWR, 0)
+	require.NoError(t, err)
+	n, err := f.WriteAt(b, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(b), n)
+	err = f.Close()
+	require.NoError(t, err)
+
 	// Try random reads and writes to the virtual file
 	{
-		f, err := os.OpenFile(filepath.Join(dir, vbd.FileName), os.O_RDWR, 0)
+		f, err := os.OpenFile(vbdFilePath, os.O_RDWR, 0)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			err := f.Close()
 			require.NoError(t, err)
 		})
+
+		const truncatedSize = fSize / 2
+		err = f.Truncate(truncatedSize)
+		require.NoError(t, err)
+		s, err := os.Stat(vbdFilePath)
+		require.NoError(t, err)
+		require.Equal(t, int64(truncatedSize), s.Size())
+		b = b[:truncatedSize]
 
 		for i := 1; i <= 100; i++ {
 			offset, length := randSubslice(len(b))
