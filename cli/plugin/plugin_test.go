@@ -1,8 +1,11 @@
 package plugin
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
@@ -266,4 +269,56 @@ func setTestHomeDir(t *testing.T, path string) {
 		err := os.Setenv("HOME", original)
 		require.NoError(t, err)
 	})
+}
+
+func TestPipelineWriter_AllOutputCaptured(t *testing.T) {
+	// Regression test: output produced by handle_bazel_output.sh must not be
+	// dropped due to pty teardown races. We run the pipeline many times with
+	// a script that emits a known number of lines, and verify every line
+	// arrives.
+	const numLines = 200
+	const iterations = 20
+
+	pluginDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		// The script reads stdin (to satisfy the pipeline), then prints
+		// numLines lines to stdout right before exiting. This stresses the
+		// "output at exit" path where the pty teardown race used to drop data.
+		"handle_bazel_output.sh": fmt.Sprintf(`#!/usr/bin/env bash
+cat > /dev/null
+for i in $(seq 1 %d); do
+  echo "OUTPUT_LINE_$i"
+done
+`, numLines),
+	})
+	testfs.MakeExecutable(t, pluginDir, "handle_bazel_output.sh")
+
+	for i := 0; i < iterations; i++ {
+		t.Run(fmt.Sprintf("iteration_%d", i), func(t *testing.T) {
+			p := &Plugin{
+				config:   &config.PluginConfig{Path: pluginDir},
+				tempDir:  t.TempDir(),
+			}
+			p.configFile = &config.File{Path: filepath.Join(pluginDir, "buildbuddy.yaml")}
+
+			var out bytes.Buffer
+			wc, err := PipelineWriter(&out, []*Plugin{p})
+			require.NoError(t, err)
+
+			// Write some input and immediately close to trigger plugin exit.
+			_, err = wc.Write([]byte("hello\n"))
+			require.NoError(t, err)
+			err = wc.Close()
+			require.NoError(t, err)
+
+			output := out.String()
+			for line := 1; line <= numLines; line++ {
+				expected := fmt.Sprintf("OUTPUT_LINE_%d", line)
+				if !strings.Contains(output, expected) {
+					t.Fatalf("missing %s in output (got %d bytes, %d lines)",
+						expected, len(output), strings.Count(output, "\n"))
+				}
+			}
+		})
+	}
 }
