@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
@@ -56,6 +57,8 @@ func Run(t *testing.T, opts *Opts) *Server {
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
 	cmd.Stdout = log.Writer("[testserver] ")
 	cmd.Stderr = log.Writer("[testserver] ")
+	// Release all held port listeners so the server subprocess can bind them.
+	testport.ReleaseAllHeldPorts()
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

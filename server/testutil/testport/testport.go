@@ -14,12 +14,20 @@ func FindFree(t testing.TB) int {
 	return portLeaser.Lease(t)
 }
 
+// ReleaseAllHeldPorts closes all held port listeners so that the ports can be
+// bound by subprocesses (e.g. test servers). This should be called just before
+// starting the subprocess that will bind to the allocated ports.
+func ReleaseAllHeldPorts() {
+	portLeaser.ReleaseAll()
+}
+
 type freePortLeaser struct {
 	leasedPorts map[int]struct{}
+	heldPorts   []net.Listener
 	mu          sync.Mutex
 }
 
-func (p *freePortLeaser) findAPort(t testing.TB) int {
+func (p *freePortLeaser) findAPort(t testing.TB) (int, net.Listener) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
@@ -28,8 +36,7 @@ func (p *freePortLeaser) findAPort(t testing.TB) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return l.Addr().(*net.TCPAddr).Port, l
 }
 
 func (p *freePortLeaser) Lease(t testing.TB) int {
@@ -39,10 +46,21 @@ func (p *freePortLeaser) Lease(t testing.TB) int {
 		p.leasedPorts = make(map[int]struct{}, 0)
 	}
 	for {
-		port := p.findAPort(t)
+		port, listener := p.findAPort(t)
 		if _, ok := p.leasedPorts[port]; !ok {
 			p.leasedPorts[port] = struct{}{}
+			p.heldPorts = append(p.heldPorts, listener)
 			return port
 		}
+		listener.Close()
 	}
+}
+
+func (p *freePortLeaser) ReleaseAll() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, l := range p.heldPorts {
+		l.Close()
+	}
+	p.heldPorts = nil
 }

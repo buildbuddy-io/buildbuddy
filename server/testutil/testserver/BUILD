@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testserver",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/testutil/testport",
         "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",
     ],
