@@ -32,6 +32,7 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
+  mnemonicFilter: string;
   limit: number;
 }
 
@@ -44,6 +45,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     sort: "status",
     direction: "desc",
     statusFilter: "all",
+    mnemonicFilter: "all",
     limit: 100,
   };
 
@@ -191,6 +193,12 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     });
   }
 
+  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    this.setState({
+      mnemonicFilter: event.target.value,
+    });
+  }
+
   handleMoreClicked() {
     this.setState({ limit: this.state.limit + 100 });
   }
@@ -206,11 +214,15 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
 
     let completedCount = 0;
     let incompleteCount = 0;
+    const mnemonics = new Set<string>();
     for (let execution of this.state.executions) {
       if (execution.stage === ExecutionStage.Value.COMPLETED) {
         completedCount++;
       } else {
         incompleteCount++;
+      }
+      if (execution.actionMnemonic) {
+        mnemonics.add(execution.actionMnemonic);
       }
     }
 
@@ -231,6 +243,10 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
         (execution) =>
           this.state.statusFilter === "all" ||
           getExecutionStatus(execution).name.toLowerCase().startsWith(this.state.statusFilter)
+      )
+      .filter(
+        (execution) =>
+          this.state.mnemonicFilter === "all" || execution.actionMnemonic === this.state.mnemonicFilter
       );
 
     return (
@@ -255,6 +271,15 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
                   <Option value="succeeded">Succeeded</Option>
                   <Option value="failed">Failed</Option>
                   <Option value="error">Errored</Option>
+                </Select>
+                <span className="invocation-filter-title">Mnemonic</span>
+                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
+                  <Option value="all">All</Option>
+                  {[...mnemonics].sort().map((m) => (
+                    <Option key={m} value={m}>
+                      {m}
+                    </Option>
+                  ))}
                 </Select>
                 <span className="invocation-sort-title">Sort by</span>
                 <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
