@@ -30,6 +30,7 @@ import (
 )
 
 var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
+var Flags = flags
 
 // Bazel-equivalent flags.
 var (

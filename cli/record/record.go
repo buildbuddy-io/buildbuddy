@@ -28,6 +28,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("record", flag.ContinueOnError)
+	Flags = flags
 
 	besBackend   = flags.String("bes_backend", "remote.buildbuddy.io", "BuildBuddy BES backend target")
 	resultsURL   = flags.String("results_url", "https://app.buildbuddy.io", "BuildBuddy results URL")

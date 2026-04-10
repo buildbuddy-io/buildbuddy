@@ -19,6 +19,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("view", flag.ContinueOnError)
+	Flags = flags
 
 	apiTarget = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	lines     = flags.Int("lines", 100_000, "Minimum number of lines to fetch")

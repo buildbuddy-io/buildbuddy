@@ -23,6 +23,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("upload", flag.ContinueOnError)
+	Flags = flags
 
 	target             = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
 	remoteInstanceName = flags.String("remote_instance_name", "", "Remote instance name")

@@ -24,6 +24,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("fix", flag.ContinueOnError)
+	Flags = flags
 	diff  = flags.Bool("diff", false, "Don't apply fixes, just print a diff showing the changes that would be applied.")
 )
 

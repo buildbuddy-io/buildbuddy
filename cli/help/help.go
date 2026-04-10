@@ -2,6 +2,7 @@ package help
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -50,12 +51,23 @@ func TryShowBBCommandHelp(targetCommand string) bool {
 		return false
 	}
 
-	if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
-		fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
-		return true
+	bbCommand := cli_command.GetCommand(targetCommand)
+	if bbCommand == nil {
+		return false
 	}
-
-	return false
+	fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+	if bbCommand.Flags != nil {
+		hasFlags := false
+		bbCommand.Flags.VisitAll(func(*flag.Flag) { hasFlags = true })
+		if hasFlags {
+			fmt.Println("\nFlags:")
+			prevOutput := bbCommand.Flags.Output()
+			bbCommand.Flags.SetOutput(os.Stdout)
+			bbCommand.Flags.PrintDefaults()
+			bbCommand.Flags.SetOutput(prevOutput)
+		}
+	}
+	return true
 }
 
 // HandleHelp Valid cases to trigger help:

@@ -38,6 +38,7 @@ const (
 
 var (
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
+	Flags = flags
 
 	group            = flags.String("org", "", "If set, log in with this org identifier (slug), like 'my-org'")
 	check            = flags.Bool("check", false, "Just check whether logged in. Exits with code 0 if logged in, code 1 if not logged in, or 2 if there is an error.")
