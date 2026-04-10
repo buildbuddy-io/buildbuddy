@@ -81,6 +81,36 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	return nil
 }
 
+func normalizeWorkingDirectory(path string) (string, error) {
+	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		return "", status.InvalidArgumentErrorf("working_directory must be repo-relative: %q", path)
+	}
+	if path == "." {
+		return "", nil
+	}
+	if strings.Contains(path, "..") {
+		return "", status.InvalidArgumentErrorf("working_directory must not have relative components: %q", path)
+	}
+	return path, nil
+}
+
+func actionFromRunRequest(req *rnpb.RunRequest) (*config.Action, error) {
+	name := "remote run"
+	if req.GetName() != "" {
+		name = req.GetName()
+	}
+	workingDirectory, err := normalizeWorkingDirectory(req.GetWorkingDirectory())
+	if err != nil {
+		return nil, err
+	}
+	return &config.Action{
+		Name:              name,
+		Steps:             req.GetSteps(),
+		BazelWorkspaceDir: workingDirectory,
+	}, nil
+}
+
 // createAction creates and uploads an action that will trigger the CI runner
 // to checkout the specified repo and execute the specified bazel action,
 // uploading any logs to an invcocation page with the specified ID.
@@ -142,13 +172,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		req.Steps = []*rnpb.Step{{Run: "bazel " + req.GetBazelCommand()}}
 	}
 
-	name := "remote run"
-	if req.GetName() != "" {
-		name = req.GetName()
-	}
-	runAction := &config.Action{
-		Name:  name,
-		Steps: req.GetSteps(),
+	runAction, err := actionFromRunRequest(req)
+	if err != nil {
+		return nil, err
 	}
 	actionBytes, err := yaml.Marshal(runAction)
 	if err != nil {
