@@ -1,13 +1,13 @@
 ---
-title: "Short-lived secrets for remote execution"
+title: "Improved handling of short-lived secrets in remote execution"
 date: 2026-04-10T10:00:00
 authors: dan
 tags: [bazel]
 ---
 
-BuildBuddy now supports `secret-env-overrides` and `secret-env-overrides-base64` platform properties for passing short-lived secrets to remote actions.
+BuildBuddy has supported passing short-lived secrets to remote actions via the `env-overrides` platform property, which redacts values from action cache entries. The new `secret-env-overrides` and `secret-env-overrides-base64` properties extend this protection by also **redacting values from workflow logs**.
 
-Unlike [organization-level secrets](https://www.buildbuddy.io/docs/secrets) which are configured ahead of time, these properties let you inject ephemeral credentials — like CI OIDC tokens or temporary cloud sessions — at invocation time via remote exec headers:
+Pass secrets via remote exec headers so they're injected at invocation time without affecting the action hash:
 
 ```bash
 bazel build //my:target \
@@ -20,10 +20,5 @@ For values containing commas or special characters, base64-encode each `KEY=VALU
 bazel build //my:target \
   --remote_exec_header=x-buildbuddy-platform.secret-env-overrides-base64=$(echo -n 'CREDS={"token": "abc"}' | base64)
 ```
-
-Because these properties are sent as remote exec headers, they are:
-
-- **Redacted** from action cache entries and workflow logs — secret values are never persisted in plain text.
-- **Excluded from the action hash** — rotating credentials won't invalidate your cache or prevent reuse of warm [Remote Bazel](https://www.buildbuddy.io/docs/remote-bazel) workspaces.
 
 See the [Secrets docs](https://www.buildbuddy.io/docs/secrets) and [RBE platform properties reference](https://www.buildbuddy.io/docs/rbe-platforms) for more details.
