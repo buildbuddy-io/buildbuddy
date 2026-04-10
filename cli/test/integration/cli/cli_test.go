@@ -178,6 +178,37 @@ exec "$BAZEL_REAL" "--bazelrc=${ws}/required.bazelrc" "$@"
 
 }
 
+// This currently fails because the CLI expands workspace rc files before the
+// Bazelisk wrapper injects --config=rbe, then suppresses future workspace rc
+// loading with --noworkspace_rc.
+func TestLateConfigAddedByBazeliskWrapper(t *testing.T) {
+	ws := newWorkspaceConfigWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// If tools/bazel is present in the workspace root, Bazelisk will run it
+		// instead of the regular bazel binary. This wrapper injects
+		// --config=rbe after the bazel command is specified.
+		"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+args=()
+inserted=0
+for arg in "$@"; do
+	args+=("$arg")
+	if [[ "$inserted" -eq 0 && "$arg" != -* ]]; then
+		if [[ "$arg" == "test" ]]; then
+			args+=("--config=rbe")
+		fi
+		inserted=1
+	fi
+done
+exec "$BAZEL_REAL" "${args[@]}"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+
+	output, err := runWorkspaceConfigTest(t, ws)
+	require.NoErrorf(t, err, "output: %s", output)
+}
+
 // Creates a workspace that verifies --bazelrc=required.bazelrc is applied.
 func newBazelrcWorkspace(t *testing.T) string {
 	ws := testcli.NewWorkspace(t)
@@ -198,9 +229,38 @@ exit 1
 	return ws
 }
 
+// Creates a workspace that verifies --config=rbe resolves from .bazelrc.
+func newWorkspaceConfigWorkspace(t *testing.T) string {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `
+test:rbe --test_env=RBE_CONFIG_VALUE=1
+`,
+		"BUILD": `
+sh_test(name = "needs_rbe_config", srcs = ["needs_rbe_config.sh"])
+`,
+		"needs_rbe_config.sh": `#!/usr/bin/env bash
+if [[ "${RBE_CONFIG_VALUE:-}" == "1" ]]; then
+  exit 0
+fi
+echo "rbe config was not applied" >&2
+exit 1
+`,
+	})
+	testfs.MakeExecutable(t, ws, "needs_rbe_config.sh")
+	return ws
+}
+
 func runBazelrcTest(t *testing.T, ws string, startupArgs ...string) (string, error) {
 	args := startupArgs
 	args = append(args, "test", "--test_output=errors", ":needs_required_rc")
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
+	return strings.ReplaceAll(string(b), "\r\n", "\n"), err
+}
+
+func runWorkspaceConfigTest(t *testing.T, ws string, startupArgs ...string) (string, error) {
+	args := startupArgs
+	args = append(args, "test", "--test_output=errors", ":needs_rbe_config")
 	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 	return strings.ReplaceAll(string(b), "\r\n", "\n"), err
 }
