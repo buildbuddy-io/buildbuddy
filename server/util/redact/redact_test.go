@@ -934,6 +934,17 @@ func TestRedactTxt(t *testing.T) {
 			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 		},
 		{
+			name: "do not redact diff headers after URL on adjacent line",
+			txt: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+			expected: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+		},
+		{
 			name:     "api key start of line",
 			txt:      "apikeyexactly20chars@mydomain.com",
 			expected: "<REDACTED>@mydomain.com",
