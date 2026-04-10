@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -784,30 +785,29 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
 	}
+	var copyDone sync.WaitGroup
+	copyDone.Add(1)
 	go func() {
+		defer copyDone.Done()
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
 	}()
 	go func() {
-		// TODO: Properly clean up the tty here. We disable the cleanup since it
-		// seems to cause some plugin output to get dropped in rare cases.
-		// See: https://github.com/creack/pty/issues/127
-		//
-		// The cleanup being disabled is not a problem for the CLI because it
-		// should get cleaned up automatically when the CLI process exits, but
-		// if we want to reuse this code for other things then we should
-		// probably fix this so the tty can get cleaned up sooner.
-
-		// defer tty.Close()
-
-		defer ptmx.Close()
-		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Wait(); err != nil {
 			log.Debugf("Command failed: %s", err)
 		} else {
 			log.Debugf("Command %s completed", cmd.Args)
 		}
+		// Close the tty (slave side) now that the child process has exited.
+		// This signals EOF to the pty master (ptmx), allowing the copy
+		// goroutine to drain any remaining buffered data and then return.
+		tty.Close()
+		// Wait for the copy goroutine to finish draining all pty output
+		// before closing ptmx and pw, so no output is lost.
+		copyDone.Wait()
+		ptmx.Close()
+		pw.Close()
 		// Flush any remaining data from the preceding stage, to prevent
 		// the output writer for the preceding stage from getting stuck.
 		io.Copy(io.Discard, r)
