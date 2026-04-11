@@ -653,17 +653,5 @@ func isInterestingEvent(ev fsnotify.Event) bool {
 		return false
 	}
 	name := filepath.Base(ev.Name)
-	if strings.HasPrefix(name, ".") || strings.HasSuffix(name, "~") || strings.HasSuffix(name, ".swp") || strings.HasSuffix(name, ".swx") {
-		return false
-	}
-	// Only source-level changes should trigger a rebuild. JSON artifacts,
-	// runfiles symlinks, etc. are noise.
-	switch filepath.Ext(name) {
-	case ".go":
-		return true
-	}
-	if name == "BUILD" {
-		return true
-	}
-	return false
+	return filepath.Ext(name) == ".go" || name == "BUILD"
 }
