@@ -135,7 +135,7 @@ func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.Dial
 func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	runFunc := func() {
-		if err := srv.Serve(lis); err != nil {
+		if err := srv.Serve(lis); err != nil && err != grpc.ErrServerStopped {
 			log.Fatal(err.Error())
 		}
 	}
