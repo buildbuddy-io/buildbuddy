@@ -65,6 +65,10 @@ go_library(
             "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
         ],
+        "@io_bazel_rules_go//go/platform:windows_386": [
+            "//enterprise/server/util/vfscommon",
+            "//proto:vfs_go_proto",
+        ],
         "@io_bazel_rules_go//go/platform:windows_arm64": [
             "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
