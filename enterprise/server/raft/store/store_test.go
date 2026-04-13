@@ -2394,6 +2394,54 @@ func TestRebalance(t *testing.T) {
 	}
 }
 
+func TestZoneAwareRebalance(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_replicas_per_range", 3)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+
+	// 3 stores in zone-a, 1 in zone-b, 1 in zone-c.
+	s1 := sf.NewStoreWithZone(t, "zone-a")
+	s2 := sf.NewStoreWithZone(t, "zone-a")
+	s3 := sf.NewStoreWithZone(t, "zone-a")
+	s4 := sf.NewStoreWithZone(t, "zone-b")
+	s5 := sf.NewStoreWithZone(t, "zone-c")
+	ctx := context.Background()
+
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 1,
+	}
+
+	// Initialize on s1, s2, s3 — all in zone-a.
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, partition, stores...)
+
+	allStores := []*testutil.TestingStore{s1, s2, s3, s4, s5}
+	// Wait for the driver to rebalance replicas across zones.
+	// With 3 replicas and 3 zones, the ideal distribution is 1-1-1.
+	require.Eventually(t,
+		func() bool {
+			clock.Advance(61 * time.Second)
+
+			zonesWithReplica := make(map[string]bool)
+			for _, s := range allStores {
+				if s.GetRange(2) != nil {
+					zonesWithReplica[s.NodeDescriptor().GetZone()] = true
+				}
+			}
+			return len(zonesWithReplica) >= 3
+		},
+		30*time.Second, 10*time.Millisecond, "timed out waiting for zone-aware rebalancing")
+}
+
 func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
