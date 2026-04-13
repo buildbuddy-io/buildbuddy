@@ -21,14 +21,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Build Website
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk build --repository_cache='~/repo-cache/' //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
@@ -87,10 +80,4 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CHANGELOG_WEBHOOK_URL }}
 
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
+

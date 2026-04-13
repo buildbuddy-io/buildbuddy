@@ -27,14 +27,7 @@ jobs:
           # Hack to work around https://github.com/containers/podman/issues/9164
           find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Run tests
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           echo > user.bazelrc "
           common --config=cache
@@ -66,10 +59,3 @@ jobs:
           # Make sure the executor binary builds.
           bazel build //enterprise/server/cmd/executor
 
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
