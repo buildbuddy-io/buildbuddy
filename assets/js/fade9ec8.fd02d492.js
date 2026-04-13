@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkbuildbuddy_docs_website=globalThis.webpackChunkbuildbuddy_docs_website||[]).push([[1358],{56909(e){e.exports=JSON.parse('{"metadata":{"permalink":"/changelog","page":1,"postsPerPage":25,"totalPages":1,"totalCount":8,"blogDescription":"Blog","blogTitle":"Blog"}}')}}]);

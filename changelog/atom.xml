@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/changelog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-03-31T10:00:00.000Z</updated>
+    <updated>2026-04-10T10:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Improved handling of short-lived secrets in remote execution]]></title>
+        <id>https://www.buildbuddy.io/changelog/secret-env-overrides</id>
+        <link href="https://www.buildbuddy.io/changelog/secret-env-overrides"/>
+        <updated>2026-04-10T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[BuildBuddy has supported passing short-lived secrets to remote actions via the env-overrides platform property, which redacts values from action cache entries. The new secret-env-overrides and secret-env-overrides-base64 properties extend this protection by also redacting values from workflow logs.]]></summary>
+        <author>
+            <name>Dan Stowell</name>
+            <uri>https://dstowell.org</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Improved GPU and device support for self-hosted executors]]></title>
         <id>https://www.buildbuddy.io/changelog/improved-gpu-support</id>
