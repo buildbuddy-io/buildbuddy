@@ -937,12 +937,11 @@ func TestCreateFailureHasStderr(t *testing.T) {
 			ContainerImage: image,
 		},
 	})
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
 		require.NoError(t, err)
 	})
-
-	require.NoError(t, err)
 	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd+"nonexistent")
