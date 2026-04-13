@@ -58,4 +58,3 @@ jobs:
 
           # Make sure the executor binary builds.
           bazel build //enterprise/server/cmd/executor
-

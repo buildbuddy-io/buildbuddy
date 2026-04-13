@@ -45,4 +45,3 @@ jobs:
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
           gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
-

@@ -54,4 +54,3 @@ jobs:
           bazelisk build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
           gh release upload ${{ inputs.version_tag }} executor-enterprise-darwin-arm64 --clobber
-

@@ -50,4 +50,3 @@ jobs:
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-amd64
           gh release upload ${{ inputs.version_tag }} buildbuddy-darwin-amd64 buildbuddy-enterprise-darwin-amd64 executor-enterprise-darwin-amd64 --clobber
-
