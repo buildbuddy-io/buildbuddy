@@ -30,6 +30,7 @@ go_library(
         "//server/testutil/testfs",
         "//server/testutil/testport",
         "//server/util/disk",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
