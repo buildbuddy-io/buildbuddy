@@ -11,11 +11,14 @@ import (
 	"context"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -29,6 +32,11 @@ const cacheDigestFunction = repb.DigestFunction_SHA256
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
 	localBSClient bspb.ByteStreamClient
+	// fetchGroup deduplicates concurrent FetchBlob requests for the same
+	// blob and credentials. The leader fetches from the upstream (apps)
+	// and writes to local BSS; waiters block until the leader finishes,
+	// then all callers stream from local BSS.
+	fetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -89,8 +97,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	if err != nil {
 		return err
 	}
+	size := metaResp.GetSize()
 
-	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, metaResp.GetSize(), &grpcStreamWriter{stream: stream})
+	// Fast path: serve from local BS cache.
+	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
 	if err == nil {
 		return nil // local cache hit
 	}
@@ -100,12 +110,33 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
-	return s.fetchBlobFromUpstreamAndCache(ctx, req, stream, hash, metaResp.GetSize())
+	// Deduplicate concurrent upstream fetches for the same blob+creds.
+	// The leader fetches from upstream and writes to local BSS.
+	// After the singleflight completes, all callers stream from local BSS.
+	key := ocicache.NewBlobFetchKey(digestRef.Context(), hash, req.GetCredentials())
+	isLeader := false
+	_, _, err = s.fetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
+		isLeader = true
+		return struct{}{}, s.fetchBlobFromUpstreamToLocalBS(ctx, req, hash, size)
+	})
+	if err != nil {
+		return err
+	}
+
+	if isLeader {
+		log.CtxInfof(ctx, "FetchBlob singleflight leader for %s, streaming from local BS", hash.Hex)
+	} else {
+		log.CtxInfof(ctx, "FetchBlob singleflight waiter for %s, streaming from local BS", hash.Hex)
+	}
+
+	// Stream the blob from local BSS to the caller.
+	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
 }
 
-// fetchBlobFromUpstreamAndCache streams a blob from the upstream OCIFetcher,
-// sends each chunk to the caller, and writes the blob to local BS cache.
-func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamAndCache(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer, hash gcr.Hash, size int64) error {
+// fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher
+// and writes it to the local byte stream cache. It does not stream to any
+// caller; callers read from local BSS after this completes.
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash gcr.Hash, size int64) error {
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
@@ -127,33 +158,12 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamAndCache(ctx context.Contex
 		}
 
 		_, writeErr := cacheWriter.Write(resp.GetData())
-		if writeErr != nil && !status.IsAlreadyExistsError(writeErr) {
-			return writeErr
-		}
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
 		if writeErr != nil {
-			// AlreadyExists: blob was cached by another writer.
-			// Stop writing to cache, relay remaining chunks.
-			cacheWriter.Close()
-			return relayStream(remoteStream, stream)
-		}
-	}
-}
-
-// relayStream drains the remaining responses from upstream to the caller.
-func relayStream(remoteStream ofpb.OCIFetcher_FetchBlobClient, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	for {
-		resp, err := remoteStream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(resp); err != nil {
-			return err
+			if status.IsAlreadyExistsError(writeErr) {
+				// Blob was cached by another writer; we're done.
+				return nil
+			}
+			return writeErr
 		}
 	}
 }
