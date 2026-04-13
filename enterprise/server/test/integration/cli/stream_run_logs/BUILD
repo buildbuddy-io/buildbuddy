@@ -14,6 +14,7 @@ go_test(
         "//cli/testutil/testcli",
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:api_key_go_proto",
+        "//proto:buildbuddy_service_go_proto",
         "//proto:capability_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
@@ -21,8 +22,10 @@ go_test(
         "//server/tables",
         "//server/testutil/app",
         "//server/testutil/testfs",
+        "//server/util/grpc_client",
         "//server/util/perms",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
