@@ -19,14 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Build Website
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           API_KEY="${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           if [[ "$API_KEY" ]]; then
@@ -35,11 +28,3 @@ jobs:
             echo >user.bazelrc "common --config=ci-anon"
           fi
           bazelisk build --repository_cache='~/repo-cache/' //website:website
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
