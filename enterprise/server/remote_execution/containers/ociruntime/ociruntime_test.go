@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
@@ -913,8 +912,6 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6878
-	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := busyboxImage(t)
@@ -945,6 +942,8 @@ func TestCreateFailureHasStderr(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd+"nonexistent")
 	require.ErrorContains(t, err, "nonexistent")
