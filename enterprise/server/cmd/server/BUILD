@@ -230,28 +230,9 @@ pkg_tar(
     },
 )
 
-pkg_tar(
-    name = "config_symlink_tar",
-    symlinks = {
-        "config.yaml": "%s/%s.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % (
-            PACKAGE_ROOT,
-            BINARY_NAME,
-            runfiles_directory(),
-        ),
-    },
-)
-
-flatten(
-    name = "config_tar",
-    tars = [
-        ":config_files_tar",
-        ":config_symlink_tar",
-    ],
-)
-
 layer_from_tar(
     name = "config_layer",
-    src = "config_tar",
+    src = "config_files_tar",
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Configuration (FOSS)",
         "org.opencontainers.image.description": (
