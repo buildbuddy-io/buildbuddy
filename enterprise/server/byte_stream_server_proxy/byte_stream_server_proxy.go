@@ -697,10 +697,10 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
 	localErr := s.local.Write(forwarding)
 
-	// Receiving an io.EOF indicates the sender closed the stream early (due to
-	// an error or an AlreadyExists short-circuit with an old Bazel client) not
-	// a real failure. Try to send all frames we've received through to the
-	// remote and return whatever CloseAndRecv() returns below.
+	// In gRPC streaming, io.EOF from Recv() is the normal end-of-stream signal.
+	// Ignore it here so we can forward any frames already received to the
+	// remote and return whatever CloseAndRecv() reports below, including cases
+	// like an AlreadyExists short-circuit with an old Bazel client.
 	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
