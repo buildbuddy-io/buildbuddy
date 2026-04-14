@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -400,6 +401,53 @@ func TestGeneratingPatches(t *testing.T) {
 		} else {
 			require.FailNowf(t, "unexpected patch %s", p)
 		}
+	}
+}
+
+func TestWorkingDirectory(t *testing.T) {
+	rootDir := t.TempDir()
+	repoRoot := filepath.Join(rootDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "subdir", "nested"), 0755))
+
+	testCases := []struct {
+		name              string
+		workspaceFilePath string
+		expectedDir       string
+		expectedError     string
+	}{
+		{
+			name:              "Repo root workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "MODULE.bazel"),
+			expectedDir:       "",
+		},
+		{
+			name:              "Nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "MODULE.bazel"),
+			expectedDir:       "subdir",
+		},
+		{
+			name:              "Deeply nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "nested", "MODULE.bazel"),
+			expectedDir:       filepath.Join("subdir", "nested"),
+		},
+		{
+			name:              "Workspace outside repo root",
+			workspaceFilePath: filepath.Join(rootDir, "outside", "MODULE.bazel"),
+			expectedError:     "outside repo root",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := workingDirectory(repoRoot, tc.workspaceFilePath)
+			if tc.expectedError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedDir, dir)
+		})
 	}
 }
 
