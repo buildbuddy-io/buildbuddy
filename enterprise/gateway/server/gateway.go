@@ -317,6 +317,7 @@ func (g *Gateway) cleanupStalePeers() {
 			lastSeen = info.registeredAt
 		}
 		if now.Sub(lastSeen) >= *stalePeerTimeout {
+			log.Infof("Found STALE peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
 			g.removePeerLocked(pubKeyHex, info)
 		}
 	}
@@ -335,7 +336,7 @@ func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 		info.networkState.namesMu.Unlock()
 	}
 	delete(g.peers, pubKeyHex)
-	log.Infof("Removed stale peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
+	log.Infof("Removed peer %s... (ip=%s name=%q)", pubKeyHex[:8], info.ip, info.assignedName)
 }
 
 // ---------------------------------------------------------------------------
