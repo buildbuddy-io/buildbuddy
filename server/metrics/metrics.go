@@ -3704,6 +3704,30 @@ var (
 		Name:      "chunked_upload_chunks_deduped",
 		Help:      "Number of chunks deduplicated (already existed on remote) during chunked uploads.",
 	})
+	CacheClientChunkedDownloadChunkBytesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_download_chunk_bytes_total",
+		Help:      "Total uncompressed chunk bytes read during chunked downloads.",
+	})
+	CacheClientChunkedDownloadChunkBytesLocal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_download_chunk_bytes_local",
+		Help:      "Uncompressed chunk bytes served from a local file during chunked downloads.",
+	})
+	CacheClientChunkedDownloadChunksTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_download_chunks_total",
+		Help:      "Total number of chunks read during chunked downloads.",
+	})
+	CacheClientChunkedDownloadChunksLocal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_download_chunks_local",
+		Help:      "Number of chunks served from a local file during chunked downloads.",
+	})
 
 	ByteStreamChunkedWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,

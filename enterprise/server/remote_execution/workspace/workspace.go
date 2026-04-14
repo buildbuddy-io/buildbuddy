@@ -322,6 +322,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
 	}
+	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -1062,6 +1064,56 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 	return ff.stats.CloneVT()
 }
 
+func (ff *BatchFileFetcher) shouldDownloadChunked(fileNode *repb.FileNode) bool {
+	return ff.opts != nil &&
+		ff.opts.ChunkedInputFiles &&
+		ff.env.GetContentAddressableStorageClient() != nil &&
+		fileNode.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes()
+}
+
+// downloadBlobToFile writes fileNode into path, creating or truncating it.
+// For large blobs it tries the SplitBlob-based parallel chunked path first
+// when enabled, falling back to a plain ByteStream.Read on any error.
+func (ff *BatchFileFetcher) downloadBlobToFile(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, path string, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if ff.shouldDownloadChunked(fileNode) {
+		cas := ff.env.GetContentAddressableStorageClient()
+		rn := digest.NewCASResourceName(fileNode.GetDigest(), ff.instanceName, ff.digestFunction)
+		if *enableDownloadCompression {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
+		openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+			if fc := ff.env.GetFileCache(); fc != nil {
+				return fc.Open(ctx, node)
+			}
+			return nil, os.ErrNotExist
+		}
+		err = cachetools.GetBlobChunked(ctx, bsClient, cas, rn, fileNode, f, openLocal)
+		if err == nil {
+			if err := f.Close(); err != nil {
+				return err
+			}
+			ff.statsMu.Lock()
+			ff.stats.FileDownloadSizeBytes += fileNode.GetDigest().GetSizeBytes()
+			ff.stats.FileDownloadCount += 1
+			ff.statsMu.Unlock()
+			return nil
+		}
+		if err := f.Truncate(0); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			_ = f.Close()
+			return err
+		}
+	}
+	return ff.bytestreamReadToWriter(ctx, bsClient, fileNode, ioutil.NewCustomCommitWriteCloser(f))
+}
+
 func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) error {
 	resourceName := digest.NewCASResourceName(fileNode.Digest, ff.instanceName, ff.digestFunction)
 	if *enableDownloadCompression {
@@ -1102,13 +1154,7 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		if fp0.FileNode.IsExecutable {
 			mode = 0755
 		}
-		f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
-		if err != nil {
-			return nil, err
-		}
-		w := ioutil.NewCustomCommitWriteCloser(f)
-
-		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
+		if err := ff.downloadBlobToFile(ctx, bsClient, fp0.FileNode, fp0.FullPath, mode); err != nil {
 			return nil, err
 		}
 
@@ -1240,6 +1286,8 @@ type DownloadTreeOpts struct {
 	// TrackTransfers specifies whether to record the full set of files downloaded
 	// and return them in TransferInfo.Transfers.
 	TrackTransfers bool
+	// ChunkedInputFiles enables SplitBlob-based input downloads for large files.
+	ChunkedInputFiles bool
 }
 
 type inputTreeRequest interface {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -55,6 +57,9 @@ const (
 	// BatchUploadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// upload using the bytestream.Write api.
 	BatchUploadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
+
+	chunkedFileDownloadConcurrency = 32
+	chunkLocationCacheMaxEntries   = 100_000 // ~30MiB
 )
 
 var (
@@ -69,6 +74,8 @@ var (
 	// chunkUploadSem is a process-wide semaphore that limits the total number
 	// of concurrent CDC chunk upload RPCs across all concurrent executions.
 	chunkUploadSem = make(chan struct{}, 256)
+
+	defaultChunkLocationCache = newChunkLocationCache()
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -199,6 +206,168 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	} else {
 		return getBlob(ctx, bsClient, r, out)
 	}
+}
+
+// chunkLocation is a known local location of a chunk: a file + byte offset.
+type chunkLocation struct {
+	parent *repb.FileNode
+	offset int64
+}
+
+// chunkLocationCache is a process-local, in-memory cache from chunk digest
+// hash to the most recently-seen local whole-file location for that chunk.
+type chunkLocationCache struct {
+	l lru.LRU[chunkLocation]
+}
+
+func newChunkLocationCache() *chunkLocationCache {
+	l, err := lru.New[chunkLocation](&lru.Config[chunkLocation]{
+		MaxSize:       chunkLocationCacheMaxEntries,
+		SizeFn:        func(chunkLocation) int64 { return 1 },
+		ThreadSafe:    true,
+		UpdateInPlace: true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return &chunkLocationCache{l: l}
+}
+
+func (c *chunkLocationCache) get(digestFunction repb.DigestFunction_Value, d *repb.Digest) (chunkLocation, bool) {
+	return c.l.Get(chunkLocationCacheKey(digestFunction, d))
+}
+
+func (c *chunkLocationCache) add(digestFunction repb.DigestFunction_Value, d *repb.Digest, loc chunkLocation) {
+	c.l.Add(chunkLocationCacheKey(digestFunction, d), loc)
+}
+
+func (c *chunkLocationCache) addFile(digestFunction repb.DigestFunction_Value, parent *repb.FileNode, chunks []*repb.Digest) {
+	if parent == nil {
+		return
+	}
+	parent = parent.CloneVT()
+	var offset int64
+	for _, chunk := range chunks {
+		c.add(digestFunction, chunk, chunkLocation{parent: parent, offset: offset})
+		offset += chunk.GetSizeBytes()
+	}
+}
+
+var errLocalChunkUnavailable = errors.New("local chunk unavailable")
+
+// GetBlobChunked downloads r into f via SplitBlob + parallel chunk reads.
+// For each chunk, it first tries any location known to the local chunk
+// location cache (via openLocal),
+// then falls back to ByteStream.Read. Each chunk is written directly at its
+// offset in f via f.WriteAt, so concurrent writes are safe. On success, the
+// new file's chunks are recorded for future reuse.
+func GetBlobChunked(
+	ctx context.Context,
+	bsClient bspb.ByteStreamClient,
+	casClient repb.ContentAddressableStorageClient,
+	r *digest.CASResourceName,
+	parent *repb.FileNode,
+	f *os.File,
+	openLocal func(context.Context, *repb.FileNode) (*os.File, error),
+) error {
+	if casClient == nil {
+		return status.FailedPreconditionError("ContentAddressableStorageClient not configured")
+	}
+
+	resp, err := casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     r.GetDigest(),
+		InstanceName:   r.GetInstanceName(),
+		DigestFunction: r.GetDigestFunction(),
+	})
+	if err != nil {
+		return err
+	}
+	chunks := resp.GetChunkDigests()
+
+	size := r.GetDigest().GetSizeBytes()
+	offsets := make([]int64, len(chunks))
+	var off int64
+	for i, c := range chunks {
+		offsets[i] = off
+		off += c.GetSizeBytes()
+	}
+	if off != size {
+		return status.DataLossErrorf("chunk sizes sum to %d, want %d", off, size)
+	}
+	if err := f.Truncate(size); err != nil {
+		return err
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(chunkedFileDownloadConcurrency)
+	for i, c := range chunks {
+		offset, c := offsets[i], c
+		g.Go(func() error {
+			return writeChunk(gctx, bsClient, r, c, offset, openLocal, f)
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	defaultChunkLocationCache.addFile(r.GetDigestFunction(), parent, chunks)
+	return nil
+}
+
+// writeChunk writes a single chunk into out at the given offset, trying known
+// local locations before falling back to ByteStream.Read.
+func writeChunk(
+	ctx context.Context,
+	bsClient bspb.ByteStreamClient,
+	parentRN *digest.CASResourceName,
+	chunk *repb.Digest,
+	offset int64,
+	openLocal func(context.Context, *repb.FileNode) (*os.File, error),
+	out *os.File,
+) error {
+	metrics.CacheClientChunkedDownloadChunksTotal.Inc()
+	metrics.CacheClientChunkedDownloadChunkBytesTotal.Add(float64(chunk.GetSizeBytes()))
+	if openLocal != nil {
+		if loc, ok := defaultChunkLocationCache.get(parentRN.GetDigestFunction(), chunk); ok {
+			err := writeLocalChunk(ctx, openLocal, loc, chunk.GetSizeBytes(), out, offset)
+			if err == nil {
+				metrics.CacheClientChunkedDownloadChunksLocal.Inc()
+				metrics.CacheClientChunkedDownloadChunkBytesLocal.Add(float64(chunk.GetSizeBytes()))
+				return nil
+			}
+			if !errors.Is(err, errLocalChunkUnavailable) {
+				return err
+			}
+		}
+	}
+	chunkRN := digest.NewCASResourceName(chunk, parentRN.GetInstanceName(), parentRN.GetDigestFunction())
+	chunkRN.SetCompressor(parentRN.GetCompressor())
+	return GetBlob(ctx, bsClient, chunkRN, io.NewOffsetWriter(out, offset))
+}
+
+func chunkLocationCacheKey(digestFunction repb.DigestFunction_Value, d *repb.Digest) string {
+	return fmt.Sprintf("%d/%s/%d", digestFunction, d.GetHash(), d.GetSizeBytes())
+}
+
+// writeLocalChunk copies a known chunk range from an existing local file into
+// out at the given offset. It returns errLocalChunkUnavailable when the source
+// file cannot be opened so the caller can fall back to a remote fetch.
+func writeLocalChunk(
+	ctx context.Context,
+	openLocal func(context.Context, *repb.FileNode) (*os.File, error),
+	loc chunkLocation,
+	size int64,
+	out *os.File,
+	offset int64,
+) error {
+	src, err := openLocal(ctx, loc.parent)
+	if err != nil {
+		return errLocalChunkUnavailable
+	}
+	defer src.Close()
+
+	_, err = copyLocalChunkAt(out, offset, src, loc.offset, size)
+	return err
 }
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
