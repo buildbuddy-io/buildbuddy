@@ -140,7 +140,7 @@ go_binary(
     embed = [":server_lib"],
 )
 
-PACKAGE_ROOT = "app"
+PACKAGE_ROOT = "app/enterprise"
 
 pkg_tar(
     name = "licenses_tar",
