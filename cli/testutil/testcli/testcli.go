@@ -164,6 +164,10 @@ type Terminal struct {
 	output *lockingbuffer.LockingBuffer
 	// File is the file used for writing to the terminal.
 	File *os.File
+
+	// copyDone is closed when the io.Copy goroutine that reads from the
+	// PTY controller (ptmx) finishes (either EOF or error).
+	copyDone chan struct{}
 }
 
 // PTY returns a pseudoterminal for use in tests.
@@ -176,12 +180,16 @@ func PTY(t *testing.T) *Terminal {
 	})
 	term := &Terminal{
 		t: t, File: tty, output: lockingbuffer.New(),
+		copyDone: make(chan struct{}),
 	}
 	w := io.Writer(term.output)
 	if *streamOutputs {
 		w = io.MultiWriter(term.output, os.Stderr)
 	}
-	go io.Copy(w, ptmx)
+	go func() {
+		defer close(term.copyDone)
+		io.Copy(w, ptmx)
+	}()
 	return term
 }
 
@@ -190,6 +198,10 @@ func (t *Terminal) Run(cmd *exec.Cmd) (int, error) {
 	cmd.Stdout = t.File
 	cmd.Stderr = t.File
 	err := cmd.Run()
+	// Close the tty so the ptmx reader gets EOF, then wait for the
+	// io.Copy goroutine to finish draining all output.
+	_ = t.File.Close()
+	<-t.copyDone
 	return cmd.ProcessState.ExitCode(), err
 }
 
