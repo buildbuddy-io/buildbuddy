@@ -10,6 +10,7 @@ go_library(
         "//proto:auditlog_go_proto",
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:cache_go_proto",
         "//proto:capability_go_proto",
         "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",

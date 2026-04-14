@@ -44,6 +44,7 @@ var (
 		buildBuddyServicePrefix + "GetTarget",
 		buildBuddyServicePrefix + "GetTargetHistory",
 		buildBuddyServicePrefix + "GetExecution",
+		buildBuddyServicePrefix + "GetExecutionDownloads",
 		buildBuddyServicePrefix + "WaitExecution",
 		buildBuddyServicePrefix + "GetZipManifest",
 		// Users do not need any particular role within their current group to be

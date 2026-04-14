@@ -161,6 +161,7 @@ ts_library(
         "//app/util:proto",
         "//app/util:rpc",
         "//app/util:shlex",
+        "//proto:cache_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:firecracker_ts_proto",
         "//proto:grpc_code_ts_proto",
