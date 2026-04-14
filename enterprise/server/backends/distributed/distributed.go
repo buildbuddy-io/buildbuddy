@@ -3,6 +3,7 @@ package distributed
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1495,6 +1496,13 @@ func (mc *multiWriteCloser) Commit() error {
 func (mc *multiWriteCloser) Close() error {
 	for peer, wc := range mc.peerClosers {
 		if err := wc.Close(); err != nil {
+			// Cancellation on the close path is benign: it happens when a
+			// writer is Closed without a successful Commit (e.g. the caller
+			// aborted mid-write), which cancels the underlying gRPC stream.
+			if status.IsCanceledError(err) || errors.Is(err, context.Canceled) {
+				mc.log.CtxDebugf(mc.ctx, "Closed peer %q writer with canceled context: %s", peer, err)
+				continue
+			}
 			mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
 		}
 	}
