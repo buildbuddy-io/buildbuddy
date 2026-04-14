@@ -1392,7 +1392,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(up{job=~\".*executor.*\"})",
+          "expr": "sum(up{job=~\".*executor.*\", job!~\"mac-executor|executor-arm64\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "linux/amd64",
