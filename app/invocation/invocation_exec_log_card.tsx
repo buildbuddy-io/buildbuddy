@@ -245,8 +245,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
           getExecutionStatus(execution).name.toLowerCase().startsWith(this.state.statusFilter)
       )
       .filter(
-        (execution) =>
-          this.state.mnemonicFilter === "all" || execution.actionMnemonic === this.state.mnemonicFilter
+        (execution) => this.state.mnemonicFilter === "all" || execution.actionMnemonic === this.state.mnemonicFilter
       );
 
     return (

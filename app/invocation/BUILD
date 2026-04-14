@@ -819,6 +819,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/select",
         "//app/errors:error_service",
