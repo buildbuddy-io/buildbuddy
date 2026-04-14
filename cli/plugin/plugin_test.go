@@ -296,8 +296,8 @@ done
 	for i := 0; i < iterations; i++ {
 		t.Run(fmt.Sprintf("iteration_%d", i), func(t *testing.T) {
 			p := &Plugin{
-				config:   &config.PluginConfig{Path: pluginDir},
-				tempDir:  t.TempDir(),
+				config:  &config.PluginConfig{Path: pluginDir},
+				tempDir: t.TempDir(),
 			}
 			p.configFile = &config.File{Path: filepath.Join(pluginDir, "buildbuddy.yaml")}
 
