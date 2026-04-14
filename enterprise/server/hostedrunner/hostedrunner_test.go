@@ -2,7 +2,9 @@ package hostedrunner
 
 import (
 	"context"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -11,11 +13,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -131,6 +137,109 @@ func TestRun_WithoutRepoURL(t *testing.T) {
 
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Equal(t, 1, len(execClient.executeRequests))
+}
+
+// getCommandFromExecRequest reads the Action and Command protos back from the
+// cache for the given execute request.
+func getCommandFromExecRequest(t *testing.T, ctx context.Context, te *testenv.TestEnv, req *executeRequest) *repb.Command {
+	t.Helper()
+	in := req.Payload.GetInstanceName()
+	df := req.Payload.GetDigestFunction()
+
+	// Attach user prefix so we can read from the same cache namespace
+	// that createAction wrote to.
+	pCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	actionRN := digest.NewCASResourceName(req.Payload.GetActionDigest(), in, df)
+	err = cachetools.ReadProtoFromCAS(pCtx, te.GetCache(), actionRN, action)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{}
+	cmdRN := digest.NewCASResourceName(action.GetCommandDigest(), in, df)
+	err = cachetools.ReadProtoFromCAS(pCtx, te.GetCache(), cmdRN, cmd)
+	require.NoError(t, err)
+
+	return cmd
+}
+
+func TestRun_BackendURLDefaults(t *testing.T) {
+	te, ctx := getEnv(t)
+
+	// Don't set events_api_url, cache_api_url, or remote_execution_api_url;
+	// the hostedrunner should fall back to grpc://localhost:<grpc_port>.
+
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+
+	cmd := getCommandFromExecRequest(t, ctx, te, execClient.executeRequests[0])
+
+	// All three backend flags should be set to the default gRPC URL.
+	var besBackend, cacheBackend, rbeBackend string
+	for _, arg := range cmd.GetArguments() {
+		switch {
+		case strings.HasPrefix(arg, "--bes_backend="):
+			besBackend = strings.TrimPrefix(arg, "--bes_backend=")
+		case strings.HasPrefix(arg, "--cache_backend="):
+			cacheBackend = strings.TrimPrefix(arg, "--cache_backend=")
+		case strings.HasPrefix(arg, "--rbe_backend="):
+			rbeBackend = strings.TrimPrefix(arg, "--rbe_backend=")
+		}
+	}
+
+	expectedURL := "grpc://localhost:1985"
+	assert.Equal(t, expectedURL, besBackend, "bes_backend should default to local gRPC port")
+	assert.Equal(t, expectedURL, cacheBackend, "cache_backend should default to local gRPC port")
+	assert.Equal(t, expectedURL, rbeBackend, "rbe_backend should default to local gRPC port")
+}
+
+func TestRun_BackendURLOverrides(t *testing.T) {
+	te, ctx := getEnv(t)
+
+	besURL, _ := url.Parse("grpc://custom-bes:9000")
+	cacheURL, _ := url.Parse("grpc://custom-cache:9000")
+	rbeURL, _ := url.Parse("grpc://custom-rbe:9000")
+	flags.Set(t, "app.events_api_url", *besURL)
+	flags.Set(t, "app.cache_api_url", *cacheURL)
+	flags.Set(t, "app.remote_execution_api_url", *rbeURL)
+
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+
+	cmd := getCommandFromExecRequest(t, ctx, te, execClient.executeRequests[0])
+
+	var besBackend, cacheBackend, rbeBackend string
+	for _, arg := range cmd.GetArguments() {
+		switch {
+		case strings.HasPrefix(arg, "--bes_backend="):
+			besBackend = strings.TrimPrefix(arg, "--bes_backend=")
+		case strings.HasPrefix(arg, "--cache_backend="):
+			cacheBackend = strings.TrimPrefix(arg, "--cache_backend=")
+		case strings.HasPrefix(arg, "--rbe_backend="):
+			rbeBackend = strings.TrimPrefix(arg, "--rbe_backend=")
+		}
+	}
+
+	assert.Equal(t, "grpc://custom-bes:9000", besBackend)
+	assert.Equal(t, "grpc://custom-cache:9000", cacheBackend)
+	assert.Equal(t, "grpc://custom-rbe:9000", rbeBackend)
 }
 
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {

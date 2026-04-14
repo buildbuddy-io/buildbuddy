@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -191,11 +192,25 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		timeout = d
 	}
 
+	defaultGRPCURL := fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort())
+	besBackend := events_api_url.String()
+	if besBackend == "" {
+		besBackend = defaultGRPCURL
+	}
+	cacheBackend := cache_api_url.String()
+	if cacheBackend == "" {
+		cacheBackend = defaultGRPCURL
+	}
+	rbeBackend := remote_exec_api_url.String()
+	if rbeBackend == "" {
+		rbeBackend = defaultGRPCURL
+	}
+
 	args := []string{
 		"./" + ci_runner_util.ExecutableName,
-		"--bes_backend=" + events_api_url.String(),
-		"--cache_backend=" + cache_api_url.String(),
-		"--rbe_backend=" + remote_exec_api_url.String(),
+		"--bes_backend=" + besBackend,
+		"--cache_backend=" + cacheBackend,
+		"--rbe_backend=" + rbeBackend,
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
 		"--invocation_id=" + invocationID,
