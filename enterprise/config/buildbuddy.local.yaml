@@ -9,6 +9,10 @@ app:
   streaming_http_enabled: true
   invocation_log_streaming_enabled: true
   dark_mode_enabled: true
+  build_buddy_url: "http://localhost:8080"
+  events_api_url: "grpc://localhost:1985"
+  cache_api_url: "grpc://localhost:1985"
+  remote_execution_api_url: "grpc://localhost:1985"
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 #olap_database:
