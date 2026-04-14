@@ -3854,6 +3854,14 @@ var (
 		CompressionType,
 	})
 
+	ByteStreamProxyChunkedReadLocalWriteBackFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_local_write_back_failures",
+		Help:      "Number of failures while writing remotely fetched chunks back to the local cache during chunked reads.",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
 	ByteStreamProxyChunkedReadFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
