@@ -60,6 +60,7 @@ var (
 	// Make sure to also set -api_key for proper auth. The API key must match
 	// the group ID that owns the snapshot.
 	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a remote snapshot key that the VM should be resumed from.")
+	disableNetworking    = flag.Bool("disable_networking", false, "Disable guest networking and skip host-side Firecracker network setup.")
 
 	tty  = flag.Bool("tty", false, "Enable debug terminal. This doesn't always work when resuming from snapshot.")
 	repl = flag.Bool("repl", false, "Start a basic REPL for running bash commands with Exec().")
@@ -179,8 +180,10 @@ func run(ctx context.Context, env environment.Env) error {
 	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to clean stale VBD mounts: %s", err)
 	}
-	if err := networking.Configure(ctx); err != nil {
-		return status.WrapError(err, "configure networking")
+	if !*disableNetworking {
+		if err := networking.Configure(ctx); err != nil {
+			return status.WrapError(err, "configure networking")
+		}
 	}
 
 	if *apiKey != "" {
@@ -200,6 +203,10 @@ func run(ctx context.Context, env environment.Env) error {
 	if *forceVMIdx != -1 {
 		vmIdx = *forceVMIdx
 	}
+	networkMode := fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+	if *disableNetworking {
+		networkMode = fcpb.NetworkMode_NETWORK_MODE_OFF
+	}
 	cfg, err := firecracker.GetExecutorConfig(ctx, "/tmp/remote_build/", *snapshotDir)
 	if err != nil {
 		return status.WrapError(err, "get executor config")
@@ -209,7 +216,7 @@ func run(ctx context.Context, env environment.Env) error {
 			NumCpus:           1,
 			MemSizeMb:         2500,
 			ScratchDiskSizeMb: 100,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+			NetworkMode:       networkMode,
 		},
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
