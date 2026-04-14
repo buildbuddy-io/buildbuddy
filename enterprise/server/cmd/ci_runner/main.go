@@ -2259,6 +2259,10 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	defer f.Close()
 
 	lines := []string{
+		// ci_runner tasks intentionally preserve Bazel server state across runs.
+		// Disable idle shutdown so a recycled runner doesn't resume a Bazel server
+		// whose idle timer is already expired.
+		"startup --max_idle_secs=0",
 		"common --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		"common --build_metadata=PARENT_RUN_ID=" + runID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event

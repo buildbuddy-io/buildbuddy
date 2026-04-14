@@ -227,19 +227,36 @@ type result struct {
 	DoNotRecycle bool
 }
 
+type invokeRunnerOpts struct {
+	Env               []string
+	WorkDir           string
+	BazelStartupFlags string
+}
+
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
+	return invokeRunnerWithOpts(t, args, invokeRunnerOpts{
+		Env:     env,
+		WorkDir: workDir,
+	})
+}
+
+func invokeRunnerWithOpts(t *testing.T, args []string, opts invokeRunnerOpts) *result {
 	binPath, err := runfiles.Rlocation(ciRunnerRunfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
+	startupFlags := bazelStartupFlags
+	if opts.BazelStartupFlags != "" {
+		startupFlags = opts.BazelStartupFlags
+	}
 	args = append([]string{
 		"--bazel_command=" + testbazel.BinaryPath(t),
-		"--bazel_startup_flags=" + bazelStartupFlags,
+		"--bazel_startup_flags=" + startupFlags,
 	}, args...)
 
 	cmd := exec.Command(binPath, args...)
-	cmd.Dir = workDir
-	cmd.Env = env
+	cmd.Dir = opts.WorkDir
+	cmd.Env = opts.Env
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := -1
 	signal := syscall.Signal(-1)
@@ -270,7 +287,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 		ExitCode:      exitCode,
 		Signal:        signal,
 		InvocationIDs: invocationIDs,
-		DoNotRecycle:  testfs.Exists(t, workDir, ".BUILDBUDDY_DO_NOT_RECYCLE"),
+		DoNotRecycle:  testfs.Exists(t, opts.WorkDir, ".BUILDBUDDY_DO_NOT_RECYCLE"),
 	}
 }
 
@@ -556,21 +573,10 @@ actions:
 			for _, sf := range tc.expectedStartupOptions {
 				missingStartupFlags[sf] = struct{}{}
 			}
-
-			for _, cl := range innerInvocation.StructuredCommandLine {
-				for _, s := range cl.Sections {
-					if s.SectionLabel == "startup options" {
-						optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
-						if !ok {
-							continue
-						}
-						for _, o := range optionList.OptionList.Option {
-							for _, so := range tc.expectedStartupOptions {
-								if strings.Contains(o.CombinedForm, so) {
-									delete(missingStartupFlags, so)
-								}
-							}
-						}
+			for _, o := range findStructuredCommandLineOptions(t, innerInvocation, "original", "startup options") {
+				for so := range missingStartupFlags {
+					if strings.Contains(o.CombinedForm, so) {
+						delete(missingStartupFlags, so)
 					}
 				}
 			}
@@ -586,6 +592,25 @@ actions:
 			}
 		})
 	}
+}
+
+func findStructuredCommandLineOptions(t *testing.T, inv *inpb.Invocation, label, section string) []*clpb.Option {
+	t.Helper()
+	for _, cl := range inv.StructuredCommandLine {
+		if cl.GetCommandLineLabel() != label {
+			continue
+		}
+		for _, s := range cl.GetSections() {
+			if s.GetSectionLabel() != section {
+				continue
+			}
+			optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
+			require.Truef(t, ok, "structured command line %q section %q was not an option list", label, section)
+			return optionList.OptionList.GetOption()
+		}
+	}
+	require.FailNowf(t, "structured command line section not found", "label=%q section=%q command_lines=%v", label, section, inv.StructuredCommandLine)
+	return nil
 }
 
 func TestCIRunner_StartupOptionsDontRestartBazelServer(t *testing.T) {
@@ -625,6 +650,65 @@ actions:
 	// Check that the bazel server wasn't restarted.
 	runnerInvocation := getRunnerInvocation(t, app, result)
 	require.NotContains(t, runnerInvocation.ConsoleBuffer, "Running Bazel server needs to be killed, because the startup options are different.")
+}
+
+func TestCIRunner_SetsMaxIdleSecsToZero(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	workspaceContents := map[string]string{
+		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+		"print_args.sh": "echo 'args: {{' $@ '}}'",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel build //:print_args
+`,
+	}
+
+	repoPath, _ := makeGitRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test action",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// This needs a dedicated test because the shared ci_runner harness injects
+	// --max_idle_secs=5, which would override the generated rc's
+	// startup --max_idle_secs=0 and mask the canonical startup option we want
+	// to assert here. Keep workflow_id so the action_name path still publishes
+	// a runner invocation to BES. Since ci_runner now disables idle shutdown for
+	// all Bazel runs, clean it up explicitly so the local Bazel server does not
+	// stay alive after the test.
+	startupFlags := "--noblock_for_lock"
+	t.Cleanup(func() {
+		shutdownFlags := append(append([]string{}, runnerFlags...), "--shutdown_and_exit")
+		result := invokeRunnerWithOpts(t, shutdownFlags, invokeRunnerOpts{
+			Env:               []string{},
+			WorkDir:           wsPath,
+			BazelStartupFlags: startupFlags,
+		})
+		require.Equalf(t, 0, result.ExitCode, "shutdown runner returned exit code %d\noutput:\n%s", result.ExitCode, result.Output)
+	})
+
+	result := invokeRunnerWithOpts(t, runnerFlags, invokeRunnerOpts{
+		Env:               []string{},
+		WorkDir:           wsPath,
+		BazelStartupFlags: startupFlags,
+	})
+	checkRunnerResult(t, result)
+
+	canonicalStartupOptions := findStructuredCommandLineOptions(t, getInnerInvocation(t, app, result), "canonical", "startup options")
+	foundMaxIdleSecs := false
+	for _, option := range canonicalStartupOptions {
+		if option.GetOptionName() == "max_idle_secs" && option.GetOptionValue() == "0" {
+			foundMaxIdleSecs = true
+			break
+		}
+	}
+	require.Truef(t, foundMaxIdleSecs, "canonical startup options did not include --max_idle_secs=0: %v", canonicalStartupOptions)
 }
 
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
