@@ -1392,7 +1392,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "\nsum(up{job=~\".*executor.*\"})",
+          "expr": "sum(up{job=~\".*executor.*\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "linux/amd64",
