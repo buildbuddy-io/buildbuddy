@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -170,7 +171,7 @@ type envOpts struct {
 	runProxy         bool
 }
 
-func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
+func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
 	// Clean up stale veth devices from previous test runs that were killed
 	// without cleanup (e.g. SIGKILL from the test runner).
 	flags.Set(t, "executor.cleanup_stale_veth_devices", true)
@@ -292,7 +293,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	return env
 }
 
-func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
+func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t testing.TB) {
 	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
@@ -301,7 +302,7 @@ func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
-func executorRootDir(t *testing.T) string {
+func executorRootDir(t testing.TB) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
@@ -320,7 +321,7 @@ func executorRootDir(t *testing.T) string {
 	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
 }
 
-func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
+func getExecutorConfig(t testing.TB) *firecracker.ExecutorConfig {
 	root := executorRootDir(t)
 	buildRoot := filepath.Join(root, "build")
 	cacheRoot := filepath.Join(root, "cache")
@@ -3909,6 +3910,86 @@ func TestFirecrackerStressIO(t *testing.T) {
 	}
 	err := eg.Wait()
 	assert.NoError(t, err)
+}
+
+func Benchmark_FullSnapshotPause(b *testing.B) {
+	for _, memorySizeMb := range []int64{1000, 2000, 4000, 8000} {
+		for _, cowExportEnabled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("memory_size_%d_mb_cow_export_%t", memorySizeMb, cowExportEnabled), func(b *testing.B) {
+				flags.Set(b, "executor.firecracker_write_full_snapshot_to_cow", cowExportEnabled)
+				ctx := context.Background()
+				env := getTestEnv(ctx, b, envOpts{})
+				rootDir := testfs.MakeTempDir(b)
+				cfg := getExecutorConfig(b)
+
+				var containersToCleanup []*firecracker.FirecrackerContainer
+				b.Cleanup(func() {
+					for _, vm := range containersToCleanup {
+						err := vm.Remove(ctx)
+						assert.NoError(b, err)
+					}
+				})
+
+				opts := firecracker.ContainerOpts{
+					ContainerImage: ubuntuImage,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:            2,
+						MemSizeMb:          memorySizeMb,
+						NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+						ScratchDiskSizeMb:  500,
+						GuestKernelVersion: cfg.GuestKernelVersion,
+						FirecrackerVersion: cfg.FirecrackerVersion,
+						GuestApiVersion:    cfg.GuestAPIVersion,
+					},
+					ExecutorConfig: cfg,
+				}
+
+				// Don't try to write the full memory size of the VM, or it will OOM.
+				mbToWrite := int(.8 * float64(memorySizeMb))
+				cmd := &repb.Command{
+					// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
+					Arguments: []string{"sh", "-c", `
+mkdir /tmp/randomdata && mount -t tmpfs -o size=` + strconv.Itoa(mbToWrite) + `M tmpfs /tmp/randomdata
+dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=` + strconv.Itoa(mbToWrite) + `
+free -h
+		`},
+				}
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					task := &repb.ExecutionTask{
+						Command: &repb.Command{
+							Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+								{Name: "recycle-runner", Value: "true"},
+								// This is testing full snapshot generation, so ensure there's no snapshot sharing between runs.
+								{Name: "salt", Value: fmt.Sprintf("%d_%v_%d", memorySizeMb, cowExportEnabled, i)},
+							}},
+							Arguments: []string{"./buildbuddy_ci_runner"},
+						},
+					}
+
+					workDir := testfs.MakeDirAll(b, rootDir, fmt.Sprintf("work%d", i))
+					opts.ActionWorkingDirectory = workDir
+					c, err := firecracker.NewContainer(ctx, env, task, opts)
+					require.NoError(b, err)
+					containersToCleanup = append(containersToCleanup, c)
+
+					err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+					require.NoError(b, err)
+					err = c.Create(ctx, opts.ActionWorkingDirectory)
+					require.NoError(b, err)
+					res := c.Exec(ctx, cmd, nil /*=stdio*/)
+					require.NoError(b, res.Error)
+
+					b.StartTimer()
+					err = c.Pause(ctx)
+					b.StopTimer()
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
 }
 
 func TestBazelBuild(t *testing.T) {

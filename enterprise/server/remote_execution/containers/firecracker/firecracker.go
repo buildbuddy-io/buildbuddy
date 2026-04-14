@@ -3302,8 +3302,12 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName)
 
-	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
-		return status.WrapError(err, "failed to remove existing memory snapshot")
+	// If exporting the snapshot to a COWstore, the mem snapshot path points to a mounted VBD.
+	// Don't remove that, or the export will fail.
+	if c.memoryVBD == nil {
+		if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
+			return status.WrapError(err, "failed to remove existing memory snapshot")
+		}
 	}
 	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
 		return status.WrapError(err, "failed to remove existing VM state snapshot")
