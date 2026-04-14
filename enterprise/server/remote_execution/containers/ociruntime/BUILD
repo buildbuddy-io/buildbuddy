@@ -111,7 +111,6 @@ go_test(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/real_environment",
-        "//server/testutil/quarantine",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
