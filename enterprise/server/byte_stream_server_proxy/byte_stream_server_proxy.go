@@ -697,7 +697,11 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
 	localErr := s.local.Write(forwarding)
 
-	if forwarding.recvErr != nil {
+	// Receiving an io.EOF indicates the sender closed the stream early (due to
+	// an error or an AlreadyExists short-circuit with an old Bazel client) not
+	// a real failure. Try to send all frames we've received through to the
+	// remote and return whatever CloseAndRecv() returns below.
+	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
 	if localErr != nil {
@@ -708,18 +712,11 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		return forwarding.remoteSendErr
 	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
-		// Local write returned, but remoteSendErr != EOF so we need to forward
-		// the rest.
-		if localErr == nil {
-			log.CtxInfo(ctx, "local write done but remote write is not")
-		}
+		// If the local write encountered an error, try to send the remaining
+		// chunks to the remote.
 		if err := flushToRemote(stream, remoteStream); err != nil {
 			return err
 		}
-	}
-	if localErr == nil && !forwarding.localFinished {
-		// Only log this if the local write didn't fail.
-		log.CtxInfo(ctx, "remote write done but local write is not")
 	}
 	resp, err := remoteStream.CloseAndRecv()
 	if err != nil {
