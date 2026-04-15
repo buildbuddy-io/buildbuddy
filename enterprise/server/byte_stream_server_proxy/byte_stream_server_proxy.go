@@ -697,7 +697,10 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
 	localErr := s.local.Write(forwarding)
 
-	if forwarding.recvErr != nil {
+	// In gRPC streaming, io.EOF from Recv() is the normal end-of-stream signal.
+	// Ignore it here so we can forward any frames already received to the
+	// remote and return whatever CloseAndRecv() returns below.
+	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
 	if localErr != nil {
@@ -708,18 +711,11 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		return forwarding.remoteSendErr
 	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
-		// Local write returned, but remoteSendErr != EOF so we need to forward
-		// the rest.
-		if localErr == nil {
-			log.CtxInfo(ctx, "local write done but remote write is not")
-		}
+		// If the remote write is still open, flush any remaining requests to
+		// the remote.
 		if err := flushToRemote(stream, remoteStream); err != nil {
 			return err
 		}
-	}
-	if localErr == nil && !forwarding.localFinished {
-		// Only log this if the local write didn't fail.
-		log.CtxInfo(ctx, "remote write done but local write is not")
 	}
 	resp, err := remoteStream.CloseAndRecv()
 	if err != nil {
