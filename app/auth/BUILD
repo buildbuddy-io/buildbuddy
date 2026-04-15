@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,6 +18,15 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "auth_service_test",
+    srcs = ["auth_service_test.ts"],
+    deps = [
+        ":auth_service",
+        "//:node_modules/tslib",
     ],
 )
 

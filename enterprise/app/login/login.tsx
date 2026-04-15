@@ -135,6 +135,10 @@ export default class LoginComponent extends React.Component<Props, State> {
     );
   }
 
+  shouldShowOIDCLogin() {
+    return !this.state.defaultToSSO && !capabilities.config.disableOidcLogin;
+  }
+
   render() {
     if (this.isOrgSpecific() && this.state.loading) {
       return (
@@ -149,17 +153,17 @@ export default class LoginComponent extends React.Component<Props, State> {
         <div className="container">
           <div className="login-box">
             <div className="login-buttons">
-              {!this.isGoogleConfigured() && !this.isOktaConfigured() && (
+              {this.shouldShowOIDCLogin() && !this.isGoogleConfigured() && !this.isOktaConfigured() && (
                 <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
                   <User /> Continue
                 </button>
               )}
-              {this.isGoogleConfigured() && !this.state.defaultToSSO && (
+              {this.shouldShowOIDCLogin() && this.isGoogleConfigured() && (
                 <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
                   <GoogleIcon /> Continue with Google
                 </button>
               )}
-              {this.isOktaConfigured() && !this.state.defaultToSSO && (
+              {this.shouldShowOIDCLogin() && this.isOktaConfigured() && (
                 <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
                   <User /> Continue with Okta
                 </button>
