@@ -63,7 +63,16 @@ type ociFetcherServer struct {
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache.
-	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
+	// The leader returns blobFetchResult so waiters can read from
+	// cache without an additional action cache metadata lookup.
+	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, blobFetchResult]
+}
+
+// blobFetchResult holds metadata from the singleflight leader's
+// registry fetch so that waiters can stream from cache without
+// a separate action cache lookup for blob metadata.
+type blobFetchResult struct {
+	contentLength int64
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -166,9 +175,10 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	start := time.Now()
 	key := ocicache.NewBlobFetchKey(repo, hash, req.GetCredentials())
 	isLeader := false
-	_, _, err = s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
+	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		return struct{}{}, s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 
 	if isLeader {
@@ -182,8 +192,11 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	// This request had to wait for the leader to complete.
-	// Stream from cache.
-	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
+	// Stream from cache using the content length from the leader,
+	// avoiding an action cache metadata lookup that can fail due to
+	// distributed cache propagation delays.
+	w := &grpcStreamWriter{stream: stream}
+	err = ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, result.contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
@@ -437,9 +450,11 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
 }
 
-// fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream registry, streams it to the
-// response, and writes it to the cache simultaneously using read-through caching.
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+// fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
+// registry, streams it to the response, and writes it to the cache
+// simultaneously using read-through caching.
+// It returns the content length of the blob (0 if metadata was unavailable).
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -470,7 +485,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return layer.Compressed()
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// streamAndClose streams from reader and closes it when done.
@@ -481,16 +496,16 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 
 	// Skip caching when metadata is unavailable.
 	if mediaType == "" || size == 0 {
-		return streamAndClose(rc)
+		return 0, streamAndClose(rc)
 	}
 
 	// cachedRC wraps rc and takes ownership (closes it).
 	cachedRC, err := ocicache.NewBlobReadThroughCacher(ctx, rc, s.bsClient, s.acClient, repo, hash, mediaType, size)
 	if err != nil {
 		log.CtxWarningf(ctx, "Error creating read-through cacher: %s", err)
-		return streamAndClose(rc)
+		return size, streamAndClose(rc)
 	}
-	return streamAndClose(cachedRC)
+	return size, streamAndClose(cachedRC)
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.
