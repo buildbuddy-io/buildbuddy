@@ -26,7 +26,7 @@
     "express": "4.21.2",
     "get-intrinsic": "1.2.4",
     "lucide-react": "^0.462.0",
-    "path-to-regexp": "0.1.12",
+    "path-to-regexp": "0.1.13",
     "prism-react-renderer": "^2.4.0",
     "prop-types": "^15.8.1",
     "react": "^18.3.1",
