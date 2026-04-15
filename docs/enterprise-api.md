@@ -8,6 +8,8 @@ The BuildBuddy API let's you programmatically obtain information about your Baze
 
 Requests can be made via JSON or using Protobuf. The examples below are using the JSON API. For a full overview of the service, you can view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
 
+If you're configuring a coding agent or MCP client, see the [BuildBuddy MCP Server docs](enterprise-mcp.md).
+
 ## GetInvocation
 
 The `GetInvocation` endpoint allows you to fetch invocations associated with a commit SHA or invocation ID. View full [Invocation proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/invocation.proto).
