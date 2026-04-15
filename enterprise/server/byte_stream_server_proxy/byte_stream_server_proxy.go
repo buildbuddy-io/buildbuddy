@@ -712,8 +712,8 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		return forwarding.remoteSendErr
 	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
-		// If the local write encountered an error, try to send the remaining
-		// chunks to the remote.
+		// If the remote write is still open, flush any remaining requests to
+		// the remote.
 		if err := flushToRemote(stream, remoteStream); err != nil {
 			return err
 		}
