@@ -4,10 +4,17 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Fri, 10 Apr 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 15 Apr 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[BuildBuddy MCP server]]></title>
+            <link>https://www.buildbuddy.io/changelog/buildbuddy-mcp-server</link>
+            <guid>https://www.buildbuddy.io/changelog/buildbuddy-mcp-server</guid>
+            <pubDate>Wed, 15 Apr 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[BuildBuddy now exposes an MCP endpoint for coding agents and other]]></description>
+        </item>
         <item>
             <title><![CDATA[Improved handling of short-lived secrets in remote execution]]></title>
             <link>https://www.buildbuddy.io/changelog/secret-env-overrides</link>

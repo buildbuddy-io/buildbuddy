@@ -2,11 +2,22 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/changelog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-04-10T10:00:00.000Z</updated>
+    <updated>2026-04-15T10:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[BuildBuddy MCP server]]></title>
+        <id>https://www.buildbuddy.io/changelog/buildbuddy-mcp-server</id>
+        <link href="https://www.buildbuddy.io/changelog/buildbuddy-mcp-server"/>
+        <updated>2026-04-15T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[BuildBuddy now exposes an MCP endpoint for coding agents and other]]></summary>
+        <author>
+            <name>Brandon Duffany</name>
+            <uri>https://www.linkedin.com/in/brandon-duffany-39b7217a</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Improved handling of short-lived secrets in remote execution]]></title>
         <id>https://www.buildbuddy.io/changelog/secret-env-overrides</id>
