@@ -888,7 +888,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
 
-		poolBuf := s.bufPool.Get(int64(len(chunkData)))
+		poolBuf := s.bufPool.Get(compression.ZstdCompressBound(int64(len(chunkData))))
 		_, compressSpn := tracing.StartNamedSpan(chunkCtx, "CompressZstd")
 		compressedData := compression.CompressZstd(poolBuf, chunkData)
 		compressSpn.End()
