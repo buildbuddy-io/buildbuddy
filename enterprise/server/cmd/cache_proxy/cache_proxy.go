@@ -218,7 +218,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapError(err, "failed to create traffic stats handler")
 	}
-	// Add the auth-headers propagating interceptor.
+	// Add metadata-propagating interceptors for configured request headers.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
