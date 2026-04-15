@@ -1,7 +1,7 @@
 ---
 id: enterprise-mcp
-title: MCP Server
-sidebar_label: MCP Server
+title: BuildBuddy MCP server
+sidebar_label: Enterprise MCP
 ---
 
 BuildBuddy's MCP server provides a suite of tools that enable agents to
