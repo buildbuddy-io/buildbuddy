@@ -699,8 +699,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 
 	// In gRPC streaming, io.EOF from Recv() is the normal end-of-stream signal.
 	// Ignore it here so we can forward any frames already received to the
-	// remote and return whatever CloseAndRecv() reports below, including cases
-	// like an AlreadyExists short-circuit with an old Bazel client.
+	// remote and return whatever CloseAndRecv() returns below.
 	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
