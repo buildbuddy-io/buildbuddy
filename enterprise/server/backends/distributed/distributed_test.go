@@ -2906,3 +2906,27 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 		return len(dc2.consistentHash.GetItems()) == 2
 	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
 }
+
+func TestDedupeBackfillsPerDestination(t *testing.T) {
+	rn1, _ := testdigest.RandomCASResourceBuf(t, 100)
+	rn2, _ := testdigest.RandomCASResourceBuf(t, 100)
+
+	backfills := []*backfillOrder{
+		{r: rn1, source: "peer-a", dest: "peer-b"},
+		{r: rn1, source: "peer-a", dest: "peer-b"},
+		{r: rn1, source: "peer-a", dest: "peer-c"},
+		{r: rn2, source: "peer-a", dest: "peer-b"},
+	}
+
+	deduped := dedupeBackfills(backfills)
+	got := make([]string, 0, len(deduped))
+	for _, bf := range deduped {
+		got = append(got, fmt.Sprintf("%s:%s", bf.r.GetDigest().GetHash(), bf.dest))
+	}
+
+	assert.ElementsMatch(t, []string{
+		fmt.Sprintf("%s:%s", rn1.GetDigest().GetHash(), "peer-b"),
+		fmt.Sprintf("%s:%s", rn1.GetDigest().GetHash(), "peer-c"),
+		fmt.Sprintf("%s:%s", rn2.GetDigest().GetHash(), "peer-b"),
+	}, got)
+}
