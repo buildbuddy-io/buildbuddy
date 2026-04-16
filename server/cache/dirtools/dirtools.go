@@ -43,7 +43,7 @@ import (
 
 var (
 	enableDownloadCompression   = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	recordInputDownloadMetadata = flag.Bool("executor.record_input_download_metadata", false, "If true, record and report metadata describing which action inputs were fetched from remote CAS.")
+	recordInputDownloadMetadata = flag.Bool("executor.record_input_download_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.")
 	linkParallelism             = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
 	inputTreeSetupParallelism   = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
