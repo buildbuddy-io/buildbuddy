@@ -314,9 +314,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		var eg errgroup.Group
 		for _, ex := range rsp.Execution {
 			ex := ex
-			// The execute response is only cached once the execution
-			// completes, so skip the lookup for in-progress executions
-			// to avoid unnecessary reads from the distributed cache.
+			// The execute response is only cached once the execution completes.
 			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
 				continue
 			}
