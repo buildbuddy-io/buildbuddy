@@ -251,12 +251,14 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
-			realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-				return fc.Close()
-			})
+		fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+		if err != nil {
+			log.Fatalf("Error initializing file cache: %s", err)
 		}
+		realEnv.SetFileCache(fc)
+		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			return fc.Close()
+		})
 	}
 
 	log.Infof("Connecting to app target: %s", *appTarget)
