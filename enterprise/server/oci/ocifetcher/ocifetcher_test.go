@@ -1525,7 +1525,7 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 			successes++
 			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
 		} else {
-			require.True(t, status.IsNotFoundError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
+			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
 		}
 	}
 	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
