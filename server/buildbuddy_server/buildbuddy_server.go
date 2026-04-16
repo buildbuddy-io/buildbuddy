@@ -1502,6 +1502,15 @@ func (s *BuildBuddyServer) GetTree(req *capb.GetTreeRequest, stream bbspb.BuildB
 	}, &getTreeStreamAdapter{BuildBuddyService_GetTreeServer: stream})
 }
 
+// GetExecutionDownloads proxies paginated execution-download lookups to the
+// configured execution service.
+func (s *BuildBuddyServer) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecutionDownloads(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
 	return directory_size.GetTreeDirectorySizes(ctx, s.env, req)
 }

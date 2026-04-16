@@ -474,7 +474,8 @@
   width: 60px;
 }
 
-.cache-requests-card .download-button {
+.cache-requests-card .download-button,
+.invocation-action-card .download-button {
   width: 18px;
   height: 18px;
   padding: 4px;
@@ -484,7 +485,8 @@
   cursor: pointer;
 }
 
-.cache-requests-card .download-button:hover {
+.cache-requests-card .download-button:hover,
+.invocation-action-card .download-button:hover {
   stroke: var(--color-light-blue-500);
   background: var(--color-bg-hover);
 }
@@ -765,6 +767,108 @@
 
 .action-section .server-log-title {
   align-self: center;
+}
+
+.action-downloads {
+  width: 100%;
+}
+
+.action-downloads-summary {
+  margin-top: 2px;
+}
+
+.action-downloads-loading,
+.action-downloads-empty {
+  color: var(--color-text-label);
+}
+
+.action-downloads-table-container {
+  margin-top: 8px;
+  margin-bottom: 12px;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.action-downloads-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+.action-downloads-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--color-border-primary);
+}
+
+.action-downloads-table tbody td {
+  padding: 4px 8px;
+  vertical-align: top;
+  background: var(--color-bg-primary);
+}
+
+.action-downloads-table tbody tr + tr td {
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.action-downloads-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.action-downloads-loading-row td {
+  padding: 8px;
+  text-align: center;
+}
+
+.action-downloads-digest,
+.action-downloads-size {
+  white-space: nowrap;
+}
+
+.action-downloads-size {
+  width: 72px;
+  font-family: var(--monospace-font-family);
+  color: var(--color-text-primary);
+}
+
+.action-downloads-path {
+  width: 100%;
+  line-height: 1.4;
+}
+
+.action-downloads-path-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.action-downloads-path-text {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.action-downloads-download-link {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.action-downloads-footer {
+  margin-top: 8px;
+}
+
+.action-downloads-load-more {
+  font-size: 14px;
 }
 
 .cache-sections {

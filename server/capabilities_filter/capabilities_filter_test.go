@@ -107,6 +107,12 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:   true,
 		},
 		{
+			Name:      "UnrestrictedRPC_ExecutionDownloads_Anonymous_Allowed",
+			RPC:       buildBuddyServicePrefix + "GetExecutionDownloads",
+			Anonymous: true,
+			Allowed:   true,
+		},
+		{
 			Name:         "UnrestrictedRPC_NonAdmin_Allowed",
 			RPC:          buildBuddyServicePrefix + "GetInvocation",
 			Capabilities: []cappb.Capability{},
