@@ -1008,10 +1008,11 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	seen := make(map[string]struct{}, len(backfills))
 	for _, bf := range backfills {
 		d := bf.r.GetDigest()
-		if _, ok := seen[d.GetHash()]; ok {
+		key := d.GetHash() + "\x00" + bf.dest
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[d.GetHash()] = struct{}{}
+		seen[key] = struct{}{}
 		deduped = append(deduped, bf)
 	}
 	return deduped
