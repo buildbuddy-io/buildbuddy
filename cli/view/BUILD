@@ -12,6 +12,8 @@ go_library(
         "//cli/login",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/util/grpc_client",
         "@org_golang_google_grpc//metadata",
     ],

@@ -15,6 +15,8 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 var (
@@ -90,18 +92,48 @@ func HandleView(args []string) (exitCode int, err error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	resp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+	hasRunLogs, err := hasRunLogs(ctx, bbClient, invocationID)
+	if err != nil {
+		return -1, fmt.Errorf("failed to check if invocation has run logs: %w", err)
+	}
+
+	req := &elpb.GetEventLogChunkRequest{
 		InvocationId: invocationID,
 		MinLines:     int32(*lines),
-	})
+	}
+	header := "BUILD LOGS"
+	// If the invocation has run logs, the build must have been successful. Only print the run logs in this case.
+	if hasRunLogs {
+		req.Type = elpb.LogType_RUN_LOG
+		header = "RUN LOGS"
+	}
+
+	resp, err := bbClient.GetEventLogChunk(ctx, req)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get log chunk: %w", err)
 	}
 
 	// Print the log chunk
 	if len(resp.Buffer) > 0 {
+		fmt.Printf("===== %s =====\n", header)
 		fmt.Print(string(resp.Buffer))
 	}
 
 	return 0, nil
+}
+
+func hasRunLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) (bool, error) {
+	resp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: invocationID,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(resp.GetInvocation()) == 0 {
+		return false, fmt.Errorf("invocation %s not found", invocationID)
+	}
+	inv := resp.GetInvocation()[0]
+	return inv.GetRunStatus() != inspb.OverallStatus_UNKNOWN_OVERALL_STATUS, nil
 }
