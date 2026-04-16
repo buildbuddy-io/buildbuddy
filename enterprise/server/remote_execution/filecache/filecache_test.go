@@ -180,6 +180,260 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	}
 }
 
+func TestFileCacheSharedDirectoryAcrossGroups(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	sharedDirectoryCtx1 := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+	sharedDirectoryCtx2 := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+	otherSharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "other_images")
+
+	normalPath := writeFileContent(t, baseDir, "normal/file", "normal-content", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+	node := nodeFromString("same-logical-key", false)
+
+	// Seed both a group-local entry and a shared ext4_images entry with the
+	// same logical filecache key.
+	require.NoError(t, fc.AddFile(group1Ctx, node, normalPath))
+	require.NoError(t, fc.AddFile(sharedDirectoryCtx1, node, sharedPath))
+
+	// The shared ext4_images entry does not make the same digest visible via
+	// another group's namespace.
+	require.True(t, fc.ContainsFile(group1Ctx, node))
+	require.False(t, fc.ContainsFile(group2Ctx, node))
+
+	normalLinkPath := filepath.Join(baseDir, "normal-link")
+	require.True(t, fc.FastLinkFile(group1Ctx, node, normalLinkPath))
+	assertFileContents(t, normalLinkPath, "normal-content")
+
+	group2MissPath := filepath.Join(baseDir, "group2-miss-link")
+	require.False(t, fc.FastLinkFile(group2Ctx, node, group2MissPath))
+	assert.NoFileExists(t, group2MissPath)
+
+	// Any group should be able to access the entry when looking it up via
+	// ext4_images.
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx1, node))
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx2, node))
+
+	sharedLinkPath1 := filepath.Join(baseDir, "shared-link-1")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx1, node, sharedLinkPath1))
+	assertFileContents(t, sharedLinkPath1, "shared-content")
+
+	sharedLinkPath2 := filepath.Join(baseDir, "shared-link-2")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx2, node, sharedLinkPath2))
+	assertFileContents(t, sharedLinkPath2, "shared-content")
+
+	// Other shared directories should not see ext4_images entries.
+	require.False(t, fc.ContainsFile(otherSharedDirectoryCtx, node))
+
+	// Open should respect the same namespace boundaries as linking.
+	_, err = fc.Open(group2Ctx, node)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected non-shared group access to miss")
+
+	f, err := fc.Open(sharedDirectoryCtx2, node)
+	require.NoError(t, err)
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "shared-content", string(data))
+}
+
+func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+	node := nodeFromString("shared-only-key", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+
+	// Seed the cache with a shared entry before recreating the filecache.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+		require.NoError(t, fc.AddFile(sharedDirectoryCtx, node, sharedPath))
+		require.NoError(t, fc.Close())
+	}
+	// Reopen the filecache and verify the shared entry is visible across groups.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		t.Cleanup(func() { fc.Close() })
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+
+		require.False(t, fc.ContainsFile(group2Ctx, node))
+		require.True(t, fc.ContainsFile(sharedDirectoryCtx, node))
+
+		missPath := filepath.Join(baseDir, "group2-link")
+		require.False(t, fc.FastLinkFile(group2Ctx, node, missPath))
+		assert.NoFileExists(t, missPath)
+
+		sharedLinkPath := filepath.Join(baseDir, "shared-link")
+		require.True(t, fc.FastLinkFile(sharedDirectoryCtx, node, sharedLinkPath))
+		assertFileContents(t, sharedLinkPath, "shared-content")
+
+		f, err := fc.Open(sharedDirectoryCtx, node)
+		require.NoError(t, err)
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		require.NoError(t, err)
+		require.Equal(t, "shared-content", string(data))
+	}
+}
+
+func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+
+	tests := []struct {
+		name                    string
+		sharedDirName           string
+		startupDir              string
+		unexpectedSharedDirName string
+	}{
+		{
+			name:          "empty",
+			sharedDirName: "",
+			startupDir:    "_SHARED_",
+		},
+		{
+			name:          "dot",
+			sharedDirName: ".",
+			startupDir:    "_SHARED_.",
+		},
+		{
+			name:          "dotdot",
+			sharedDirName: "..",
+			startupDir:    "_SHARED_..",
+		},
+		{
+			name:          "anon",
+			sharedDirName: "ANON",
+			startupDir:    "_SHARED_ANON",
+		},
+		{
+			name:          "group_prefix",
+			sharedDirName: "GR_invalid",
+			startupDir:    "_SHARED_GR_invalid",
+		},
+		{
+			name:          "shared_prefix",
+			sharedDirName: "_SHARED_ext4_images",
+			startupDir:    "_SHARED__SHARED_ext4_images",
+		},
+		{
+			name:                    "forward_slash",
+			sharedDirName:           "ext4/images",
+			startupDir:              filepath.Join("_SHARED_ext4", "images"),
+			unexpectedSharedDirName: "ext4",
+		},
+		{
+			name:          "backslash",
+			sharedDirName: `ext4\images`,
+			startupDir:    "_SHARED_ext4\\images",
+		},
+	}
+
+	// Seed malformed shared-directory layouts on disk before startup scanning.
+	for _, test := range tests {
+		node := nodeFromString("invalid-shared-"+test.name, false)
+		writeFileContent(
+			t,
+			fcDir,
+			filepath.Join(test.startupDir, node.GetDigest().GetHash()),
+			"startup-"+test.name,
+			false,
+		)
+	}
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node := nodeFromString("invalid-shared-"+test.name, false)
+			invalidSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.sharedDirName)
+
+			// Startup scanning should ignore the malformed on-disk entries
+			// completely, regardless of whether lookups use the group's default
+			// namespace or the invalid shared-directory context.
+			require.False(t, fc.ContainsFile(group1Ctx, node))
+			require.False(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath := filepath.Join(baseDir, test.name, "group1-startup-link")
+			require.False(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assert.NoFileExists(t, group1LinkPath)
+
+			invalidLinkPath := filepath.Join(baseDir, test.name, "invalid-startup-link")
+			require.False(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assert.NoFileExists(t, invalidLinkPath)
+
+			_, err := fc.Open(group1Ctx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected group lookup to miss for invalid startup directory")
+
+			_, err = fc.Open(invalidSharedDirectoryCtx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected invalid shared-directory lookup to miss after startup scan")
+
+			if test.unexpectedSharedDirName != "" {
+				// Malformed nested paths should not be reinterpreted as some other
+				// valid shared namespace during startup scanning.
+				unexpectedSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.unexpectedSharedDirName)
+				require.False(t, fc.ContainsFile(unexpectedSharedDirectoryCtx, node))
+
+				unexpectedLinkPath := filepath.Join(baseDir, test.name, "unexpected-shared-link")
+				require.False(t, fc.FastLinkFile(unexpectedSharedDirectoryCtx, node, unexpectedLinkPath))
+				assert.NoFileExists(t, unexpectedLinkPath)
+
+				_, err := fc.Open(unexpectedSharedDirectoryCtx, node)
+				require.Error(t, err)
+				require.True(t, status.IsNotFoundError(err), "expected malformed startup directory to not hydrate another shared namespace")
+			}
+
+			// Supplying an invalid shared-directory name should fall back to the
+			// caller's normal group namespace on writes and subsequent reads.
+			// (This also logs an error, but we don't test for that.)
+			path := writeFileContent(t, baseDir, filepath.Join(test.name, "invalid", "file"), "invalid-"+test.name, false)
+			require.NoError(t, fc.AddFile(invalidSharedDirectoryCtx, node, path))
+
+			require.True(t, fc.ContainsFile(group1Ctx, node))
+			require.True(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath = filepath.Join(baseDir, test.name, "group1-link")
+			require.True(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assertFileContents(t, group1LinkPath, "invalid-"+test.name)
+
+			invalidLinkPath = filepath.Join(baseDir, test.name, "invalid-link")
+			require.True(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assertFileContents(t, invalidLinkPath, "invalid-"+test.name)
+
+			// Open should follow the same fallback-to-group behavior.
+			f, err := fc.Open(invalidSharedDirectoryCtx, node)
+			require.NoError(t, err)
+			defer f.Close()
+			data, err := io.ReadAll(f)
+			require.NoError(t, err)
+			require.Equal(t, "invalid-"+test.name, string(data))
+		})
+	}
+}
+
 func TestFileCacheOverwrite(t *testing.T) {
 	ctx := context.TODO()
 	for _, test := range []struct {
