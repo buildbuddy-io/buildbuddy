@@ -503,9 +503,7 @@ func (c *fileCache) WithSharedDirectory(ctx context.Context, sharedDirectory str
 // context is returned unchanged.
 func withSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
 	if !isValidSharedDirectory(sharedDirectory) {
-		if sharedDirectory != "" {
-			alert.CtxUnexpectedEvent(ctx, "filecache_invalid_shared_directory", "Invalid shared directory %s", sharedDirectory)
-		}
+		alert.CtxUnexpectedEvent(ctx, "filecache_invalid_shared_directory", "Invalid shared directory %s", sharedDirectory)
 		return ctx
 	}
 	return context.WithValue(ctx, sharedDirectoryContextKey{}, sharedDirectory)
