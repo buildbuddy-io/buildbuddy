@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
@@ -62,7 +61,7 @@ func baseTimeseries(title, unit string) *timeseries.PanelBuilder {
 				DisplayMode(common.LegendDisplayModeTable).
 				Placement(common.LegendPlacementBottom).
 				ShowLegend(true).
-				Calcs([]string{"mean", "max"}),
+				Calcs([]string{"mean", "max", "last"}),
 		).
 		Tooltip(
 			common.NewVizTooltipOptionsBuilder().
@@ -123,8 +122,8 @@ func queueDepthPanel() *timeseries.PanelBuilder {
 				Mode(dashboard.ThresholdsModeAbsolute).
 				Steps([]dashboard.Threshold{
 					{Value: nil, Color: "green"},
-					{Value: cog.ToPtr(4.0), Color: "orange"},
-					{Value: cog.ToPtr(16.0), Color: "red"},
+					{Value: new(4.0), Color: "orange"},
+					{Value: new(16.0), Color: "red"},
 				}),
 		)
 }
@@ -182,8 +181,8 @@ func diskSpacePanel() *timeseries.PanelBuilder {
 				Mode(dashboard.ThresholdsModeAbsolute).
 				Steps([]dashboard.Threshold{
 					{Value: nil, Color: "green"},
-					{Value: cog.ToPtr(80.0), Color: "orange"},
-					{Value: cog.ToPtr(90.0), Color: "red"},
+					{Value: new(80.0), Color: "orange"},
+					{Value: new(90.0), Color: "red"},
 				}),
 		)
 }
@@ -194,7 +193,7 @@ func queryVar(name, label, query string) *dashboard.QueryVariableBuilder {
 	return dashboard.NewQueryVariableBuilder(name).
 		Label(label).
 		Datasource(datasourceRef()).
-		Query(dashboard.StringOrMap{String: cog.ToPtr(query)}).
+		Query(dashboard.StringOrMap{String: &query}).
 		Refresh(dashboard.VariableRefreshOnTimeRangeChanged).
 		Sort(dashboard.VariableSortAlphabeticalAsc).
 		Multi(true).
@@ -212,7 +211,6 @@ func build() (dashboard.Dashboard, error) {
 		Editable().
 		Refresh("30s").
 		Time("now-1h", "now").
-		Timezone(common.TimeZoneBrowser).
 		Tooltip(dashboard.DashboardCursorSyncCrosshair).
 		WithVariable(
 			dashboard.NewDatasourceVariableBuilder("datasource").
