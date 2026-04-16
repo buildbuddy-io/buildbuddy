@@ -63,8 +63,6 @@ type ociFetcherServer struct {
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache.
-	// The leader returns blobFetchResult so waiters can read from
-	// cache without an additional action cache metadata lookup.
 	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, blobFetchResult]
 }
 
@@ -191,10 +189,6 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return err
 	}
 
-	// This request had to wait for the leader to complete.
-	// Stream from cache using the content length from the leader,
-	// avoiding an action cache metadata lookup that can fail due to
-	// distributed cache propagation delays.
 	w := &grpcStreamWriter{stream: stream}
 	err = ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, result.contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
