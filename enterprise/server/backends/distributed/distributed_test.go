@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -107,6 +108,23 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
 	assert.Equal(t, r.GetDigest().GetHash(), d1.GetHash())
+}
+
+func findResourceForPeerSet(t *testing.T, dc *Cache, preferredPeers []string, fallbackPeer string) (*rspb.ResourceName, []byte) {
+	t.Helper()
+	for range 10_000 {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		ps := dc.readPeers(rn.GetDigest())
+		if !slices.Equal(ps.PreferredPeers, preferredPeers) {
+			continue
+		}
+		if len(ps.FallbackPeers) == 0 || ps.FallbackPeers[0] != fallbackPeer {
+			continue
+		}
+		return rn, buf
+	}
+	t.Fatalf("failed to find digest with preferred peers %v and fallback peer %q", preferredPeers, fallbackPeer)
+	return nil, nil
 }
 
 func TestBasicReadWrite(t *testing.T) {
@@ -1153,6 +1171,56 @@ func TestHintedHandoff(t *testing.T) {
 		assert.True(t, exists, "memoryCache3 doesn't contain %v", r)
 		readAndCompareDigest(t, ctx, dc3, r)
 	}
+}
+
+func TestReaderFallsBackOnNotFoundAndBackfillsPreferredPeers(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1_000_000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:  2,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	rn, buf := findResourceForPeerSet(t, dc1, []string{peer1, peer2}, peer3)
+	require.NoError(t, memoryCache3.Set(ctx, rn, buf))
+
+	reader, err := dc1.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err)
+	got, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	require.Equal(t, buf, got)
+
+	exists, err := memoryCache1.Cache.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	exists, err = memoryCache2.Cache.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists)
 }
 
 func TestDelete(t *testing.T) {

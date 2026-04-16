@@ -1058,12 +1058,19 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 		return nil
 	}
 	source, targets := ps.GetBackfillTargets()
+	return makeBackfillOrders(r, source, targets)
+}
+
+func makeBackfillOrders(r *rspb.ResourceName, source string, targets []string) []*backfillOrder {
 	if len(targets) == 0 {
 		return nil
 	}
 
 	orders := make([]*backfillOrder, 0, len(targets))
 	for _, target := range targets {
+		if target == source {
+			continue
+		}
 		orders = append(orders, &backfillOrder{
 			source: source,
 			dest:   target,
@@ -1071,6 +1078,24 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 		})
 	}
 	return orders
+}
+
+func (c *Cache) getFallbackBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet, source string) []*backfillOrder {
+	if !*enableBackfill {
+		return nil
+	}
+	failedPeers := make(map[string]struct{}, len(ps.FailedPeers))
+	for _, peer := range ps.FailedPeers {
+		failedPeers[peer] = struct{}{}
+	}
+	targets := make([]string, 0, len(ps.PreferredPeers))
+	for _, peer := range ps.PreferredPeers {
+		if _, ok := failedPeers[peer]; ok {
+			continue
+		}
+		targets = append(targets, peer)
+	}
+	return makeBackfillOrders(r, source, targets)
 }
 
 // The first contains result that finds the digest will be returned. If all
@@ -1289,9 +1314,16 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 		}
 	}
+	backfillFromFallback := func(source string) {
+		if err := c.backfillPeers(ctx, c.getFallbackBackfillOrders(rn, ps, source)); err != nil {
+			c.log.CtxDebugf(ctx, "Error backfilling peers from fallback %q: %s", source, err)
+		}
+	}
 
 	lookups := 0
+	attemptedPeers := make(map[string]struct{}, len(ps.PreferredPeers))
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		attemptedPeers[peer] = struct{}{}
 		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
@@ -1311,6 +1343,31 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		// Some other error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
 
+	}
+
+	// If all preferred peers reported NotFound, explicitly probe any fallback
+	// peers that weren't tried via the normal peerset traversal. This covers
+	// digests that still exist only on fallback peers while hinted handoffs are
+	// catching up after node churn.
+	for _, peer := range ps.FallbackPeers {
+		if _, ok := attemptedPeers[peer]; ok {
+			continue
+		}
+		lookups++
+		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
+		if err == nil {
+			backfillFromFallback(peer)
+			metrics.DistributedCachePeerLookups.WithLabelValues(
+				metricsLabel,
+				metrics.HitStatusLabel,
+			).Observe(float64(lookups))
+			return r, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "Reader(%q) not found on fallback peer %s", distributed_client.ResourceIsolationString(rn), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "Reader(%q) fallback error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
 	}
 	metrics.DistributedCachePeerLookups.WithLabelValues(
 		metricsLabel,
