@@ -58,22 +58,24 @@ import (
 var (
 	// TODO(Maggie): Once https://github.com/buildbuddy-io/buildbuddy-internal/issues/4672 is fixed,
 	// use `flag.Struct` to avoid having to duplicate all the config flags and share validation logic.
-	readWriteAppEnabled       = flag.Bool("github.app.enabled", false, "Whether to enable the read-write BuildBuddy GitHub app server.")
-	readWriteAppClientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
-	readWriteAppClientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
-	readWriteAppID            = flag.String("github.app.id", "", "GitHub app ID.")
-	readWriteAppPublicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
-	readWriteAppPrivateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
-	readWriteAppWebhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
-	enableReviewMutates       = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+	readWriteAppEnabled                = flag.Bool("github.app.enabled", false, "Whether to enable the read-write BuildBuddy GitHub app server.")
+	readWriteAppClientID               = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
+	readWriteAppClientSecret           = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readWriteAppID                     = flag.String("github.app.id", "", "GitHub app ID.")
+	readWriteAppPublicLink             = flag.String("github.app.public_link", "", "GitHub app installation URL.")
+	readWriteAppPrivateKey             = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
+	readWriteAppWebhookSecret          = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	readWriteAppWebhookSecretAlternate = flag.String("github.app.webhook_secret_alternate", "", "Alternate GitHub app webhook secret accepted while rotating the primary webhook secret.", flag.Secret)
+	enableReviewMutates                = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
-	readOnlyAppEnabled       = flag.Bool("github.read_only_app.enabled", false, "Whether to enable the read-only BuildBuddy GitHub app server.")
-	readOnlyAppClientID      = flag.String("github.read_only_app.client_id", "", "Read-only GitHub app OAuth client ID.")
-	readOnlyAppClientSecret  = flag.String("github.read_only_app.client_secret", "", "Read-only GitHub app OAuth client secret.", flag.Secret)
-	readOnlyAppID            = flag.String("github.read_only_app.id", "", "Read-only GitHub app ID.")
-	readOnlyAppPublicLink    = flag.String("github.read_only_app.public_link", "", "Read-only GitHub app installation URL.")
-	readOnlyAppPrivateKey    = flag.String("github.read_only_app.private_key", "", "Read-only GitHub app private key.", flag.Secret)
-	readOnlyAppWebhookSecret = flag.String("github.read_only_app.webhook_secret", "", "Read-only GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	readOnlyAppEnabled                = flag.Bool("github.read_only_app.enabled", false, "Whether to enable the read-only BuildBuddy GitHub app server.")
+	readOnlyAppClientID               = flag.String("github.read_only_app.client_id", "", "Read-only GitHub app OAuth client ID.")
+	readOnlyAppClientSecret           = flag.String("github.read_only_app.client_secret", "", "Read-only GitHub app OAuth client secret.", flag.Secret)
+	readOnlyAppID                     = flag.String("github.read_only_app.id", "", "Read-only GitHub app ID.")
+	readOnlyAppPublicLink             = flag.String("github.read_only_app.public_link", "", "Read-only GitHub app installation URL.")
+	readOnlyAppPrivateKey             = flag.String("github.read_only_app.private_key", "", "Read-only GitHub app private key.", flag.Secret)
+	readOnlyAppWebhookSecret          = flag.String("github.read_only_app.webhook_secret", "", "Read-only GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	readOnlyAppWebhookSecretAlternate = flag.String("github.read_only_app.webhook_secret_alternate", "", "Alternate read-only GitHub app webhook secret accepted while rotating the primary webhook secret.", flag.Secret)
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -327,7 +329,8 @@ type GitHubApp struct {
 
 	oauth *gh_oauth.OAuthHandler
 
-	webhookSecret string
+	webhookSecret          string
+	webhookSecretAlternate string
 
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
@@ -373,10 +376,11 @@ func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 	}
 
 	app := &GitHubApp{
-		env:           env,
-		privateKey:    privateKey,
-		webhookSecret: *readWriteAppWebhookSecret,
-		appID:         int64(appIDParsed),
+		env:                    env,
+		privateKey:             privateKey,
+		webhookSecret:          *readWriteAppWebhookSecret,
+		webhookSecretAlternate: *readWriteAppWebhookSecretAlternate,
+		appID:                  int64(appIDParsed),
 	}
 	app.newAppClient = app.newAuthenticatedAppClient
 	oauth := gh_oauth.NewOAuthHandler(env, *readWriteAppClientID, *readWriteAppClientSecret, readWriteOauthPath)
@@ -419,10 +423,11 @@ func NewReadOnlyApp(env environment.Env) (*GitHubApp, error) {
 	}
 
 	app := &GitHubApp{
-		env:           env,
-		privateKey:    privateKey,
-		webhookSecret: *readOnlyAppWebhookSecret,
-		appID:         int64(appIDParsed),
+		env:                    env,
+		privateKey:             privateKey,
+		webhookSecret:          *readOnlyAppWebhookSecret,
+		webhookSecretAlternate: *readOnlyAppWebhookSecretAlternate,
+		appID:                  int64(appIDParsed),
 	}
 	app.newAppClient = app.newAuthenticatedAppClient
 	oauth := gh_oauth.NewOAuthHandler(env, *readOnlyAppClientID, *readOnlyAppClientSecret, readOnlyOauthPath)
@@ -442,7 +447,7 @@ func (a *GitHubApp) WebhookHandler() http.Handler {
 
 func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	b, err := github.ValidatePayload(req, []byte(a.webhookSecret))
+	b, err := a.validateWebhookPayload(req)
 	if err != nil {
 		log.CtxDebugf(ctx, "Failed to validate webhook payload: %s", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -464,6 +469,36 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	io.WriteString(w, "OK")
+}
+
+func (a *GitHubApp) validateWebhookPayload(req *http.Request) ([]byte, error) {
+	// Buffer the full body since we need to read it multiple times.
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, secret := range []string{a.webhookSecret, a.webhookSecretAlternate} {
+		if secret == "" {
+			// Secret not configured - skip
+			continue
+		}
+
+		// Clone the request and set the body, since ValidatePayload consumes the
+		// body.
+		req = req.Clone(req.Context())
+		req.Body = io.NopCloser(bytes.NewReader(body))
+
+		payload, err := github.ValidatePayload(req, []byte(secret))
+		if err == nil {
+			return payload, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, status.FailedPreconditionError("missing GitHub app webhook secret")
 }
 
 func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, event any) error {
