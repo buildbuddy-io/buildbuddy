@@ -54,17 +54,12 @@ func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
 // that can be specified as the "hinted handoff peer". When all peers have been
 // exhausted, the empty string will be returned.
 func (p *PeerSet) GetNextPeerAndHandoff() (string, string) {
-	// A function we can defer to increment our peer counter.
-	increment := func() {
-		p.i += 1
-	}
-
 	i := p.i
 	numPreferred := len(p.PreferredPeers)
 	if i < numPreferred {
 		// Return preferred peers if they haven't yet been exhausted.
 		// There are no hinted handoffs to return yet.
-		defer increment()
+		p.i++
 		return p.PreferredPeers[i], ""
 	}
 
@@ -85,7 +80,7 @@ func (p *PeerSet) GetNextPeerAndHandoff() (string, string) {
 	failedIdx := i - len(p.FailedFallbackPeers)
 
 	if fallbackIdx < len(p.FallbackPeers) && failedIdx < len(p.FailedPeers) {
-		defer increment()
+		p.i++
 		return p.FallbackPeers[fallbackIdx], p.FailedPeers[failedIdx]
 	}
 	return "", ""
