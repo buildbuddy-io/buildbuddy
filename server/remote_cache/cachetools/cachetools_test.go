@@ -487,6 +487,8 @@ type fakeFilecache struct {
 	writeCount int
 }
 
+var _ interfaces.FileCache = (*fakeFilecache)(nil)
+
 func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 	return &repb.FileNode{
 		Digest:       r.GetDigest(),
@@ -515,6 +517,10 @@ func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode) 
 	defer fc.mu.Unlock()
 	_, ok := fc.files[key(node)]
 	return ok
+}
+
+func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
+	panic("unimplemented")
 }
 
 func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {

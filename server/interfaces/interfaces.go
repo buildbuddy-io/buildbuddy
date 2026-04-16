@@ -907,6 +907,16 @@ type FileCache interface {
 	DeleteFile(ctx context.Context, f *repb.FileNode) bool
 	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
 	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+
+	// WithSharedDirectory returns a context that stores filecache entries under
+	// a shared executor-local directory instead of the current group or ANON
+	// directory.
+	//
+	// NOTE: Authorization for the objects in these shared directories must be
+	// handled by the caller. The caller must also ensure that the objects in
+	// these shared directories are not modified.
+	WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context
+
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
 	WaitForDirectoryScanToComplete()
