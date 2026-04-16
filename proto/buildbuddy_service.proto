@@ -87,6 +87,8 @@ service BuildBuddyService {
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
   rpc SetGroupStatus(grp.SetGroupStatusRequest)
       returns (grp.SetGroupStatusResponse);
+  rpc GetSSOConfig(grp.GetSSOConfigRequest) returns (grp.GetSSOConfigResponse);
+  rpc SetSSOConfig(grp.SetSSOConfigRequest) returns (grp.SetSSOConfigResponse);
 
   // User Lists API
   rpc GetUserLists(user_list.GetUserListsRequest)

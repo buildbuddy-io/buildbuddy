@@ -577,6 +577,9 @@ type UserDB interface {
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error
+	// UpdateGroupSamlIdpMetadataUrl updates the group's SAML IdP metadata URL.
+	// An empty URL disables SSO for the group. Restricted to server admins.
+	UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
 
