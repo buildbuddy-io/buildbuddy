@@ -341,6 +341,8 @@ func processDashboard(dashboardJSON []byte, fileName string) ([]byte, error) {
 
 func writeDashboardsBzl(fileNames []string) error {
 	var lines []string
+	lines = append(lines, "# List of dashboard JSON files checked into the repo.")
+	lines = append(lines, "# For generated JSON files, see tools/metrics/grafana/generated/BUILD.")
 	lines = append(lines, "# This file is automatically updated by grafana.go - DO NOT EDIT")
 	lines = append(lines, "DASHBOARD_NAMES = [")
 	for _, name := range fileNames {

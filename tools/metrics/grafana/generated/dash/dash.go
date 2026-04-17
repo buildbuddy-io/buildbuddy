@@ -22,6 +22,7 @@ const (
 	UnitPercent       = "percent"
 	UnitSeconds       = "s"
 	UnitShort         = "short"
+	UnitWatts         = "watt"
 )
 
 // Datasource returns a reference to the default Victoria Metrics datasource.
