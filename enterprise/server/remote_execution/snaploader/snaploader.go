@@ -1064,7 +1064,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	// We iterate through the chunks twice. In the first pass we compute all the digests so that we can
 	// batch call FindMissing to determine which chunks to write.
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
+	var ctxErr error
 	for i, c := range chunks {
+		// Check whether the user / caller cancelled the context.
+		if err := ctx.Err(); err != nil {
+			ctxErr = err
+			break
+		}
+		// Check whether one errgroup failed and cancelled the context.
 		if egCtx.Err() != nil {
 			break
 		}
@@ -1120,6 +1127,10 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	// If the user / caller cancelled the context, return the error.
+	if ctxErr != nil {
+		return nil, ctxErr
+	}
 
 	// If the snapshot should be written remotely, we must call FindMissing on all chunks
 	// to ensure their atimes are updated and all chunks of the remote snapshot won't be evicted.
@@ -1139,7 +1150,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		}
 	}
 
-	// In the second pass, we cache the chunks.
 	uploadEg, uploadCtx := errgroup.WithContext(ctx)
 	if *snaputil.ThrottleSnapshotWrites {
 		uploadEg.SetLimit(chunkedFileWriteConcurrency)
@@ -1148,7 +1158,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		uploadEg.SetLimit(writeConcurrency)
 	}
 	filteredChunkNodes := make([]*repb.FileNode, 0)
+	var mu sync.Mutex
+
+	// In the second pass, we cache the chunks.
 	for i, c := range chunks {
+		// Check whether the user / caller cancelled the context.
+		if err := ctx.Err(); err != nil {
+			ctxErr = err
+			break
+		}
+		// Check whether one errgroup failed and cancelled the context.
 		if uploadCtx.Err() != nil {
 			break
 		}
@@ -1178,7 +1197,11 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// we need to cache it.
 			shouldCacheRemotely := false
 			if cacheOpts.CacheSnapshotRemotely {
-				_, shouldCacheRemotely = missingRemoteDigests[chunkDigest.GetHash()]
+				mu.Lock()
+				if _, shouldCacheRemotely = missingRemoteDigests[chunkDigest.GetHash()]; shouldCacheRemotely {
+					delete(missingRemoteDigests, chunkDigest.GetHash())
+				}
+				mu.Unlock()
 			}
 
 			if !shouldCacheRemotely && !shouldCacheLocally {
@@ -1209,8 +1232,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			return nil
 		})
 	}
+	// If an errgroup failed caching a chunk, return the error.
 	if err := uploadEg.Wait(); err != nil {
 		return nil, err
+	}
+	// If the user / caller cancelled the context, return the error.
+	if ctxErr != nil {
+		return nil, ctxErr
 	}
 
 	// Save ActionCache Tree to the cache
