@@ -116,7 +116,6 @@ type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
-	lookasideMu          *sync.Mutex
 	lookaside            lru.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
@@ -189,18 +188,6 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 	}
 }
 
-// Converts an LRU eviction reason into a metrics.LookasideCacheEvictionReason.
-func convertEvictionReason(r lru.EvictionReason) string {
-	switch r {
-	case lru.SizeEviction:
-		return "size"
-	case lru.ManualEviction:
-		return "age"
-	default:
-		return string(r)
-	}
-}
-
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -237,7 +224,6 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
 		local:               c,
-		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
 		distributedProxy:    distributed_client.New(env, c, opts.ListenAddr),
@@ -259,14 +245,14 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
-				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(
-					convertEvictionReason(reason),
-				).Observe(float64(age.Milliseconds()))
+				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(string(reason)).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
 				return int64(len(v.data) + 8)
 			},
+			ThreadSafe: true,
+			TTL:        *lookasideCacheTTL,
 		})
 		if err != nil {
 			return nil, err
@@ -473,11 +459,9 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 		data:            data,
 	}
 
-	c.lookasideMu.Lock()
 	if !c.lookaside.Contains(lookasideKey) {
 		c.lookaside.Add(lookasideKey, entry)
 	}
-	c.lookasideMu.Unlock()
 	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
@@ -514,18 +498,7 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 		return nil, false
 	}
 
-	c.lookasideMu.Lock()
-	found := false
-	entry, ok := c.lookaside.Get(k)
-	if ok {
-		if *lookasideCacheTTL > 0 && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
-			// Remove the item from the LRU if it's expired.
-			c.lookaside.Remove(k)
-		} else {
-			found = true
-		}
-	}
-	c.lookasideMu.Unlock()
+	entry, found := c.lookaside.Get(k)
 
 	lookasideCacheLookupCount[found].Inc()
 	lookasideCacheLookupBytes[found].Add(float64(r.GetDigest().GetSizeBytes()))
@@ -1603,8 +1576,6 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if c.lookasideCacheEnabled() {
 		key, ok := c.lookasideKey(ctx, r)
 		if ok {
-			c.lookasideMu.Lock()
-			defer c.lookasideMu.Unlock()
 			c.lookaside.Remove(key)
 		}
 	}
