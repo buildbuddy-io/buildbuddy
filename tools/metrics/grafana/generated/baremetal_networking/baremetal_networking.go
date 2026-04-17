@@ -50,6 +50,7 @@ func trafficByDevicePanel() *timeseries.PanelBuilder {
 
 func errorsAndDiscardsPanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Errors and Discards", dash.UnitEventsPerSec).
+		Description("Absolute rate of errors/discards. Prefer the 'Error rate' panel for detecting actual issues — a high absolute count on a busy link may still be a tiny fraction of total traffic.").
 		WithTarget(dash.PromQuery(
 			`sum(rate(interfaces_interface_state_counters_in_errors{region="${region}"}[1m])) by (source)`,
 			"ingress errors {{source}}",
@@ -73,6 +74,31 @@ func errorsAndDiscardsPanel() *timeseries.PanelBuilder {
 		WithTarget(dash.PromQuery(
 			`sum(rate(interfaces_interface_state_counters_out_fcs_errors{region="${region}"}[1m])) by (source)`,
 			"egress fcs errors {{source}}",
+		))
+}
+
+func errorRateByDevicePanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Error rate by device", dash.UnitPercent).
+		Description("Errors and discards as a percentage of total packets, by device. More reliable than absolute counts for spotting real problems.").
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_in_errors{region="${region}"}[1m])) by (source)`+
+				` / sum(rate(interfaces_interface_state_counters_in_pkts{region="${region}"}[1m])) by (source)`,
+			"ingress errors {{source}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_in_discards{region="${region}"}[1m])) by (source)`+
+				` / sum(rate(interfaces_interface_state_counters_in_pkts{region="${region}"}[1m])) by (source)`,
+			"ingress discards {{source}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_out_errors{region="${region}"}[1m])) by (source)`+
+				` / sum(rate(interfaces_interface_state_counters_out_pkts{region="${region}"}[1m])) by (source)`,
+			"egress errors {{source}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_out_discards{region="${region}"}[1m])) by (source)`+
+				` / sum(rate(interfaces_interface_state_counters_out_pkts{region="${region}"}[1m])) by (source)`,
+			"egress discards {{source}}",
 		))
 }
 
@@ -116,6 +142,7 @@ func trafficByInterfacePanel() *timeseries.PanelBuilder {
 
 func errorsAndDiscardsByInterfacePanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Errors and Discards by interface", dash.UnitEventsPerSec).
+		Description("Absolute rate of errors/discards. Prefer the 'Error rate' panel for detecting actual issues — a high absolute count on a busy link may still be a tiny fraction of total traffic.").
 		WithTarget(dash.PromQuery(
 			`sum(rate(interfaces_interface_state_counters_in_errors{region="${region}", source="${device}"}[1m])) by (interface_name)`,
 			"ingress errors {{interface_name}}",
@@ -139,6 +166,31 @@ func errorsAndDiscardsByInterfacePanel() *timeseries.PanelBuilder {
 		WithTarget(dash.PromQuery(
 			`sum(rate(interfaces_interface_state_counters_out_fcs_errors{region="${region}", source="${device}"}[1m])) by (interface_name)`,
 			"egress fcs errors {{interface_name}}",
+		))
+}
+
+func errorRateByInterfacePanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Error rate by interface", dash.UnitPercent).
+		Description("Errors and discards as a percentage of total packets, by interface. More reliable than absolute counts for spotting real problems.").
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_in_errors{region="${region}", source="${device}"}[1m])) by (interface_name)`+
+				` / sum(rate(interfaces_interface_state_counters_in_pkts{region="${region}", source="${device}"}[1m])) by (interface_name)`,
+			"ingress errors {{interface_name}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_in_discards{region="${region}", source="${device}"}[1m])) by (interface_name)`+
+				` / sum(rate(interfaces_interface_state_counters_in_pkts{region="${region}", source="${device}"}[1m])) by (interface_name)`,
+			"ingress discards {{interface_name}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_out_errors{region="${region}", source="${device}"}[1m])) by (interface_name)`+
+				` / sum(rate(interfaces_interface_state_counters_out_pkts{region="${region}", source="${device}"}[1m])) by (interface_name)`,
+			"egress errors {{interface_name}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`100 * sum(rate(interfaces_interface_state_counters_out_discards{region="${region}", source="${device}"}[1m])) by (interface_name)`+
+				` / sum(rate(interfaces_interface_state_counters_out_pkts{region="${region}", source="${device}"}[1m])) by (interface_name)`,
+			"egress discards {{interface_name}}",
 		))
 }
 
@@ -188,6 +240,7 @@ func build() (dashboard.Dashboard, error) {
 		Collapsed(true).
 		Repeat("device").
 		WithPanel(trafficByInterfacePanel()).
+		WithPanel(errorRateByInterfacePanel()).
 		WithPanel(errorsAndDiscardsByInterfacePanel()).
 		WithPanel(packetsByInterfacePanel()).
 		WithPanel(broadcastByInterfacePanel())
@@ -203,6 +256,7 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(dashboard.NewRowBuilder("Overview")).
 		WithPanel(externalThroughputPanel()).
 		WithPanel(trafficByDevicePanel()).
+		WithPanel(errorRateByDevicePanel()).
 		WithPanel(errorsAndDiscardsPanel()).
 		WithPanel(packetsByDevicePanel()).
 		WithPanel(broadcastByDevicePanel()).
