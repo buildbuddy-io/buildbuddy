@@ -131,7 +131,7 @@ go_test(
         # because of OCI image conversion. Size the task manually to avoid OOM.
         # TODO: include test ext4 images as deps to avoid conversion.
         "test.EstimatedComputeUnits": "10",
-        "test.no-sandbox": "true",  # Firecracker is not compatible with Bazel's sandbox environment
+        "test.no-sandbox": "",  # Firecracker is not compatible with Bazel's sandbox environment
     },
     shard_count = 30,
     tags = [
