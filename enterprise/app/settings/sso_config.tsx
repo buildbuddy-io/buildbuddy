@@ -106,14 +106,14 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
         ) : loadError ? (
           <div className="error-text">Failed to load SSO configuration: {loadError}</div>
         ) : (
-          <form onSubmit={this.openConfirm} className="sso-config-form" style={{ marginTop: "16px" }}>
+          <form onSubmit={this.openConfirm} className="sso-config-form">
             <TextInput
-              style={{ width: "100%", maxWidth: "640px" }}
+              className="sso-config-input"
               placeholder="https://idp.example.com/metadata"
               value={inputUrl}
               onChange={this.handleInputChange}
             />
-            <div style={{ marginTop: "12px" }}>
+            <div className="sso-config-actions">
               <FilledButton type="submit" disabled={!dirty || submitting}>
                 Save
               </FilledButton>
