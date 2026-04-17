@@ -37,7 +37,6 @@ go_test(
         "//server/util/cdc",
         "//server/util/log",
         "//server/util/prefix",
-        "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
