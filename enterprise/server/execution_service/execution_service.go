@@ -314,6 +314,10 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		var eg errgroup.Group
 		for _, ex := range rsp.Execution {
 			ex := ex
+			// The execute response is only cached once the execution completes.
+			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
+				continue
+			}
 			eg.Go(func() error {
 				// TODO: if the authenticated user has access to the group
 				// that owns the execution, switch to that group's ctx.
