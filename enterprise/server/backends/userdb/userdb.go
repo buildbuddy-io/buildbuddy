@@ -430,6 +430,19 @@ func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status g
 	).Exec().Error
 }
 
+func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return err
+	}
+
+	return d.h.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
+		UPDATE "Groups" SET saml_idp_metadata_url = ?
+		WHERE group_id = ?`,
+		url,
+		groupID,
+	).Exec().Error
+}
+
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
 	q, args := query_builder.
 		NewQuery(`UPDATE "Groups" SET github_token = ''`).

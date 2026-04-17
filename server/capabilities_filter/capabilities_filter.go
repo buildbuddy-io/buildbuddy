@@ -231,6 +231,8 @@ var (
 
 		// Org management
 		buildBuddyServicePrefix + "SetGroupStatus",
+		buildBuddyServicePrefix + "GetSSOConfig",
+		buildBuddyServicePrefix + "SetSSOConfig",
 	}
 )
 
