@@ -1664,7 +1664,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 			uploadString: r.NewUploadString(),
 			buf:          uploadBufPool.Get(bufSize),
 			useZstd:      true,
-			cbuf:         uploadBufPool.Get(bufSize),
+			cbuf:         uploadBufPool.Get(compression.ZstdCompressBound(bufSize)),
 		}, nil
 	}
 	return &UploadWriter{
