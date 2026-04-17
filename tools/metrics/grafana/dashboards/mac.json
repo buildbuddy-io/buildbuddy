@@ -4987,9 +4987,10 @@
   "templating": {
     "list": [
       {
+        "allValue": ".*",
         "current": {
           "text": "All",
-          "value": ".*"
+          "value": "$__all"
         },
         "definition": "label_values(up{job=\"mac-executor\"},region)",
         "includeAll": true,
