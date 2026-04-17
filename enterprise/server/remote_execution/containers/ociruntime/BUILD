@@ -77,13 +77,13 @@ go_test(
         "test.container-image": "docker://" + NET_TOOLS_IMAGE,
         "test.EstimatedComputeUnits": "2",
         "test.EstimatedFreeDiskBytes": "10GB",
+        "test.no-sandbox": "true",
     },
     # NOTE: if testing locally, use --test_sharding_strategy=disabled to work
     # around the networking package not supporting cross-process locks.
     shard_count = 4,
     tags = [
         "docker",
-        "no-sandbox",
     ],
     target_compatible_with = [
         "@platforms//os:linux",
