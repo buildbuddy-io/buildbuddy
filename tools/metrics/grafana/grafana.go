@@ -132,8 +132,6 @@ func run() error {
 		return fmt.Errorf("populate dashboards dir: %w", err)
 	}
 
-	time.Sleep(10 * time.Second)
-
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer cancel() // stop everything else even when docker exits cleanly
