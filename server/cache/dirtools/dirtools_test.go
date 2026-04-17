@@ -1,6 +1,7 @@
 package dirtools_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,9 +32,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1621,6 +1626,136 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 	require.True(t, fc.ContainsFile(ctx, largeFileNode), "large file should be in the file cache")
 }
 
+func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
+	flags.Set(t, "cache.client.enable_download_compression", false)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	env, ctx := testEnv(t)
+	env.SetExperimentFlagProvider(fp)
+
+	fileCache := &countingFileCache{
+		FileCache: env.GetFileCache(),
+		adds:      make(map[string]int),
+		opens:     make(map[string]int),
+	}
+	env.SetFileCache(fileCache)
+
+	byteStream := &countingByteStreamClient{
+		ByteStreamClient: env.GetByteStreamClient(),
+		reads:            make(map[string]int),
+	}
+	env.SetByteStreamClient(byteStream)
+
+	makeChunk := func(label byte) []byte {
+		chunk := bytes.Repeat([]byte{label}, 2*1024*1024)
+		copy(chunk, []byte(fmt.Sprintf("%s-%c", t.Name(), label)))
+		return chunk
+	}
+	chunkA := makeChunk('A')
+	chunkB := makeChunk('B')
+	chunkC := makeChunk('C')
+	chunkD := makeChunk('D')
+	chunkE := makeChunk('E')
+
+	putChunk := func(data []byte) *repb.Digest {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, rn.ToProto(), data))
+		return d
+	}
+	chunkADigest := putChunk(chunkA)
+	chunkBDigest := putChunk(chunkB)
+	chunkCDigest := putChunk(chunkC)
+	chunkDDigest := putChunk(chunkD)
+	chunkEDigest := putChunk(chunkE)
+
+	makeBlob := func(name string, chunks [][]byte, chunkDigests []*repb.Digest) (*repb.FileNode, []byte) {
+		blob := make([]byte, 0, len(chunks)*len(chunks[0]))
+		for _, chunk := range chunks {
+			blob = append(blob, chunk...)
+		}
+		blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		_, err = env.GetContentAddressableStorageClient().SpliceBlob(ctx, &repb.SpliceBlobRequest{
+			BlobDigest:     blobDigest,
+			ChunkDigests:   chunkDigests,
+			DigestFunction: repb.DigestFunction_SHA256,
+		})
+		require.NoError(t, err)
+		return &repb.FileNode{Name: name, Digest: blobDigest}, blob
+	}
+	fileNode1, blob1 := makeBlob("large-1.bin", [][]byte{chunkA, chunkB, chunkC}, []*repb.Digest{chunkADigest, chunkBDigest, chunkCDigest})
+	fileNode2, blob2 := makeBlob("large-2.bin", [][]byte{chunkA, chunkB, chunkD}, []*repb.Digest{chunkADigest, chunkBDigest, chunkDDigest})
+	fileNode3, blob3 := makeBlob("large-3.bin", [][]byte{chunkE, chunkB, chunkD}, []*repb.Digest{chunkEDigest, chunkBDigest, chunkDDigest})
+
+	download := func(node *repb.FileNode, want []byte) {
+		rootDir := testfs.MakeTempDir(t)
+		info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{
+			Root: &repb.Directory{
+				Files: []*repb.FileNode{node},
+			},
+		}, &dirtools.DownloadTreeOpts{
+			RootDir:           rootDir,
+			ChunkedInputFiles: true,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), info.FileCount)
+		require.Equal(t, int64(len(want)), info.BytesTransferred)
+
+		got, err := os.ReadFile(filepath.Join(rootDir, node.GetName()))
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+
+	chunkReadCount := func(d *repb.Digest) int {
+		return byteStream.readCount(digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).DownloadString())
+	}
+
+	download(fileNode1, blob1)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode1))
+	require.Equal(t, 1, fileCache.addCount(fileNode1))
+	require.Equal(t, 1, chunkReadCount(chunkADigest))
+	require.Equal(t, 1, chunkReadCount(chunkBDigest))
+	require.Equal(t, 1, chunkReadCount(chunkCDigest))
+
+	download(fileNode2, blob2)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode2))
+	require.Equal(t, 1, fileCache.addCount(fileNode2))
+	require.Equal(t, 1, chunkReadCount(chunkADigest))
+	require.Equal(t, 1, chunkReadCount(chunkBDigest))
+	require.Equal(t, 1, chunkReadCount(chunkCDigest))
+	require.Equal(t, 1, chunkReadCount(chunkDDigest))
+	require.GreaterOrEqual(t, fileCache.openCount(fileNode1), 2)
+
+	require.True(t, env.GetFileCache().DeleteFile(ctx, fileNode1))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode1))
+
+	download(fileNode3, blob3)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode3))
+	require.Equal(t, 1, fileCache.addCount(fileNode3))
+	require.Equal(t, 1, chunkReadCount(chunkADigest))
+	require.Equal(t, 1, chunkReadCount(chunkBDigest))
+	require.Equal(t, 1, chunkReadCount(chunkCDigest))
+	require.Equal(t, 1, chunkReadCount(chunkDDigest))
+	require.Equal(t, 1, chunkReadCount(chunkEDigest))
+	require.GreaterOrEqual(t, fileCache.openCount(fileNode2), 2)
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1701,4 +1836,62 @@ func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tem
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
 	require.NoError(t, err)
+}
+
+type countingFileCache struct {
+	interfaces.FileCache
+
+	mu    sync.Mutex
+	adds  map[string]int
+	opens map[string]int
+}
+
+func (c *countingFileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	c.mu.Lock()
+	c.adds[fileNodeKey(node)]++
+	c.mu.Unlock()
+	return c.FileCache.AddFile(ctx, node, existingFilePath)
+}
+
+func (c *countingFileCache) Open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+	c.mu.Lock()
+	c.opens[fileNodeKey(node)]++
+	c.mu.Unlock()
+	return c.FileCache.Open(ctx, node)
+}
+
+func (c *countingFileCache) addCount(node *repb.FileNode) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.adds[fileNodeKey(node)]
+}
+
+func (c *countingFileCache) openCount(node *repb.FileNode) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.opens[fileNodeKey(node)]
+}
+
+type countingByteStreamClient struct {
+	bspb.ByteStreamClient
+
+	mu    sync.Mutex
+	reads map[string]int
+}
+
+func (c *countingByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	c.mu.Lock()
+	c.reads[req.GetResourceName()]++
+	c.mu.Unlock()
+	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+func (c *countingByteStreamClient) readCount(resourceName string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads[resourceName]
+}
+
+func fileNodeKey(node *repb.FileNode) string {
+	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
 }
