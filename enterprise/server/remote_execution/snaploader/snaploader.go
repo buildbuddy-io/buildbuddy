@@ -47,6 +47,13 @@ const (
 	// Number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
 	chunkedFileWriteConcurrency = 4
+
+	// Batch size used when checking remote snapshot chunks.
+	// The maximum gRPC message size is 4MB. Each digest proto is
+	// 64 bytes (hash) + 8 bytes (size) + 2 bytes (tags) = 74 bytes. The
+	// remaining fields in FindMissingBlobsRequest should be small (1kb?), so
+	// we can conceivably fit 4MB / 74bytes = 14.1k of these. Cap it at 10k for now.
+	findMissingBlobsBatchSize = 10_000
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -1040,8 +1047,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
-	defer cancelForEarlyExit()
 
 	// This is higher than parallelization for syncing chunks, because other work (like generating digests and writing
 	// to the cache) is less IO-intensive and can run with more concurrency.
@@ -1056,29 +1061,25 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	var syncMu sync.Mutex
 
 	chunks := cow.SortedChunks()
+	// We iterate through the chunks twice. In the first pass we compute all the digests so that we can
+	// batch call FindMissing to determine which chunks to write.
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
 	for i, c := range chunks {
-		if earlyExitCtx.Err() != nil {
+		if egCtx.Err() != nil {
 			break
 		}
 
 		i := i
 		c := c
-
-		// Make sure chunks are appended in order
 		fn := &repb.FileNode{
 			Name: fmt.Sprintf("%d", c.Offset),
-			// Digest is computed in goroutine.
 		}
 		chunkNodes = append(chunkNodes, fn)
 
 		eg.Go(func() error {
 			returnError := func(err error) error {
-				cancelForEarlyExit()
 				return status.WrapError(err, fmt.Sprintf("cache chunk %d/%d", i, len(chunks)))
 			}
-
-			ctx := earlyExitCtx
 
 			// Get or compute the digest.
 			d, err := c.Digest()
@@ -1087,7 +1088,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			// Skip caching chunks of all 0s
+			// Skip syncing chunks of all 0s
 			if d.GetHash() != allZerosDigest.GetHash() {
 				dirty := cow.Dirty(c.Offset)
 				if dirty {
@@ -1103,23 +1104,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 					if err != nil {
 						return returnError(status.WrapError(err, "sync dirty chunk"))
 					}
-				}
-
-				// If the chunk was pulled from a cache and is not dirty, we don't need
-				// to re-cache it.
-				// If it was chunked directly from a snapshot file, it may not exist
-				// in the cache yet, and we should cache it.
-				chunkSrc := c.Source()
-				shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
-				if shouldCache {
-					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-					bytesWritten, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, d, remoteInstanceName, path, name)
-					if err != nil {
-						return returnError(status.WrapError(err, "write chunk to cache"))
-					}
-					atomic.AddInt64(&compressedBytesWrittenRemotely, bytesWritten)
-				} else if *snaputil.VerboseLogging {
-					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
 				}
 			}
 
@@ -1137,16 +1121,100 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, err
 	}
 
-	// Filter out empty chunks
-	filteredChunkNodes := make([]*repb.FileNode, 0)
-	for _, c := range chunkNodes {
-		if c.Digest.GetHash() != allZerosDigest.GetHash() {
-			filteredChunkNodes = append(filteredChunkNodes, c)
+	// If the snapshot should be written remotely, we must call FindMissing on all chunks
+	// to ensure their atimes are updated and all chunks of the remote snapshot won't be evicted.
+	missingRemoteDigests := map[string]struct{}{}
+	if cacheOpts.CacheSnapshotRemotely {
+		allDigests := make([]*repb.Digest, 0, len(chunkNodes))
+		for _, chunkNode := range chunkNodes {
+			if chunkNode.Digest == nil || chunkNode.Digest.GetHash() == allZerosDigest.GetHash() {
+				continue
+			}
+			allDigests = append(allDigests, chunkNode.Digest)
+		}
+		var err error
+		missingRemoteDigests, err = l.findMissingRemoteDigests(ctx, remoteInstanceName, allDigests)
+		if err != nil {
+			return nil, err
 		}
 	}
-	tree.Root.Files = filteredChunkNodes
+
+	// In the second pass, we cache the chunks.
+	uploadEg, uploadCtx := errgroup.WithContext(ctx)
+	if *snaputil.ThrottleSnapshotWrites {
+		uploadEg.SetLimit(chunkedFileWriteConcurrency)
+	} else {
+		writeConcurrency := int(math.Max(8, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+		uploadEg.SetLimit(writeConcurrency)
+	}
+	filteredChunkNodes := make([]*repb.FileNode, 0)
+	for i, c := range chunks {
+		if uploadCtx.Err() != nil {
+			break
+		}
+		d := chunkNodes[i].Digest
+
+		// Skip caching chunks of all 0s
+		if d == nil || d.GetHash() == allZerosDigest.GetHash() {
+			continue
+		}
+
+		filteredChunkNodes = append(filteredChunkNodes, chunkNodes[i])
+
+		i := i
+		c := c
+		chunkDigest := d
+		uploadEg.Go(func() error {
+			dirty := cow.Dirty(c.Offset)
+			chunkSrc := c.Source()
+
+			// If the chunk was pulled from a cache and is not dirty, we don't need
+			// to re-cache it locally.
+			// Either it already exists in the local cache, or it would've been cache locally
+			// after we fetched it remotely.
+			shouldCacheLocally := cacheOpts.CacheSnapshotLocally && (dirty || chunkSrc == snaputil.ChunkSourceLocalFile)
+
+			// Even if the chunk isn't dirty, if we're saving the snapshot remotely and the chunk isn't cached remotely,
+			// we need to cache it.
+			shouldCacheRemotely := false
+			if cacheOpts.CacheSnapshotRemotely {
+				_, shouldCacheRemotely = missingRemoteDigests[chunkDigest.GetHash()]
+			}
+
+			if !shouldCacheRemotely && !shouldCacheLocally {
+				if *snaputil.VerboseLogging && !cacheOpts.CacheSnapshotRemotely {
+					log.CtxDebugf(uploadCtx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), chunkDigest.GetHash())
+				}
+				return nil
+			}
+
+			// There may be a chunk that wasn't touched during this workload run, so was never fetched.
+			// We still need to write it remotely though if it's not already cached, or the remote snapshot
+			// will be invalid if chunks are missing.
+			// We know it must exist locally, or we would not have been able to have resumed from this snapshot.
+			// The chunk may be cached locally and not remotely because the caches have different TTLs
+			// and a remote chunk may not be touched if it was read locally.
+			if shouldCacheRemotely {
+				if err := c.Fetch(); err != nil {
+					return status.WrapErrorf(err, "fetch chunk %d/%d for remote chunk writes", i, len(chunks))
+				}
+			}
+
+			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, dirty))
+			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name)
+			if err != nil {
+				return status.WrapErrorf(err, "write chunk %d/%d to cache", i, len(chunks))
+			}
+			atomic.AddInt64(&compressedBytesWrittenRemotely, bytesWritten)
+			return nil
+		})
+	}
+	if err := uploadEg.Wait(); err != nil {
+		return nil, err
+	}
 
 	// Save ActionCache Tree to the cache
+	tree.Root.Files = filteredChunkNodes
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
 	if err != nil {
 		return nil, err
@@ -1160,6 +1228,42 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	return treeDigest, nil
+}
+
+func (l *FileCacheLoader) findMissingRemoteDigests(ctx context.Context, remoteInstanceName string, digests []*repb.Digest) (map[string]struct{}, error) {
+	if len(digests) == 0 {
+		return map[string]struct{}{}, nil
+	}
+
+	ctx = snaputil.GetSnapshotAccessContext(ctx)
+
+	uniqueDigests := make([]*repb.Digest, 0, len(digests))
+	seenDigests := make(map[string]struct{}, len(digests))
+	for _, d := range digests {
+		hash := d.GetHash()
+		if _, ok := seenDigests[hash]; ok {
+			continue
+		}
+		seenDigests[hash] = struct{}{}
+		uniqueDigests = append(uniqueDigests, d)
+	}
+
+	missingDigests := make(map[string]struct{})
+	for start := 0; start < len(uniqueDigests); start += findMissingBlobsBatchSize {
+		end := min(start+findMissingBlobsBatchSize, len(uniqueDigests))
+		rsp, err := cachetools.FindMissingBlobs(ctx, l.env.GetContentAddressableStorageClient(), &repb.FindMissingBlobsRequest{
+			InstanceName:   remoteInstanceName,
+			BlobDigests:    uniqueDigests[start:end],
+			DigestFunction: repb.DigestFunction_BLAKE3,
+		})
+		if err != nil {
+			return nil, status.WrapError(err, "querying remote cache for snapshot chunks")
+		}
+		for _, d := range rsp.GetMissingBlobDigests() {
+			missingDigests[d.GetHash()] = struct{}{}
+		}
+	}
+	return missingDigests, nil
 }
 
 type SnapshotService struct {
