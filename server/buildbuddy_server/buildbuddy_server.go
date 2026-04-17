@@ -746,7 +746,7 @@ func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOCon
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogForGroup(ctx, groupID, alpb.Action_UPDATE, req)
+		al.LogForGroup(ctx, groupID, alpb.Action_SSO_CONFIG, req)
 	}
 	return &grpb.SetSSOConfigResponse{}, nil
 }

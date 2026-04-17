@@ -166,6 +166,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Update IP Rules Config";
       case Action.INVALIDATE_VM_SNAPSHOT:
         return "Invalidate VM Snapshot";
+      case Action.UPDATE_SSO_CONFIG:
+        return "Update SSO Config";
     }
     return "";
   }
