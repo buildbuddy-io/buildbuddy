@@ -1,0 +1,133 @@
+diff --git a/jailer.go b/jailer.go
+index 208de67..7afcd65 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -338,6 +338,7 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
+ 
+ 	fcArgs := seccompArgs(cfg)
+ 	fcArgs = append(fcArgs, "--api-sock", machineSocketPath)
++	fcArgs = append(fcArgs, cfg.FirecrackerArgs...)
+ 
+ 	builder := NewJailerCommandBuilder().
+ 		WithID(cfg.JailerCfg.ID).
+diff --git a/jailer_test.go b/jailer_test.go
+index 7c7017b..b0c5817 100644
+--- a/jailer_test.go
++++ b/jailer_test.go
+@@ -177,6 +177,7 @@ func TestJail(t *testing.T) {
+ 	var testCases = []struct {
+ 		name             string
+ 		jailerCfg        JailerConfig
++		firecrackerArgs  []string
+ 		expectedArgs     []string
+ 		netns            string
+ 		socketPath       string
+@@ -304,6 +305,39 @@ func TestJail(t *testing.T) {
+ 				"run",
+ 				"firecracker.socket"),
+ 		},
++		{
++			name:             "firecracker args passthrough",
++			firecrackerArgs:  []string{"--enable-pci"},
++			expectedSockPath: filepath.Join(defaultJailerPath, "firecracker", "my-test-id", rootfsFolderName, "run", "firecracker.socket"),
++			jailerCfg: JailerConfig{
++				ID:             "my-test-id",
++				UID:            Int(123),
++				GID:            Int(100),
++				NumaNode:       Int(0),
++				ChrootStrategy: NewNaiveChrootStrategy("kernel-image-path"),
++				ExecFile:       "/path/to/firecracker",
++			},
++			expectedArgs: []string{
++				defaultJailerBin,
++				"--id",
++				"my-test-id",
++				"--uid",
++				"123",
++				"--gid",
++				"100",
++				"--exec-file",
++				"/path/to/firecracker",
++				"--cgroup",
++				"cpuset.mems=0",
++				"--cgroup",
++				fmt.Sprintf("cpuset.cpus=%s", getNumaCpuset(0)),
++				"--",
++				"--no-seccomp",
++				"--api-sock",
++				"/run/firecracker.socket",
++				"--enable-pci",
++			},
++		},
+ 		{
+ 			name:       "custom socket path",
+ 			socketPath: "api.sock",
+@@ -350,10 +384,11 @@ func TestJail(t *testing.T) {
+ 				},
+ 			}
+ 			cfg := &Config{
+-				VMID:       "vmid",
+-				JailerCfg:  &c.jailerCfg,
+-				NetNS:      c.netns,
+-				SocketPath: c.socketPath,
++				VMID:            "vmid",
++				JailerCfg:       &c.jailerCfg,
++				NetNS:           c.netns,
++				SocketPath:      c.socketPath,
++				FirecrackerArgs: c.firecrackerArgs,
+ 			}
+ 			jail(context.Background(), m, cfg)
+ 
+diff --git a/machine.go b/machine.go
+index a812b98..a259981 100644
+--- a/machine.go
++++ b/machine.go
+@@ -158,6 +158,10 @@ type Config struct {
+ 	// restrictive they should be.
+ 	Seccomp SeccompConfig
+ 
++	// FirecrackerArgs specifies additional command-line arguments to pass
++	// directly to the Firecracker process.
++	FirecrackerArgs []string
++
+ 	// MmdsAddress is IPv4 address used by guest applications when issuing requests to MMDS.
+ 	// It is possible to use a valid IPv4 link-local address (169.254.0.0/16).
+ 	// If not provided, the default address (169.254.169.254) will be used.
+@@ -353,7 +357,8 @@ func configureBuilder(builder VMCommandBuilder, cfg Config) VMCommandBuilder {
+ 	return builder.
+ 		WithSocketPath(cfg.SocketPath).
+ 		AddArgs("--id", cfg.VMID).
+-		AddArgs(seccompArgs(&cfg)...)
++		AddArgs(seccompArgs(&cfg)...).
++		AddArgs(cfg.FirecrackerArgs...)
+ }
+ 
+ // NewMachine initializes a new Machine instance and performs validation of the
+diff --git a/machine_test.go b/machine_test.go
+index 6b330d3..d316b6d 100644
+--- a/machine_test.go
++++ b/machine_test.go
+@@ -2439,3 +2439,23 @@ func testUpdateBalloonStats(ctx context.Context, t *testing.T, m *Machine) {
+ 		t.Errorf("Updating balloon staistics failed from testUpdateBalloonStats: %s", err)
+ 	}
+ }
++
++func TestConfigureBuilderWithFirecrackerArgs(t *testing.T) {
++	cfg := Config{
++		SocketPath:      "foo/bar",
++		VMID:            "vmid",
++		FirecrackerArgs: []string{"--enable-pci"},
++	}
++
++	cmd := configureBuilder(VMCommandBuilder{}.WithBin("firecracker"), cfg).Build(context.Background())
++
++	assert.Equal(t, []string{
++		"firecracker",
++		"--api-sock",
++		"foo/bar",
++		"--id",
++		"vmid",
++		"--no-seccomp",
++		"--enable-pci",
++	}, cmd.Args)
++}

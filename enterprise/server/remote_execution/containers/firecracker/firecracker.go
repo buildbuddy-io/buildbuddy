@@ -95,6 +95,7 @@ var (
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", false, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
@@ -601,6 +602,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		HostCpuid:         getCPUID(),
 		EnableVfs:         args.Props.EnableVFS,
 		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
+		EnablePci:         *enablePCI,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1326,6 +1328,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		},
 		ForwardSignals: make([]os.Signal, 0),
 	}
+	if c.vmConfig.GetEnablePci() {
+		cfg.FirecrackerArgs = []string{"--enable-pci"}
+	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
 		return err
@@ -1695,7 +1700,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"console=ttyS0",
 		"reboot=k",
 		"panic=1",
-		"pci=off",
 		"nomodules=1",
 		"random.trust_cpu=on",
 		"i8042.noaux",
@@ -1709,6 +1713,10 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	}
 	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
+	}
+
+	if !vmConfig.EnablePci {
+		kernelArgs = append(kernelArgs, "pci=off")
 	}
 
 	if *initOnAllocAndFree {

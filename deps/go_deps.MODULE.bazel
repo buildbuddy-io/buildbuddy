@@ -46,6 +46,7 @@ go_deps.module_override(
     patches = [
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_extra_args.patch",
     ],
     path = "github.com/firecracker-microvm/firecracker-go-sdk",
 )
