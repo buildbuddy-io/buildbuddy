@@ -12,5 +12,6 @@ filegroup(
         "//tools/metrics/grafana/generated/baremetal_networking:baremetal-networking.json",
         "//tools/metrics/grafana/generated/baremetal_power:baremetal-power.json",
         "//tools/metrics/grafana/generated/disk_performance:disk-performance.json",
+        "//tools/metrics/grafana/generated/node_exporter_full:node-exporter-full-bb.json",
     ],
 )
