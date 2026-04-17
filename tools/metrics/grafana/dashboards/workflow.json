@@ -235,7 +235,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
+          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=~\"executor-workflows.*\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"$region\", job=~\"executor-workflows.*\"}[60m])) > 0)* 60 * 60 > 10)",
           "legendFormat": "runner reuse rate (1h window, where at least 10 workflows executed)",
           "range": true,
           "refId": "A"
@@ -246,7 +246,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "clamp_max(\n  sum(\n    (up{region=~\"$region\", job=\"executor-workflows\"} offset 3m)\n      unless\n     up{region=~\"$region\", job=\"executor-workflows\"}\n  )\n    /\n  sum(up{region=~\"$region\", job=\"executor-workflows\"}),\n1)",
+          "expr": "clamp_max(\n  sum(\n    (up{region=~\"$region\", job=~\"executor-workflows.*\"} offset 3m)\n      unless\n     up{region=~\"$region\", job=~\"executor-workflows.*\"}\n  )\n    /\n  sum(up{region=~\"$region\", job=~\"executor-workflows.*\"}),\n1)",
           "hide": false,
           "legendFormat": "event: fraction of executors shutdown (approx)",
           "range": true,
@@ -354,7 +354,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[10m])\n\t    )\n) / 1e6 / 60",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[10m])\n\t    )\n) / 1e6 / 60",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -434,7 +434,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"memory\", job=\"executor-workflows\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"memory\", job=~\"executor-workflows.*\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -516,7 +516,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"rootfs\", job=\"executor-workflows\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"rootfs\", job=~\"executor-workflows.*\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -709,7 +709,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=\"executor-workflows\"}[5m])) / 1000000000",
+          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])) / 1000000000",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -925,7 +925,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=\"executor-workflows\"})",
+          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=~\"executor-workflows.*\"})",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1006,7 +1006,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"unmapped\"}[5m])) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=~\"executor-workflows.*\", chunk_source=\"unmapped\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -1100,7 +1100,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=\"executor-workflows\"}[5m])\n    )\n  )",
+          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])\n    )\n  )",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -1494,7 +1494,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=~\"executor-workflows.*\", chunk_source=\"remote_cache\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -1575,7 +1575,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\",  job=\"executor-workflows\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\",  job=~\"executor-workflows.*\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
