@@ -8,22 +8,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
-	"github.com/grafana/grafana-foundation-sdk/go/common"
+	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
-	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
-)
-
-// Grafana unit codes used by panel Unit() calls.
-const (
-	unitBytesPerSec = "Bps"
-	unitPercent     = "percent"
-	unitSeconds     = "s"
-	unitShort       = "short"
 )
 
 // Label filter applied to node_exporter and ebpf_exporter queries.
@@ -33,87 +22,48 @@ const (
 	diskFilter = `region=~"$region",rack=~"$rack",platform=~"$platform",virt=~"$virt",pool=~"$pool",instance=~"$instance",device=~"$device"`
 )
 
-func datasourceRef() dashboard.DataSourceRef {
-	uid := "$datasource"
-	return dashboard.DataSourceRef{Uid: &uid}
-}
-
-func promQuery(expr, legend string) *prometheus.DataqueryBuilder {
-	return prometheus.NewDataqueryBuilder().
-		Expr(expr).
-		LegendFormat(legend)
-}
-
-// baseTimeseries returns a timeseries panel preconfigured with a sensible
-// default look: bottom table legend with mean+max calcs, multi-series tooltip,
-// and the $datasource variable.
-func baseTimeseries(title, unit string) *timeseries.PanelBuilder {
-	return timeseries.NewPanelBuilder().
-		Title(title).
-		Datasource(datasourceRef()).
-		Unit(unit).
-		LineWidth(1).
-		FillOpacity(10).
-		GradientMode(common.GraphGradientModeOpacity).
-		ShowPoints(common.VisibilityModeNever).
-		Legend(
-			common.NewVizLegendOptionsBuilder().
-				DisplayMode(common.LegendDisplayModeTable).
-				Placement(common.LegendPlacementBottom).
-				ShowLegend(true).
-				Calcs([]string{"mean", "max", "last"}),
-		).
-		Tooltip(
-			common.NewVizTooltipOptionsBuilder().
-				Mode(common.TooltipDisplayModeMulti).
-				Sort(common.SortOrderDescending),
-		).
-		Height(8).
-		Span(12)
-}
-
 // --- Panels ---
 
 func readThroughputPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Disk read throughput", unitBytesPerSec).
+	return dash.Timeseries("Disk read throughput", dash.UnitBytesPerSec).
 		Description("Bytes read from disk per second, by device.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_read_bytes_total{%s}[$__rate_interval])`, diskFilter),
 			"{{instance}} {{device}}",
 		))
 }
 
 func writeThroughputPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Disk write throughput", unitBytesPerSec).
+	return dash.Timeseries("Disk write throughput", dash.UnitBytesPerSec).
 		Description("Bytes written to disk per second, by device.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_written_bytes_total{%s}[$__rate_interval])`, diskFilter),
 			"{{instance}} {{device}}",
 		))
 }
 
 func readIOPSPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Disk read IOPS", unitShort).
+	return dash.Timeseries("Disk read IOPS", dash.UnitShort).
 		Description("Read operations completed per second, by device.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_reads_completed_total{%s}[$__rate_interval])`, diskFilter),
 			"{{instance}} {{device}}",
 		))
 }
 
 func writeIOPSPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Disk write IOPS", unitShort).
+	return dash.Timeseries("Disk write IOPS", dash.UnitShort).
 		Description("Write operations completed per second, by device.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_writes_completed_total{%s}[$__rate_interval])`, diskFilter),
 			"{{instance}} {{device}}",
 		))
 }
 
 func queueDepthPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Average queue depth", unitShort).
+	return dash.Timeseries("Average queue depth", dash.UnitShort).
 		Description("Average number of I/O requests queued + in-service (aqu-sz from iostat). Leading indicator of saturation — climbs before latency does.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_io_time_weighted_seconds_total{%s}[$__rate_interval])`, diskFilter),
 			"{{instance}} {{device}}",
 		)).
@@ -129,19 +79,19 @@ func queueDepthPanel() *timeseries.PanelBuilder {
 }
 
 func ioUtilPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Disk %util", unitPercent).
+	return dash.Timeseries("Disk %util", dash.UnitPercent).
 		Description("Fraction of time the device had at least one I/O in flight. Caveat: misleading for NVMe, which can service many parallel requests — prefer queue depth and throughput-vs-rated for saturation.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(`rate(node_disk_io_time_seconds_total{%s}[$__rate_interval]) * 100`, diskFilter),
 			"{{instance}} {{device}}",
 		))
 }
 
 func bioLatencyPanel(title, op string, quantile float64) *timeseries.PanelBuilder {
-	return baseTimeseries(title, unitSeconds).
+	return dash.Timeseries(title, dash.UnitSeconds).
 		Description(fmt.Sprintf("%s percentile block I/O %s latency, from the eBPF biolatency histogram.",
 			quantileLabel(quantile), op)).
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(
 				`histogram_quantile(%.2f, sum by (le,instance,device) (rate(ebpf_exporter_bio_latency_seconds_bucket{%s,operation=%q}[$__rate_interval])))`,
 				quantile, diskFilter, op,
@@ -155,9 +105,9 @@ func quantileLabel(q float64) string {
 }
 
 func iowaitPanel() *timeseries.PanelBuilder {
-	return baseTimeseries("CPU iowait", unitPercent).
+	return dash.Timeseries("CPU iowait", dash.UnitPercent).
 		Description("Percentage of CPU time spent waiting on I/O. High iowait means applications are blocked on disk.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(
 				`avg by (instance) (rate(node_cpu_seconds_total{%s,mode="iowait"}[$__rate_interval])) * 100`,
 				nodeFilter,
@@ -167,9 +117,9 @@ func iowaitPanel() *timeseries.PanelBuilder {
 }
 
 func diskSpacePanel() *timeseries.PanelBuilder {
-	return baseTimeseries("Filesystem used", unitPercent).
+	return dash.Timeseries("Filesystem used", dash.UnitPercent).
 		Description("Percentage of filesystem space used.").
-		WithTarget(promQuery(
+		WithTarget(dash.PromQuery(
 			fmt.Sprintf(
 				`100 * (1 - node_filesystem_avail_bytes{%s,fstype!~"tmpfs|overlay|rootfs"} / node_filesystem_size_bytes{%s,fstype!~"tmpfs|overlay|rootfs"})`,
 				nodeFilter, nodeFilter,
@@ -190,12 +140,9 @@ func diskSpacePanel() *timeseries.PanelBuilder {
 // --- Template variables ---
 
 func queryVar(name, label, query string) *dashboard.QueryVariableBuilder {
-	return dashboard.NewQueryVariableBuilder(name).
+	return dash.QueryVar(name, query).
 		Label(label).
-		Datasource(datasourceRef()).
-		Query(dashboard.StringOrMap{String: &query}).
 		Refresh(dashboard.VariableRefreshOnTimeRangeChanged).
-		Sort(dashboard.VariableSortAlphabeticalAsc).
 		Multi(true).
 		IncludeAll(true).
 		AllValue(".*")
@@ -212,12 +159,6 @@ func build() (dashboard.Dashboard, error) {
 		Refresh("30s").
 		Time("now-1h", "now").
 		Tooltip(dashboard.DashboardCursorSyncCrosshair).
-		WithVariable(
-			dashboard.NewDatasourceVariableBuilder("datasource").
-				Label("Data source").
-				Type("prometheus").
-				Multi(false),
-		).
 		WithVariable(queryVar("region", "Region",
 			`label_values(node_uname_info, region)`)).
 		WithVariable(queryVar("rack", "Rack",
@@ -254,15 +195,5 @@ func build() (dashboard.Dashboard, error) {
 }
 
 func main() {
-	d, err := build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "build dashboard: %v\n", err)
-		os.Exit(1)
-	}
-	out, err := json.MarshalIndent(d, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "marshal: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Println(string(out))
+	dash.MustMarshal(build())
 }
