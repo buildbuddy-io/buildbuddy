@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -82,11 +83,17 @@ func insertInstallation(t *testing.T, te *testenv.TestEnv, ctx context.Context) 
 }
 
 func insertRepo(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
+	insertRepoWithSettings(t, te, ctx, false /*=useDefaultWorkflowConfig*/, false /*=cancelOlderWorkflowRunsOnSamePR*/)
+}
+
+func insertRepoWithSettings(t *testing.T, te *testenv.TestEnv, ctx context.Context, useDefaultWorkflowConfig bool, cancelOlderWorkflowRunsOnSamePR bool) {
 	err := te.GetDBHandle().NewQuery(ctx, "test_insert_repo").Create(&tables.GitRepository{
-		GroupID: testGroupID,
-		RepoURL: testRepoURL,
-		AppID:   1,
-		Perms:   1,
+		GroupID:                         testGroupID,
+		RepoURL:                         testRepoURL,
+		AppID:                           1,
+		Perms:                           1,
+		UseDefaultWorkflowConfig:        useDefaultWorkflowConfig,
+		CancelOlderWorkflowRunsOnSamePR: cancelOlderWorkflowRunsOnSamePR,
 	})
 	require.NoError(t, err)
 }
@@ -158,6 +165,44 @@ func TestGetRepositoryInstallationToken_RepoNotImported(t *testing.T) {
 	require.Empty(t, tok)
 	require.Equal(t, 0, client.createTokenCalls)
 }
+
+func TestGetLinkedGitHubRepos_IncludesRepoSettings(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertRepoWithSettings(t, te, ctx, true /*=useDefaultWorkflowConfig*/, true /*=cancelOlderWorkflowRunsOnSamePR*/)
+	service := &GitHubAppService{env: te}
+
+	rsp, err := service.GetLinkedGitHubRepos(ctx)
+	require.NoError(t, err)
+	require.Len(t, rsp.GetRepos(), 1)
+	require.Equal(t, testRepoURL, rsp.GetRepos()[0].GetRepoUrl())
+	require.True(t, rsp.GetRepos()[0].GetUseDefaultWorkflowConfig())
+	require.True(t, rsp.GetRepos()[0].GetCancelOlderWorkflowRunsOnSamePr())
+}
+
+func TestUpdateRepoSettings_UpdatesAllRepoSettings(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertRepo(t, te, ctx)
+	app := &GitHubApp{env: te}
+
+	_, err := app.UpdateRepoSettings(ctx, &ghpb.UpdateRepoSettingsRequest{
+		RepoUrl:                         testRepoURL,
+		UseDefaultWorkflowConfig:        true,
+		CancelOlderWorkflowRunsOnSamePr: true,
+	})
+	require.NoError(t, err)
+
+	var repo tables.GitRepository
+	err = te.GetDBHandle().NewQuery(ctx, "test_get_repo").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, testGroupID, testRepoURL).Take(&repo)
+	require.NoError(t, err)
+	require.True(t, repo.UseDefaultWorkflowConfig)
+	require.True(t, repo.CancelOlderWorkflowRunsOnSamePR)
+}
+
 func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)

@@ -169,6 +169,7 @@ var (
 
 	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	workflowRunID      = flag.String("workflow_run_id", "", "ID shared by all workflow actions that belong to the same workflow run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -1036,11 +1037,18 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 	if *prNumber != 0 {
 		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
+		buildMetadata.Metadata["TAG_PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
 	}
 	if isPushedRefInFork() {
 		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
 	}
 	buildMetadata.Metadata["REPO_URL"] = baseRepoURL()
+	if *workflowID != "" {
+		buildMetadata.Metadata["TAG_WORKFLOW_ID"] = *workflowID
+	}
+	if *workflowRunID != "" {
+		buildMetadata.Metadata["TAG_WORKFLOW_RUN_ID"] = *workflowRunID
+	}
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}

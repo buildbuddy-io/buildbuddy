@@ -190,6 +190,10 @@ message GitRepository {
   // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
   // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 2;
+
+  // Whether to automatically cancel older in-progress workflow runs for the
+  // same pull request after starting a newer run.
+  bool cancel_older_workflow_runs_on_same_pr = 3;
 }
 
 message GetLinkedReposResponse {
@@ -241,6 +245,10 @@ message UpdateRepoSettingsRequest {
   // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
   // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 3;
+
+  // Whether to automatically cancel older in-progress workflow runs for the
+  // same pull request after starting a newer run.
+  bool cancel_older_workflow_runs_on_same_pr = 4;
 }
 
 message UpdateRepoSettingsResponse {

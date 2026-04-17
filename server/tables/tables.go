@@ -701,6 +701,11 @@ type GitRepository struct {
 	// running for a git repo when it is linked.
 	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
 
+	// CancelOlderWorkflowRunsOnSamePR determines whether older in-progress
+	// workflow runs for the same pull request should be canceled automatically
+	// once a newer run has started.
+	CancelOlderWorkflowRunsOnSamePR bool `gorm:"not null;default:0"`
+
 	// UseCLIInRemoteRunners determines whether the BuildBuddy CLI (`bb`) should be
 	// used as the bazel command on remote runners for this repo.
 	// Otherwise they will use `bazelisk` by default.

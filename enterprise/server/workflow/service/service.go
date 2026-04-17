@@ -59,6 +59,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -96,6 +97,10 @@ const (
 
 	// Non-root user that has been pre-provisioned in workflow images.
 	nonRootUser = "buildbuddy"
+
+	workflowIDTagKey        = "WORKFLOW_ID"
+	pullRequestNumberTagKey = "PULL_REQUEST_NUMBER"
+	workflowRunIDTagKey     = "WORKFLOW_RUN_ID"
 
 	// Number of workers to work on processing webhook events in the background.
 	webhookWorkerCount = 64
@@ -485,7 +490,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
 			shouldRetry := !req.GetDisableRetry()
-			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
+			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, "" /*=workflowRunID*/, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
 				log.CtxWarning(executionCtx, statusErr.Error())
@@ -1002,7 +1007,7 @@ func (ws *workflowService) createBBURL(ctx context.Context, path string) (string
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string, env map[string]string, retry bool) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, workflowRunID string, extraArgs []string, env map[string]string, retry bool) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -1117,6 +1122,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--target_branch=" + wd.TargetBranch,
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
+		"--workflow_run_id=" + workflowRunID,
 		"--trigger_event=" + wd.EventName,
 		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
@@ -1444,7 +1450,18 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		return err
 	}
 
+	workflowRunID := ""
+	cancelOlderRunsOnSamePR := ws.shouldCancelOlderWorkflowRunsOnSamePR(wf, wd)
+	if cancelOlderRunsOnSamePR {
+		workflowRunUUID, err := guuid.NewRandom()
+		if err != nil {
+			return err
+		}
+		workflowRunID = workflowRunUUID.String()
+	}
+
 	var wg sync.WaitGroup
+	var cancelOlderRuns sync.Once
 	for _, action := range actions {
 		action := action
 		invocationUUID, err := guuid.NewRandom()
@@ -1461,23 +1478,109 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			// Webhook triggered workflows should always be retried, because they
 			// don't have a client to retry for them
 			shouldRetry := true
-			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
+			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, workflowRunID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
+			if err != nil {
 				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+				return
 			}
+			if !cancelOlderRunsOnSamePR {
+				return
+			}
+			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+				log.CtxWarningf(ctx, "Failed to wait for workflow invocation %s to be created before canceling older PR runs: %s", invocationID, err)
+				return
+			}
+			cancelOlderRuns.Do(func() {
+				if err := ws.cancelOlderWorkflowRunsOnSamePR(ctx, apiKey, wf, wd, workflowRunID, invocationID); err != nil {
+					log.CtxWarningf(ctx, "Failed to cancel older PR workflow runs for %s: %s", wf.WorkflowID, err)
+				}
+			})
 		}()
 	}
 	wg.Wait()
 	return nil
 }
 
+func (ws *workflowService) shouldCancelOlderWorkflowRunsOnSamePR(wf *tables.Workflow, wd *interfaces.WebhookData) bool {
+	return wf.GitRepository != nil &&
+		wf.GitRepository.CancelOlderWorkflowRunsOnSamePR &&
+		wd.PullRequestNumber != 0
+}
+
+func workflowInvocationTag(key, value string) string {
+	return key + "=" + value
+}
+
+func invocationHasTag(inv *inpb.Invocation, tag string) bool {
+	for _, t := range inv.GetTags() {
+		if t.GetName() == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func (ws *workflowService) cancelOlderWorkflowRunsOnSamePR(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, workflowRunID, invocationID string) error {
+	if ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
+		return nil
+	}
+
+	authCtx := ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	currentInvocation, err := ws.env.GetInvocationDB().LookupInvocation(authCtx, invocationID)
+	if err != nil {
+		return status.WrapErrorf(err, "lookup current invocation %q", invocationID)
+	}
+
+	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(authCtx, &inpb.SearchInvocationRequest{
+		Query: &inpb.InvocationQuery{
+			GroupId: wf.GroupID,
+			RepoUrl: wf.RepoURL,
+			Role:    []string{"CI_RUNNER"},
+			Status:  []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
+			Tags: []string{
+				workflowInvocationTag(workflowIDTagKey, wf.WorkflowID),
+				workflowInvocationTag(pullRequestNumberTagKey, fmt.Sprintf("%d", wd.PullRequestNumber)),
+			},
+		},
+		Count: 1000,
+		Sort:  &inpb.InvocationSort{SortField: inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD},
+	})
+	if err != nil {
+		return status.WrapError(err, "search in-progress PR workflow invocations")
+	}
+
+	currentRunTag := workflowInvocationTag(workflowRunIDTagKey, workflowRunID)
+	cancelled := 0
+	for _, inv := range searchResp.GetInvocation() {
+		if inv.GetInvocationId() == invocationID {
+			continue
+		}
+		if inv.GetCreatedAtUsec() >= currentInvocation.CreatedAtUsec {
+			continue
+		}
+		if invocationHasTag(inv, currentRunTag) {
+			continue
+		}
+		if err := ws.env.GetRemoteExecutionService().Cancel(authCtx, inv.GetInvocationId()); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel older workflow invocation %s for workflow %s PR #%d: %s", inv.GetInvocationId(), wf.WorkflowID, wd.PullRequestNumber, err)
+			continue
+		}
+		cancelled++
+	}
+	if cancelled > 0 {
+		log.CtxInfof(ctx, "Cancelled %d older workflow run(s) for workflow %s PR #%d", cancelled, wf.WorkflowID, wd.PullRequestNumber)
+	}
+	return nil
+}
+
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
-func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, workflowRunID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = *workflowsMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
-		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, workflowRunID, extraCIRunnerArgs, env, shouldRetry)
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
@@ -1512,14 +1615,14 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	return "", lastErr
 }
 
-func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
+func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, workflowRunID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env.GetAuthenticator())
 	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd, workflowAction.Name, workflowAction.GitCleanExclude)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs, env, retry)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, workflowRunID, extraCIRunnerArgs, env, retry)
 	if err != nil {
 		return "", err
 	}

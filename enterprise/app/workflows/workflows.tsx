@@ -280,6 +280,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     user={this.props.user}
                     repoUrl={repo.repoUrl}
                     useDefaultWorkflowConfig={repo.useDefaultWorkflowConfig}
+                    cancelOlderWorkflowRunsOnSamePr={repo.cancelOlderWorkflowRunsOnSamePr}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
                     onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
                     history={this.renderActionList(workflowHistory, repo.repoUrl)}
@@ -294,6 +295,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     useDefaultWorkflowConfig={true} /* Default for legacy workflows */
+                    cancelOlderWorkflowRunsOnSamePr={false}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
                     onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
@@ -353,6 +355,7 @@ type RepoItemProps = {
   repoUrl: string;
   webhookUrl?: string;
   useDefaultWorkflowConfig: boolean;
+  cancelOlderWorkflowRunsOnSamePr: boolean;
   onClickUnlinkItem: (url: string) => void;
   onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
@@ -370,6 +373,7 @@ type RepoItemState = {
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
   startTime: Date | null;
   useDefaultWorkflowConfig: boolean;
+  cancelOlderWorkflowRunsOnSamePr: boolean;
 };
 
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
@@ -384,6 +388,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     runWorkflowActionStatuses: null,
     startTime: null,
     useDefaultWorkflowConfig: this.props.useDefaultWorkflowConfig,
+    cancelOlderWorkflowRunsOnSamePr: this.props.cancelOlderWorkflowRunsOnSamePr,
   };
 
   private onClickMenuButton() {
@@ -399,13 +404,18 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     alert_service.success("Copied webhook URL to clipboard!");
   }
 
-  private onClickUpdateDefaultConfig(updated: boolean) {
-    const prev = this.state.useDefaultWorkflowConfig;
-    this.setState({ useDefaultWorkflowConfig: updated });
+  private updateRepoSettings(updated: Partial<Pick<RepoItemState, "useDefaultWorkflowConfig" | "cancelOlderWorkflowRunsOnSamePr">>) {
+    const prev = {
+      useDefaultWorkflowConfig: this.state.useDefaultWorkflowConfig,
+      cancelOlderWorkflowRunsOnSamePr: this.state.cancelOlderWorkflowRunsOnSamePr,
+    };
+    this.setState(updated as Pick<RepoItemState, "useDefaultWorkflowConfig" | "cancelOlderWorkflowRunsOnSamePr">);
 
     const request = new github.UpdateRepoSettingsRequest({
       repoUrl: this.props.repoUrl,
-      useDefaultWorkflowConfig: updated,
+      useDefaultWorkflowConfig: updated.useDefaultWorkflowConfig ?? prev.useDefaultWorkflowConfig,
+      cancelOlderWorkflowRunsOnSamePr:
+        updated.cancelOlderWorkflowRunsOnSamePr ?? prev.cancelOlderWorkflowRunsOnSamePr,
     });
 
     alert_service.loading();
@@ -415,14 +425,27 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         alert_service.success(`Successfully updated repository settings`);
       })
       .catch((e) => {
-        this.setState({ useDefaultWorkflowConfig: prev });
+        this.setState(prev);
         errorService.handleError(e);
       });
+  }
+
+  private onClickUpdateDefaultConfig(updated: boolean) {
+    this.updateRepoSettings({ useDefaultWorkflowConfig: updated });
   }
 
   private onClickUpdateDefaultConfigMenuItem() {
     this.setState({ isMenuOpen: false });
     this.onClickUpdateDefaultConfig(!this.state.useDefaultWorkflowConfig);
+  }
+
+  private onClickUpdateCancelOlderWorkflowRunsOnSamePR(updated: boolean) {
+    this.updateRepoSettings({ cancelOlderWorkflowRunsOnSamePr: updated });
+  }
+
+  private onClickUpdateCancelOlderWorkflowRunsOnSamePRMenuItem() {
+    this.setState({ isMenuOpen: false });
+    this.onClickUpdateCancelOlderWorkflowRunsOnSamePR(!this.state.cancelOlderWorkflowRunsOnSamePr);
   }
 
   private onClickUnlinkMenuItem() {
@@ -540,6 +563,14 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         ? "Disable default workflow config"
         : "Enable default workflow config";
       menuItems.push(<MenuItem onClick={this.onClickUpdateDefaultConfigMenuItem.bind(this)}>{configText}</MenuItem>);
+      const cancelOlderRunsText = this.state.cancelOlderWorkflowRunsOnSamePr
+        ? "Disable cancel older PR runs"
+        : "Enable cancel older PR runs";
+      menuItems.push(
+        <MenuItem onClick={this.onClickUpdateCancelOlderWorkflowRunsOnSamePRMenuItem.bind(this)}>
+          {cancelOlderRunsText}
+        </MenuItem>
+      );
     }
 
     return (

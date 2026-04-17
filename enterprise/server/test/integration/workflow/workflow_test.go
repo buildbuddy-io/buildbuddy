@@ -123,6 +123,27 @@ actions:
 	}
 }
 
+func repoWithSlowPullRequestScript() map[string]string {
+	return map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "sleep_forever_test",
+    srcs = ["sleep_forever_test.sh"],
+)
+`,
+		"sleep_forever_test.sh": "tail -f /dev/null",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Slow PR test action"
+    bazel_use_cli: false
+    triggers: { pull_request: { branches: [ master ] } }
+    bazel_commands: [ "run //:sleep_forever_test" ]
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+`,
+	}
+}
+
 func repoWithInvalidConfig() map[string]string {
 	// Note the missing close-quote in the bazel command.
 	return map[string]string{
@@ -221,6 +242,23 @@ func triggerWebhook(t *testing.T, ctx context.Context, gitProvider *testgit.Fake
 		SHA:           commitSHA,
 		TargetRepoURL: repoURL,
 		TargetBranch:  "master",
+	}
+	err := workflowService.HandleRepositoryEvent(ctx, repo, gitProvider.WebhookData, "faketoken")
+	require.NoError(t, err)
+}
+
+func triggerPullRequestWebhook(t *testing.T, ctx context.Context, gitProvider *testgit.FakeProvider, workflowService interfaces.WorkflowService, repo *tables.GitRepository, repoContents map[string]string, repoURL string, commitSHA string, prNumber int64) {
+	gitProvider.FileContents = repoContents
+	gitProvider.WebhookData = &interfaces.WebhookData{
+		EventName:          "pull_request",
+		PushedRepoURL:      repoURL,
+		PushedBranch:       "feature",
+		SHA:                commitSHA,
+		TargetRepoURL:      repoURL,
+		TargetBranch:       "master",
+		PullRequestNumber:  prNumber,
+		IsTargetRepoPublic: true,
+		PullRequestAuthor:  "trusted-user",
 	}
 	err := workflowService.HandleRepositoryEvent(ctx, repo, gitProvider.WebhookData, "faketoken")
 	require.NoError(t, err)
@@ -540,6 +578,61 @@ func TestCancel(t *testing.T) {
 			require.FailNowf(t, "timeout", "Timed out waiting for child to either complete or be disconeccted")
 		}
 	}
+}
+
+func TestCancelOlderRunsOnSamePR(t *testing.T) {
+	fakeGitProvider := testgit.NewFakeProvider()
+	fakeGitProvider.TrustedUsers = []string{"trusted-user"}
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	repoContentsMap := repoWithSlowPullRequestScript()
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	repo := createWorkflow(t, env, repoURL)
+	repo.CancelOlderWorkflowRunsOnSamePR = true
+
+	triggerPullRequestWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, commitSHA, 123)
+	firstInvocationID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstInvocationID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	triggerPullRequestWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, commitSHA, 123)
+
+	var secondInvocationID string
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+			RequestContext: reqCtx,
+			Query:          &inpb.InvocationQuery{GroupId: reqCtx.GetGroupId()},
+		})
+		require.NoError(t, err)
+		for _, inv := range searchResp.GetInvocation() {
+			if inv.GetRole() == "CI_RUNNER" && inv.GetInvocationId() != firstInvocationID {
+				secondInvocationID = inv.GetInvocationId()
+				break
+			}
+		}
+		if secondInvocationID != "" {
+			break
+		}
+		time.Sleep(delay)
+	}
+	require.NotEmpty(t, secondInvocationID)
+
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstInvocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, secondInvocationID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		RequestContext: reqCtx,
+		InvocationId:   secondInvocationID,
+	})
+	require.NoError(t, err)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, secondInvocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 }
 
 func TestInvalidYAML(t *testing.T) {
