@@ -21,8 +21,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -1071,7 +1073,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			ctxErr = err
 			break
 		}
-		// Check whether one errgroup failed and cancelled the context.
+		// Check whether one errgroup goroutine failed and cancelled the context.
 		if egCtx.Err() != nil {
 			break
 		}
@@ -1134,11 +1136,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 	// If the snapshot should be written remotely, we must call FindMissing on all chunks
 	// to ensure their atimes are updated and all chunks of the remote snapshot won't be evicted.
-	missingRemoteDigests := map[string]struct{}{}
+	missingRemoteDigests := make(set.Set[string])
 	if cacheOpts.CacheSnapshotRemotely {
 		allDigests := make([]*repb.Digest, 0, len(chunkNodes))
 		for _, chunkNode := range chunkNodes {
-			if chunkNode.Digest == nil || chunkNode.Digest.GetHash() == allZerosDigest.GetHash() {
+			if chunkNode.Digest == nil {
+				msg := fmt.Sprintf("Digest is nil for chunk %s", chunkNode.Name)
+				alert.CtxUnexpectedEvent(ctx, msg)
+				return nil, status.InternalErrorf("%s", msg)
+			}
+			if chunkNode.Digest.GetHash() == allZerosDigest.GetHash() {
 				continue
 			}
 			allDigests = append(allDigests, chunkNode.Digest)
@@ -1167,7 +1174,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			ctxErr = err
 			break
 		}
-		// Check whether one errgroup failed and cancelled the context.
+		// Check whether one errgroup goroutine failed and cancelled the context.
 		if uploadCtx.Err() != nil {
 			break
 		}
@@ -1180,8 +1187,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 		filteredChunkNodes = append(filteredChunkNodes, chunkNodes[i])
 
-		i := i
-		c := c
 		chunkDigest := d
 		uploadEg.Go(func() error {
 			dirty := cow.Dirty(c.Offset)
@@ -1198,8 +1203,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			shouldCacheRemotely := false
 			if cacheOpts.CacheSnapshotRemotely {
 				mu.Lock()
-				if _, shouldCacheRemotely = missingRemoteDigests[chunkDigest.GetHash()]; shouldCacheRemotely {
-					delete(missingRemoteDigests, chunkDigest.GetHash())
+				shouldCacheRemotely = missingRemoteDigests.Contains(chunkDigest.GetHash())
+				if shouldCacheRemotely {
+					missingRemoteDigests.Remove(chunkDigest.GetHash())
 				}
 				mu.Unlock()
 			}
@@ -1258,37 +1264,36 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	return treeDigest, nil
 }
 
-func (l *FileCacheLoader) findMissingRemoteDigests(ctx context.Context, remoteInstanceName string, digests []*repb.Digest) (map[string]struct{}, error) {
+func (l *FileCacheLoader) findMissingRemoteDigests(ctx context.Context, remoteInstanceName string, digests []*repb.Digest) (set.Set[string], error) {
 	if len(digests) == 0 {
-		return map[string]struct{}{}, nil
+		return make(set.Set[string]), nil
 	}
 
 	ctx = snaputil.GetSnapshotAccessContext(ctx)
 
 	uniqueDigests := make([]*repb.Digest, 0, len(digests))
-	seenDigests := make(map[string]struct{}, len(digests))
+	seenDigests := make(set.Set[string], len(digests))
 	for _, d := range digests {
 		hash := d.GetHash()
-		if _, ok := seenDigests[hash]; ok {
+		if seenDigests.Contains(hash) {
 			continue
 		}
-		seenDigests[hash] = struct{}{}
+		seenDigests.Add(hash)
 		uniqueDigests = append(uniqueDigests, d)
 	}
 
-	missingDigests := make(map[string]struct{})
-	for start := 0; start < len(uniqueDigests); start += findMissingBlobsBatchSize {
-		end := min(start+findMissingBlobsBatchSize, len(uniqueDigests))
+	missingDigests := make(set.Set[string])
+	for chunk := range slices.Chunk(uniqueDigests, findMissingBlobsBatchSize) {
 		rsp, err := cachetools.FindMissingBlobs(ctx, l.env.GetContentAddressableStorageClient(), &repb.FindMissingBlobsRequest{
 			InstanceName:   remoteInstanceName,
-			BlobDigests:    uniqueDigests[start:end],
+			BlobDigests:    chunk,
 			DigestFunction: repb.DigestFunction_BLAKE3,
 		})
 		if err != nil {
 			return nil, status.WrapError(err, "querying remote cache for snapshot chunks")
 		}
 		for _, d := range rsp.GetMissingBlobDigests() {
-			missingDigests[d.GetHash()] = struct{}{}
+			missingDigests.Add(d.GetHash())
 		}
 	}
 	return missingDigests, nil
