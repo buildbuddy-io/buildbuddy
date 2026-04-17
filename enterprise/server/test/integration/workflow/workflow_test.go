@@ -269,6 +269,33 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 	return ""
 }
 
+func waitForAnyInvocationCreatedMatching(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, query *inpb.InvocationQuery, excludeInvocationIDs ...string) string {
+	excluded := make(map[string]struct{}, len(excludeInvocationIDs))
+	for _, invocationID := range excludeInvocationIDs {
+		excluded[invocationID] = struct{}{}
+	}
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+			RequestContext: reqCtx,
+			Query:          query,
+		})
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			require.NoError(t, err)
+		}
+		for _, in := range searchResp.GetInvocation() {
+			if _, ok := excluded[in.GetInvocationId()]; ok {
+				continue
+			}
+			return in.GetInvocationId()
+		}
+
+		time.Sleep(delay)
+	}
+
+	require.FailNowf(t, "timeout", "Timed out waiting for matching invocation to be created")
+	return ""
+}
+
 func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inspb.InvocationStatus) *inpb.Invocation {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		inv := getInvocation(t, ctx, bb, reqCtx, invocationID, false /*fetchChildren*/)
@@ -279,8 +306,9 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 				InvocationId: invocationID,
 				MinLines:     math.MaxInt32,
 			})
-			require.NoError(t, err)
-			inv.ConsoleBuffer = string(logResp.Buffer)
+			if err == nil {
+				inv.ConsoleBuffer = string(logResp.Buffer)
+			}
 			return inv
 		}
 
@@ -540,6 +568,61 @@ func TestCancel(t *testing.T) {
 			require.FailNowf(t, "timeout", "Timed out waiting for child to either complete or be disconeccted")
 		}
 	}
+}
+
+func TestCancelOlderRunsOnSameBranch(t *testing.T) {
+	flags.Set(t, "workflows.cancel_duplicates", true)
+
+	fakeGitProvider := testgit.NewFakeProvider()
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	// Set up a workflow that hangs, so the workflow doesn't accidentally complete before we can cancel it.
+	repoContentsMap := repoWithSlowScript()
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	repo := createWorkflow(t, env, repoURL)
+
+	// Trigger run #1 of the workflow on a branch.
+	triggerWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, commitSHA)
+	firstOuterIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
+		GroupId: reqCtx.GetGroupId(),
+		RepoUrl: repoURL,
+		Role:    []string{"CI_RUNNER"},
+	})
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+	firstChildIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
+		GroupId:    reqCtx.GetGroupId(),
+		RepoUrl:    repoURL,
+		BranchName: "master",
+		Role:       []string{"CI"},
+		Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
+	})
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstChildIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	secondCommitSHA := testgit.CommitFiles(t, repoPath, map[string]string{
+		"rerun.txt": "second commit on the same branch\n",
+	})
+
+	// Trigger run #2 of the workflow on the same branch but at a different commit.
+	triggerWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, secondCommitSHA)
+	secondOuterIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
+		GroupId: reqCtx.GetGroupId(),
+		RepoUrl: repoURL,
+		Role:    []string{"CI_RUNNER"},
+	}, firstOuterIID)
+
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstChildIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+
+	// Make sure the second workflow was not accidentally cancelled too.
+	waitForInvocationStatus(t, ctx, bb, reqCtx, secondOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 }
 
 func TestInvalidYAML(t *testing.T) {

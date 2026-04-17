@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/webhooks/webhook_data",
         "//enterprise/server/workflow/config",
         "//proto:context_go_proto",
+        "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
