@@ -9,6 +9,7 @@ package(default_visibility = ["//visibility:public"])
 filegroup(
     name = "all_dashboards",
     srcs = [
+        "//tools/metrics/grafana/generated/baremetal_networking:baremetal-networking.json",
         "//tools/metrics/grafana/generated/disk_performance:disk-performance.json",
     ],
 )

@@ -7,9 +7,8 @@ go_library(
     srcs = ["disk_performance.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/disk_performance",
     deps = [
-        "@com_github_grafana_grafana_foundation_sdk_go//common",
+        "//tools/metrics/grafana/generated/dash",
         "@com_github_grafana_grafana_foundation_sdk_go//dashboard",
-        "@com_github_grafana_grafana_foundation_sdk_go//prometheus",
         "@com_github_grafana_grafana_foundation_sdk_go//timeseries",
     ],
 )
