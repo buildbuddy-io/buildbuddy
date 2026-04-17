@@ -111,6 +111,10 @@ type Sender[S proto.Message, R proto.Message] struct {
 	stream   SendStream[S, R]
 	sendChan chan S
 	errChan  chan error
+
+	// done channel that's closed when the sending goroutine exists, to ensure
+	// that there are no in-flight stream.Send calls when calling CloseAndRecv.
+	done chan struct{}
 }
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
@@ -153,13 +157,23 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 		close(s.sendChan)
 		s.sendChan = nil
 	}
+	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
+	defer cancel()
+
+	// gRPC client streams don't support concurrent Send and Close* operations.
+	// If a previous SendWithTimeoutCause timed out, the sending goroutine may
+	// be stuck in stream.Send — let it exit before touching the stream again.
+	select {
+	case <-s.done:
+	case <-ctx.Done():
+		return *new(R), context.Cause(ctx)
+	}
+
 	ch := make(chan StreamMsg[R], 1)
 	go func() {
 		rsp, err := s.stream.CloseAndRecv()
 		ch <- StreamMsg[R]{rsp, err}
 	}()
-	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
-	defer cancel()
 	select {
 	case msg := <-ch:
 		return msg.Data, msg.Error
@@ -182,7 +196,9 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause
 func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
 	sendChan := make(chan S, 1)
 	errChan := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
 			case req, ok := <-sendChan:
@@ -203,7 +219,7 @@ func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream Sen
 			}
 		}
 	}()
-	return Sender[S, R]{ctx, stream, sendChan, errChan}
+	return Sender[S, R]{ctx, stream, sendChan, errChan, done}
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.
