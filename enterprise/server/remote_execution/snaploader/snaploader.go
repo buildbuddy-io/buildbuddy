@@ -491,6 +491,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		}
 	}
 
+	log.CtxInfof(ctx, "Using remote manifest")
 	return manifest, snaputil.ChunkSourceRemoteCache, nil
 }
 
