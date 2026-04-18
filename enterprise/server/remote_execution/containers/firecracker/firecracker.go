@@ -2187,27 +2187,18 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
 
-	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
-		return status.InternalErrorf("failed to create chroot dir: %s", err)
-	}
-	log.CtxInfof(ctx, "Created chroot dir %q", c.getChroot())
-
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+
+	// Validate that the caller pulled the image.
+	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+		return status.UnavailableErrorf("check containerfs exists: %s", err)
+	} else if !exists {
+		return status.FailedPreconditionError("containerfs unexpectedly missing from VM root directory")
+	}
+
 	rootFSPath := filepath.Join(c.getChroot(), rootFSName)
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
 	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
-
-	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return status.UnavailableErrorf("container image is unavailable: %s", err)
-	}
-	if imageExt4Path == "" {
-		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
-	}
-	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
-		return err
-	}
 
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
@@ -2691,11 +2682,23 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+
+	// In normal operation, we don't expect IsImageCached to be called multiple
+	// times, but handle this case gracefully and do nothing if the image was
+	// already hardlinked.
+	exists, err := disk.FileExists(ctx, containerFSPath)
 	if err != nil {
 		return false, err
+	} else if exists {
+		return true, nil
 	}
-	return diskImagePath != "", nil
+
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return false, err
+	}
+	_, ok, err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+	return ok, err
 }
 
 // PullImage pulls the container image from the remote. It always
@@ -2722,7 +2725,26 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher)
+	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "authenticate with registry")
+	}
+
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+
+	// PullImageIfNecessary may have already called IsImageCached, which eagerly
+	// hardlinks the cached image into the chroot. In that case we still need to
+	// re-authenticate before using the cached image.
+	exists, err := disk.FileExists(ctx, containerFSPath)
+	if err != nil {
+		return status.UnavailableErrorf("stat container FS path: %s", err)
+	} else if exists {
+		return nil
+	}
+
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.UnavailableErrorf("create chroot dir: %s", err)
+	}
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}
