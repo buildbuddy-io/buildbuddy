@@ -1188,7 +1188,6 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	// We want to more frequently save the default snapshot, because it is used as a fallback for
 	// runs on other branches, so we want it to stay relatively up-to-date.
 	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
-		log.CtxInfof(ctx, "IsLikelyDefaultSnapshot: %v", c.SnapshotKeySet())
 		// Limit how often we write snapshots on the default branch.
 		manifest, _, err := c.loader.FetchRemoteManifest(ctx, c.SnapshotKeySet().GetWriteKey())
 		if err != nil {
@@ -1202,7 +1201,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
 		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Writing remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
 			return true
 		}
 		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
@@ -1250,7 +1249,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
 		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Writing local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
 			return true
 		}
 		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
