@@ -426,7 +426,7 @@ type FakeContainerWithImageSize struct {
 	Size int64
 }
 
-func (c *FakeContainerWithImageSize) ImageSizeBytes() int64 {
+func (c *FakeContainerWithImageSize) ImageSizeBytes(ctx context.Context) int64 {
 	return c.Size
 }
 
@@ -434,14 +434,14 @@ func TestTracedCommandContainer_ImageSizeBytes_WithImageSizer(t *testing.T) {
 	delegate := &FakeContainerWithImageSize{Size: 1234567890}
 	traced := container.NewTracedCommandContainer(delegate)
 
-	assert.Equal(t, int64(1234567890), traced.ImageSizeBytes())
+	assert.Equal(t, int64(1234567890), traced.ImageSizeBytes(context.Background()))
 }
 
 func TestTracedCommandContainer_ImageSizeBytes_WithoutImageSizer(t *testing.T) {
 	delegate := &FakeContainer{}
 	traced := container.NewTracedCommandContainer(delegate)
 
-	assert.Equal(t, int64(0), traced.ImageSizeBytes())
+	assert.Equal(t, int64(0), traced.ImageSizeBytes(context.Background()))
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

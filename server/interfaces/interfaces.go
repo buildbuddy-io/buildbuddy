@@ -1140,7 +1140,7 @@ type Runner interface {
 	// ContainerImageInfo returns the container image ref used for the
 	// execution, and its estimated on-disk size in bytes.
 	// Should be called after PrepareForTask.
-	ContainerImageInfo() (ref string, sizeBytes int64)
+	ContainerImageInfo(ctx context.Context) (ref string, sizeBytes int64)
 }
 
 type CacheRoutingService interface {

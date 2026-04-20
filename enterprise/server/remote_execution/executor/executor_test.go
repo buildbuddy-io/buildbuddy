@@ -541,7 +541,7 @@ type imageSizingContainer struct {
 	imageSize int64
 }
 
-func (c *imageSizingContainer) ImageSizeBytes() int64 {
+func (c *imageSizingContainer) ImageSizeBytes(ctx context.Context) int64 {
 	return c.imageSize
 }
 

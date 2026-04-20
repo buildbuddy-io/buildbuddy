@@ -328,7 +328,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	// Record container image metadata after pulling.
-	auxMetadata.ContainerImage, auxMetadata.ContainerImageSizeBytes = r.ContainerImageInfo()
+	auxMetadata.ContainerImage, auxMetadata.ContainerImageSizeBytes = r.ContainerImageInfo(ctx)
 
 	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 

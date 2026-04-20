@@ -629,7 +629,7 @@ func (c *ociContainer) IsolationType() string {
 	return "oci" // TODO: make const in platform.go
 }
 
-func (c *ociContainer) ImageSizeBytes() int64 {
+func (c *ociContainer) ImageSizeBytes(ctx context.Context) int64 {
 	if c.lockedImage == nil {
 		return 0
 	}

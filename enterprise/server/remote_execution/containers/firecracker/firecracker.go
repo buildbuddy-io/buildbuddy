@@ -2102,13 +2102,11 @@ func (c *FirecrackerContainer) IsolationType() string {
 	return "firecracker"
 }
 
-func (c *FirecrackerContainer) ImageSizeBytes() int64 {
+func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) int64 {
 	if !c.pulled {
 		return 0
 	}
-	// ImageSizer interface doesn't take a context; this is only called once
-	// per execution so context.TODO() is acceptable.
-	imagePath, err := ociconv.CachedDiskImagePath(context.TODO(), c.executorConfig.CacheRoot, c.containerImage)
+	imagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil || imagePath == "" {
 		return 0
 	}
