@@ -1177,9 +1177,12 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 	})
 	eg.Go(func() error {
 		execution, err := retry.Do(ctx, &retry.Options{
-			InitialBackoff: 500 * time.Millisecond,
-			MaxBackoff:     5 * time.Second,
-			Multiplier:     2,
+			InitialBackoff:        500 * time.Millisecond,
+			MaxBackoff:            5 * time.Second,
+			Multiplier:            2,
+			// Failed attempts are expected here since we're polling for
+			// existence.
+			DontLogFailedAttempts: true,
 		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
 			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
 				InvocationId: iid,
