@@ -4053,7 +4053,7 @@ var (
 // number of buckets. You can use go/buckets (go.dev/play/p/-9T203IuxF1)
 // to help you come up with sensible buckets for your metric.
 func exponentialBucketRange(min, max, factor float64) []float64 {
-	if min < 0 || min >= max {
+	if min <= 0 || min >= max {
 		panic(fmt.Sprintf("exponentialBucketRange: expected 0 < min < max, got min=%f, max=%f", min, max))
 	}
 	if factor <= 1 {
