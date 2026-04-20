@@ -31,15 +31,11 @@ import (
 )
 
 var (
-	chunkedManifestSalt  = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes    = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
-	checkLegacyManifests = flag.Bool("cache.chunking.check_legacy_manifests", true, "If true, fall back to loading manifests with the legacy AC key scheme when the current scheme returns not found. Disable once metrics confirm no legacy manifests are being loaded, and re-enable when a new manifest scheme is introduced.")
+	chunkedManifestSalt = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
+	avgChunkSizeBytes   = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 )
 
 const (
-	// When adding a new manifest scheme, update legacyManifestPrefix to
-	// point to the current prefix, then add the new one as the active prefix.
-	legacyManifestPrefix         = "_bb_chunked_manifest_v2_/"
 	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
 	chunkOutputFilePrefix        = "chunk_"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
@@ -310,30 +306,16 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 }
 
 // LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
-// It tries the current key first, then falls back to the legacy key.
 func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
 	manifest, err := loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, rn)
-	if err == nil {
-		metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
-		return manifest, nil
-	}
-	if !status.IsNotFoundError(err) || !*checkLegacyManifests {
-		return nil, err
-	}
-
-	legacyRN, err := legacyACResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err = loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, legacyRN)
-	if err != nil {
-		return nil, err
-	}
-	metrics.ChunkedManifestLoadCount.WithLabelValues(legacyManifestPrefix).Inc()
+	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
 	return manifest, nil
 }
 
@@ -511,18 +493,10 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 }
 
 func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	return acResourceNameVersioned(chunkedManifestPrefix, blobToManifestSize(blobDigest.GetSizeBytes()), blobDigest, instanceName, digestFunction)
-}
-
-func legacyACResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	return acResourceNameVersioned(legacyManifestPrefix, blobDigest.GetSizeBytes(), blobDigest, instanceName, digestFunction)
-}
-
-func acResourceNameVersioned(prefix string, sizeBytes int64, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	acInstanceName := prefix + instanceName
+	acInstanceName := chunkedManifestPrefix + instanceName
 	acDigest := &repb.Digest{
 		Hash:      blobDigest.GetHash(),
-		SizeBytes: sizeBytes,
+		SizeBytes: blobToManifestSize(blobDigest.GetSizeBytes()),
 	}
 
 	// Optionally salt the AC key with a salt value. This is used to prevent someone uploading
@@ -534,7 +508,7 @@ func acResourceNameVersioned(prefix string, sizeBytes int64, blobDigest *repb.Di
 		if err != nil {
 			return nil, err
 		}
-		saltedDigest.SizeBytes = sizeBytes
+		saltedDigest.SizeBytes = acDigest.SizeBytes
 		acDigest = saltedDigest
 	}
 
