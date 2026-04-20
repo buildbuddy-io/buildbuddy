@@ -32,6 +32,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -74,11 +76,13 @@ func (m MapFlag) Set(s string) error {
 }
 
 var (
-	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
-	oldLog     = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
-	newLog     = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
-	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
-	apiTarget  = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
+	explainCmd   = flag.NewFlagSet("explain", flag.ContinueOnError)
+	Flags        = explainCmd
+	oldLog       = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
+	newLog       = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
+	verbose      = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+	apiTarget    = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
+	outputFormat = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
 
 	profilePaths = make(MapFlag)
 )
@@ -136,8 +140,26 @@ func HandleExplain(args []string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	writeHeader(os.Stdout, diffResult.OldInvocationId, diffResult.NewInvocationId)
-	writeSpawnDiffs(os.Stdout, diffResult.SpawnDiffs)
+	switch *outputFormat {
+	case "text":
+		writeHeader(os.Stdout, diffResult.OldInvocationId, diffResult.NewInvocationId)
+		writeSpawnDiffs(os.Stdout, diffResult.SpawnDiffs)
+	case "json":
+		b, err := protojson.MarshalOptions{Multiline: true, UseProtoNames: true}.Marshal(diffResult)
+		if err != nil {
+			return -1, fmt.Errorf("failed to marshal diff result as JSON: %v", err)
+		}
+		_, _ = os.Stdout.Write(b)
+		_, _ = fmt.Fprintln(os.Stdout)
+	case "proto":
+		b, err := proto.Marshal(diffResult)
+		if err != nil {
+			return -1, fmt.Errorf("failed to marshal diff result as proto: %v", err)
+		}
+		_, _ = os.Stdout.Write(b)
+	default:
+		return 1, fmt.Errorf("unknown --output_format %q: must be text, json, or proto", *outputFormat)
+	}
 
 	for profile, p := range profilePaths {
 		if profile == "cpu" {
