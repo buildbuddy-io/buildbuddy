@@ -1026,7 +1026,7 @@ func alignToMultiple(n int64, multiple int64) int64 {
 }
 
 func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
-	return c.snapshotKeySet.CloneVT()
+	return c.snapshotKeySet
 }
 
 func (c *FirecrackerContainer) SnapshotID() string {
