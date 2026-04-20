@@ -143,11 +143,10 @@ func legacyCachedDiskImagePath(ctx context.Context, cacheRoot, containerImage st
 
 // MigrateImagesToFileCache scans the legacy images/ext4 tree and migrates the
 // newest image for each cached container image ref into filecache.
-func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCache) error {
+func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCache, cacheRoot string) error {
 	if !*localCacheStoreExt4Images || fileCache == nil {
 		return nil
 	}
-	cacheRoot := filepath.Dir(fileCache.TempDir())
 	entries, err := os.ReadDir(legacyDiskImagesRoot(cacheRoot))
 	if os.IsNotExist(err) {
 		return nil
@@ -193,36 +192,37 @@ func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCach
 // LinkCachedImage links a cached OCI ext4 image.
 //
 // If outputPath is non-empty, the cached image is hardlinked there.
-func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage, outputPath string) (_ string, ok bool, err error) {
-	if outputPath == "" {
-		return "", false, status.InvalidArgumentError("missing output path")
-	}
-	if *localCacheStoreExt4Images && fileCache != nil {
+func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage, outputPath string) error {
+	if *localCacheStoreExt4Images {
 		sharedCtx := sharedFileCacheContext(ctx, fileCache)
-
 		node := diskImageFileNode(containerImage)
-		if fileCache.FastLinkFile(sharedCtx, node, outputPath) {
+		if ok := fileCache.FastLinkFile(sharedCtx, node, outputPath); ok {
 			log.CtxDebugf(ctx, "Linked cached %q disk image to %q", containerImage, outputPath)
-			return outputPath, true, nil
+			return nil
 		}
-		return "", false, nil
+		// TODO: FastLinkFile can fail for reasons other than NotFound, so we
+		// return "Unknown" here. Since we control FastLinkFile, we should
+		// instead have it return (ok, err) and wrap the actual error.
+		return status.UnknownErrorf("failed to link image %q from local cache", containerImage)
 	}
 	legacyPath, err := legacyCachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
-		return "", false, err
+		return status.WrapError(err, "get legacy cached disk image path")
 	}
 	if legacyPath == "" {
-		return "", false, nil
+		return status.NotFoundErrorf("image %q not found in local cache", containerImage)
 	}
 	if err := os.Link(legacyPath, outputPath); err != nil {
-		return "", false, err
+		return status.WrapError(err, "link container image")
 	}
 	log.CtxDebugf(ctx, "Linked cached %q legacy disk image to %q", containerImage, outputPath)
-	return outputPath, true, nil
+	return nil
 }
 
-func isCachedDiskImagePresent(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string) (bool, error) {
-	if *localCacheStoreExt4Images && fileCache != nil {
+// IsImageCached checks whether an ext4 image is present in filecache (if
+// enabled) or the legacy ext4 cache dir (if filecache is not enabled).
+func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string) (bool, error) {
+	if *localCacheStoreExt4Images {
 		sharedCtx := sharedFileCacheContext(ctx, fileCache)
 		node := diskImageFileNode(containerImage)
 		return fileCache.ContainsFile(sharedCtx, node), nil
@@ -239,7 +239,7 @@ func isCachedDiskImagePresent(ctx context.Context, fileCache interfaces.FileCach
 // cached image to outputPath.
 //
 // This function does NOT re-authenticate with the registry if the image is
-// already cached.
+// already cached. Instead, the caller is responsible for doing so if needed.
 func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -255,7 +255,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	// practice however, container.PullImageIfNecessary only allows one
 	// concurrent pull per image ref, so this should be fine.
 	conversionOpKeyParts := []string{cacheRoot, containerImage, creds.Username, creds.Password}
-	if *localCacheStoreExt4Images && fileCache != nil {
+	if *localCacheStoreExt4Images {
 		// Dedupe image conversion operations since they are disk IO-heavy.
 		conversionOpKeyParts = append([]string{cacheRoot, fileCache.TempDir()}, conversionOpKeyParts[1:]...)
 	} else {
@@ -267,7 +267,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 
 		// Re-check the cache here so we can avoid duplicate conversion work if
 		// another caller populated the cache after the caller's initial lookup.
-		cached, err := isCachedDiskImagePresent(ctx, fileCache, cacheRoot, containerImage)
+		cached, err := IsImageCached(ctx, fileCache, cacheRoot, containerImage)
 		if err != nil {
 			return "", err
 		}
@@ -282,15 +282,13 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	if err != nil {
 		return err
 	}
-	_, imageFound, err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, outputPath)
-	if err != nil {
-		// Since we just pulled, linking from filecache shouldn't fail unless
-		// the filecache is under heavy eviction pressure, which most likely
-		// means it's too small.
-		return status.WrapError(err, "failed to link cached image (this usually indicates a misconfigured filecache)")
-	}
-	if !imageFound {
-		return status.NotFoundErrorf("cached disk image not found after conversion: %s", containerImage)
+	// Note: there is a potential race condition here: createExt4Image just
+	// fetched the image into filecache, but there is a short window where it
+	// could potentially get evicted. Since we just pulled, this normally
+	// shouldn't happen unless the filecache is under heavy eviction pressure,
+	// which most likely means it's too small.
+	if err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, outputPath); err != nil {
+		return status.WrapError(err, "failed to link cached image")
 	}
 	return nil
 }

@@ -260,7 +260,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 			return fc.Close()
 		})
 
-		if err := migrateExt4ImagesToFileCache(fc); err != nil {
+		if err := migrateExt4ImagesToFileCache(fc, cacheRoot); err != nil {
 			log.Fatalf("Error migrating ext4 images to file cache: %s", err)
 		}
 	}

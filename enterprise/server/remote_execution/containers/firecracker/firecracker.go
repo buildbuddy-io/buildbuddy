@@ -2187,18 +2187,21 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
 
-	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
-
-	// Validate that the caller pulled the image.
-	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
-		return status.UnavailableErrorf("check containerfs exists: %s", err)
-	} else if !exists {
-		return status.FailedPreconditionError("containerfs unexpectedly missing from VM root directory")
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
+	log.CtxInfof(ctx, "Created chroot dir %q", c.getChroot())
 
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
 	rootFSPath := filepath.Join(c.getChroot(), rootFSName)
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
 	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
+
+	// Hardlink the ext4 image to the chroot at containerFSPath.
+	err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+	if err != nil {
+		return status.UnavailableErrorf("link cached image: %s", err)
+	}
 
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
@@ -2682,23 +2685,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
-
-	// In normal operation, we don't expect IsImageCached to be called multiple
-	// times, but handle this case gracefully and do nothing if the image was
-	// already hardlinked.
-	exists, err := disk.FileExists(ctx, containerFSPath)
-	if err != nil {
-		return false, err
-	} else if exists {
-		return true, nil
-	}
-
-	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
-		return false, err
-	}
-	_, ok, err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
-	return ok, err
+	return ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
 }
 
 // PullImage pulls the container image from the remote. It always

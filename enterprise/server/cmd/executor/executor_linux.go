@@ -203,6 +203,6 @@ func (c *cgroupMemCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func migrateExt4ImagesToFileCache(fc interfaces.FileCache) error {
-	return ociconv.MigrateImagesToFileCache(context.Background(), fc)
+func migrateExt4ImagesToFileCache(fc interfaces.FileCache, cacheRoot string) error {
+	return ociconv.MigrateImagesToFileCache(context.Background(), fc, cacheRoot)
 }

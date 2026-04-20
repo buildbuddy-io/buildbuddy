@@ -23,6 +23,6 @@ func cleanBuildRoot(ctx context.Context, buildRoot string) error {
 	return disk.ForceRemove(ctx, buildRoot)
 }
 
-func migrateExt4ImagesToFileCache(fc interfaces.FileCache) error {
+func migrateExt4ImagesToFileCache(fc interfaces.FileCache, cacheRoot string) error {
 	return nil
 }
