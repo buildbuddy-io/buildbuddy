@@ -14,4 +14,4 @@ manifest:
     urllib3: urllib3
   pip_repository:
     name: pypi
-integrity: dc2a042c61978257c2e2cc50f48e00d7201025c53db424795ec620b2f716a982
+integrity: d288359104d8bdbdfb529d85faa81fe35e22cfcf58121d00c83f962d5e0b90a4

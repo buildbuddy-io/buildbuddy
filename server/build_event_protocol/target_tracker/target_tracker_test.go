@@ -157,7 +157,7 @@ func TestTrackTargetForEvents_NonOLAP(t *testing.T) {
 
 func runTrackTargetsForEventsTest(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
 	flags.Set(t, "app.enable_target_tracking", true)
 
@@ -478,7 +478,7 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 
 func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
 	flags.Set(t, "app.enable_target_tracking", true)
 
@@ -652,7 +652,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 		UserID:  "USER1",
 		GroupID: "GROUP1",
 	}
-	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{user.UserID: user})
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{user.UserID: user})
 	te.SetAuthenticator(ta)
 	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 

@@ -21,8 +21,10 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -78,6 +80,7 @@ var (
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
+	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
@@ -395,8 +398,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
-	if req.GetPushedBranch() == "" && req.GetCommitSha() == "" {
-		return nil, status.InvalidArgumentError("At least one of pushed_branch or commit_sha must be set.")
+	if req.GetPushedBranch() == "" && req.GetPushedTag() == "" && req.GetCommitSha() == "" {
+		return nil, status.InvalidArgumentError("At least one of pushed_branch, pushed_tag or commit_sha must be set.")
 	}
 
 	// Authenticate
@@ -422,6 +425,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wd := &interfaces.WebhookData{
 		PushedRepoURL:     req.GetPushedRepoUrl(),
 		PushedBranch:      req.GetPushedBranch(),
+		PushedTag:         req.GetPushedTag(),
 		TargetRepoURL:     req.GetTargetRepoUrl(),
 		TargetBranch:      req.GetTargetBranch(),
 		SHA:               req.GetCommitSha(),
@@ -525,7 +529,7 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	var actions []*config.Action
 	for _, a := range cfg.Actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
-		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
 		if matchesActionName && matchesTrigger {
 			actions = append(actions, a)
 		}
@@ -605,44 +609,45 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 }
 
 func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
-
-	enableCS, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
+	enableCS, enableKythe, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
 	if err != nil {
 		return err
 	}
 	if enableCS {
 		// TODO(jdelfino): Using the cache API URL here is hacky, long term we might want a codesearch_api_url
 		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(cache_api_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
+	}
+	if enableKythe {
 		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
 	}
 	return nil
 }
 
-func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, error) {
-	if !*enableKytheIndexing {
-		return false, nil
+func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, bool, error) {
+	// No point checking the DB if both flags are off.
+	if !*enableKytheIndexing && !*enableCodesearchIndexing {
+		return false, false, nil
 	}
+
+	// Check the DB bit... and examine flags if enabled.
 	g, err := ws.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	return g.CodeSearchEnabled, nil
+
+	if !g.CodeSearchEnabled {
+		return false, false, nil
+	}
+	return *enableCodesearchIndexing, *enableKytheIndexing, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
-	gh := ws.env.GetGitHubAppService()
-	if gh == nil {
-		return nil, status.UnimplementedError("No GitHub app configured")
-	}
-	app, err := gh.GetGitHubAppForOwner(ctx, repoURL.Owner)
-	if err != nil {
-		return nil, err
-	}
 	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
 		return nil, err
 	}
+
 	gitRepository := &tables.GitRepository{}
-	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
+	err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
@@ -654,11 +659,11 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	token, err := app.GetRepositoryInstallationToken(ctx, gitRepository)
+	accessToken, err := githubapp.GetRepositoryInstallationToken(ctx, ws.env, groupID, repoURL.String())
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get repository installation token")
 	}
-	return ws.gitRepositoryWorkflow(gitRepository, token), nil
+	return ws.gitRepositoryWorkflow(gitRepository, accessToken), nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
@@ -1007,10 +1012,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "CI", Value: "true"},
 		{Name: "GIT_COMMIT", Value: wd.SHA},
 		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
+		{Name: "GIT_TAG", Value: wd.PushedTag},
 		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
 		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
 		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
-		{Name: "BUILDBUDDY_INVOCATION_ID", Value: invocationID},
+		{Name: ci_runner_env.BuildBuddyInvocationIDEnvVarName, Value: invocationID},
 	}
 	for k, v := range workflowAction.Env {
 		envVars = append(envVars, &repb.Command_EnvironmentVariable{
@@ -1105,13 +1111,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--commit_sha=" + wd.SHA,
 		"--pushed_repo_url=" + wd.PushedRepoURL,
 		"--pushed_branch=" + wd.PushedBranch,
+		"--pushed_tag=" + wd.PushedTag,
 		"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
 		"--target_repo_url=" + wd.TargetRepoURL,
 		"--target_branch=" + wd.TargetBranch,
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,
-		"--bazel_command=" + ws.ciRunnerBazelCommand(),
+		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		"--timeout=" + timeout.String(),
 		"--serialized_action=" + serializedAction,
@@ -1268,9 +1275,23 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 	return remote_execution_config.RemoteExecutionEnabled() && *workflowsCIRunnerDebug
 }
 
-func (ws *workflowService) ciRunnerBazelCommand() string {
-	if !remote_execution_config.RemoteExecutionEnabled() {
-		return ""
+func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.Workflow, workflowAction *config.Action) string {
+	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", workflowAction.Name))
+		if bazelCommandOverride != "" {
+			return bazelCommandOverride
+		}
+	}
+
+	useCLI := false
+	if wf.GitRepository != nil {
+		useCLI = wf.GitRepository.UseCLIInRemoteRunners
+	}
+	if workflowAction.BazelUseCLI != nil {
+		useCLI = *workflowAction.BazelUseCLI
+	}
+	if useCLI {
+		return "bb"
 	}
 	return *workflowsCIRunnerBazelCommand
 }
@@ -1307,7 +1328,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
-		workflowRef = webhookData.PushedBranch
+		if webhookData.PushedBranch != "" {
+			workflowRef = webhookData.PushedBranch
+		} else if webhookData.PushedTag != "" {
+			workflowRef = webhookData.PushedTag
+		}
 	}
 
 	var c *config.BuildBuddyConfig
@@ -1506,9 +1531,11 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	if err != nil {
 		return "", err
 	}
+
 	if isTrusted {
+		// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 		headerEnv := []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: key.Value},
+			{Name: ci_runner_env.BuildBuddyAPIKeyEnvVarName, Value: key.Value},
 			{Name: "REPO_USER", Value: wf.Username},
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}

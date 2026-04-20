@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -414,4 +416,193 @@ func TestPreserveWorkspace_DoesNotPreserveOutputPaths(t *testing.T) {
 	err := ws.Clean()
 	require.NoError(t, err)
 	assert.Empty(t, actualFilePaths(t, ws))
+}
+
+func TestPreserveWorkspace_WorkingDirectory_OutputPathsRelativeToWorkDir(t *testing.T) {
+	ctx := context.Background()
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+			OutputPaths:      []string{"foo.out"},
+		},
+	})
+	testfs.WriteAllFileContents(t, ws.Path(), map[string]string{
+		"subdir/foo.out":  "output",
+		"subdir/input.in": "input",
+		"other.txt":       "other",
+	})
+
+	err := ws.Clean()
+	require.NoError(t, err)
+
+	remaining := actualFilePaths(t, ws)
+	assert.Contains(t, remaining, filepath.Join("subdir", "input.in"))
+	assert.Contains(t, remaining, "other.txt")
+	assert.NotContains(t, remaining, filepath.Join("subdir", "foo.out"))
+}
+
+func TestPreserveWorkspace_WorkingDirectory_CleansInputIndex(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+
+	// Upload file contents to CAS.
+	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+	require.NoError(t, err)
+	outputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("output"))
+	require.NoError(t, err)
+
+	// Build an input tree: subdir/ contains both input.txt and out.txt.
+	subdir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: inputDigest},
+			{Name: "out.txt", Digest: outputDigest},
+		},
+	}
+	subdirDigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, subdir)
+	require.NoError(t, err)
+
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+			OutputPaths:      []string{"out.txt"},
+		},
+	})
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "subdir", Digest: subdirDigest},
+				},
+			},
+			Children: []*repb.Directory{subdir},
+		},
+	})
+	require.NoError(t, err)
+
+	// Both files should be tracked in the inputs index.
+	inputKey := fspath.NewKey(filepath.Join("subdir", "input.txt"), false)
+	outputKey := fspath.NewKey(filepath.Join("subdir", "out.txt"), false)
+	assert.Contains(t, ws.Inputs, inputKey)
+	assert.Contains(t, ws.Inputs, outputKey)
+
+	err = ws.Clean()
+	require.NoError(t, err)
+
+	// After cleanup, the output file should be removed from both the
+	// filesystem and the inputs index, while the input file remains.
+	remaining := actualFilePaths(t, ws)
+	assert.Contains(t, remaining, filepath.Join("subdir", "input.txt"))
+	assert.NotContains(t, remaining, filepath.Join("subdir", "out.txt"))
+
+	assert.Contains(t, ws.Inputs, inputKey,
+		"non-output input should remain in inputs index")
+	assert.NotContains(t, ws.Inputs, outputKey,
+		"output file should be removed from inputs index")
+}
+
+func TestDownloadInputs_WorkingDirectoryMissing(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "nonexistent",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{},
+		},
+	})
+
+	require.Error(t, err)
+	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestDownloadInputs_WorkingDirectoryExists(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+
+	// Build an input tree with "subdir" as a directory.
+	subdir := &repb.Directory{}
+	subdirDigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, subdir)
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "subdir",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "subdir", Digest: subdirDigest},
+				},
+			},
+			Children: []*repb.Directory{subdir},
+		},
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	root := testfs.MakeTempDir(t)
+	ws, err := workspace.New(te, root, &workspace.Opts{})
+	require.NoError(t, err)
+
+	// Build an input tree with "a" but not "a/b".
+	dirA := &repb.Directory{}
+	dirADigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirA)
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			WorkingDirectory: "a/b",
+		},
+	})
+
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{
+					{Name: "a", Digest: dirADigest},
+				},
+			},
+			Children: []*repb.Directory{dirA},
+		},
+	})
+
+	require.Error(t, err)
+	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	assert.Contains(t, err.Error(), "a/b")
 }

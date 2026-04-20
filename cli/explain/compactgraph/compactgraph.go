@@ -301,7 +301,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 					invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
 				}
 			}
-			for invalidatedBy, _ := range invalidatedByPrimaryOutput {
+			for invalidatedBy := range invalidatedByPrimaryOutput {
 				if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
 					invalidatingResult := invalidatingResultEntry.(*diffResult)
 					foundTransitiveCause = true
@@ -773,12 +773,12 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 	newMapping := newTree.ComputeMapping(workspaceRunfilesDirectory, hashFunction)
 
 	var oldOnly, newOnly []string
-	for p, _ := range oldMapping {
+	for p := range oldMapping {
 		if _, ok := newMapping[p]; !ok {
 			oldOnly = append(oldOnly, p)
 		}
 	}
-	for p, _ := range newMapping {
+	for p := range newMapping {
 		if _, ok := oldMapping[p]; !ok {
 			newOnly = append(newOnly, p)
 		}

@@ -3,6 +3,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
@@ -41,7 +42,7 @@ import InvocationOverviewComponent from "./invocation_overview";
 import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import SpawnCardComponent from "./invocation_spawn_card";
-import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
+import SuggestionCardComponent, { getSuggestions, hasSuggestionAboveInfo } from "./invocation_suggestion_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TargetsComponent from "./invocation_targets";
 import TimingCardComponent from "./invocation_timing_card";
@@ -91,13 +92,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
+  private runLogsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
+  private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
   private cancelGroupIdOverride?: () => void;
 
   private seenChildInvocationConfiguredIds = new Set<string>();
   private seenChildInvocationCompletedIds = new Set<string>();
+  private didFetchAfterRunLogsComplete = false;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -111,7 +115,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     } else {
       this.fetchInvocation();
 
-      this.logsModel = new InvocationLogsModel(this.props.invocationId);
+      this.logsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.BUILD_LOG);
       // Re-render whenever we fetch new log chunks.
       this.logsSubscription = this.logsModel.onChange.subscribe({
         next: () => this.forceUpdate(),
@@ -119,6 +123,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
       if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
         this.logsModel.startFetching();
       }
+
+      this.runLogsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.RUN_LOG);
+      this.runLogsSubscription = this.runLogsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
     }
   }
 
@@ -179,6 +188,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (this.isQueued(prevProps, prevState) && !this.isQueued() && this.state.model) {
       this.logsModel?.startFetching();
     }
+    // If a run status was set on the invocation, start fetching run logs.
+    if (this.state.model?.hasRunStatus() && !prevState.model?.hasRunStatus()) {
+      this.runLogsModel?.startFetching();
+    }
+    // If the run log stream just completed while run is still in progress,
+    // fetch the invocation once more to get the final run status.
+    if (this.state.model?.isRunInProgress() && this.runLogsModel?.isComplete() && !this.didFetchAfterRunLogsComplete) {
+      this.didFetchAfterRunLogsComplete = true;
+      this.fetchInvocation();
+    }
     // If we have an invocation, or we failed to fetch an invocation and the CI
     // runner failed, we're no longer queued.
     if (
@@ -200,6 +219,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    this.runLogsModel?.stopFetching();
+    this.runLogsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
 
@@ -341,6 +362,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return false;
     }
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
+  }
+
+  getRunLogs(): string {
+    return this.runLogsModel?.getLogs() ?? "";
+  }
+
+  areRunLogsLoading() {
+    return Boolean(this.runLogsModel?.isFetching() && !this.runLogsModel?.getLogs());
   }
 
   isQueued(props = this.props, state = this.state) {
@@ -560,7 +589,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const isRemoteRunnerInvocation =
       this.state.model.isWorkflowInvocation() || this.state.model.isHostedBazelInvocation();
     const fetchBuildLogs = () => {
-      rpcService.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+      rpcService.downloadBuildLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+    };
+    const fetchRunLogs = () => {
+      rpcService.downloadRunLog(this.props.invocationId);
     };
 
     const suggestions = getSuggestions({
@@ -569,6 +601,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       runnerExecution: this.state.runnerExecution,
       user: this.props.user,
     });
+    const showSuggestionsAboveBuildLogs = activeTab === "all" && hasSuggestionAboveInfo(suggestions);
 
     return (
       <div className="invocation">
@@ -621,7 +654,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab === "log") && (
+            <ErrorCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
 
           {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
@@ -637,6 +672,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
+          {showSuggestionsAboveBuildLogs && (
+            <SuggestionCardComponent suggestions={suggestions} overview user={this.props.user} />
+          )}
+
           {(activeTab === "all" || activeTab === "log") && (
             <BuildLogsCardComponent
               title={!isRemoteRunnerInvocation ? "Build logs" : "Runner logs"}
@@ -648,13 +687,27 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent
-              suggestions={suggestions}
-              overview={activeTab !== "suggestions"}
-              user={this.props.user}
-            />
-          )}
+          {(activeTab === "all" || activeTab === "log") &&
+            this.state.model.hasRunStatus() &&
+            this.getRunLogs().length > 0 && (
+              <BuildLogsCardComponent
+                title="Run output"
+                dark={!this.props.preferences.lightTerminalEnabled}
+                value={this.getRunLogs()}
+                loading={this.areRunLogsLoading()}
+                expanded={activeTab === "log"}
+                fullLogsFetcher={fetchRunLogs}
+              />
+            )}
+
+          {!showSuggestionsAboveBuildLogs &&
+            (activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
+              <SuggestionCardComponent
+                suggestions={suggestions}
+                overview={activeTab !== "suggestions"}
+                user={this.props.user}
+              />
+            )}
 
           {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
@@ -713,7 +766,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab === "timing" && <TimingCardComponent model={this.state.model} />}
+          {activeTab === "timing" && (
+            <TimingCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
 
           {activeTab === "coverage" && <InvocationCoverageCardComponent model={this.state.model} />}
 

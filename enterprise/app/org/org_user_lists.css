@@ -42,15 +42,27 @@
 .org-user-lists .org-user-list-name {
   display: block;
   margin-top: 14px;
-  width: 300px;
+  width: 200px;
+  flex-shrink: 0;
   text-wrap: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.org-user-lists .org-user-list-role {
+  margin-top: 14px;
+  width: 100px;
+  flex-shrink: 0;
+}
+
 .org-user-lists .org-user-list-buttons {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.org-user-lists .org-user-list-buttons button {
+  width: 100%;
 }
 
 .org-user-lists .org-members .org-members-list-item {

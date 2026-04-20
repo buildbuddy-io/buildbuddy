@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "cachetools",
-    srcs = ["cachetools.go"],
+    srcs = [
+        "cachetools.go",
+        "cachetools_linux.go",
+        "cachetools_other.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools",
     visibility = ["//visibility:public"],
     deps = [
@@ -12,11 +16,14 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/ioutil",
+        "//server/util/lib/set",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/proto",
         "//server/util/retry",
         "//server/util/rpcutil",
@@ -26,7 +33,12 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(
@@ -34,19 +46,24 @@ go_test(
     srcs = ["cachetools_test.go"],
     deps = [
         ":cachetools",
+        "//enterprise/server/experiments",
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/compression",
         "//server/util/prefix",
         "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

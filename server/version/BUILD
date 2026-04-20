@@ -1,7 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//rules:platform_transitions.bzl", "linux_x86_64_alias")
+
+# These stamped files are platform-independent, so pin them to one target
+# platform instead of regenerating them once per consuming platform.
 
 genrule(
-    name = "populate_version",
+    name = "populate_version_impl",
     outs = ["version.txt"],
     cmd_bash = select({
         "//:fastbuild": "touch $@",
@@ -12,10 +16,16 @@ genrule(
         """,
     }),
     stamp = 1,
+    tags = ["manual"],
+)
+
+linux_x86_64_alias(
+    name = "populate_version",
+    actual = ":populate_version_impl",
 )
 
 genrule(
-    name = "populate_commit",
+    name = "populate_commit_impl",
     outs = ["commit.txt"],
     cmd_bash = select({
         "//:fastbuild": "touch $@",
@@ -26,15 +36,21 @@ genrule(
         """,
     }),
     stamp = 1,
+    tags = ["manual"],
+)
+
+linux_x86_64_alias(
+    name = "populate_commit",
+    actual = ":populate_commit_impl",
 )
 
 go_library(
     name = "version",
     srcs = ["version.go"],
     embedsrcs = [
-        "version.txt",
-        "commit.txt",
-    ],
+        ":populate_commit",
+        ":populate_version",
+    ],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/version",
     visibility = ["//visibility:public"],
     deps = [

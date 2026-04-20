@@ -1,20 +1,8 @@
 import React from "react";
-import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
-import Button, { OutlinedButton } from "../../../app/components/button/button";
-import Dialog, {
-  DialogBody,
-  DialogFooter,
-  DialogFooterButtons,
-  DialogHeader,
-  DialogTitle,
-} from "../../../app/components/dialog/dialog";
-import TextInput from "../../../app/components/input/input";
+import Button from "../../../app/components/button/button";
 import { TextLink } from "../../../app/components/link/link";
-import Modal from "../../../app/components/modal/modal";
-import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
@@ -32,11 +20,6 @@ type State = {
 
   userList?: user_list.UserList;
   allUsers?: grp.GetGroupUsersResponse.GroupUser[];
-
-  // state related to the rename user list modal
-  isRenameUserListModalVisible?: boolean;
-  renameNewName?: string;
-  isRenameUserListRequestPending?: boolean;
 };
 
 export default class OrgUserListComponent extends React.Component<OrgUserListProps, State> {
@@ -115,59 +98,6 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
       .finally(() => this.fetch());
   }
 
-  private onClickBackToAllGroups() {
-    router.navigateToUserLists();
-  }
-
-  // Rename modal.
-
-  private onClickOpenRenameUserListModal() {
-    this.setState({
-      isRenameUserListModalVisible: true,
-      renameNewName: this.state.userList?.name,
-    });
-  }
-
-  private onRequestCloseRenameModal() {
-    if (this.state.isRenameUserListRequestPending) return;
-
-    this.setState({ isRenameUserListModalVisible: false });
-  }
-
-  private onChangeRenameUserListName(e: React.ChangeEvent<HTMLInputElement>) {
-    const name = e.target.value;
-    this.setState({ renameNewName: name });
-  }
-
-  private onSubmitRenameForm(e: React.FormEvent) {
-    e.preventDefault();
-    if (!this.state.isRenameUserListRequestPending) {
-      this.onClickRenameUserList();
-    }
-  }
-
-  private onClickRenameUserList() {
-    this.setState({ isRenameUserListRequestPending: true });
-    rpcService.service
-      .updateUserList(
-        user_list.UpdateUserListRequest.create({
-          userList: new user_list.UserList({
-            userListId: this.state.userList?.userListId,
-            name: this.state.renameNewName,
-          }),
-        })
-      )
-      .then(() => {
-        this.setState({
-          isRenameUserListModalVisible: false,
-        });
-        alert_service.success("IAM Group renamed");
-        this.fetch();
-      })
-      .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ isRenameUserListRequestPending: false }));
-  }
-
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -201,10 +131,6 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
           </div>
         </div>
 
-        <div className="org-user-list-controls">
-          <OutlinedButton onClick={this.onClickOpenRenameUserListModal.bind(this)}>Rename group</OutlinedButton>
-        </div>
-
         <div className="settings-option-title">Members</div>
         {members.length == 0 && <div>There are no users in the IAM group.</div>}
         {members.length > 0 && (
@@ -229,48 +155,6 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
             readOnly={this.props.user.selectedGroup.externalUserManagement}
           />
         )}
-
-        {/* rename user list modal */}
-        <Modal
-          className="org-user-lists-rename-modal"
-          isOpen={Boolean(this.state.isRenameUserListModalVisible)}
-          onRequestClose={this.onRequestCloseRenameModal.bind(this)}>
-          <Dialog>
-            <DialogHeader>
-              <DialogTitle>Rename IAM group</DialogTitle>
-            </DialogHeader>
-            <DialogBody className="modal-body">
-              <form onSubmit={this.onSubmitRenameForm.bind(this)}>
-                <div className="field-container">
-                  <label className="note-input-label" htmlFor="name">
-                    Name
-                  </label>
-                  <TextInput
-                    name="name"
-                    onChange={this.onChangeRenameUserListName.bind(this)}
-                    value={this.state.renameNewName}
-                    autoFocus={true}
-                  />
-                </div>
-              </form>
-            </DialogBody>
-            <DialogFooter>
-              <DialogFooterButtons>
-                {this.state.isRenameUserListRequestPending && <Spinner />}
-                <OutlinedButton
-                  onClick={this.onRequestCloseRenameModal.bind(this)}
-                  disabled={this.state.isRenameUserListRequestPending}>
-                  Cancel
-                </OutlinedButton>
-                <Button
-                  onClick={this.onClickRenameUserList.bind(this)}
-                  disabled={this.state.isRenameUserListRequestPending}>
-                  Rename
-                </Button>
-              </DialogFooterButtons>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
       </>
     );
   }

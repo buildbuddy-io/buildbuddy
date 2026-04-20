@@ -118,7 +118,7 @@
 .organization-form .input-help-text,
 .organization-form .url-preview {
   font-size: 14px;
-  color: #333;
+  color: var(--color-form-help-text);
   margin-top: -8px;
 }
 
@@ -131,7 +131,7 @@
 }
 
 .organization-invite-link-container {
-  background: #eee;
+  background: var(--color-form-input-bg-secondary);
   border-radius: 8px;
   padding: 16px;
   display: inline-flex;
@@ -151,7 +151,7 @@
 }
 
 .organization-invite-link-container .invite-link {
-  color: #212121;
+  color: var(--color-org-invite-link);
   font-weight: 600;
 }
 
@@ -313,6 +313,7 @@
 .org-members .org-member-name :is(svg, img) {
   width: 16px;
   height: 16px;
+  color: var(--color-org-member-github-icon);
 }
 
 .org-members .org-member-role {

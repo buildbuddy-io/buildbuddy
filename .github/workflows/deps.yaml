@@ -32,15 +32,18 @@ jobs:
           cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
           cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
+          cp buildbuddy/bazel_downloader.cfg buildbuddy-internal/bazel_downloader.cfg
           mkdir -p buildbuddy-internal/buildpatches/bazel_dep
           cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
           mkdir -p buildbuddy-internal/deps
           cp buildbuddy/deps/* buildbuddy-internal/deps/
+          cp buildbuddy/MODULE.bazel.lock buildbuddy-internal/MODULE.bazel.lock
 
-      - name: Update SHA
+      - name: Update SHA and lockfile
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
+          bazel mod deps --lockfile_mode=update
 
       - name: Commit
         env:
@@ -55,8 +58,10 @@ jobs:
           git add deps.bzl
           git add .bazelversion
           git add shared.bazelrc
+          git add bazel_downloader.cfg
           git add buildpatches
           git add deps
+          git add MODULE.bazel.lock
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA

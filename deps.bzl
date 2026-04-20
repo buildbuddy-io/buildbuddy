@@ -9,6 +9,9 @@ PODMAN_VERSION = "v5.7.0"
 PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
+# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
+BB_CLI_VERSION = "5.0.333"
+
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
@@ -29,11 +32,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
-        ]).format(release = "v1.13.0-with_clock_reset_patch-20251029-d33011c6788153a8a601e1b7000466c1ff1ecfc7"),
-        sha256 = "d08f5245fcb84c59bdb060385e3058f4667765afbea5c3cbfcb969d570d624bf",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.13.0-with_clock_reset_patch.tgz"],
+            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+        ]).format(release = "v1.15.1-x86_64"),
+        sha256 = "d4a32ab2322d887ca1bc4a4e7afa9cc35393e6362dfc2b3becb389d362e4275a",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.1/firecracker-v1.15.1-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -68,30 +71,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazel-6.5.0-linux-x86_64",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-linux-x86_64"],
         sha256 = "a40ac69263440761199fcb8da47ad4e3f328cbe79ffbf4ecc14e5ba252857307",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.6.1-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-darwin-arm64"],
-        sha256 = "45cca81a839d7495258b19ee8371c7b891f350586ef37b9940f7b531eb654cc8",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.6.1-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-darwin-x86_64"],
-        sha256 = "3b007e7ce2281408b99dbba11b35d2ae0191de1330fae49dc632077e93edf78e",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.6.1-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-linux-arm64"],
-        sha256 = "2d86d36db0c9af15747ff02a80e6db11a45d68f868ea8f62f489505c474f0099",
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-7.6.1-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-linux-x86_64"],
-        sha256 = "ac6249d1192aea9feaf49dfee2ab50c38cee2454b00cf29bbec985a11795c025",
         executable = True,
     )
     http_file(
@@ -240,23 +219,22 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7"],
+        sha256 = "59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "221765c1c163d7f4687c0fba573c47a17ada6cbe4063c16e6205fabc7066fd15",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-221765c1c163d7f4687c0fba573c47a17ada6cbe4063c16e6205fabc7066fd15"],
+        sha256 = "9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3"],
+        sha256 = "6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a"],
         executable = True,
     )
-
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
         executable = True,
@@ -269,6 +247,34 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-arm64",
+        executable = True,
+        integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-x86_64",
+        executable = True,
+        integrity = "sha256-B0rhObAwP/aGdtwnw7iZuCarOTS/jxp2eaUE8M67o5A=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-arm64",
+        executable = True,
+        integrity = "sha256-08m6+utxtg0CrYDgeNz/ZkZprSLeTMkjSKe5BPD9SW8=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-x86_64",
+        executable = True,
+        integrity = "sha256-TaoceuYO8XWwHFvEYAoEyBb2CvQsLnLIzVft9qwr5f0=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(

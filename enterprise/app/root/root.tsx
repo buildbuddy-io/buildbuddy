@@ -12,6 +12,7 @@ import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
+import TimingProfilePageComponent from "../../../app/profile/profile";
 import router, { Path } from "../../../app/router/router";
 import Shortcuts from "../../../app/shortcuts/shortcuts";
 import AuditLogsComponent from "../auditlogs/auditlogs";
@@ -29,6 +30,7 @@ import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
 import WorkflowsComponent from "../workflows/workflows";
+const SettingsThemeTransition = React.lazy(() => import("../settings/settings_theme_transition"));
 const CodeComponent = React.lazy(() => import("../code/code"));
 const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
@@ -57,6 +59,7 @@ interface State {
 
 capabilities.register("BuildBuddy Enterprise", true, [
   Path.invocationPath,
+  Path.profilePath,
   Path.userHistoryPath,
   Path.hostHistoryPath,
   Path.repoHistoryPath,
@@ -182,6 +185,15 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentDidMount() {
     errorService.register();
+    this.updateDarkModeClass();
+  }
+
+  private updateDarkModeClass() {
+    document.documentElement.classList.toggle("dark", this.state.preferences.darkModeEnabled);
+  }
+
+  componentWillUnmount() {
+    this.state.preferences.cleanup();
   }
 
   handlePathChange() {
@@ -197,6 +209,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
+    this.updateDarkModeClass();
     this.forceUpdate();
   }
 
@@ -230,6 +243,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
     let codesearch = this.state.user && this.state.path.startsWith("/search");
+    let profile = this.state.path.startsWith(Path.profilePath);
     let fallback =
       !code &&
       !cliLogin &&
@@ -254,6 +268,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !auditLogs &&
       !repo &&
       !codesearch &&
+      !profile &&
       !review;
 
     let setup =
@@ -261,14 +276,19 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !repo && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
+    let sidebar =
+      Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin && !profile;
     let menu = !sidebar && !repo && !code && !this.state.loading;
+
+    const rootClasses = ["root"];
+    if (this.state.preferences.denseModeEnabled) rootClasses.push("dense");
+    if (this.state.preferences.darkModeEnabled) rootClasses.push("dark");
+    if (sidebar || code) rootClasses.push("left");
 
     return (
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
-        <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
+        <div className={rootClasses.join(" ")}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent
@@ -290,7 +310,7 @@ export default class EnterpriseRootComponent extends React.Component {
             <div
               className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""} ${
                 tests ? "root-tests" : ""
-              }`}>
+              } ${settings ? "root-main-settings" : ""}`}>
               {!this.state.loading && (
                 <div className={`content ${login || repo ? "content-flex" : ""}`}>
                   {invocationId && (
@@ -305,6 +325,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       />
                     </Suspense>
                   )}
+                  {profile && <TimingProfilePageComponent dark={this.state.preferences.darkModeEnabled} />}
                   {compareInvocationIds && (
                     <Suspense fallback={<div className="loading" />}>
                       <CompareInvocationsComponent
@@ -452,6 +473,11 @@ export default class EnterpriseRootComponent extends React.Component {
                 </div>
               )}
               {!this.state.loading && !code && <FooterComponent />}
+              {settings && (
+                <Suspense fallback={null}>
+                  <SettingsThemeTransition dark={this.state.preferences.darkModeEnabled} />
+                </Suspense>
+              )}
               {this.state.loading && <div className="loading loading"></div>}
             </div>
           </div>

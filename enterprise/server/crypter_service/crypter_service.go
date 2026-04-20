@@ -592,7 +592,7 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 		case interfaces.KMSTypeAWS:
 			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_AWS)
 		default:
-			log.Warningf("unknown KMS type %q", t)
+			log.Warningf("unknown KMS type %v", t)
 		}
 	}
 

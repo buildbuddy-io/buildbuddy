@@ -1,6 +1,20 @@
 # NOTE: this is a multi-platform image, so each step needs to work on both amd64 and arm64.
 # See README for details.
 
+# Extract nvidia-cdi-hook in an intermediate stage so the final image gets only
+# the binary and not any apt/dpkg metadata churn from package installation.
+FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598 AS nvidia_cdi_hook_extractor
+
+RUN NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION="1.19.0-1" && \
+    apt-get update && \
+    apt-get install -y ca-certificates curl && \
+    arch="$(dpkg --print-architecture)" && \
+    curl -fsSL \
+    "https://nvidia.github.io/libnvidia-container/stable/deb/${arch}/nvidia-container-toolkit-base_${NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION}_${arch}.deb" \
+    -o /tmp/nvidia-container-toolkit-base.deb && \
+    dpkg-deb -x /tmp/nvidia-container-toolkit-base.deb /tmp/rootfs && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean
+
 # debian 12
 FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598
 
@@ -10,12 +24,6 @@ RUN \
     sed -i 's/^Suites: stable-security$/Suites: trixie-security/' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
     apt-get install -y \
-    # Necessary for rules_go
-    gcc \
-    # Necessary for rules_pkg
-    python3 \
-    # Necessary to build redis, for some reason???
-    libstdc++-14-dev \
     # Necessary for firecracker
     e2fsprogs \
     # FUSE support, used by vbd and vfs packages.
@@ -72,3 +80,17 @@ RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
     # /usr/bin/rootlesskit \
     # runc
     /usr/bin/runc
+
+# nvidia-cdi-hook is needed for the executor to spawn child containers that need
+# to access the GPU. CDI takes care of mounting device files and libraries
+# needed for the GPU, but it doesn't mount the supporting files used to set up
+# the container itself. So, these container support files need to be provisioned
+# manually.
+#
+# For NVIDIA, the relevant container support files are nvidia-cdi-hook as well
+# as some configs under /usr/share/vulkan. It's fine to mount /usr/share/vulkan
+# from the host since it just contains some JSON manifests, but we can't mount
+# nvidia-cdi-hook since it's usually dynamically linked against GLIBC, and we
+# can't assume the host GLIBC version will be compatible with the one installed
+# in the executor image. Copy only nvidia-cdi-hook from an extractor stage.
+COPY --from=nvidia_cdi_hook_extractor /tmp/rootfs/usr/bin/nvidia-cdi-hook /usr/bin/nvidia-cdi-hook

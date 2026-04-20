@@ -10,6 +10,7 @@ const (
 	MetaRangeTag   = "meta_range"
 	ZoneTag        = "zone"
 	StoreUsageTag  = "store_usage"
+	PodIndexTag    = "pod_index"
 
 	RegistryUpdateEvent       = "registry_update_event"
 	RegistryQueryEvent        = "registry_query_event"

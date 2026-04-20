@@ -1,5 +1,6 @@
-import { AlertCircle, CheckCircle, Info, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, Info, X, XCircle } from "lucide-react";
 import React from "react";
+import { OutlinedButton } from "../button/button";
 
 const ICONS = {
   info: <Info className="icon blue" />,
@@ -13,6 +14,8 @@ type BannerType = keyof typeof ICONS;
 export type BannerProps = JSX.IntrinsicElements["div"] & {
   /** The banner type. */
   type: BannerType;
+  /** Called when the dismiss button is clicked. If null/undefined, no dismiss button is shown. */
+  onDismiss?: (() => void) | null;
 };
 
 /**
@@ -20,11 +23,16 @@ export type BannerProps = JSX.IntrinsicElements["div"] & {
  * colorful icon and background.
  */
 export const Banner = React.forwardRef((props: BannerProps, ref: React.Ref<HTMLDivElement>) => {
-  const { type = "info", className, children, ...rest } = props;
+  const { type = "info", className, children, onDismiss, ...rest } = props;
   return (
     <div className={`banner banner-${type} ${className || ""}`} {...rest} ref={ref}>
       {ICONS[type]}
       <div className="banner-content">{children}</div>
+      {onDismiss && (
+        <OutlinedButton className="icon-button banner-dismiss-button" onClick={onDismiss} title="Dismiss" type="button">
+          <X className="icon" />
+        </OutlinedButton>
+      )}
     </div>
   );
 });

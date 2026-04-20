@@ -126,7 +126,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(up{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(up{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "up",
               "queryType": "randomWalk",
@@ -134,7 +134,7 @@
               "refId": "A"
             }
           ],
-          "title": "${job} Instances",
+          "title": "mac-executor Instances",
           "type": "timeseries"
         },
         {
@@ -227,7 +227,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (version) (buildbuddy_version{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (version) (buildbuddy_version{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{version}}",
               "queryType": "randomWalk",
@@ -235,7 +235,7 @@
               "refId": "A"
             }
           ],
-          "title": "${job} Versions",
+          "title": "mac-executor Versions",
           "type": "timeseries"
         },
         {
@@ -305,7 +305,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 283
+            "y": 9
           },
           "id": 6281,
           "options": {
@@ -331,7 +331,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (1 - up{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "1 - (1 - up{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
@@ -339,7 +339,7 @@
               "refId": "A"
             }
           ],
-          "title": "${job} Instance States",
+          "title": "mac-executor Instance States",
           "type": "timeseries"
         },
         {
@@ -406,7 +406,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 283
+            "y": 9
           },
           "id": 5492,
           "options": {
@@ -430,7 +430,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} == 0)) by (pod_name, health_check_name)",
+              "expr": "sum(1 - (buildbuddy_health_check_status{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} == 0)) by (pod_name, health_check_name)",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
@@ -563,7 +563,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2
+            "y": 50
           },
           "id": 6272,
           "options": {
@@ -587,7 +587,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_free_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_free_bytes{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "instant": false,
               "legendFormat": "Free",
               "range": true,
@@ -599,7 +599,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_inactive_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_inactive_bytes{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Inactive",
@@ -612,7 +612,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_active_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_active_bytes{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Active",
@@ -625,7 +625,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_compressed_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_compressed_bytes{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Compressed",
@@ -638,7 +638,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_wired_bytes{region=\"global\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_wired_bytes{region=~\"${region}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Wired (OS)",
@@ -714,7 +714,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2
+            "y": 50
           },
           "id": 6273,
           "options": {
@@ -811,7 +811,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 260
+            "y": 58
           },
           "id": 6274,
           "options": {
@@ -908,7 +908,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 260
+            "y": 58
           },
           "id": 6275,
           "options": {
@@ -1034,7 +1034,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 268
+            "y": 66
           },
           "id": 6276,
           "options": {
@@ -1158,7 +1158,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 268
+            "y": 66
           },
           "id": 6277,
           "options": {
@@ -1302,7 +1302,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 1241
           },
           "id": 274,
           "options": {
@@ -1327,7 +1327,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Pooled",
               "queryType": "randomWalk",
@@ -1340,7 +1340,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Average",
               "range": true,
@@ -1352,7 +1352,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(up{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(up{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Executor count (for comparison)",
               "range": true,
@@ -1443,7 +1443,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 1241
           },
           "id": 276,
           "options": {
@@ -1468,7 +1468,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1560,7 +1560,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 237
+            "y": 1257
           },
           "id": 290,
           "options": {
@@ -1585,7 +1585,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{reason}}",
               "queryType": "randomWalk",
@@ -1677,7 +1677,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 237
+            "y": 1257
           },
           "id": 292,
           "options": {
@@ -1702,7 +1702,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
@@ -1794,7 +1794,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 245
+            "y": 1265
           },
           "id": 278,
           "options": {
@@ -1819,7 +1819,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1911,7 +1911,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 245
+            "y": 1265
           },
           "id": 280,
           "options": {
@@ -1936,7 +1936,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1948,8 +1948,7 @@
           "type": "timeseries"
         }
       ],
-      "repeat": "pool",
-      "title": "Runner recycling (${pool})",
+      "title": "Runner recycling",
       "type": "row"
     },
     {
@@ -2045,7 +2044,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 4
+            "y": 2826
           },
           "id": 190,
           "options": {
@@ -2071,7 +2070,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
@@ -2084,7 +2083,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "Idle",
               "range": true,
@@ -2220,7 +2219,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 4
+            "y": 2826
           },
           "id": 210,
           "options": {
@@ -2246,7 +2245,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  ${quantile},\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  ${quantile},\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=~\"${region}\", stage!=\"worker\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stage}}",
@@ -2322,7 +2321,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 12
+            "y": 2834
           },
           "id": 1209,
           "options": {
@@ -2347,7 +2346,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{stage}}",
               "range": true,
@@ -2422,7 +2421,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 12
+            "y": 2834
           },
           "id": 31,
           "options": {
@@ -2447,7 +2446,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
@@ -2523,7 +2522,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 2842
           },
           "id": 1216,
           "options": {
@@ -2548,7 +2547,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_memory_usage_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Current memory usage",
               "range": true,
@@ -2561,7 +2560,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Current peak memory usage",
@@ -2575,7 +2574,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_assigned_ram_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Estimated memory usage",
@@ -2589,7 +2588,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Max assignable memory",
@@ -2664,7 +2663,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 20
+            "y": 2842
           },
           "id": 1231,
           "options": {
@@ -2689,7 +2688,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
+              "expr": "sum(buildbuddy_remote_execution_assigned_milli_cpu{region=~\"${region}\",job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
               "hide": false,
               "interval": "",
               "legendFormat": "Estimated CPU",
@@ -2702,7 +2701,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
+              "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=~\"${region}\",job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
               "hide": false,
               "interval": "",
               "legendFormat": "Max assignable CPU",
@@ -2770,7 +2769,7 @@
                   }
                 ]
               },
-              "unit": "binBps"
+              "unit": "percentunit"
             },
             "overrides": []
           },
@@ -2778,16 +2777,15 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 28
+            "y": 2850
           },
-          "id": 33,
+          "id": 6305,
           "options": {
-            "alertThreshold": true,
             "legend": {
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
-              "showLegend": false
+              "showLegend": true
             },
             "tooltip": {
               "hideZeros": false,
@@ -2803,15 +2801,16 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "exemplar": true,
+              "expr": "sum by (resource_name) (buildbuddy_remote_execution_assigned_custom_resources{region=~\"${region}\",job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) / sum by (resource_name) (buildbuddy_remote_execution_assignable_custom_resources{region=~\"${region}\",job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "hide": false,
               "interval": "",
-              "legendFormat": "",
-              "queryType": "randomWalk",
+              "legendFormat": "{{resource_name}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Total downloaded bytes per second",
+          "title": "Task Custom Resource usage (Percentage)",
           "type": "timeseries"
         },
         {
@@ -2895,7 +2894,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 28
+            "y": 2850
           },
           "id": 35,
           "options": {
@@ -2920,7 +2919,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2997,7 +2996,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 2858
           },
           "id": 129,
           "options": {
@@ -3023,7 +3022,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "quantile(${quantile}, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "quantile(${quantile}, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3101,7 +3100,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 2858
           },
           "id": 102,
           "options": {
@@ -3128,7 +3127,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
@@ -3205,7 +3204,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 2866
           },
           "id": 1195,
           "options": {
@@ -3230,7 +3229,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_remote_execution_file_cache_requests{status=\"hit\", region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n  /\nsum(rate(buildbuddy_remote_execution_file_cache_requests{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_cache_requests{status=\"hit\", region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n  /\nsum(rate(buildbuddy_remote_execution_file_cache_requests{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "Hit rate",
               "range": true,
@@ -3306,7 +3305,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 44
+            "y": 2866
           },
           "id": 1202,
           "options": {
@@ -3333,7 +3332,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "p50",
               "range": true,
@@ -3346,7 +3345,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p90",
@@ -3360,7 +3359,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p99",
@@ -3374,7 +3373,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p99.99",
@@ -3476,7 +3475,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 52
+            "y": 2882
           },
           "id": 1196,
           "options": {
@@ -3503,7 +3502,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
               "legendFormat": "",
               "range": true,
@@ -3514,8 +3513,7 @@
           "type": "timeseries"
         }
       ],
-      "repeat": "pool",
-      "title": "Executor pool (${pool})",
+      "title": "Executor pool",
       "type": "row"
     },
     {
@@ -3593,7 +3591,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 368
+            "y": 5666
           },
           "id": 85,
           "options": {
@@ -3620,7 +3618,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "expr": "go_memstats_heap_alloc_bytes{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
               "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
@@ -3695,7 +3693,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 368
+            "y": 5666
           },
           "id": 87,
           "options": {
@@ -3722,7 +3720,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "expr": "go_goroutines{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
               "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
@@ -3798,7 +3796,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 417
+            "y": 5715
           },
           "id": 93,
           "options": {
@@ -3825,7 +3823,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"${quantile}\",job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "expr": "go_gc_duration_seconds{region=~\"${region}\", quantile=\"${quantile}\",job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
               "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
@@ -3837,8 +3835,7 @@
           "type": "timeseries"
         }
       ],
-      "repeat": "job",
-      "title": "golang (${job})",
+      "title": "golang",
       "type": "row"
     },
     {
@@ -3916,7 +3913,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 676
+            "y": 19234
           },
           "id": 1127,
           "options": {
@@ -3941,7 +3938,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (avg by(mode,inventory_hostname) ((rate(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})))",
+              "expr": "1 - (avg by(mode,inventory_hostname) ((rate(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\"})))",
               "hide": false,
               "interval": "",
               "legendFormat": "{{nodename}}",
@@ -4017,7 +4014,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 676
+            "y": 19234
           },
           "id": 1166,
           "options": {
@@ -4042,7 +4039,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (inventory_hostname) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "max by (inventory_hostname) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "reads {{inventory_hostname}}",
               "range": true,
@@ -4055,7 +4052,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (inventory_hostname) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))\n",
+              "expr": "max by (inventory_hostname) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))\n",
               "hide": false,
               "interval": "",
               "legendFormat": "writes {{inventory_hostname}}",
@@ -4131,7 +4128,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 692
+            "y": 19250
           },
           "id": 1168,
           "options": {
@@ -4156,7 +4153,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
+              "expr": "rate(node_network_receive_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
               "interval": "",
               "legendFormat": "rx {{inventory_hostname}} {{device}}",
               "range": true,
@@ -4169,7 +4166,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
+              "expr": "rate(node_network_transmit_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
               "hide": false,
               "interval": "",
               "legendFormat": "tx {{inventory_hostname}} {{device}}",
@@ -4291,7 +4288,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 677
+            "y": 19235
           },
           "id": 992,
           "maxPerRow": 2,
@@ -4317,7 +4314,7 @@
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{inventory_hostname}} {{device}} reads",
               "range": true,
@@ -4330,7 +4327,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} {{device}} writes",
@@ -4344,7 +4341,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} {{device}} rx",
@@ -4358,7 +4355,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} {{device}} tx",
@@ -4394,11 +4391,13 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisBorderShow": false,
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
+                "barWidthFactor": 0.6,
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
@@ -4446,7 +4445,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1545
+            "y": 12626
           },
           "id": 6304,
           "maxPerRow": 2,
@@ -4458,10 +4457,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
+          "pluginVersion": "11.6.2",
           "repeat": "group_name",
           "repeatDirection": "h",
           "targets": [
@@ -4492,6 +4493,99 @@
             }
           ],
           "title": "${group_name} disk use",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 12634
+          },
+          "id": 6306,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "1 - node_filesystem_avail_bytes{mountpoint=\"/System/Volumes/Data\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}/node_filesystem_size_bytes{mountpoint=\"/System/Volumes/Data\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} ",
+              "legendFormat": "{{inventory_hostname}} ",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "${group_name} disk use %",
           "type": "timeseries"
         }
       ],
@@ -4647,7 +4741,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1578
+            "y": 20136
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -4675,7 +4769,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_wired_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_wired_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} Wired memory",
@@ -4689,7 +4783,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_compressed_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_compressed_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} Compressed memory",
@@ -4703,7 +4797,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_active_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_active_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{inventory_hostname}} Active memory",
               "range": true,
@@ -4716,7 +4810,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_inactive_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_inactive_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} Inactive memory",
@@ -4730,7 +4824,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_free_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_free_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{inventory_hostname}} Free memory",
@@ -4817,7 +4911,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 1611
+            "y": 20169
           },
           "id": 1991,
           "maxPerRow": 2,
@@ -4843,7 +4937,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_swap_used_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "node_memory_swap_used_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{inventory_hostname}} swap memory used",
               "range": true,
@@ -4855,7 +4949,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "{{inventory_hostname}} swap in rate",
@@ -4868,7 +4962,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=~\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "{{inventory_hostname}} swap out rate",
@@ -4893,22 +4987,23 @@
   "templating": {
     "list": [
       {
+        "allValue": ".*",
         "current": {
-          "text": "global",
-          "value": "global"
+          "text": "All",
+          "value": "$__all"
         },
-        "hide": 2,
-        "includeAll": false,
+        "definition": "label_values(up{job=\"mac-executor\"},region)",
+        "includeAll": true,
         "name": "region",
-        "options": [
-          {
-            "selected": true,
-            "text": "global",
-            "value": "global"
-          }
-        ],
-        "query": "global",
-        "type": "custom"
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up{job=\"mac-executor\"},region)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
       },
       {
         "current": {
@@ -5011,60 +5106,19 @@
       {
         "current": {
           "text": "All",
-          "value": "$__all"
+          "value": ".*"
         },
         "datasource": {
           "type": "prometheus",
           "uid": "vm"
         },
-        "definition": "label_values(up{region=\"$region\"}, job)",
-        "includeAll": true,
-        "label": "Jobs",
-        "name": "job",
-        "options": [],
-        "query": {
-          "query": "label_values(up{region=\"$region\"}, job)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
-        "regex": "buildbuddy-app|cache-proxy|executor.*",
-        "type": "query"
-      },
-      {
-        "current": {
-          "text": "mac-executor",
-          "value": "mac-executor"
-        },
-        "hide": 2,
-        "includeAll": false,
-        "label": "Executor pool",
-        "name": "pool",
-        "options": [
-          {
-            "selected": true,
-            "text": "mac-executor",
-            "value": "mac-executor"
-          }
-        ],
-        "query": "mac-executor",
-        "type": "custom"
-      },
-      {
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "vm"
-        },
-        "definition": "label_values(node_uname_info{region=\"$region\"}, group_name)",
+        "definition": "label_values(node_uname_info{region=~\"${region}\"}, group_name)",
         "includeAll": true,
         "multi": true,
         "name": "group_name",
         "options": [],
         "query": {
-          "query": "label_values(node_uname_info{region=\"$region\"}, group_name)",
+          "query": "label_values(node_uname_info{region=~\"${region}\"}, group_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

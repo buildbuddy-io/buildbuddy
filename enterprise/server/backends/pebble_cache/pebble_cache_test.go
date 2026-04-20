@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,7 +131,7 @@ func TestSetOptionDefaults(t *testing.T) {
 
 func TestIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -262,7 +263,7 @@ func TestIsolation(t *testing.T) {
 
 func TestGetSet(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -321,7 +322,7 @@ func TestGetSet(t *testing.T) {
 
 func TestDupeWrites(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -406,7 +407,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	testAPIKey := "AK2222"
 	testGroup := "GR7890"
 	testUsers := testauth.TestUsers(testAPIKey, testGroup)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
@@ -489,7 +490,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 	testAPIKey := "AK2222"
 	testGroup := "GR7890"
 	testUsers := testauth.TestUsers(testAPIKey, testGroup)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
@@ -556,7 +557,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 
 func TestMetadata(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -692,7 +693,7 @@ func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
 
 func TestMultiGetSet(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -755,7 +756,7 @@ func TestMultiGetSet(t *testing.T) {
 
 func TestReadWrite(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -830,7 +831,7 @@ func TestReadWrite(t *testing.T) {
 
 func TestWriteCancelBeforeCommit(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
@@ -891,7 +892,7 @@ func TestWriteCancelBeforeCommit(t *testing.T) {
 
 func TestCancelBeforeWrite(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
@@ -945,7 +946,7 @@ func TestCancelBeforeWrite(t *testing.T) {
 
 func TestSizeLimit(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(100_000_000)
@@ -1044,7 +1045,7 @@ func TestCompression(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	testParams := []struct {
@@ -1150,7 +1151,7 @@ func TestCompression(t *testing.T) {
 
 func TestCompression_BufferPoolReuse(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1000)
@@ -1220,7 +1221,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 
 func TestCompression_ParallelRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	maxSizeBytes := int64(1000)
 
 	testCases := []struct {
@@ -1291,7 +1292,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 
 func TestCompression_NoEarlyEviction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	numDigests := 10
@@ -1411,7 +1412,7 @@ func TestCompressionOffset(t *testing.T) {
 			compressedRN.Compressor = repb.Compressor_ZSTD
 
 			te := testenv.GetTestEnv(t)
-			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 			ctx := getAnonContext(t, te)
 
 			opts := &pebble_cache.Options{
@@ -1459,7 +1460,7 @@ func TestFindMissing(t *testing.T) {
 			desc := fmt.Sprintf("%s_test_size_%d", tc.desc, testSize)
 			t.Run(desc, func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
-				te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+				te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 				ctx := getAnonContext(t, te)
 
 				options := &pebble_cache.Options{
@@ -1497,7 +1498,7 @@ func TestFindMissing(t *testing.T) {
 
 func TestNoEarlyEviction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	testCases := []struct {
@@ -1598,7 +1599,7 @@ func TestLRU(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
-			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 			ctx := getAnonContext(t, te)
 			clock := clockwork.NewFakeClock()
 			numDigests := 25
@@ -1743,7 +1744,7 @@ func TestLRU(t *testing.T) {
 
 func TestStartupScan(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
@@ -1827,7 +1828,7 @@ func TestDeleteOrphans(t *testing.T) {
 	flags.Set(t, "cache.pebble.scan_for_missing_files", true)
 	flags.Set(t, "cache.pebble.orphan_delete_dry_run", false)
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -1944,7 +1945,7 @@ func TestDeleteOrphans(t *testing.T) {
 func TestDeleteEmptyDirs(t *testing.T) {
 	flags.Set(t, "cache.pebble.dir_deletion_delay", time.Nanosecond)
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -1990,7 +1991,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 
 func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000) // 1MB
@@ -2011,7 +2012,7 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 
 func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000) // 1MB
@@ -2047,7 +2048,7 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 
 func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000) // 1MB
@@ -2068,7 +2069,7 @@ func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 
 func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000) // 1MB
@@ -2131,7 +2132,7 @@ func openPebbleCache(ctx context.Context, t *testing.T, te *testenv.TestEnv, opt
 
 func TestMigrateVersions(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
@@ -2309,7 +2310,7 @@ func TestEncryption(t *testing.T) {
 				user := testauth.User(userID, groupID)
 				user.CacheEncryptionEnabled = true
 				users := map[string]interfaces.UserInfo{userID: user}
-				auther := testauth.NewTestAuthenticator(users)
+				auther := testauth.NewTestAuthenticator(t, users)
 				te.SetAuthenticator(auther)
 
 				ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
@@ -2363,7 +2364,7 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 	user := testauth.User(userID, groupID)
 	user.CacheEncryptionEnabled = true
 	users := map[string]interfaces.UserInfo{userID: user}
-	auther := testauth.NewTestAuthenticator(users)
+	auther := testauth.NewTestAuthenticator(t, users)
 	te.SetAuthenticator(auther)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
@@ -2438,7 +2439,7 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 			user := testauth.User(userID, groupID)
 			user.CacheEncryptionEnabled = true
 			users := map[string]interfaces.UserInfo{userID: user}
-			auther := testauth.NewTestAuthenticator(users)
+			auther := testauth.NewTestAuthenticator(t, users)
 			te.SetAuthenticator(auther)
 
 			rootDir := testfs.MakeTempDir(t)
@@ -2507,7 +2508,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 	user := testauth.User(userID, groupID)
 	user.CacheEncryptionEnabled = true
 	users := map[string]interfaces.UserInfo{userID: user}
-	auther := testauth.NewTestAuthenticator(users)
+	auther := testauth.NewTestAuthenticator(t, users)
 	te.SetAuthenticator(auther)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
@@ -2691,7 +2692,7 @@ func BenchmarkGetMulti(b *testing.B) {
 	log.Configure()
 
 	te := testenv.GetTestEnv(b)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
 	maxSizeBytes := int64(100_000_000)
@@ -2762,7 +2763,7 @@ func BenchmarkFindMissing(b *testing.B) {
 	*log.IncludeShortFileName = true
 	log.Configure()
 	te := testenv.GetTestEnv(b)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
 	maxSizeBytes := int64(100_000_000)
@@ -2818,7 +2819,7 @@ func BenchmarkContains1(b *testing.B) {
 	*log.IncludeShortFileName = true
 	log.Configure()
 	te := testenv.GetTestEnv(b)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
 	maxSizeBytes := int64(100_000_000)
@@ -2860,7 +2861,7 @@ func BenchmarkSet(b *testing.B) {
 	log.Configure()
 
 	te := testenv.GetTestEnv(b)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
 	maxSizeBytes := int64(100_000_000)
@@ -2892,7 +2893,7 @@ func TestSampling(t *testing.T) {
 	user := testauth.User(userID, groupID)
 	user.CacheEncryptionEnabled = true
 	users := map[string]interfaces.UserInfo{userID: user}
-	auther := testauth.NewTestAuthenticator(users)
+	auther := testauth.NewTestAuthenticator(t, users)
 	te.SetAuthenticator(auther)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
@@ -3041,7 +3042,7 @@ func TestRatchetDB(t *testing.T) {
 
 func TestGCSBlobStorage(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	clock := clockwork.NewFakeClock()
 	ctx := getAnonContext(t, te)
 
@@ -3113,7 +3114,7 @@ func TestGCSBlobStorage(t *testing.T) {
 
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	clock := clockwork.NewFakeClock()
 	ctx := getAnonContext(t, te)
 
@@ -3203,7 +3204,7 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 	minBytesAutoZstdCompression := int64(math.MaxInt64)
 
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
 
 	clock := clockwork.NewRealClock()
@@ -3326,7 +3327,7 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 
 func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	clock := clockwork.NewFakeClock()
 	ctx := getAnonContext(t, te)
 
@@ -3377,4 +3378,55 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 		_, err := pc.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), err)
 	}
+}
+
+type fakeAtimeUpdater struct {
+	calls *atomic.Int32
+}
+
+func (u fakeAtimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	u.calls.Add(1)
+	return true
+}
+
+func (u fakeAtimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	u.calls.Add(1)
+	return true
+}
+
+func TestAtimeUpdater(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	threshold := time.Microsecond
+	workers := 1
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          1_000_000_000,
+		AtimeUpdateThreshold:  &threshold,
+		NumAtimeUpdateWorkers: &workers,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Create the resource name that we'll update
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	// Register updater now to prevent calling when the file was created above
+	updater := fakeAtimeUpdater{calls: &atomic.Int32{}}
+	pc.RegisterAtimeUpdater(updater)
+
+	// Call Get() to trigger an atime update
+	_, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+
+	// Verify the atime updater was called
+	calledFunc := func() bool {
+		return updater.calls.Load() > 0
+	}
+	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
 }

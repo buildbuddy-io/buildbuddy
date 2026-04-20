@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/stats"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -73,6 +74,9 @@ func MaxRecvMsgSizeBytes() int {
 type GRPCServerConfig struct {
 	ExtraChainedUnaryInterceptors  []grpc.UnaryServerInterceptor
 	ExtraChainedStreamInterceptors []grpc.StreamServerInterceptor
+	PostAuthUnaryInterceptors      []grpc.UnaryServerInterceptor
+	PostAuthStreamInterceptors     []grpc.StreamServerInterceptor
+	ExtraStatsHandlers             []stats.Handler
 }
 
 type GRPCServer struct {
@@ -205,16 +209,22 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 })
 
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
-	return []grpc.ServerOption{
+	opts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
+		grpc.ChainUnaryInterceptor(config.PostAuthUnaryInterceptors...),
+		grpc.ChainStreamInterceptor(config.PostAuthStreamInterceptors...),
 		grpc.StreamInterceptor(interceptors.TracedStreamServerInterceptor("grpc_server.MetricsInterceptor", Metrics().StreamServerInterceptor())),
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		KeepaliveEnforcementPolicy(),
 	}
+	for _, h := range config.ExtraStatsHandlers {
+		opts = append(opts, grpc.StatsHandler(h))
+	}
+	return opts
 }
 
 func KeepaliveEnforcementPolicy() grpc.ServerOption {

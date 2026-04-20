@@ -113,6 +113,7 @@ type Invocation struct {
 	Tags                              []string `gorm:"type:Array(String);"`
 	RunID                             string
 	ParentRunID                       string
+	RunStatus                         int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -137,7 +138,8 @@ func (i *Invocation) TableName() string {
 func (i *Invocation) TableOptions(clickhouseVersion string) string {
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
 type Execution struct {
@@ -153,6 +155,7 @@ type Execution struct {
 	UserID             string
 	Worker             string
 	ExecutorHostname   string
+	ClientIP           string
 
 	// Executor metadata
 	SelfHosted bool
@@ -337,6 +340,7 @@ func (e *Execution) AdditionalFields() []string {
 		"SelfHosted",
 		"ExecutorHostname",
 		"Experiments",
+		"ClientIP",
 	}
 }
 
@@ -382,7 +386,8 @@ func (t *TestTargetStatus) TableName() string {
 }
 
 func (t *TestTargetStatus) TableOptions(clickhouseVersion string) string {
-	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(invocation_start_time_usec, 1000000), 'UTC'))"
 	if clickhouseVersion > "24.8" {
 		// Clickhouse 24.8 added a table setting, deduplicate_merge_projection_mode,
 		// that is required when adding projections with on tables with merge engines.
@@ -558,8 +563,8 @@ func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{}
 				state = afterCreateBody
 				continue
 			}
-			if strings.HasPrefix(line, "PROJECTION ") {
-				line = strings.TrimPrefix(line, "PROJECTION ")
+			if after, ok := strings.CutPrefix(line, "PROJECTION "); ok {
+				line = after
 				elems := strings.Split(line, " ")
 				if len(elems) > 0 {
 					names[elems[0]] = struct{}{}
@@ -640,5 +645,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
+		RunStatus:                         ti.RunStatus,
 	}
 }

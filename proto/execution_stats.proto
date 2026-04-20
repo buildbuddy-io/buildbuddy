@@ -171,6 +171,9 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata about the runner assigned to process the task.
   RunnerMetadata runner_metadata = 10;
+
+  // Metadata containing more detail about the input fetch phase of execution.
+  InputFetchMetadata input_fetch_detailed_stats = 11;
 }
 
 message RunnerMetadata {
@@ -201,6 +204,15 @@ message RunnerMetadata {
   string persistent_worker_key = 4;
 }
 
+message InputFetchMetadata {
+  // Serialized roaring bitmap. Set bits correspond to leaf file indices in a
+  // deterministic order: files first, in the order they are listed in each
+  // Directory message, then leaf files from each child directory,
+  // recursively, in the order the child directories are listed in each
+  // Directory message.
+  bytes downloaded_file_indices_bitmap = 1;
+}
+
 message ExecutionLookup {
   // The invocation_id associated with the execution.
   string invocation_id = 1;
@@ -212,6 +224,10 @@ message ExecutionLookup {
   // Optional execution ID. Only the specific execution with this ID will be
   // returned.
   string execution_id = 3;
+
+  // Optional target label filter. Only executions for this target will be
+  // returned (exact match). Ex: "//foo/bar:baz"
+  string target_label = 4;
 }
 
 message GetExecutionRequest {

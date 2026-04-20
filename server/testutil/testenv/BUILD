@@ -7,7 +7,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:remote_execution_go_proto",
         "//server/backends/blobstore",
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
@@ -16,7 +15,6 @@ go_library(
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_client",
-        "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",

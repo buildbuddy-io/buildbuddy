@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunked_manifest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -45,10 +45,6 @@ import (
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
-)
-
-const (
-	experimentFlagChunkingEnabled = "cache.chunking_enabled"
 )
 
 var (
@@ -125,7 +121,34 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, missing...)
+
+	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		checker := chunking.NewMissingChunkChecker(s.cache)
+
+		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
+		stillMissing := missing[:0]
+		for _, d := range missing {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+			if err != nil {
+				stillMissing = append(stillMissing, d)
+				continue
+			}
+			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
+			if err != nil {
+				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
+			}
+			if anyMissing {
+				stillMissing = append(stillMissing, d)
+			}
+		}
+		missing = stillMissing
+	}
+
+	rsp.MissingBlobDigests = missing
 	return rsp, nil
 }
 
@@ -240,7 +263,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		checksum.Write(decompressedData)
 		computedDigest := hex.EncodeToString(checksum.Sum(nil))
 		if computedDigest != rn.GetDigest().GetHash() {
-			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
+			err := status.InvalidArgumentErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
@@ -248,7 +271,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		if int64(len(decompressedData)) != rn.GetDigest().GetSizeBytes() {
-			err := status.DataLossErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
+			err := status.InvalidArgumentErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), rn.GetDigest().GetSizeBytes())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: rn.GetDigest(),
 				Status: gstatus.Convert(err).Proto(),
@@ -330,6 +353,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -365,6 +389,17 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 
 		data, ok := cacheRsp[rn.GetDigest()]
+
+		// It's unexpected, but BatchReadBlobs may be used for blobs that are
+		// large enough to be chunked. If the blob was not found and it's large
+		// enough to be chunked, try to reassemble it from CDC chunks.
+		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes() && chunkingEnabled {
+			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
+				data = assembled
+				ok = true
+			}
+		}
+
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
 			Digest: rn.GetDigest(),
 			Data:   data,
@@ -1122,13 +1157,39 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 // SpliceBlob is used to tell the server how it can assemble a blob from a list of CAS digests.
 // The server will verify the chunks assembled from the digests match the expected blob digest.
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	start := time.Now()
+	rsp, err := s.spliceBlob(ctx, req)
+	metrics.SpliceBlobDurationUsec.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Observe(float64(time.Since(start).Microseconds()))
+	return rsp, err
+}
+
+func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// For read-only API keys, behave like a no-op success to be consistent with
+		// other write methods (e.g. UpdateActionResult, BatchUpdateBlobs) and avoid
+		// breaking builds that rely on read-only credentials.
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
+
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
+	}
+
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
 	}
 
 	if req.GetBlobDigest() == nil {
@@ -1140,7 +1201,7 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
 	}
 
-	manifest := &chunked_manifest.ChunkedManifest{
+	manifest := &chunking.Manifest{
 		BlobDigest:     req.GetBlobDigest(),
 		ChunkDigests:   req.GetChunkDigests(),
 		InstanceName:   req.GetInstanceName(),
@@ -1156,6 +1217,34 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 	}, nil
 }
 
+func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
+	for _, d := range manifest.ChunkDigests {
+		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		if readZstd {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
+		rns = append(rns, rn.ToProto())
+	}
+	chunkData, err := s.cache.GetMulti(ctx, rns)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 0, blobDigest.GetSizeBytes())
+	for _, d := range manifest.ChunkDigests {
+		data, ok := chunkData[d]
+		if !ok {
+			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+		}
+		buf = append(buf, data...)
+	}
+	return buf, nil
+}
+
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
 // any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
@@ -1164,20 +1253,28 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if efp := s.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, experimentFlagChunkingEnabled, false) {
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
+	}
+
+	cf := req.GetChunkingFunction()
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
 	}
 
 	if req.GetBlobDigest() == nil {
 		return nil, status.InvalidArgumentError("blob_digest is required")
 	}
 
-	manifest, err := chunked_manifest.Load(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err != nil {
-		// TODO(buildbuddy-internal#6426): Unimplemented is returned when the blob
-		// exists but wasn't stored with chunking. In the future, we could return
-		// the blob as a single chunk to better comply with the RE API contract.
 		return nil, err
+	}
+
+	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+		return nil, err
+	} else if len(resp.GetMissingBlobDigests()) > 0 {
+		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))
 	}
 	return manifest.ToSplitBlobResponse(), nil
 }

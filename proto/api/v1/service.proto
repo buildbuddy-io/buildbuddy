@@ -4,6 +4,7 @@ package api.v1;
 
 import "proto/api/v1/action.proto";
 import "proto/api/v1/api_key.proto";
+import "proto/api/v1/audit_log.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
@@ -38,6 +39,9 @@ service ApiService {
   // Retrieves the logs for a specific invocation.
   rpc GetLog(GetLogRequest) returns (GetLogResponse);
 
+  // Retrieves a page of audit log entries.
+  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+
   // Retrieves a list of targets or a specific target matching the given
   // request selector.
   rpc GetTarget(GetTargetRequest) returns (GetTargetResponse);
@@ -50,6 +54,10 @@ service ApiService {
   // - Over gRPC returns a stream of bytes to be stitched together in order.
   // - Over HTTP this simply returns the requested file.
   rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
+
+  // Retrieves a byte range from the CAS blob with the given digest. Supports
+  // ranges up to 16 MiB in size.
+  rpc GetFileRange(GetFileRangeRequest) returns (GetFileRangeResponse);
 
   // Delete the File with the given uri.
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);

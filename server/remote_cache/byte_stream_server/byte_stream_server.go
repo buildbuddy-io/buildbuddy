@@ -1,14 +1,18 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"hash"
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
@@ -22,10 +26,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -140,10 +146,15 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if err := ht.TrackMiss(r.GetDigest()); err != nil {
-			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
+			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
-		return err
+		if err != nil {
+			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
+				log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", htErr)
+			}
+			return err
+		}
 	}
 	defer reader.Close()
 
@@ -191,6 +202,68 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 	return err
+}
+
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
+	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+
+	offsetRead := strconv.FormatBool(offset > 0)
+
+	// Skip chunks that fall entirely before the requested offset.
+	chunkDigests := manifest.ChunkDigests
+	remainingOffset := offset
+	for len(chunkDigests) > 0 && remainingOffset >= chunkDigests[0].GetSizeBytes() {
+		remainingOffset -= chunkDigests[0].GetSizeBytes()
+		chunkDigests = chunkDigests[1:]
+	}
+	if len(chunkDigests) == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+	for _, d := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		chunkRN.SetCompressor(rn.GetCompressor())
+		rns = append(rns, chunkRN.ToProto())
+	}
+	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
+		}).Inc()
+		return nil, err
+	} else if len(missing) > 0 {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunks_missing",
+			metrics.StatusHumanReadableLabel:  "NotFound",
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
+		}).Inc()
+		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
+	}
+
+	rcs := make([]io.ReadCloser, 0, len(rns))
+	for _, crn := range rns {
+		rc, err := s.cache.Reader(ctx, crn, remainingOffset, 0)
+		remainingOffset = 0
+		if err != nil {
+			metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+				metrics.ChunkedFailureReasonLabel: "chunk_read_error",
+				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+				metrics.ChunkedOffsetReadLabel:    offsetRead,
+			}).Inc()
+			for _, openCloser := range rcs {
+				openCloser.Close()
+			}
+			return nil, err
+		}
+		rcs = append(rcs, rc)
+	}
+
+	return ioutil.NewMultiReadCloser(rcs...), nil
 }
 
 // writeHandler enapsulates an on-going ByteStream write to a cache,
@@ -518,11 +591,10 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	// If the data has not been committed to the cache, then just tell the
-	//client that we don't have anything and let them retry it.
-	return &bspb.QueryWriteStatusResponse{
-		CommittedSize: 0,
-		Complete:      false,
-	}, nil
+	// client to retry from the beginning in a way that avoids future calls
+	// to this method in the case of Bazel.
+	// https://github.com/bazelbuild/bazel/pull/28235
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
@@ -610,12 +682,24 @@ func (s *Checksum) Write(p []byte) (int, error) {
 
 func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := hex.EncodeToString(s.hash.Sum(nil))
-	if computedDigest != d.GetHash() {
-		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
-	}
-	if s.BytesWritten() != d.GetSizeBytes() {
-		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
+	computedHash := hex.EncodeToString(s.hash.Sum(nil))
+	// Use an INVALID_ARGUMENT status error to match the spec.
+	// https://github.com/bazelbuild/bazel/blob/ec36eacc31678ecf4b5c25f9ab7ab166330aff28/third_party/remoteapis/build/bazel/remote/execution/v2/remote_execution.proto#L283-L286
+	//
+	// It's hard to see the hashes matched but file sizes did not,
+	// but we are still supporting SHA1 so this could shield off potential collision attacks.
+	if computedHash != d.GetHash() || s.BytesWritten() != d.GetSizeBytes() {
+		computed := &repb.Digest{
+			Hash:      computedHash,
+			SizeBytes: s.BytesWritten(),
+		}
+		return status.InvalidArgumentErrorf(
+			"Digest of uploaded bytes %q [%s] did not match provided digest: %q [%s].",
+			digest.String(computed),
+			s.digestFunction,
+			digest.String(d),
+			r.GetDigestFunction(),
+		)
 	}
 	return nil
 }

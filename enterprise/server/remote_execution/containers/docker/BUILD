@@ -16,6 +16,7 @@ go_library(
         "//server/interfaces",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/random",
         "//server/util/status",
         "@com_github_docker_docker//api/types/container",

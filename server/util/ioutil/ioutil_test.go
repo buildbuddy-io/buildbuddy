@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -32,6 +33,22 @@ func TestCustomCommitWriteCloser_SecondCommitFails(t *testing.T) {
 
 	err = cwc.Close()
 	require.NoError(t, err)
+}
+
+func TestCustomCommitWriteCloser_SeekerPropagation(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "seekable-*")
+	require.NoError(t, err)
+	defer f.Close()
+
+	cwc := ioutil.NewCustomCommitWriteCloser(f)
+	seeker, ok := cwc.(io.Seeker)
+	require.True(t, ok)
+	_, err = seeker.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	cwc = ioutil.NewCustomCommitWriteCloser(&bytes.Buffer{})
+	_, ok = cwc.(io.Seeker)
+	require.False(t, ok)
 }
 
 type failAfterNumWritesWriter struct {
@@ -111,10 +128,10 @@ func TestDoubleBufferWriter(t *testing.T) {
 	pr, pw := io.Pipe()
 	cwc := ioutil.NewCustomCommitWriteCloser(pw)
 	var committed int64
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		committed = n
 		return pw.Close()
-	}
+	})
 	dbw := ioutil.NewDoubleBufferWriter(context.Background(), cwc, bytebufferpool.VariableSize(8), 4, 8)
 
 	// Write 1 byte and immediately let it get written by pulling from the pipe.
@@ -155,10 +172,10 @@ func TestDoubleBufferWriter_RandomWrites(t *testing.T) {
 	pr, pw := io.Pipe()
 	cwc := ioutil.NewCustomCommitWriteCloser(pw)
 	var committed int64
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		committed = n
 		return pw.Close()
-	}
+	})
 	dbw := ioutil.NewDoubleBufferWriter(context.Background(), cwc, bytebufferpool.VariableSize(8), 4, 8)
 
 	writesDone, readsDone := make(chan struct{}), make(chan struct{})
@@ -196,9 +213,9 @@ func TestDoubleBufferWriter_RandomWrites(t *testing.T) {
 func TestDoubleBufferWriter_Errors(t *testing.T) {
 	pr, pw := io.Pipe()
 	cwc := ioutil.NewCustomCommitWriteCloser(pw)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		return pw.Close()
-	}
+	})
 	dbw := ioutil.NewDoubleBufferWriter(context.Background(), cwc, bytebufferpool.VariableSize(8), 4, 8)
 
 	require.NoError(t, pw.Close())

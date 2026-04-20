@@ -2,9 +2,11 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -14,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -353,7 +356,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
 		// the action timeout yet, so any DeadlineExceeded errors at this point
 		// would be internal timeouts.
-		if status.IsDeadlineExceededError(err) {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
 
@@ -365,13 +368,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// here, we coerce NotFound to this special FailedPrecondition error so
 		// that bazel will reupload inputs in the rare cases where inputs are
 		// missing.
-		//
-		// At the time of writing (bazel 8.x), bazel does not actually care
-		// about the "subject" part of the spec, and will instead just reupload
-		// all inputs. So for now, we just return an empty digest in the subject
-		// field.
 		if status.IsNotFoundError(err) {
-			err = digest.MissingDigestError(&repb.Digest{Hash: digest.EmptySha256})
+			err = digest.MissingDigestErrorf(task.GetAction().GetInputRootDigest(), "%s", err)
 		}
 
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
@@ -471,6 +469,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if cmdResult.Error != nil {
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
+	if dirtools.InputFetchMetadataEnabled() {
+		auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
+	}
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
@@ -538,6 +539,11 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 }
 
 func validateCommand(cmd *repb.Command) error {
+	if wd := cmd.GetWorkingDirectory(); wd != "" {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+			return status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
+		}
+	}
 	for _, pathList := range [][]string{
 		cmd.GetOutputFiles(),
 		cmd.GetOutputDirectories(),

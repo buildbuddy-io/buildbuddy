@@ -10,6 +10,6 @@ go_library(
     deps = [
         "//cli/log",
         "//server/util/lib/set",
-        "//server/util/shlex",
+        "@com_github_google_shlex//:shlex",
     ],
 )

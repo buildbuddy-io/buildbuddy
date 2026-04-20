@@ -6,6 +6,7 @@ import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
 import rpcService, { FileEncoding } from "../service/rpc_service";
+import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
@@ -14,6 +15,7 @@ import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_sugge
 
 interface Props {
   model: InvocationModel;
+  dark: boolean;
 }
 
 interface State {
@@ -28,6 +30,8 @@ interface State {
   groupBy: string;
   threadPageSize: number;
   eventPageSize: number;
+  localProfileName: string;
+  viewerKey: number;
 }
 
 interface Thread {
@@ -46,8 +50,8 @@ const sortByDurationDescStorageValue = "duration-desc";
 const groupByThreadStorageValue = "thread";
 const groupByAllStorageValue = "all";
 
-export default class InvocationTimingCardComponent extends React.Component<Props, State> {
-  state: State = {
+function createEmptyProfileState() {
+  return {
     profile: null,
     loading: true,
     threadNumPages: 1,
@@ -55,10 +59,18 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadMap: new Map<number, Thread>(),
     durationByNameMap: new Map<string, number>(),
     durationByCategoryMap: new Map<string, number>(),
+    localProfileName: "",
+  };
+}
+
+export default class InvocationTimingCardComponent extends React.Component<Props, State> {
+  state: State = {
+    ...createEmptyProfileState(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
+    viewerKey: 0,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -69,7 +81,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
-      this.fetchProfile();
+      this.setState(createEmptyProfileState(), () => this.fetchProfile());
     }
   }
 
@@ -171,10 +183,13 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
   }
 
-  updateProfile(profile: Profile) {
-    this.state.profile = profile;
-    for (let event of this.state.profile?.traceEvents || []) {
-      let thread = this.state.threadMap.get(event.tid) || {
+  private buildDerivedProfileState(profile: Profile) {
+    const threadMap = new Map<number, Thread>();
+    const durationByNameMap = new Map<string, number>();
+    const durationByCategoryMap = new Map<string, number>();
+
+    for (let event of profile.traceEvents || []) {
+      let thread = threadMap.get(event.tid) || {
         name: "",
         totalDuration: 0,
         id: event.tid,
@@ -182,11 +197,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       };
 
       if (event.dur) {
-        this.state.durationByNameMap.set(event.name, (this.state.durationByNameMap.get(event.name) || 0) + event.dur);
-        this.state.durationByCategoryMap.set(
-          event.cat,
-          (this.state.durationByCategoryMap.get(event.cat) || 0) + event.dur
-        );
+        durationByNameMap.set(event.name, (durationByNameMap.get(event.name) || 0) + event.dur);
+        durationByCategoryMap.set(event.cat, (durationByCategoryMap.get(event.cat) || 0) + event.dur);
       }
 
       if (event.ph == "X") {
@@ -198,9 +210,52 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         thread.name = event.args.name;
       }
 
-      this.state.threadMap.set(event.tid, thread);
+      threadMap.set(event.tid, thread);
     }
-    this.setState(this.state);
+
+    return {
+      profile,
+      threadNumPages: 1,
+      threadToNumEventPagesMap: new Map<number, number>(),
+      threadMap,
+      durationByNameMap,
+      durationByCategoryMap,
+      viewerKey: this.state.viewerKey + 1,
+    };
+  }
+
+  updateProfile(profile: Profile, localProfileName = "") {
+    this.setState({
+      ...this.buildDerivedProfileState(profile),
+      loading: false,
+      localProfileName,
+    });
+  }
+
+  private restoreInvocationProfile() {
+    this.setState(createEmptyProfileState(), () => this.fetchProfile());
+  }
+
+  private renderTraceViewer() {
+    return (
+      <TimingProfileDropTarget
+        className="timing-profile-drop-target"
+        onProfileLoaded={this.updateProfile.bind(this)}
+        onProfileLoadError={(e) => errorService.handleError(e)}>
+        {({ dragActive, loadingMessage }) => (
+          <>
+            <TraceViewer key={this.state.viewerKey} profile={this.state.profile!} dark={this.props.dark} />
+            {(dragActive || loadingMessage) && (
+              <div className="timing-profile-drop-overlay">
+                <div className="timing-profile-drop-overlay-text">
+                  {loadingMessage || "Drop a timing profile to render it"}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </TimingProfileDropTarget>
+    );
   }
 
   sortIdAsc(a: any, b: any) {
@@ -323,7 +378,15 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        <TraceViewer profile={this.state.profile} />
+        {this.state.localProfileName && (
+          <div className="timing-profile-local-banner">
+            <div>
+              Showing local profile <span className="inline-code">{this.state.localProfileName}</span>.
+            </div>
+            <Button onClick={this.restoreInvocationProfile.bind(this)}>Show invocation profile</Button>
+          </div>
+        )}
+        {this.renderTraceViewer()}
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}
@@ -339,7 +402,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               {Boolean(this.getProfileFile()?.uri) && (
                 <div className="button">
                   <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                    Download profile
+                    {this.state.localProfileName ? "Download invocation profile" : "Download profile"}
                   </Button>
                 </div>
               )}

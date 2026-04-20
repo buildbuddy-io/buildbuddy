@@ -9,19 +9,12 @@ export const EVENTS_PANEL_HEIGHT = 540;
 export const LINE_PLOTS_PANEL_HEIGHT = 400;
 
 export const TIMESTAMP_HEADER_SIZE = 16;
-export const TIMESTAMP_HEADER_COLOR = "rgba(236, 239, 241, 0.9)"; // "#ECEFF1" with alpha
-export const TIMESTAMP_FONT_COLOR = "#424242";
 export const TIMESTAMP_FONT_SIZE = "11px";
 
 export const GRIDLINE_IDEAL_GAP = 80;
-export const GRIDLINE_COLOR = "#CFD8DC";
-export const MOUSE_GRIDLINE_COLOR = "#B0BEC5";
 
 export const SECTION_LABEL_HEIGHT = 20;
 export const SECTION_LABEL_FONT_SIZE = "13px";
-export const SECTION_LABEL_FONT_COLOR = "#212121";
-export const SECTION_LABEL_BG_COLOR = "#eee";
-export const SECTION_LABEL_BORDER_COLOR = "#E0E0E0";
 export const SECTION_LABEL_PADDING_BOTTOM = 1;
 export const SECTION_PADDING_BOTTOM = 1;
 
@@ -31,8 +24,6 @@ export const TRACK_VERTICAL_GAP = 1;
 export const EVENT_HORIZONTAL_GAP = 0.5;
 export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
 export const EVENT_LABEL_FONT_SIZE = "11px";
-export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
-export const EVENT_FILTERED_OUT_COLOR = "#ddd";
 
 // The minimum pixel width an event should be rendered at. Events smaller than
 // this will be clamped to this width, unless they are explicitly skipped.
@@ -47,3 +38,6 @@ export const TIME_SERIES_POINT_RADIUS = 2;
 export const BOTTOM_CONTROLS_HEIGHT = 48;
 
 export const SCROLLBAR_SIZE = 13;
+
+export const DARK_LINE_PLOT_FILL_OPACITY = 0.35;
+export const DARK_LINE_PLOT_STROKE_OPACITY = 0.6;

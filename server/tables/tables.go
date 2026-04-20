@@ -22,9 +22,6 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
-
-	// Temporary flag until the feature is ready.
-	createUserListTables = flag.Bool("database.create_user_list_tables", false, "If true, crate user list tables.", flag.Internal)
 )
 
 const (
@@ -166,6 +163,10 @@ type Invocation struct {
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	RunID                            string
 	BazelExitCode                    string
+
+	// For invocations with run logs, the status of the executable running.
+	// Type is `invocation_status.OverallStatus`.
+	RunStatus int64
 
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
@@ -332,8 +333,8 @@ func (u *User) ToProto() *uspb.DisplayUser {
 	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
 	// Parse username from subscriber ID (for known providers).
 	username := ""
-	if strings.HasPrefix(u.SubID, "https://github.com/") {
-		username = strings.TrimPrefix(u.SubID, "https://github.com/")
+	if after, ok := strings.CutPrefix(u.SubID, "https://github.com/"); ok {
+		username = after
 	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{
@@ -434,7 +435,13 @@ type APIKey struct {
 	APIKeyID string `gorm:"primaryKey"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
-	Label   string
+	Label string
+	// UserID is set when an API key is associated with a user
+	// (i.e. it's a user API key)
+	// The API key must be treated as invalid if this field is set but this
+	// user does not exist or is not a member of the group.
+	// All read paths should utilize authdb.fetchAPIKeys to take this into
+	// account.
 	UserID  string
 	GroupID string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
@@ -446,6 +453,12 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
+	//
+	// For user API keys this represents "requested capabilities". This value
+	// must be masked by user membership capabilities to derive the effective
+	// capabilities.
+	// All read paths should utilize authdb.fetchAPIKeys to obtain the
+	// effective capabilities.
 	Capabilities        int32 `gorm:"default:1"`
 	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
@@ -687,6 +700,12 @@ type GitRepository struct {
 	// in the workspace root. If enabled, workflows will automatically start
 	// running for a git repo when it is linked.
 	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
+
+	// UseCLIInRemoteRunners determines whether the BuildBuddy CLI (`bb`) should be
+	// used as the bazel command on remote runners for this repo.
+	// Otherwise they will use `bazelisk` by default.
+	// This can be overridden per-workflow via the bazel_use_cli field in buildbuddy.yaml.
+	UseCLIInRemoteRunners bool `gorm:"not null;default:1"`
 
 	// The ID of the BuildBuddy Github app this repository was authorized for.
 	// (i.e. either the read-only or the read-write app)
@@ -1204,6 +1223,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_branch_index":      `("group_id", "branch_name", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 		"invocations_stats_commit_index":      `("group_id", "commit_sha", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_search_repo_role_index":  `("group_id", "repo_url", "role", "updated_at_usec")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
 		mysqlDialect: {
@@ -1411,10 +1431,8 @@ func RegisterTables() {
 	registerTable("UA", &Usage{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
-	if *createUserListTables {
-		registerTable("UL", &UserList{})
-		registerTable("UU", &UserUserList{})
-		registerTable("UM", &UserListGroup{})
-	}
+	registerTable("UL", &UserList{})
+	registerTable("UU", &UserUserList{})
+	registerTable("UM", &UserListGroup{})
 	registerTable("WF", &Workflow{})
 }

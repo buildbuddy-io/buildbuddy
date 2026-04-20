@@ -51,21 +51,11 @@ func (t *RegistryServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 		path := req.URL.Path
 		pathPaths := strings.Split(path, "/")
 
-		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "github.") {
+		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.Contains(pathPaths[3], "-github.") {
 			buf, status, err := handleGitHub(path)
 			w.WriteHeader(status)
 			if err != nil {
 				log.Errorf("error serving github module %s: %s", path, err)
-			}
-			w.Write(buf)
-			return
-		}
-
-		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "npm") {
-			buf, status, err := handleNPM(path)
-			w.WriteHeader(status)
-			if err != nil {
-				log.Errorf("error serving npm module %s: %s", path, err)
 			}
 			w.Write(buf)
 			return

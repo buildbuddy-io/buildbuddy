@@ -221,7 +221,7 @@ func TestEncryptDecrypt(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -265,7 +265,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -308,7 +308,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 	clock := clockwork.NewRealClock()
 
@@ -361,7 +361,7 @@ func TestKeyLookup(t *testing.T) {
 	group2KeyID := "EK456"
 	userID3 := "US999"
 	groupID3 := "GR999"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2, userID3, groupID3))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2, userID3, groupID3))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
@@ -479,7 +479,7 @@ func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.Test
 	testDecryption(ctx, t, crypter, encrypted, metadata, input)
 }
 
-func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock clockwork.FakeClock) error {
+func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock *clockwork.FakeClock) error {
 	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
@@ -504,7 +504,7 @@ func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthen
 }
 
 // advances the fake clock once and waits for the refresh to be done.
-func advanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
+func advanceTimeAndWaitForRefresh(clock *clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
 	lastRun := crypter.testGetLastCacheRefreshRun()
 	clock.Advance(dur)
 	for !crypter.testGetLastCacheRefreshRun().After(lastRun) {
@@ -517,7 +517,7 @@ func advanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, d
 
 // similar to above, but continuously moves fake clock forward while refresh in
 // progress for testing error scenarios where retries may be attempted.
-func contAdvanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
+func contAdvanceTimeAndWaitForRefresh(clock *clockwork.FakeClock, crypter *Crypter, dur time.Duration) {
 	lastRun := crypter.testGetLastCacheRefreshRun()
 	clock.Advance(dur)
 	for !crypter.testGetLastCacheRefreshRun().After(lastRun) {
@@ -538,7 +538,7 @@ func TestKeyCaching(t *testing.T) {
 	userID2 := "US456"
 	groupID2 := "GR456"
 	group2KeyID := "EK456"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
@@ -802,7 +802,7 @@ func TestKeyReencryption(t *testing.T) {
 	userID2 := "US456"
 	groupID2 := "GR456"
 	group2KeyID := "EK456"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID1, groupID1, userID2, groupID2))
 	env.SetAuthenticator(auther)
 
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
@@ -876,7 +876,7 @@ func TestGetEncryptionKey(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
@@ -901,7 +901,7 @@ func TestGetEncryptionKey_NoGroup(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
@@ -922,7 +922,7 @@ func TestGetEncryptionKey_NoClientIdentity(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
@@ -944,7 +944,7 @@ func TestGetEncryptionKey_BadClientIdentity(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
@@ -966,7 +966,7 @@ func TestGetEncryptionKey_WrongId(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")
@@ -995,7 +995,7 @@ func TestGetEncryptionKey_WrongVersion(t *testing.T) {
 	env, kms := getEnv(t)
 	userID := "US123"
 	groupID := "GR123"
-	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
+	auther := testauth.NewTestAuthenticator(t, testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
 
 	customerKeyURI := generateKMSKey(t, kms, "customerKey")

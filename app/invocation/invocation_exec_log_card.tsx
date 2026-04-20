@@ -22,6 +22,8 @@ interface Props {
   model: InvocationModel;
   search: URLSearchParams;
   filter: string;
+  /** Optional target label to filter executions by (exact match). */
+  targetLabel?: string;
 }
 
 interface State {
@@ -30,6 +32,7 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
+  mnemonicFilter: string;
   limit: number;
 }
 
@@ -42,6 +45,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     sort: "status",
     direction: "desc",
     statusFilter: "all",
+    mnemonicFilter: "all",
     limit: 100,
   };
 
@@ -55,8 +59,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
     const invocationStatusChanged =
       this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
+    const targetLabelChanged = this.props.targetLabel !== prevProps.targetLabel;
 
-    if (invocationIdChanged || invocationStatusChanged) {
+    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged) {
       clearTimeout(this.timeoutRef);
       this.timeoutRef = undefined;
       this.fetchExecution();
@@ -71,6 +76,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
+    if (this.props.targetLabel) {
+      request.executionLookup.targetLabel = this.props.targetLabel;
+    }
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
     rpcService.service
       .getExecution(request)
@@ -185,6 +193,12 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     });
   }
 
+  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    this.setState({
+      mnemonicFilter: event.target.value,
+    });
+  }
+
   handleMoreClicked() {
     this.setState({ limit: this.state.limit + 100 });
   }
@@ -200,11 +214,15 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
 
     let completedCount = 0;
     let incompleteCount = 0;
+    const mnemonics = new Set<string>();
     for (let execution of this.state.executions) {
       if (execution.stage === ExecutionStage.Value.COMPLETED) {
         completedCount++;
       } else {
         incompleteCount++;
+      }
+      if (execution.actionMnemonic) {
+        mnemonics.add(execution.actionMnemonic);
       }
     }
 
@@ -225,6 +243,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
         (execution) =>
           this.state.statusFilter === "all" ||
           getExecutionStatus(execution).name.toLowerCase().startsWith(this.state.statusFilter)
+      )
+      .filter(
+        (execution) => this.state.mnemonicFilter === "all" || execution.actionMnemonic === this.state.mnemonicFilter
       );
 
     return (
@@ -249,6 +270,15 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
                   <Option value="succeeded">Succeeded</Option>
                   <Option value="failed">Failed</Option>
                   <Option value="error">Errored</Option>
+                </Select>
+                <span className="invocation-filter-title">Mnemonic</span>
+                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
+                  <Option value="all">All</Option>
+                  {[...mnemonics].sort().map((m) => (
+                    <Option key={m} value={m}>
+                      {m}
+                    </Option>
+                  ))}
                 </Select>
                 <span className="invocation-sort-title">Sort by</span>
                 <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>

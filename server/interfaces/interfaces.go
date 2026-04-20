@@ -28,6 +28,7 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -304,8 +305,15 @@ type Cache interface {
 	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
+	// Returns the partition ID for the given context and remote instance name.
+	Partition(ctx context.Context, remoteInstanceName string) (string, error)
+
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+
+	// Registers an external (to the cache) atime updater that's called whenever
+	// the cache updates the atime of an artifact.
+	RegisterAtimeUpdater(updater DigestOperator) error
 }
 
 type StoppableCache interface {
@@ -466,7 +474,6 @@ type AuthDB interface {
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
-	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 
 	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
 	// group. It is only to be used in situations where the user has a
@@ -502,6 +509,10 @@ type AuthDB interface {
 
 	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
 	GetUserOwnedKeysEnabled() bool
+
+	// GetAPIKeyValueReadbackEnabled returns whether API key values can be
+	// retrieved after creation by API key read methods.
+	GetAPIKeyValueReadbackEnabled() bool
 
 	// GetUserAPIKeys returns all user-owned API keys within a group.
 	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
@@ -544,6 +555,7 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error
@@ -565,6 +577,9 @@ type UserDB interface {
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error
+	// UpdateGroupSamlIdpMetadataUrl updates the group's SAML IdP metadata URL.
+	// An empty URL disables SSO for the group. Restricted to server admins.
+	UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
 
@@ -703,9 +718,9 @@ type GitHubApp interface {
 	// so should be used for status reporting only.
 	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
-	// GetRepositoryInstallationToken returns an installation token for the given
-	// GitRepository.
-	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+	// GetRepositoryInstallationToken returns an installation token for the given repo.
+	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
+	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler
@@ -836,7 +851,11 @@ type WebhookData struct {
 	// Ex: "my-cool-feature"
 	PushedBranch string
 
-	// SHA is the commit SHA of the branch that was pushed.
+	// PushedTag is the name of the tag that was pushed, if applicable.
+	// Ex: "v1.0.0"
+	PushedTag string
+
+	// SHA is the commit SHA of the branch or tag that was pushed.
 	SHA string
 
 	// TargetRepoURL is the canonical URL of the repo containing the TargetBranch.
@@ -892,6 +911,16 @@ type FileCache interface {
 	DeleteFile(ctx context.Context, f *repb.FileNode) bool
 	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
 	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+
+	// WithSharedDirectory returns a context that stores filecache entries under
+	// a shared executor-local directory instead of the current group or ANON
+	// directory.
+	//
+	// NOTE: Authorization for the objects in these shared directories must be
+	// handled by the caller. The caller must also ensure that the objects in
+	// these shared directories are not modified.
+	WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context
+
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
 	WaitForDirectoryScanToComplete()
@@ -903,6 +932,21 @@ type FileCache interface {
 	// The written data is verified using the specified hash function and not
 	// added to the cache unless the hash matches.
 	Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (CommittedWriteCloser, error)
+
+	// TrackExternalDirectory tracks a pre-existing directory using the
+	// filecache and locks it, protecting it from eviction until unlocked. It
+	// returns NotFound if the dir does not exist. The dir is not moved to the
+	// filecache directory, so the caller must manually re-track during executor
+	// startup. The filecache takes sole responsibility for deleting the
+	// directory.
+	//
+	// See filecache.go for more details.
+	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
+
+	// LookupExternalDirectory looks up and locks an already-tracked external
+	// directory without creating a new tracked entry. It returns NotFound if
+	// the dir does not exist or is not currently tracked.
+	LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error)
 
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
@@ -942,6 +986,7 @@ type PoolInfo struct {
 
 type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
+	GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error)
 	WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error
 	WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error
 }
@@ -1208,6 +1253,10 @@ type CommandResult struct {
 	// VfsStats holds VFS-specific stats if VFS workspaces are enabled.
 	VfsStats *repb.VfsStats
 
+	// InputFetchMetadata describes which action inputs were fetched from
+	// remote CAS while preparing or serving the workspace.
+	InputFetchMetadata *espb.InputFetchMetadata
+
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
 }
@@ -1327,38 +1376,6 @@ type XcodeLocator interface {
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
-// LRU implements a Least Recently Used cache.
-type LRU[V any] interface {
-	// Inserts a value into the LRU. A boolean is returned that indicates
-	// if the value was successfully added.
-	Add(key string, value V) bool
-
-	// Inserts a value into the back of the LRU. A boolean is returned that
-	// indicates if the value was successfully added.
-	PushBack(key string, value V) bool
-
-	// Gets a value from the LRU, returns a boolean indicating if the value
-	// was present.
-	Get(key string) (V, bool)
-
-	// Returns a boolean indicating if the value is present in the LRU.
-	Contains(key string) bool
-
-	// Removes a value from the LRU, releasing resources associated with
-	// that value. Returns a boolean indicating if the value was sucessfully
-	// removed.
-	Remove(key string) bool
-
-	// Returns the total "size" of the LRU.
-	Size() int64
-
-	// Returns the number of items in the LRU.
-	Len() int
-
-	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (V, bool)
-}
-
 // DistributedLock provides a way to serialize access to a resource, where the
 // accessors may be running on different nodes.
 //
@@ -1466,7 +1483,8 @@ type SecretService interface {
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
-	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+	// If secretNames is non-empty, only secrets whose names appear in the list are returned.
+	GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error)
 }
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
@@ -1567,28 +1585,40 @@ type AuditLogger interface {
 	LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message)
 	LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message)
 	LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message)
+	LogForUserList(ctx context.Context, userListID string, userListName string, action alpb.Action, request proto.Message)
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
-type IPRulesService interface {
+type IPRulesEnforcer interface {
 	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the group identified in the context.
-	Authorize(ctx context.Context) error
+	// to access the group identified in the context. The returned context
+	// should be used after successful authorization.
+	Authorize(ctx context.Context) (context.Context, error)
 
 	// AuthorizeGroup checks whether the authenticated user in the context is
 	// allowed to access the specified groupId. This function should not be used
 	// in performance sensitive code paths.
-	AuthorizeGroup(ctx context.Context, groupID string) error
+	AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error)
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
 	// allowed based on the authenticated user and group information in the
 	// context.
-	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error)
 
+	// Invalidates all cached IP rules for the specified group ID.
+	InvalidateCache(ctx context.Context, groupID string)
+
+	// Performs an explicit IP rule check for the given group ID, skipping the
+	// rule with the provided ID, if specified.
+	Check(ctx context.Context, groupID string, skipRuleID string) error
+}
+
+type IPRulesService interface {
 	GetRule(ctx context.Context, groupID string, ruleID string) (*tables.IPRule, error)
 
 	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)
 	SetIPRuleConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error)
+	GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
 	AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error)
 	UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error)
@@ -1688,6 +1718,10 @@ type ServerNotificationService interface {
 	Publish(ctx context.Context, msg proto.Message) error
 }
 
+type MCPService interface {
+	RegisterHandlers(mux HttpServeMux)
+}
+
 type SCIMService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
@@ -1727,14 +1761,14 @@ type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
 
-type AtimeUpdater interface {
-	// Enqueues atime updates for the provided instanceName, digestFunction,
-	// and set of digests provided. Returns true if the updates were
+type DigestOperator interface {
+	// Enqueues digests for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the digests were
 	// successfully enqueued, false if not.
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
 
-	// Enqueues atime updates for the provided resource name. Returns true if
-	// the update was successfully enqueued, false if not.
+	// Enqueues the digest for the provided resource name. Returns true if
+	// the digest was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 

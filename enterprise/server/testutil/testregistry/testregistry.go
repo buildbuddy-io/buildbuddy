@@ -3,7 +3,6 @@ package testregistry
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -235,9 +234,9 @@ func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName stri
 	return r.Push(t, image, imageName, creds), image
 }
 
-func (r *Registry) Shutdown(ctx context.Context) error {
+func (r *Registry) Shutdown() error {
 	if r.server != nil {
-		return r.server.Shutdown(ctx)
+		return r.server.Close()
 	}
 	return nil
 }

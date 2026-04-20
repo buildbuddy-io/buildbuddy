@@ -3,7 +3,6 @@ package capabilities_filter
 import (
 	"context"
 	"flag"
-	"path"
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -11,7 +10,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+)
+
+var (
+	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 )
 
 var (
@@ -22,181 +28,189 @@ var (
 	// if appropriate.
 	unfilteredRPCs = []string{
 		// RPCs that happen pre-login and don't require group membership.
-		"GetUser",
-		"CreateUser",
-		"GetGroup",
+		buildBuddyServicePrefix + "GetUser",
+		buildBuddyServicePrefix + "CreateUser",
+		buildBuddyServicePrefix + "GetGroup",
 
 		// Invocations can be shared publicly, so authorization for these RPCs is
 		// done purely using perms bits attached to each row.
-		"GetInvocation",
-		"GetEventLogChunk",
-		"GetEventLog",
-		"GetCacheScoreCard",
-		"GetCacheMetadata",
-		"GetTreeDirectorySizes",
-		"GetTarget",
-		"GetTargetHistory",
-		"GetExecution",
-		"WaitExecution",
-		"GetZipManifest",
+		buildBuddyServicePrefix + "GetInvocation",
+		buildBuddyServicePrefix + "GetEventLogChunk",
+		buildBuddyServicePrefix + "GetEventLog",
+		buildBuddyServicePrefix + "GetCacheScoreCard",
+		buildBuddyServicePrefix + "GetCacheMetadata",
+		buildBuddyServicePrefix + "GetTree",
+		buildBuddyServicePrefix + "GetTreeDirectorySizes",
+		buildBuddyServicePrefix + "GetTarget",
+		buildBuddyServicePrefix + "GetTargetHistory",
+		buildBuddyServicePrefix + "GetExecution",
+		buildBuddyServicePrefix + "GetExecutionDownloads",
+		buildBuddyServicePrefix + "WaitExecution",
+		buildBuddyServicePrefix + "GetZipManifest",
 		// Users do not need any particular role within their current group to be
 		// able to create another group or request to join an existing group.
-		"JoinGroup",
+		buildBuddyServicePrefix + "JoinGroup",
 		// Anonymous users can see the Bazel config required to use BuildBuddy, so
 		// don't require a group role.
-		"GetBazelConfig",
-		// API calls are role independent
-		// TODO(bduffany): prefix all of these with the service name,
-		// since API methods and BuildBuddyService methods may be the same.
-		"GetInvocation",
-		"GetLog",
-		"DeleteFile",
-		"GetTarget",
-		"GetAction",
-		"GetFile",
-		"DeleteFile",
+		buildBuddyServicePrefix + "GetBazelConfig",
+
+		// API calls which have their own auth checks
+		apiServicePrefix + "GetInvocation",
+		apiServicePrefix + "GetAuditLog",
+		apiServicePrefix + "GetLog",
+		apiServicePrefix + "DeleteFile",
+		apiServicePrefix + "GetTarget",
+		apiServicePrefix + "GetAction",
+		apiServicePrefix + "GetFile",
+		apiServicePrefix + "GetFileRange",
+		apiServicePrefix + "DeleteFile",
 
 		// GitHub user-level token management does not require group membership.
-		"UnlinkUserGitHubAccount",
+		buildBuddyServicePrefix + "UnlinkUserGitHubAccount",
 
 		// GitHub passthrough endpoints use User's linked GitHub account
-		"GetGithubUserInstallations",
-		"GetGithubUser",
-		"GetGithubRepo",
-		"GetGithubContent",
-		"GetGithubTree",
-		"CreateGithubTree",
-		"GetGithubBlob",
-		"CreateGithubBlob",
-		"CreateGithubPull",
-		"MergeGithubPull",
-		"GetGithubCompare",
-		"GetGithubForks",
-		"CreateGithubFork",
-		"GetGithubCommits",
-		"CreateGithubCommit",
-		"UpdateGithubRef",
-		"CreateGithubRef",
-		"GetGithubPullRequest",
-		"GetGithubPullRequestDetails",
-		"CreateGithubPullRequestComment",
-		"UpdateGithubPullRequestComment",
-		"DeleteGithubPullRequestComment",
-		"SendGithubPullRequestReview",
+		buildBuddyServicePrefix + "GetGithubUserInstallations",
+		buildBuddyServicePrefix + "GetGithubUser",
+		buildBuddyServicePrefix + "GetGithubRepo",
+		buildBuddyServicePrefix + "GetGithubContent",
+		buildBuddyServicePrefix + "GetGithubTree",
+		buildBuddyServicePrefix + "CreateGithubTree",
+		buildBuddyServicePrefix + "GetGithubBlob",
+		buildBuddyServicePrefix + "CreateGithubBlob",
+		buildBuddyServicePrefix + "CreateGithubPull",
+		buildBuddyServicePrefix + "MergeGithubPull",
+		buildBuddyServicePrefix + "GetGithubCompare",
+		buildBuddyServicePrefix + "GetGithubForks",
+		buildBuddyServicePrefix + "CreateGithubFork",
+		buildBuddyServicePrefix + "GetGithubCommits",
+		buildBuddyServicePrefix + "CreateGithubCommit",
+		buildBuddyServicePrefix + "UpdateGithubRef",
+		buildBuddyServicePrefix + "CreateGithubRef",
+		buildBuddyServicePrefix + "GetGithubPullRequest",
+		buildBuddyServicePrefix + "GetGithubPullRequestDetails",
+		buildBuddyServicePrefix + "CreateGithubPullRequestComment",
+		buildBuddyServicePrefix + "UpdateGithubPullRequestComment",
+		buildBuddyServicePrefix + "DeleteGithubPullRequestComment",
+		buildBuddyServicePrefix + "SendGithubPullRequestReview",
 
 		// Audit logs.
-		"GetAuditLogs",
+		buildBuddyServicePrefix + "GetAuditLogs",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of
 	// the selected group, irrespective of capabilities.
 	groupMemberRPCs = []string{
 		// Invocation history and historical data for the org
-		"SearchInvocation",
-		"GetInvocationStat",
-		"GetTrend",
-		"GetStatHeatmap",
-		"GetStatDrilldown",
-		"GetTargetTrends",
-		"GetSuggestion",
-		"SearchExecution",
-		"GetTargetStats",
-		"GetDailyTargetStats",
-		"GetTargetFlakeSamples",
-		"GetInvocationFilterSuggestions",
+		buildBuddyServicePrefix + "SearchInvocation",
+		buildBuddyServicePrefix + "GetInvocationStat",
+		buildBuddyServicePrefix + "GetTrend",
+		buildBuddyServicePrefix + "GetStatHeatmap",
+		buildBuddyServicePrefix + "GetStatDrilldown",
+		buildBuddyServicePrefix + "GetTargetTrends",
+		buildBuddyServicePrefix + "GetSuggestion",
+		buildBuddyServicePrefix + "SearchExecution",
+		buildBuddyServicePrefix + "GetTargetStats",
+		buildBuddyServicePrefix + "GetDailyTargetStats",
+		buildBuddyServicePrefix + "GetTargetFlakeSamples",
+		buildBuddyServicePrefix + "GetInvocationFilterSuggestions",
 		// Workflow configuration and history (read-only).
-		"GetWorkflows",
-		"GetRepos",
-		"GetWorkflowHistory",
+		buildBuddyServicePrefix + "GetWorkflows",
+		buildBuddyServicePrefix + "GetRepos",
+		buildBuddyServicePrefix + "GetWorkflowHistory",
 		// Github configuration (read-only).
-		"GetLinkedGitHubRepos",
+		buildBuddyServicePrefix + "GetLinkedGitHubRepos",
 		// Per-invocation actions
-		"UpdateInvocation",
-		"DeleteInvocation",
-		"CancelExecutions",
-		"ExecuteWorkflow",
-		"InvalidateSnapshot",
+		buildBuddyServicePrefix + "UpdateInvocation",
+		buildBuddyServicePrefix + "DeleteInvocation",
+		buildBuddyServicePrefix + "CancelExecutions",
+		buildBuddyServicePrefix + "ExecuteWorkflow",
+		apiServicePrefix + "ExecuteWorkflow",
+		buildBuddyServicePrefix + "InvalidateSnapshot",
+		buildBuddyServicePrefix + "WriteEventLog",
+		buildBuddyServicePrefix + "UpdateRunStatus",
 		// Org API keys (implementation only returns developer-visible keys
 		// for developers; admins can see all keys).
-		"GetApiKeys",
-		"GetApiKey",
+		buildBuddyServicePrefix + "GetApiKeys",
+		buildBuddyServicePrefix + "GetApiKey",
 		// User-level API keys
-		"GetUserApiKeys",
-		"GetUserApiKey",
-		"CreateUserApiKey",
-		"UpdateUserApiKey",
-		"DeleteUserApiKey",
+		buildBuddyServicePrefix + "GetUserApiKeys",
+		buildBuddyServicePrefix + "GetUserApiKey",
+		buildBuddyServicePrefix + "CreateUserApiKey",
+		apiServicePrefix + "CreateUserApiKey",
+		buildBuddyServicePrefix + "UpdateUserApiKey",
+		buildBuddyServicePrefix + "DeleteUserApiKey",
 		// Remote Bazel
-		"Run",
+		buildBuddyServicePrefix + "Run",
+		apiServicePrefix + "Run",
 		// Codesearch and Kythe
-		"Search",
-		"KytheProxy",
-		"Index",
-		"RepoStatus",
+		buildBuddyServicePrefix + "Search",
+		buildBuddyServicePrefix + "KytheProxy",
+		buildBuddyServicePrefix + "Index",
+		buildBuddyServicePrefix + "RepoStatus",
 		// Workspace management
-		"GetWorkspace",
-		"SaveWorkspace",
-		"GetWorkspaceDirectory",
-		"GetWorkspaceFile",
+		buildBuddyServicePrefix + "GetWorkspace",
+		buildBuddyServicePrefix + "SaveWorkspace",
+		buildBuddyServicePrefix + "GetWorkspaceDirectory",
+		buildBuddyServicePrefix + "GetWorkspaceFile",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
 	groupAdminOnlyRPCs = []string{
 		// Org details management
-		"UpdateGroup",
+		buildBuddyServicePrefix + "UpdateGroup",
 		// Org members management
-		"GetGroupUsers",
-		"UpdateGroupUsers",
+		buildBuddyServicePrefix + "GetGroupUsers",
+		buildBuddyServicePrefix + "UpdateGroupUsers",
 		// Org user list management
-		"GetUserLists",
-		"GetUserList",
-		"CreateUserList",
-		"DeleteUserList",
-		"UpdateUserList",
-		"UpdateUserListMembership",
+		buildBuddyServicePrefix + "GetUserLists",
+		buildBuddyServicePrefix + "GetUserList",
+		buildBuddyServicePrefix + "CreateUserList",
+		buildBuddyServicePrefix + "DeleteUserList",
+		buildBuddyServicePrefix + "UpdateUserList",
+		buildBuddyServicePrefix + "UpdateUserListMembership",
 		// Org GitHub account link management
-		"UnlinkGitHubAccount",
+		buildBuddyServicePrefix + "UnlinkGitHubAccount",
 		// Org GitHub app link management
-		"LinkGitHubAppInstallation",
-		"GetGitHubAppInstallations",
-		"UnlinkGitHubAppInstallation",
-		"UpdateGitHubAppInstallation",
+		buildBuddyServicePrefix + "LinkGitHubAppInstallation",
+		buildBuddyServicePrefix + "GetGitHubAppInstallations",
+		buildBuddyServicePrefix + "UnlinkGitHubAppInstallation",
+		buildBuddyServicePrefix + "UpdateGitHubAppInstallation",
 		// Org GitHub repo management
-		"GetAccessibleGitHubRepos",
-		"GetGitHubAppInstallPath",
-		"LinkGitHubRepo",
-		"UnlinkGitHubRepo",
-		"UpdateGitHubRepoSettings",
+		buildBuddyServicePrefix + "GetAccessibleGitHubRepos",
+		buildBuddyServicePrefix + "GetGitHubAppInstallPath",
+		buildBuddyServicePrefix + "LinkGitHubRepo",
+		buildBuddyServicePrefix + "UnlinkGitHubRepo",
+		buildBuddyServicePrefix + "UpdateGitHubRepoSettings",
 		// Org API key management
-		"CreateApiKey",
-		"UpdateApiKey",
-		"DeleteApiKey",
+		buildBuddyServicePrefix + "CreateApiKey",
+		buildBuddyServicePrefix + "UpdateApiKey",
+		buildBuddyServicePrefix + "DeleteApiKey",
 		// Secret management
-		"GetPublicKey",
-		"ListSecrets",
-		"UpdateSecret",
-		"DeleteSecret",
+		buildBuddyServicePrefix + "GetPublicKey",
+		buildBuddyServicePrefix + "ListSecrets",
+		buildBuddyServicePrefix + "UpdateSecret",
+		buildBuddyServicePrefix + "DeleteSecret",
 		// Workflow management
-		"DeleteWorkflow",
-		"InvalidateAllSnapshotsForRepo",
+		buildBuddyServicePrefix + "DeleteWorkflow",
+		buildBuddyServicePrefix + "InvalidateAllSnapshotsForRepo",
 		// RBE deployment view
-		"GetExecutionNodes",
+		buildBuddyServicePrefix + "GetExecutionNodes",
 		// BuildBuddy usage data
-		"GetUsage",
+		buildBuddyServicePrefix + "GetUsage",
 		// Encryption.
-		"GetEncryptionConfig",
-		"SetEncryptionConfig",
+		buildBuddyServicePrefix + "GetEncryptionConfig",
+		buildBuddyServicePrefix + "SetEncryptionConfig",
 		// Repo management
-		"CreateRepo",
+		buildBuddyServicePrefix + "CreateRepo",
 		// IP Rules.
-		"GetIPRules",
-		"AddIPRule",
-		"UpdateIPRule",
-		"DeleteIPRule",
-		"GetIPRulesConfig",
-		"SetIPRulesConfig",
+		buildBuddyServicePrefix + "GetIPRules",
+		buildBuddyServicePrefix + "AddIPRule",
+		buildBuddyServicePrefix + "UpdateIPRule",
+		buildBuddyServicePrefix + "DeleteIPRule",
+		buildBuddyServicePrefix + "GetIPRulesConfig",
+		buildBuddyServicePrefix + "SetIPRulesConfig",
 		// GCP
-		"GetGCPProject",
+		buildBuddyServicePrefix + "GetGCPProject",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different
@@ -204,19 +218,21 @@ var (
 	// admin of the configured server-admin group, and not just an admin of
 	// their authenticated group.
 	serverAdminOnlyRPCs = []string{
-		"GetInvocationOwner",
+		buildBuddyServicePrefix + "GetInvocationOwner",
 
 		// Quota APIs
-		"GetNamespace",
-		"RemoveNamespace",
-		"ModifyNamespace",
-		"ApplyBucket",
+		buildBuddyServicePrefix + "GetNamespace",
+		buildBuddyServicePrefix + "RemoveNamespace",
+		buildBuddyServicePrefix + "ModifyNamespace",
+		buildBuddyServicePrefix + "ApplyBucket",
 
 		// Impersonation
-		"CreateImpersonationApiKey",
+		buildBuddyServicePrefix + "CreateImpersonationApiKey",
 
 		// Org management
-		"SetGroupStatus",
+		buildBuddyServicePrefix + "SetGroupStatus",
+		buildBuddyServicePrefix + "GetSSOConfig",
+		buildBuddyServicePrefix + "SetSSOConfig",
 	}
 )
 
@@ -257,7 +273,7 @@ func AllRPCsForTestOnly() []string {
 func getUnfilteredRPCs() []string {
 	r := unfilteredRPCs
 	if !*adminOnlyCreateGroup {
-		r = append(r, "CreateGroup")
+		r = append(r, buildBuddyServicePrefix+"CreateGroup")
 	}
 	return r
 }
@@ -265,7 +281,7 @@ func getUnfilteredRPCs() []string {
 func getGroupAdminOnlyRPCs() []string {
 	r := groupAdminOnlyRPCs
 	if *adminOnlyCreateGroup {
-		r = append(r, "CreateGroup")
+		r = append(r, buildBuddyServicePrefix+"CreateGroup")
 	}
 	return r
 }
@@ -276,10 +292,6 @@ func getGroupAdminOnlyRPCs() []string {
 // If the RPC accesses any specific resources within the org, further
 // authorization checks may be needed beyond this coarse-grained filter.
 func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) error {
-	// Strip off the service name since it varies depending on whether it was
-	// accessed via protolet or gRPC.
-	rpcName = path.Base(rpcName)
-
 	var groupID string
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {

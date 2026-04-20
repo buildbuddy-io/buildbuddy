@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
@@ -37,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
@@ -63,6 +61,8 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -108,6 +108,7 @@ var (
 		"/audit-logs/",
 		"/repo/",
 		"/reviews/",
+		"/profile/",
 	}
 )
 
@@ -200,10 +201,6 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
 
-	if err := gossip.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
-	}
-
 	collector, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	if err != nil {
 		log.Fatalf("Error configuring in-memory metrics collector: %s", err.Error())
@@ -252,8 +249,8 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func startGRPCServers(env *real_environment.RealEnv) error {
-	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
+func startGRPCServers(env *real_environment.RealEnv, config grpc_server.GRPCServerConfig) error {
+	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, config)
 	if err != nil {
 		return err
 	}
@@ -265,7 +262,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	grpc_server.EnableGRPCOverHTTP(env, b.GetServer())
 
 	if env.GetSSLService().IsEnabled() {
-		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, grpc_server.GRPCServerConfig{})
+		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, config)
 		if err != nil {
 			return err
 		}
@@ -310,6 +307,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 		cspb.RegisterCacheServer(grpcServer, cacheServer)
 	}
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	if ociFetcherServer := env.GetOCIFetcherServer(); ociFetcherServer != nil {
+		ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
+	}
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 
@@ -326,6 +326,10 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if crypter := env.GetCrypter(); crypter != nil {
 		enpb.RegisterEncryptionServiceServer(grpcServer, crypter)
 	}
+	if irs := env.GetIPRulesService(); irs != nil {
+		irpb.RegisterIPRulesServiceServer(grpcServer, irs)
+	}
+
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6187): Reduce gRPC overhead from self-RPCs.
@@ -362,30 +366,10 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
-	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads)
-	}
-
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Printf("Error raising open files limit: %s", err)
-	}
-
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
-
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
+// RegisterLocalServersAndClients registers core gRPC service implementations
+// (BuildBuddy server, build event server, remote cache servers, etc.) and then
+// sets up local gRPC clients that point back at them.
+func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -419,15 +403,37 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := capabilities_server.Register(env); err != nil {
-		log.Fatalf("%v", err)
+}
+
+func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.GRPCServerConfig) {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if err := rlimit.MaxRLimit(); err != nil {
+		log.Printf("Error raising open files limit: %s", err)
+	}
+
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, appBundleHash)
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
 	if err := startInternalGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	if err := startGRPCServers(env); err != nil {
+	if err := startGRPCServers(env, grpcConfig); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -471,6 +477,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
 		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
+	}
+
+	if mcp := env.GetMCPService(); mcp != nil {
+		mcp.RegisterHandlers(mux)
 	}
 
 	if scim := env.GetSCIMService(); scim != nil {

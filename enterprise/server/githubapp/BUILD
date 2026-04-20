@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -38,5 +38,21 @@ go_library(
         "@com_github_shurcool_githubv4//:githubv4",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "githubapp_test",
+    size = "small",
+    srcs = ["githubapp_test.go"],
+    embed = [":githubapp"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "@com_github_google_go_github_v59//github",
+        "@com_github_stretchr_testify//require",
     ],
 )

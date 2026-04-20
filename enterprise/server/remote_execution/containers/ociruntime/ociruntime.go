@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fsync"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -56,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -81,11 +83,14 @@ var (
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	cdiDevices              = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
+	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
 	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
+	enableImageEviction     = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -93,8 +98,8 @@ var (
 const (
 	ociVersion = "1.1.0-rc.3" // matches podman
 
-	// Execution root directory path relative to the container rootfs directory.
-	execrootPath = "/buildbuddy-execroot"
+	// Default execution root directory path relative to the container rootfs directory.
+	defaultExecrootPath = "/buildbuddy-execroot"
 
 	// Image cache layout version.
 	//
@@ -218,6 +223,10 @@ type provider struct {
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
 	lxcfsMount string
+
+	// CDI registry used for resolving configured CDI devices.
+	// This is initialized once at startup when CDI devices are configured.
+	cdiRegistry *cdi.Cache
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
@@ -338,7 +347,10 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
-	imageStore, err := NewImageStore(resolver, imageCacheRoot)
+	if *enableImageEviction && env.GetFileCache() == nil {
+		return nil, status.FailedPreconditionError("FileCache is required for OCI image storage")
+	}
+	imageStore, err := NewImageStore(resolver, imageCacheRoot, env.GetFileCache())
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +358,26 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
+
+	var cdiRegistry *cdi.Cache
+	if len(*cdiDevices) > 0 {
+		registry, err := cdi.NewCache(
+			cdi.WithSpecDirs((*cdiSpecDirs)...),
+			// Disable auto-refresh since we don't have a way to clean up the
+			// goroutines that would be spawned to do the refreshing. For now,
+			// users can just restart the executor to pick up changes to CDI
+			// specs if needed.
+			//
+			// TODO: if we add a provider.Close() lifecycle
+			// method, close the registry when the provider is closed, and
+			// enable auto-refresh.
+			cdi.WithAutoRefresh(false),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create CDI registry: %w", err)
+		}
+		cdiRegistry = registry
+	}
 
 	return &provider{
 		env:            env,
@@ -357,13 +389,25 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 		lxcfsMount:     lxcfsMount,
+		cdiRegistry:    cdiRegistry,
 	}, nil
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	networkMode := args.Props.DockerNetwork
+	networkMode, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 	if networkMode == "" {
 		networkMode = *defaultNetworkMode
+	}
+
+	execroot := args.Props.ExecrootPath
+	if execroot == "" {
+		execroot = defaultExecrootPath
+	}
+	if !filepath.IsAbs(execroot) {
+		return nil, status.InvalidArgumentErrorf("execroot-path platform property must be an absolute path, got %q", execroot)
 	}
 
 	container := &ociContainer{
@@ -376,6 +420,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
+		cdiRegistry:    p.cdiRegistry,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,
@@ -386,10 +431,12 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
 		forceRoot:          args.Props.DockerForceRoot,
+		execrootPath:       execroot,
 		persistentVolumes:  args.Props.PersistentVolumes,
 
-		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
-		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
+		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		memoryBytes:   args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
+		useOCIFetcher: args.Props.UseOCIFetcher,
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
@@ -411,6 +458,7 @@ type ociContainer struct {
 	containersRoot string
 	imageCacheRoot string
 	imageStore     *ImageStore
+	lockedImage    *LockedImage
 
 	cid                    string
 	workDir                string
@@ -429,9 +477,13 @@ type ociContainer struct {
 	networkEnabled bool
 	user           string
 	forceRoot      bool
+	execrootPath   string
 
-	milliCPU    int64 // milliCPU allocation from task size
-	memoryBytes int64 // memory allocation from task size in bytes
+	milliCPU      int64 // milliCPU allocation from task size
+	memoryBytes   int64 // memory allocation from task size in bytes
+	useOCIFetcher bool
+
+	cdiRegistry *cdi.Cache
 }
 
 // Assert [*ociContainer] implements [container.StatsRecorder].
@@ -551,11 +603,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	// Create config.json from the image config and command
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return fmt.Errorf("image must be cached before creating OCI bundle")
 	}
-	cmd, err := withImageConfig(cmd, image)
+	cmd, err := withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return fmt.Errorf("apply image config to command: %w", err)
 	}
@@ -579,14 +630,29 @@ func (c *ociContainer) IsolationType() string {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, ok := c.imageStore.CachedImage(c.imageRef)
-	return ok, nil
+	if c.lockedImage != nil {
+		return true, nil
+	}
+
+	lockedImage, ok := c.imageStore.GetCachedImageAndLock(ctx, c.imageRef)
+	if !ok {
+		return false, nil
+	}
+
+	c.lockedImage = lockedImage
+	return true, nil
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds); err != nil {
+	if c.lockedImage != nil {
+		return nil
+	}
+
+	lockedImage, err := c.imageStore.PullAndLockImage(ctx, c.imageRef, creds, c.useOCIFetcher)
+	if err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
+	c.lockedImage = lockedImage
 	return nil
 }
 
@@ -598,7 +664,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 	c.cid = cid
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef, c.useOCIFetcher); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
 	}
 	if err := c.createNetwork(ctx); err != nil {
@@ -670,7 +736,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	args := []string{"exec", "--cwd=" + execrootPath}
+	args := []string{"exec", "--cwd=" + filepath.Join(c.execrootPath, cmd.GetWorkingDirectory())}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
 	// to it. So we specify the complete env here, including the base env,
@@ -678,11 +744,16 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	for _, e := range baseEnv {
 		args = append(args, "--env="+e)
 	}
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
-	cmd, err := withImageConfig(cmd, image)
+	user, err := getUser(ctx, c.lockedImage.Image, c.rootfsPath(), c.user, c.forceRoot)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("get container user: %s", err))
+	}
+	args = append(args, fmt.Sprintf("--user=%d:%d", user.UID, user.GID))
+
+	cmd, err = withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
@@ -739,8 +810,14 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
-//nolint:nilness
 func (c *ociContainer) Remove(ctx context.Context) error {
+	defer func() {
+		if c.lockedImage != nil {
+			c.lockedImage.Unlock()
+			c.lockedImage = nil
+		}
+	}()
+
 	if c.cid == "" {
 		// We haven't created anything yet
 		return nil
@@ -748,7 +825,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
-	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil && firstErr == nil {
+	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
 
@@ -951,8 +1028,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 
 	// Create an overlayfs with the pulled image layers.
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
+	if c.lockedImage == nil {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
 
@@ -971,7 +1047,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	optionsTpl := "lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile"
 	tplLen := len(optionsTpl) - 3*len("%s")
 	var lowerDirs []string
-	for _, layer := range image.Layers {
+	for _, layer := range c.lockedImage.Layers {
 		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -1046,8 +1122,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
-	image, _ := c.imageStore.CachedImage(c.imageRef)
-	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
+	user, err := getUser(ctx, c.lockedImage.Image, c.rootfsPath(), c.user, c.forceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
@@ -1059,7 +1134,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Terminal: false,
 			User:     *user,
 			Args:     cmd.GetArguments(),
-			Cwd:      execrootPath,
+			Cwd:      filepath.Join(c.execrootPath, cmd.GetWorkingDirectory()),
 			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
@@ -1152,7 +1227,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Options:     []string{"bind", "rprivate", "ro"},
 			},
 			{
-				Destination: execrootPath,
+				Destination: c.execrootPath,
 				Type:        "bind",
 				Source:      c.workDir,
 				Options:     []string{"bind", "rprivate"},
@@ -1243,8 +1318,27 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
+	if err := injectConfiguredCDIDevices(&spec, c.cdiRegistry); err != nil {
+		return nil, fmt.Errorf("inject configured CDI devices: %w", err)
+	}
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
+}
+
+// injectConfiguredCDIDevices resolves configured CDI devices and applies their
+// container edits to the OCI spec (for example mounts, /dev nodes, env vars,
+// hooks, cgroup device rules).
+func injectConfiguredCDIDevices(spec *specs.Spec, registry *cdi.Cache) error {
+	if len(*cdiDevices) == 0 {
+		return nil
+	}
+	if registry == nil {
+		return fmt.Errorf("CDI registry is not initialized")
+	}
+	if _, err := registry.InjectDevices(spec, (*cdiDevices)...); err != nil {
+		return fmt.Errorf("set up CDI devices: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
@@ -1487,10 +1581,26 @@ type ImageStore struct {
 	resolver       *oci.Resolver
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
-	layerPullGroup singleflight.Group[string, any]
+	layerPullGroup singleflight.Group[string, int64]
+	// fileCache is used for managing layer eviction.
+	fileCache interfaces.FileCache
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
+}
+
+// LockedImage represents a cached image that will not be evicted from filecache
+// until Unlock is called.
+type LockedImage struct {
+	*Image
+	unlockFns []func()
+}
+
+func (l *LockedImage) Unlock() {
+	for _, unlock := range l.unlockFns {
+		unlock()
+	}
+	l.unlockFns = nil
 }
 
 // Image represents a cached image, including all layer digests and image
@@ -1506,28 +1616,120 @@ type Image struct {
 
 // ImageLayer represents a resolved image layer.
 type ImageLayer struct {
+	// Path is the path where the layer is stored on disk.
+	Path string
+	// EstimatedDiskUsageBytes is a best-effort estimate of layer disk usage.
+	// It may come from a disk walk (startup scan / lookup) or by counting the
+	// uncompressed layer tar stream bytes while extracting.
+	EstimatedDiskUsageBytes int64
 	// DiffID is the uncompressed image digest.
 	DiffID ctr.Hash
 }
 
-func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
-	return &ImageStore{
+func NewImageStore(resolver *oci.Resolver, layersDir string, fileCache interfaces.FileCache) (*ImageStore, error) {
+	s := &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,
+		fileCache:    fileCache,
 		cachedImages: map[string]*Image{},
-	}, nil
+	}
+
+	if *enableImageEviction {
+		// Populate the filecache by scanning existing layer directories.
+		// This ensures that existing layers are tracked for LRU eviction.
+		if err := s.populateFileCache(); err != nil {
+			return nil, status.InternalErrorf("populate filecache with existing image layers: %s", err)
+		}
+	}
+
+	return s, nil
 }
 
-// Pull downloads and extracts image layers to a directory, skipping layers
-// that have already been downloaded, and deduping concurrent downloads for the
-// same layer.
-// Pull always re-authenticates the credentials with the image registry.
+// populateFileCache scans the layers directory and registers existing layer
+// directories with the filecache. This ensures that layers from previous runs
+// are tracked for LRU eviction.
+func (s *ImageStore) populateFileCache() error {
+	ctx := context.Background()
+
+	// The layers directory structure is: {layersDir}/{version}/{algorithm}/{hash}/
+	// e.g., /cache/images/oci/v2/sha256/abc123.../
+	// We only scan the current version directory.
+	versionDir := filepath.Join(s.layersDir, imageCacheVersion)
+	entries, err := os.ReadDir(versionDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read	layers directory: %w", err)
+	}
+
+	var populatedCount int
+	for _, algorithmEntry := range entries {
+		if !algorithmEntry.IsDir() {
+			continue
+		}
+		algorithmDir := filepath.Join(versionDir, algorithmEntry.Name())
+		layerEntries, err := os.ReadDir(algorithmDir)
+		if err != nil {
+			return fmt.Errorf("read layer algorithm directory %s: %w", algorithmDir, err)
+		}
+
+		for _, layerEntry := range layerEntries {
+			if !layerEntry.IsDir() {
+				continue
+			}
+			layerPath := filepath.Join(algorithmDir, layerEntry.Name())
+			info, err := layerEntry.Info()
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to get info for layer %s: %s", layerPath, err)
+				continue
+			}
+
+			// Get the size of the layer directory.
+			size, err := disk.DirSize(layerPath)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to get size of layer %s: %s", layerPath, err)
+				continue
+			}
+
+			// Track the layer directory in the filecache.
+			unlock, err := s.fileCache.TrackExternalDirectory(ctx, layerPath, size)
+			if err != nil {
+				if status.IsNotFoundError(err) {
+					// Layer not in cache yet, will be added when used.
+					continue
+				}
+				log.CtxWarningf(ctx, "Failed to track layer %s in filecache: %s", layerPath, err)
+				continue
+			}
+			// Immediately unlock since we're just populating the cache.
+			unlock()
+			populatedCount++
+			log.CtxDebugf(ctx, "Populated filecache with layer %s (size=%d, mtime=%s)", layerPath, size, info.ModTime())
+		}
+	}
+
+	if populatedCount > 0 {
+		log.Infof("Populated filecache with %d existing image layers", populatedCount)
+	}
+	return nil
+}
+
+// PullAndLockImage downloads and extracts image layers to a directory, skipping
+// layers that have already been downloaded, and deduping concurrent downloads
+// for the same layer.
+//
+// It always re-authenticates the credentials with the image registry.
 // Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
 // "sha256/abc123".
-func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
+//
+// The returned image is locked to prevent eviction from filecache while it is
+// in use. The caller is responsible for unlocking the image once it is no
+// longer being used.
+func (s *ImageStore) PullAndLockImage(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*LockedImage, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
 	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
-		image, err := s.pull(ctx, imageName, creds)
+		image, err := s.pull(ctx, imageName, creds, useOCIFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -1538,22 +1740,66 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 
 		return image, nil
 	})
-	return image, err
+	if err != nil {
+		return nil, err
+	}
+	return s.lockImage(ctx, image)
 }
 
-// CachedLayers returns references to the cached image layers if the image
-// has been pulled. The second return value indicates whether the image has
-// been pulled - if false, the returned slice of layers will be nil.
-func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// GetCachedImageAndLock atomically (1) gets a reference to the cached image,
+// and (2) locks the image if it exists to prevent it from being evicted from
+// cache. The caller MUST call [*LockedImage.Unlock] on the returned image once
+// it is no longer used, in order to re-mark the image as eligible for eviction.
+func (s *ImageStore) GetCachedImageAndLock(ctx context.Context, imageName string) (_ *LockedImage, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	image, ok = s.cachedImages[imageName]
-	return image, ok
+	image, ok := s.cachedImages[imageName]
+	if !ok {
+		return nil, false
+	}
+
+	lockedImage, err := s.lockImage(ctx, image)
+	if err != nil {
+		// An image layer was evicted - don't report the image as cached.
+		return nil, false
+	}
+
+	return lockedImage, true
 }
 
-func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+func (s *ImageStore) lockImage(ctx context.Context, image *Image) (*LockedImage, error) {
+	// If image cache eviction is disabled, return a LockedImage with no-op
+	// unlock since we're not tracking layers in the filecache.
+	if !*enableImageEviction {
+		return &LockedImage{Image: image}, nil
+	}
+
+	// Lock all image layers to prevent eviction.
+	var unlockFns []func()
+	for _, layer := range image.Layers {
+		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.EstimatedDiskUsageBytes)
+		if err != nil {
+			// Unlock any layers that we were able to lock, to ensure we don't
+			// end up with a partially locked image.
+			for _, unlock := range unlockFns {
+				unlock()
+			}
+			if !status.IsNotFoundError(err) {
+				log.CtxErrorf(ctx, "Failed to track cached image layer directory %q: %s", layer.Path, err)
+			}
+			return nil, status.UnavailableErrorf("track cached image layer directory: %s", err)
+		}
+		unlockFns = append(unlockFns, unlock)
+	}
+	return &LockedImage{
+		Image:     image,
+		unlockFns: unlockFns,
+	}, nil
+}
+
+func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*Image, error) {
+	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
 	}
@@ -1573,7 +1819,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 		layer := layer
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
-		eg.Go(func() error {
+		eg.Go(func() (err error) {
 			d, err := layer.DiffID()
 			if err != nil {
 				return status.UnavailableErrorf("get layer digest: %s", err)
@@ -1581,33 +1827,62 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			resolvedLayer.DiffID = d
 
 			destDir := layerPath(s.layersDir, d)
+			resolvedLayer.Path = destDir
 
-			// If the destination directory already exists then we can skip
-			// the download.
-			if _, err := os.Stat(destDir); err != nil {
-				if !os.IsNotExist(err) {
-					return status.UnavailableErrorf("stat layer directory: %s", err)
-				}
-			} else {
-				return nil
-			}
-
-			size, err := layer.Size()
+			compressedSize, err := layer.Size()
 			if err != nil {
 				return status.UnavailableErrorf("get layer size: %s", err)
 			}
+
+			// Check whether the layer already exists and can be reused.
+			if *enableImageEviction {
+				// Check via the filecache LRU - this also temporarily locks the
+				// layer to prevent eviction during the existence check.
+				unlock, existingLayerSize, err := s.fileCache.LookupExternalDirectory(ctx, destDir)
+				if err != nil {
+					if !status.IsNotFoundError(err) {
+						return status.UnavailableErrorf("lookup layer directory in local cache: %s", err)
+					}
+					// Layer not in cache, fall through to download it.
+				} else {
+					resolvedLayer.EstimatedDiskUsageBytes = existingLayerSize
+
+					// Layer exists in cache. Release the lock for now - we will
+					// properly re-lock the layers individually later, once we
+					// are outside of the singleflight group.
+					//
+					// This does introduce a tiny period where the layer could
+					// get evicted if there is a high filecache churn rate, but
+					// we assume this will be rare enough that a client retry is
+					// acceptable in this case.
+					unlock()
+					return nil
+				}
+			} else {
+				// Image cache eviction disabled - just check if dir exists on disk.
+				if _, err := os.Stat(destDir); err == nil {
+					return nil
+				}
+			}
+
+			// Layer dir does not exist in cache, so we need to download it.
+
 			start := time.Now()
-			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
+			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB compressed)", d.Hex, float64(compressedSize)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
 			// Images often share layers - dedupe individual layer pulls.
 			// Note that each layer pull is also authorized, so include
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
-			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				return nil, downloadLayer(ctx, layer, destDir)
+			size, _, err := s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
+				return downloadLayer(ctx, layer, destDir)
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			resolvedLayer.EstimatedDiskUsageBytes = size
+			return nil
 		})
 	}
 	// Fetch image config file concurrently with layer downloads.
@@ -1631,31 +1906,36 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // For reference implementations, see:
 //   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
 //   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64, error) {
 	rc, err := layer.Uncompressed()
 	if err != nil {
-		return status.UnavailableErrorf("get layer reader: %s", err)
+		return 0, status.UnavailableErrorf("get layer reader: %s", err)
 	}
 	defer rc.Close()
 
 	tempUnpackDir := destDir + tmpSuffix()
-	if err := fsync.MkdirAllAndSync(filepath.Dir(tempUnpackDir), filepath.Base(tempUnpackDir), 0755); err != nil {
-		return status.UnavailableErrorf("create layer unpack dir: %s", err)
+	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+		return 0, status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	tr := tar.NewReader(rc)
+	// Track all operations using [fsync.Root] so that once we're done unpacking
+	// the layer we can ensure it gets persisted to disk (to avoid corruption).
+	root := fsync.NewRoot(tempUnpackDir, nil)
+
+	counter := &ioutil.Counter{}
+	tr := tar.NewReader(io.TeeReader(rc, counter))
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
+			return 0, status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
 		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
-			return status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
+			return 0, status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
 		}
 
 		// filepath.Join applies filepath.Clean to all arguments
@@ -1668,8 +1948,8 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			header.Typeflag == tar.TypeSymlink ||
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
-			if err := fsync.MkdirAllAndSync(tempUnpackDir, filepath.Dir(header.Name), os.ModePerm); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
+			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
 			log.CtxDebugf(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
@@ -1681,8 +1961,8 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		if strings.HasPrefix(base, whiteoutPrefix) {
 			// Directory whiteout
 			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-				if err := fsync.SetxattrAndSync(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
+				if err := root.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+					return 0, status.UnavailableErrorf("setxattr on deleted dir: %s", err)
 				}
 				continue
 			}
@@ -1690,58 +1970,60 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			// File whiteout: Mark the file for deletion in overlayfs.
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
-			if err := fsync.MknodAndSync(originalPath, unix.S_IFCHR, 0); err != nil {
-				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
+			if err := root.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
+				return 0, status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
 			continue
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := fsync.MkdirAllAndSync(tempUnpackDir, header.Name, os.FileMode(header.Mode)); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
-			}
-			if err := fsync.ChownAndSync(file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("chown directory: %s", err)
+			if err := root.MkdirAll(file, os.FileMode(header.Mode), header.Uid, header.Gid); err != nil {
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		case tar.TypeReg:
-			if err := fsync.CreateFileAndSync(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create and sync file: %s", err)
+			if err := root.CreateFile(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
+				return 0, status.UnavailableErrorf("create file: %s", err)
 			}
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
-			if err := fsync.SymlinkAndSync(header.Linkname, file); err != nil {
-				return status.UnavailableErrorf("create symlink: %s", err)
-			}
-			if err := fsync.LchownAndSync(file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("chown link: %s", err)
+			if err := root.Symlink(header.Linkname, file, header.Uid, header.Gid); err != nil {
+				return 0, status.UnavailableErrorf("create symlink: %s", err)
 			}
 		case tar.TypeLink:
 			target := filepath.Join(tempUnpackDir, header.Linkname)
 			if !strings.HasPrefix(target, tempUnpackDir) {
-				return status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
+				return 0, status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
 			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
-			if err := fsync.LinkAndSync(target, file); err != nil {
-				return status.UnavailableErrorf("create hard link: %s", err)
+			if err := root.Link(target, file); err != nil {
+				return 0, status.UnavailableErrorf("create hard link: %s", err)
 			}
 		}
 	}
 
-	if err := fsync.RenameAndSync(tempUnpackDir, destDir); err != nil {
+	if err := root.Sync(); err != nil {
+		return 0, status.UnavailableErrorf("sync layer paths: %s", err)
+	}
+
+	if err := os.Rename(tempUnpackDir, destDir); err != nil {
 		// If the dest dir already exists then it's most likely because we were
 		// pulling the same layer concurrently with different credentials.
 		if os.IsExist(err) {
 			log.CtxDebugf(ctx, "Ignoring temp layer dir rename failure %q (likely due to concurrent layer download)", err)
-			return nil
+			return counter.Count(), nil
 		}
 
-		return status.UnavailableErrorf("rename temp layer dir: %s", err)
+		return 0, status.UnavailableErrorf("rename temp layer dir: %s", err)
 	}
 
-	return nil
+	if err := fsync.SyncPath(filepath.Dir(destDir)); err != nil {
+		return 0, status.UnavailableErrorf("sync layer dir: %s", err)
+	}
+
+	return counter.Count(), nil
 }
 
 // Statusz returns statusz page contents for the image store.
@@ -2053,12 +2335,13 @@ func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
 // kernel source is here:
 // https://github.com/torvalds/linux/blob/07e27ad16399afcd693be20211b0dfae63e0615f/kernel/cgroup/cgroup-v1.c#L676-L705
 func getFakeProcCgroupsContent() string {
-	out := "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+	var out strings.Builder
+	out.WriteString("#subsys_name\thierarchy\tnum_cgroups\tenabled\n")
 	for _, v1Controller := range []string{
 		"cpuset", "cpu", "cpuacct", "blkio", "memory", "devices", "freezer",
 		"net_cls", "perf_event", "net_prio", "hugetlb", "pids", "rdma", "misc",
 	} {
-		out += v1Controller + "\t0\t1\t1\n"
+		out.WriteString(v1Controller + "\t0\t1\t1\n")
 	}
-	return out
+	return out.String()
 }

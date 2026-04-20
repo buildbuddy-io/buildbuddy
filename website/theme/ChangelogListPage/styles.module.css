@@ -1,0 +1,216 @@
+.wrapper.wrapper {
+  max-width: 860px;
+}
+
+.header {
+  margin-bottom: 0.75rem;
+}
+
+.title {
+  font-size: 40px;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.filterButton {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background: transparent;
+  color: var(--ifm-color-emphasis-700);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.filterButton:hover {
+  border-color: var(--ifm-color-emphasis-400);
+  color: var(--ifm-font-color-base);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.filterButtonActive {
+  background: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: #fff;
+}
+
+.filterButtonActive:hover {
+  background: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: #fff;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.item {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.item:hover {
+  border-color: var(--ifm-color-emphasis-300);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.itemMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+}
+
+.metaDot {
+  color: var(--ifm-color-emphasis-400);
+}
+
+.itemTitle {
+  font-size: 48px;
+  margin-bottom: 0.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.itemTitle a {
+  color: var(--ifm-font-color-base);
+}
+
+.itemTitle a:hover {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.preview {
+  margin-bottom: 0.75rem;
+  line-height: 1.65;
+}
+
+.preview a {
+  text-decoration: underline;
+}
+
+.preview a:hover {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.preview :global(img),
+.preview :global(video) {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-color-emphasis-700);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.tag:hover {
+  background: var(--ifm-color-emphasis-200);
+  color: var(--ifm-font-color-base);
+}
+
+.copyLinkButton {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background: transparent;
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 150ms ease;
+}
+
+.copyLinkButton:hover {
+  border-color: var(--ifm-color-emphasis-400);
+  color: var(--ifm-font-color-base);
+}
+
+.emptyState {
+  color: var(--ifm-color-emphasis-600);
+  text-align: center;
+  padding: 3rem 0;
+}
+
+.paginator {
+  padding-top: 1.5rem;
+}
+
+.paginator :global(.pagination-nav__link--next) {
+  grid-row: 1;
+  grid-column: 1 / 2;
+  text-align: left;
+}
+
+.paginator :global(.pagination-nav__link--prev) {
+  grid-row: 1;
+  grid-column: 2 / 3;
+  text-align: right;
+}
+
+.paginator :global(.pagination-nav__link--next .pagination-nav__label)::before {
+  content: "« ";
+}
+
+.paginator :global(.pagination-nav__link--next .pagination-nav__label)::after {
+  content: "";
+}
+
+.paginator :global(.pagination-nav__link--prev .pagination-nav__label)::before {
+  content: "";
+}
+
+.paginator :global(.pagination-nav__link--prev .pagination-nav__label)::after {
+  content: " »";
+}

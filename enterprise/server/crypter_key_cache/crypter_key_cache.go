@@ -41,7 +41,7 @@ type CacheKey struct {
 	Version int64
 }
 
-func (ck *CacheKey) String() string {
+func (ck CacheKey) String() string {
 	if ck.KeyID == "" {
 		return ck.GroupID
 	} else {

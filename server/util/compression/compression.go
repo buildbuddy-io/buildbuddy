@@ -39,6 +39,29 @@ func mustGetZstdEncoder() *zstd.Encoder {
 	return enc
 }
 
+// ZstdCompressBound matches zstd's documented ZSTD_COMPRESSBOUND macro:
+// https://github.com/facebook/zstd/blob/v1.5.6/lib/zstd.h#L232
+// srcSize + (srcSize >> 8) + (srcSize < 128 KiB ? ((128 KiB - srcSize) >> 11) : 0).
+// In practice, this is the input size plus about 1/256 of the input size,
+// with up to 64 extra bytes for inputs smaller than 128 KiB.
+//
+// This is the worst-case size because incompressible input falls back to
+// "raw" (uncompressed) blocks: the payload is stored verbatim, so the only
+// overhead is the per-block header (3 bytes per <=128 KiB block, bounded by
+// the >>8 term) plus the fixed frame header/checksum (bounded by the small-
+// input margin).
+//
+// Extra headroom examples:
+// 1 KiB -> +67 bytes
+// 1 MiB -> +4 KiB
+// 1 GiB -> +4 MiB
+func ZstdCompressBound(size int64) int64 {
+	if size < 128<<10 {
+		return size + (size >> 8) + (((128 << 10) - size) >> 11)
+	}
+	return size + (size >> 8)
+}
+
 // CompressZstd compresses a chunk of data into dst using zstd compression at
 // the default level. If dst is not big enough, then a new buffer will be
 // allocated.
@@ -176,7 +199,7 @@ func NewZstdCompressingWriter(writer io.Writer, bufferPool *bytebufferpool.Varia
 	if bufSize <= 0 {
 		return nil, errors.New("bufSize must be > 0")
 	}
-	a, b := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
+	a, b := bufferPool.Get(bufSize), bufferPool.Get(ZstdCompressBound(bufSize))
 	return &ZstdCompressingWriter{
 		writer:         writer,
 		buffer:         a,
@@ -196,7 +219,7 @@ func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferP
 		return nil, err
 	}
 	compressWC := ioutil.NewCustomCommitWriteCloser(compressor)
-	compressWC.CommitFn = func(inputBytes int64) error {
+	compressWC.SetCommitFn(func(inputBytes int64) error {
 		// Close the compressor to flush the buffer and return it to the pool.
 		if err := compressor.Close(); err != nil {
 			return err
@@ -205,8 +228,8 @@ func NewZstdCompressingWriteCommiter(wc interfaces.CommittedWriteCloser, bufferP
 			With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: cacheName}).
 			Observe(float64(compressor.CompressedBytesWritten) / float64(inputBytes))
 		return wc.Commit()
-	}
-	compressWC.CloseFn = wc.Close
+	})
+	compressWC.SetCloseFn(wc.Close)
 	return compressWC, nil
 }
 
@@ -341,7 +364,7 @@ func NewZstdCompressingReader(input io.ReadCloser, bufferPool *bytebufferpool.Va
 	if bufSize <= 0 {
 		return nil, io.ErrShortBuffer
 	}
-	readBuf, compressBuf := bufferPool.Get(bufSize), bufferPool.Get(bufSize)
+	readBuf, compressBuf := bufferPool.Get(bufSize), bufferPool.Get(ZstdCompressBound(bufSize))
 	return &ZstdCompressingReader{
 		inputReader: input,
 		readBuf:     readBuf,

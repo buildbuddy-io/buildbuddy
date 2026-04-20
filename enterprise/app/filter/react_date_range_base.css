@@ -1,6 +1,6 @@
 .rdrCalendarWrapper {
   box-sizing: border-box;
-  background: #ffffff;
+  background: var(--color-datepicker-calendar-bg);
   display: inline-flex;
   flex-direction: column;
   -webkit-user-select: none;
@@ -130,7 +130,7 @@
   line-height: 1.6em;
   top: 0;
   right: 0.25em;
-  color: #ff0000;
+  color: var(--color-datepicker-warning);
 }
 
 .rdrDay {
@@ -147,7 +147,7 @@
 }
 
 .rdrDayNumber span {
-  color: #1d2429;
+  color: var(--color-datepicker-day);
 }
 
 .rdrDayDisabled {

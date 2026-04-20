@@ -7,5 +7,8 @@ go_library(
     srcs = ["runscript.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/runscript",
     visibility = ["//visibility:public"],
-    deps = ["//cli/arg"],
+    deps = [
+        "//cli/arg",
+        "//cli/stream_run_logs",
+    ],
 )

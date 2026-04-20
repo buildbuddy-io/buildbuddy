@@ -13,7 +13,6 @@ option go_package = "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher";
 // we needed to centralize HTTP requests for the same OCI blobs
 // in order to reduce network IO.
 service OCIFetcher {
-
   // FetchManifest returns the raw bytes for an OCI manifest along with
   // the manifest's digest, size, and media type.
   // Implementations may cache the manifest contents and serve those

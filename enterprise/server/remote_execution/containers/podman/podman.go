@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -116,7 +117,7 @@ type Provider struct {
 	podmanVersion    *semver.Version
 	cgroupPaths      *cgroup.Paths
 	buildRoot        string
-	imageExistsCache *imageExistsCache
+	imageExistsCache lru.LRU[struct{}]
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
@@ -129,7 +130,12 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", podmanVersion)
 	}
 
-	imageExistsCache, err := newImageExistsCache()
+	imageExistsCache, err := lru.New(&lru.Config[struct{}]{
+		TTL:        imageExistsCacheTTL,
+		MaxSize:    imageExistsCacheSize,
+		SizeFn:     func(struct{}) int64 { return 1 },
+		ThreadSafe: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +200,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
 	}
 
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	return &podmanCommandContainer{
 		env:               p.env,
 		name:              containerName,
@@ -208,7 +219,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			ForceRoot:          args.Props.DockerForceRoot,
 			Init:               args.Props.DockerInit,
 			User:               args.Props.DockerUser,
-			Network:            args.Props.DockerNetwork,
+			Network:            network,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,
@@ -236,7 +247,7 @@ type PodmanOptions struct {
 type podmanCommandContainer struct {
 	env              environment.Env
 	podmanVersion    *semver.Version
-	imageExistsCache *imageExistsCache
+	imageExistsCache lru.LRU[struct{}]
 	cgroupPaths      *cgroup.Paths
 
 	image       string
@@ -283,12 +294,12 @@ func addUserArgs(args []string, options *PodmanOptions) []string {
 	return args
 }
 
-func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
+func (c *podmanCommandContainer) getPodmanRunArgs(workDir, cwd string) []string {
 	args := []string{
 		"--hostname",
 		"localhost",
 		"--workdir",
-		workDir,
+		cwd,
 		"--name",
 		c.name,
 		"--cidfile",
@@ -365,12 +376,12 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, filepath.Join(workDir, command.GetWorkingDirectory()))
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
@@ -441,7 +452,7 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
 	c.workDir = workDir
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, workDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
@@ -469,6 +480,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
+	podmanRunArgs = append(podmanRunArgs, "--workdir", filepath.Join(c.workDir, cmd.GetWorkingDirectory()))
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
@@ -512,7 +524,7 @@ func (c *podmanCommandContainer) Signal(ctx context.Context, sig syscall.Signal)
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	if c.imageExistsCache.Exists(c.image) {
+	if c.imageExistsCache.Contains(c.image) {
 		return true, nil
 	}
 
@@ -530,7 +542,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, nil
 	}
 
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return true, nil
 }
 
@@ -638,7 +650,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 
 	// Since we just pulled the image, we can skip the next call to 'podman
 	// image exists'.
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return nil
 }
 
@@ -829,39 +841,4 @@ func ConfigureIsolation(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-type imageExistsCache struct {
-	mu  sync.Mutex
-	lru *lru.LRU[time.Time]
-}
-
-func newImageExistsCache() (*imageExistsCache, error) {
-	l, err := lru.NewLRU(&lru.Config[time.Time]{
-		MaxSize: imageExistsCacheSize,
-		SizeFn:  func(time.Time) int64 { return 1 },
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &imageExistsCache{lru: l}, nil
-}
-
-func (c *imageExistsCache) Exists(image string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t, ok := c.lru.Get(image)
-	return ok && time.Since(t) < imageExistsCacheTTL
-}
-
-func (c *imageExistsCache) Add(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Add(image, time.Now())
-}
-
-func (c *imageExistsCache) Remove(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Remove(image)
 }

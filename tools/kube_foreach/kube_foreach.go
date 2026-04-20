@@ -68,14 +68,14 @@ func run() error {
 				}
 			} else {
 				if res.Stdout != "" {
-					lines := strings.Split(res.Stdout, "\n")
-					for _, line := range lines {
+					lines := strings.SplitSeq(res.Stdout, "\n")
+					for line := range lines {
 						fmt.Fprintf(os.Stdout, "%s stdout: %s\n", res.Pod, line)
 					}
 				}
 				if res.Stderr != "" {
-					lines := strings.Split(res.Stderr, "\n")
-					for _, line := range lines {
+					lines := strings.SplitSeq(res.Stderr, "\n")
+					for line := range lines {
 						fmt.Fprintf(os.Stderr, "%s stderr: %s\n", res.Pod, line)
 					}
 				}

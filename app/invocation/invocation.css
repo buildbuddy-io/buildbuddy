@@ -40,7 +40,7 @@
 .input-tree-node .input-tree-node-size {
   background-color: var(--color-bg-hover);
   border-radius: 4px;
-  color: var(--color-black);
+  color: var(--color-tree-node-size-text);
   margin-left: 8px;
   padding: 0 8px;
   white-space: nowrap;
@@ -231,6 +231,52 @@
 
 .invocation .trace-viewer {
   margin-top: 24px;
+}
+
+.invocation .timing-profile-drop-target {
+  margin-top: 24px;
+  position: relative;
+}
+
+.invocation .timing-profile-drop-target .trace-viewer {
+  margin-top: 0;
+}
+
+.invocation .timing-profile-drop-target.drag-active .trace-viewer,
+.invocation .timing-profile-drop-target.profile-loading .trace-viewer {
+  opacity: 0.5;
+}
+
+.invocation .timing-profile-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border: 2px dashed var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.invocation .timing-profile-drop-overlay-text {
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 1px 3px var(--color-shadow-lg);
+  font-weight: 600;
+}
+
+.invocation .timing-profile-local-banner {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
 }
 
 .cache-requests-card.card {
@@ -428,7 +474,8 @@
   width: 60px;
 }
 
-.cache-requests-card .download-button {
+.cache-requests-card .download-button,
+.invocation-action-card .download-button {
   width: 18px;
   height: 18px;
   padding: 4px;
@@ -438,7 +485,8 @@
   cursor: pointer;
 }
 
-.cache-requests-card .download-button:hover {
+.cache-requests-card .download-button:hover,
+.invocation-action-card .download-button:hover {
   stroke: var(--color-light-blue-500);
   background: var(--color-bg-hover);
 }
@@ -548,7 +596,7 @@
 
 .cache-requests-card-hovercard {
   margin: 12px;
-  background: var(--color-overlay-light-full);
+  background: var(--color-cache-hovercard-bg);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px var(--color-shadow-strong);
@@ -559,7 +607,8 @@
 
 .cache-result-hovercard {
   margin: 12px;
-  background: var(--color-overlay-light-strong);
+  background: var(--color-cache-hovercard-bg);
+  color: var(--color-cache-hovercard-text);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px var(--color-shadow-light);
@@ -718,6 +767,108 @@
 
 .action-section .server-log-title {
   align-self: center;
+}
+
+.action-downloads {
+  width: 100%;
+}
+
+.action-downloads-summary {
+  margin-top: 2px;
+}
+
+.action-downloads-loading,
+.action-downloads-empty {
+  color: var(--color-text-label);
+}
+
+.action-downloads-table-container {
+  margin-top: 8px;
+  margin-bottom: 12px;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.action-downloads-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+.action-downloads-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--color-border-primary);
+}
+
+.action-downloads-table tbody td {
+  padding: 4px 8px;
+  vertical-align: top;
+  background: var(--color-bg-primary);
+}
+
+.action-downloads-table tbody tr + tr td {
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.action-downloads-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.action-downloads-loading-row td {
+  padding: 8px;
+  text-align: center;
+}
+
+.action-downloads-digest,
+.action-downloads-size {
+  white-space: nowrap;
+}
+
+.action-downloads-size {
+  width: 72px;
+  font-family: var(--monospace-font-family);
+  color: var(--color-text-primary);
+}
+
+.action-downloads-path {
+  width: 100%;
+  line-height: 1.4;
+}
+
+.action-downloads-path-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.action-downloads-path-text {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.action-downloads-download-link {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.action-downloads-footer {
+  margin-top: 8px;
+}
+
+.action-downloads-load-more {
+  font-size: 14px;
 }
 
 .cache-sections {
@@ -909,7 +1060,7 @@
 
 .invocation-share-dialog .visibility-explanation {
   margin-top: 8px;
-  color: var(--color-gray-900-alt);
+  color: var(--color-form-help-text);
 }
 
 .invocation-share-dialog select {
@@ -925,14 +1076,14 @@
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: var(--color-light-blue-50);
+  background: var(--color-banner-info-bg);
 }
 
 .invocation-share-dialog .error-message {
   margin-top: 16px;
   padding: 16px;
   border-radius: 8px;
-  background: var(--color-red-50);
+  background: var(--color-status-error-bg);
 }
 
 .invocation-share-dialog-footer .loading-message {
@@ -1006,7 +1157,7 @@
 }
 
 .invocation-execution-row .status {
-  color: var(--color-black);
+  color: var(--color-hovercard-text);
   display: flex;
   gap: 8px;
   margin-bottom: 2px;
@@ -1479,6 +1630,10 @@ svg.invocation-query-graph .nodes rect {
   text-align: right;
   margin-left: auto;
   white-space: nowrap;
+}
+
+.timing.card .sort-control .selected {
+  color: var(--color-text-primary);
 }
 
 .timing.card .progress-bar {

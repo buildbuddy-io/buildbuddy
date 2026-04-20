@@ -39,6 +39,7 @@ func TestGetUsage_ParentAdminFetchesChildGroupUsage(t *testing.T) {
 	parent.IsParent = true
 	parent.SamlIdpMetadataUrl = "https://idp.example.test/metadata"
 	parent.URLIdentifier = "parent-org"
+	parent.Status = grpb.Group_ENTERPRISE_GROUP_STATUS
 	require.NoError(t, app.DB().Save(parent).Error)
 
 	// Create an ORG_ADMIN API key for the parent org using cookie-authenticated Web RPC.

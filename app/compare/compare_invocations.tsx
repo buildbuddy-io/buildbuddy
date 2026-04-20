@@ -115,6 +115,7 @@ const FACETS = [
   { name: "GKE Cluster", facet: (i?: InvocationModel) => i?.getGKECluster() },
   { name: "GKE Project", facet: (i?: InvocationModel) => i?.getGKEProject() },
   { name: "Buildkite URL", facet: (i?: InvocationModel) => i?.getBuildkiteUrl() },
+  { name: "GitHub Actions URL", facet: (i?: InvocationModel) => i?.getGithubActionsUrl() },
   {
     name: "Cache writes",
     facet: (i?: InvocationModel) => (i?.hasCacheWriteCapability() ? "Allowed" : "Not allowed"),

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "changelogtags_test",
+    size = "small",
+    srcs = ["changelogtags_test.go"],
+    data = [
+        "changelog-tags.json",
+    ] + glob(
+        [
+            "*.md",
+            "*.mdx",
+        ],
+        allow_empty = True,
+    ),
+    x_defs = {
+        "changelogTagsRlocationpath": "$(rlocationpath changelog-tags.json)",
+    },
+    deps = [
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

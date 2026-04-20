@@ -2,7 +2,7 @@ import Layout from "@theme/Layout";
 import { Calendar, Github, Mail, Slack } from "lucide-react";
 import React from "react";
 import common from "../css/common.module.css";
-import message from "../util/message";
+import { sendFormsMessage } from "../util/message";
 import styles from "./contact.module.css";
 
 let form = {
@@ -111,7 +111,7 @@ function Contact() {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Contact Form Message!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nMessage: ${form.message.current.value}`
   );
 

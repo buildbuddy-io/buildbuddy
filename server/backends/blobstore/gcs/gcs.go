@@ -262,7 +262,7 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	ow.ObjectAttrs.CustomTime = customTime
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
 		if gerr, ok := err.(*googleapi.Error); ok {
 			if gerr.Code == http.StatusPreconditionFailed {
@@ -283,11 +283,11 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 		}
 		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
 		return err
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		cancel()
 		return nil
-	}
+	})
 	return cwc, nil
 }
 
@@ -307,7 +307,7 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		zw = ow
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
-	cwc.CommitFn = func(n int64) error {
+	cwc.SetCommitFn(func(n int64) error {
 		err := zw.Close()
 		if err != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
@@ -317,11 +317,11 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		}
 		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
 		return err
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		cancel()
 		return nil
-	}
+	})
 	return cwc, nil
 }
 

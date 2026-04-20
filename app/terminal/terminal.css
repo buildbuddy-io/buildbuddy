@@ -4,7 +4,7 @@
   display: flex;
 }
 .terminal.light-terminal {
-  background: var(--color-bg-primary);
+  background: var(--color-white);
 }
 
 .terminal .terminal-search {
@@ -34,6 +34,11 @@
   max-width: 180px;
   border: 1px solid var(--color-gray-200);
   border-radius: 8px;
+}
+
+.terminal.light-terminal .terminal-search-input {
+  background: var(--color-white);
+  color: var(--color-black);
 }
 
 .terminal .terminal-text {
@@ -154,7 +159,7 @@
   color: var(--color-terminal-text);
 }
 .terminal.light-terminal .terminal-line {
-  color: var(--color-text-primary);
+  color: var(--color-gray-900);
 }
 
 /* Scrollbars */

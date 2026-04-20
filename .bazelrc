@@ -21,13 +21,6 @@ import %workspace%/shared.bazelrc
 # so OSS / anonymous users can still send events to our server.
 common --config=anon-bes
 
-# Target+Exec platform configurations.
-#
-# We maintain separate configuration for each repo so that we can migrate them to bzlmod independently.
-common:target-darwin-arm64 --config=bzlmod-target-darwin-arm64
-common:target-linux-x86 --config=bzlmod-target-linux-x86
-common:target-linux-arm64 --config=bzlmod-target-linux-arm64
-
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
@@ -46,6 +39,13 @@ common:ci-shared --build_metadata=VISIBILITY=PUBLIC
 common:ci --config=ci-shared
 common:ci --config=remote-minimal
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
+
+# Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
+common:ci-anon --config=ci
+common:ci-anon --bes_backend=remote.buildbuddy.io
+common:ci-anon --remote_downloader=remote.buildbuddy.io
+common:ci-anon --remote_cache=remote.buildbuddy.io
+common:ci-anon --remote_executor=remote.buildbuddy.io
 
 # Configuration used for all BuildBuddy workflows
 common:workflows --config=ci-shared

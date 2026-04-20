@@ -5,34 +5,41 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-
-	"google.golang.org/grpc/metadata"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -385,6 +392,9 @@ func (g *getTreeStreamer) Trailer() metadata.MD {
 type fakeCasClient struct {
 	treeDigest *repb.Digest
 	response   *repb.GetTreeResponse
+
+	findMissingBlobsFn func(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error)
+	splitBlobFn        func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error)
 }
 
 // BatchReadBlobs implements remote_execution.ContentAddressableStorageClient.
@@ -399,6 +409,9 @@ func (f *fakeCasClient) BatchUpdateBlobs(ctx context.Context, in *repb.BatchUpda
 
 // FindMissingBlobs implements remote_execution.ContentAddressableStorageClient.
 func (f *fakeCasClient) FindMissingBlobs(ctx context.Context, in *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	if f.findMissingBlobsFn != nil {
+		return f.findMissingBlobsFn(ctx, in)
+	}
 	panic("unimplemented")
 }
 
@@ -419,7 +432,58 @@ func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 }
 
 func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
+	if f.splitBlobFn != nil {
+		return f.splitBlobFn(ctx, req)
+	}
 	panic("unimplemented")
+}
+
+func TestFindMissingBlobs_AppliesCASRPCTimeout(t *testing.T) {
+	// Set a very short timeout so the test is fast.
+	flags.Set(t, "cache.client.cas_rpc_timeout", 1*time.Nanosecond)
+
+	var (
+		attempts     int
+		gotDeadline  time.Time
+		gotReq       *repb.FindMissingBlobsRequest
+		deadlineSkew time.Duration
+	)
+	cas := &fakeCasClient{
+		findMissingBlobsFn: func(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+			attempts++
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok, "outgoing FindMissingBlobs request should have a deadline")
+			gotDeadline = deadline
+			gotReq = req
+			deadlineSkew = time.Until(deadline)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	req := &repb.FindMissingBlobsRequest{
+		InstanceName:   "test",
+		DigestFunction: repb.DigestFunction_SHA256,
+		BlobDigests: []*repb.Digest{
+			{Hash: "abc", SizeBytes: 123},
+		},
+	}
+
+	// Internal retries will stretch the test out unnecessarily, so a short
+	// deadline.
+	const totalRequestTimeout = 10 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), totalRequestTimeout)
+	defer cancel()
+
+	rsp, err := cachetools.FindMissingBlobs(ctx, cas, req)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Nil(t, rsp)
+	require.Equal(t, 1, attempts)
+	require.Same(t, req, gotReq)
+	require.False(t, gotDeadline.IsZero())
+
+	// The remaining client timeout should not exceed the total RPC timeout that
+	// we set initially.
+	assert.LessOrEqual(t, deadlineSkew, totalRequestTimeout)
 }
 
 type fakeFilecache struct {
@@ -428,6 +492,8 @@ type fakeFilecache struct {
 	readCount  int
 	writeCount int
 }
+
+var _ interfaces.FileCache = (*fakeFilecache)(nil)
 
 func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 	return &repb.FileNode{
@@ -457,6 +523,10 @@ func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode) 
 	defer fc.mu.Unlock()
 	_, ok := fc.files[key(node)]
 	return ok
+}
+
+func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
+	panic("unimplemented")
 }
 
 func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {
@@ -492,6 +562,14 @@ func (fc *fakeFilecache) Writer(ctx context.Context, node *repb.FileNode, digest
 
 func (fc *fakeFilecache) TempDir() string {
 	panic("unimplemented")
+}
+
+func (fc *fakeFilecache) TrackExternalDirectory(ctx context.Context, path string, sizeBytes int64) (unlock func(), err error) {
+	return func() {}, nil
+}
+
+func (fc *fakeFilecache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
+	return nil, 0, status.NotFoundErrorf("not found: %s", path)
 }
 
 type fakeBytestreamClient struct {
@@ -573,6 +651,188 @@ func (b *bsReadStreamer) SendMsg(m any) error {
 // Trailer implements bytestream.ByteStream_ReadClient.
 func (b *bsReadStreamer) Trailer() metadata.MD {
 	panic("unimplemented")
+}
+
+func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
+	ctx := context.Background()
+	out, err := os.CreateTemp(t.TempDir(), "chunked-download-*")
+	require.NoError(t, err)
+	defer out.Close()
+
+	_, err = out.WriteString("keep me")
+	require.NoError(t, err)
+
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+
+	err = cachetools.GetBlobChunked(ctx, nil, &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			return nil, gstatus.Error(codes.Unimplemented, "no manifest")
+		},
+	}, rn, &repb.FileNode{Digest: blobDigest}, out, nil)
+	require.Equal(t, codes.Unimplemented, gstatus.Code(err))
+
+	got, err := os.ReadFile(out.Name())
+	require.NoError(t, err)
+	require.Equal(t, []byte("keep me"), got)
+}
+
+func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
+	ctx := context.Background()
+	chunk1 := bytes.Repeat([]byte("a"), 1024)
+	chunk2 := bytes.Repeat([]byte("b"), 1536)
+	blob := append(append([]byte{}, chunk1...), chunk2...)
+	compute := func(data []byte) *repb.Digest {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		return d
+	}
+	chunkDigests := []*repb.Digest{compute(chunk1), compute(chunk2)}
+	blobDigest := compute(blob)
+	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	cas := &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			require.Equal(t, blobDigest.GetHash(), req.GetBlobDigest().GetHash())
+			require.Equal(t, blobDigest.GetSizeBytes(), req.GetBlobDigest().GetSizeBytes())
+			require.Equal(t, repb.DigestFunction_BLAKE3, req.GetDigestFunction())
+			return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
+		},
+	}
+	bsData := make(map[string][]byte, len(chunkDigests))
+	for i, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, testInstance, repb.DigestFunction_BLAKE3)
+		chunkRN.SetCompressor(repb.Compressor_ZSTD)
+		chunkData := chunk1
+		if i == 1 {
+			chunkData = chunk2
+		}
+		bsData[chunkRN.DownloadString()] = compression.CompressZstd(nil, chunkData)
+	}
+	bs := &fakeBytestreamClient{
+		mu:   &sync.Mutex{},
+		data: bsData,
+	}
+	source, err := os.CreateTemp(t.TempDir(), "source-*")
+	require.NoError(t, err)
+	sourcePath := source.Name()
+	sourceNode := &repb.FileNode{Digest: blobDigest}
+	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+		if key(node) != key(sourceNode) {
+			return nil, os.ErrNotExist
+		}
+		return os.Open(sourcePath)
+	}
+
+	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, sourceNode, source, openLocal)
+	require.NoError(t, err)
+	require.NoError(t, source.Close())
+	got, err := os.ReadFile(sourcePath)
+	require.NoError(t, err)
+	require.Equal(t, blob, got)
+	require.Equal(t, len(chunkDigests), bs.readCount)
+
+	target, err := os.CreateTemp(t.TempDir(), "target-*")
+	require.NoError(t, err)
+	targetNode := &repb.FileNode{Digest: blobDigest}
+	err = cachetools.GetBlobChunked(ctx, nil, cas, rn, targetNode, target, openLocal)
+	require.NoError(t, err)
+	require.NoError(t, target.Close())
+	got, err = os.ReadFile(target.Name())
+	require.NoError(t, err)
+	require.Equal(t, blob, got)
+}
+
+func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		numChunks     = 100
+		chunkSize     = 1 << 20 // 1 MiB; total blob ~100 MiB
+		localEveryNth = 10      // ~10% of chunks available locally
+	)
+
+	rng := rand.New(rand.NewSource(1))
+	chunks := make([][]byte, numChunks)
+	chunkDigests := make([]*repb.Digest, numChunks)
+	for i := range chunks {
+		chunks[i] = make([]byte, chunkSize)
+		_, err := rng.Read(chunks[i])
+		require.NoError(t, err)
+		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		chunkDigests[i] = d
+	}
+
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	// Build a partial local file from every Nth chunk.
+	var localChunks [][]byte
+	var localChunkDigests []*repb.Digest
+	for i := 0; i < numChunks; i += localEveryNth {
+		localChunks = append(localChunks, chunks[i])
+		localChunkDigests = append(localChunkDigests, chunkDigests[i])
+	}
+	localBlob := bytes.Join(localChunks, nil)
+	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	localPath := filepath.Join(t.TempDir(), "local")
+	require.NoError(t, os.WriteFile(localPath, localBlob, 0644))
+	localNode := &repb.FileNode{Digest: localDigest}
+
+	cas := &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			switch req.GetBlobDigest().GetHash() {
+			case blobDigest.GetHash():
+				return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
+			case localDigest.GetHash():
+				return &repb.SplitBlobResponse{ChunkDigests: localChunkDigests}, nil
+			}
+			return nil, gstatus.Error(codes.NotFound, "no manifest")
+		},
+	}
+
+	bsData := make(map[string][]byte, numChunks)
+	for i, cd := range chunkDigests {
+		rn := digest.NewCASResourceName(cd, testInstance, repb.DigestFunction_BLAKE3)
+		bsData[rn.DownloadString()] = chunks[i]
+	}
+	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
+
+	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+		if key(node) != key(localNode) {
+			return nil, os.ErrNotExist
+		}
+		return os.Open(localPath)
+	}
+
+	// Prime the chunk location cache by downloading the partial local file.
+	localOut, err := os.CreateTemp(t.TempDir(), "local-out-*")
+	require.NoError(t, err)
+	localRN := digest.NewCASResourceName(localDigest, testInstance, repb.DigestFunction_BLAKE3)
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, localRN, localNode, localOut, openLocal))
+	require.NoError(t, localOut.Close())
+
+	priorBSReads := bs.readCount
+
+	// Download the full blob, reusing cached local chunks where available.
+	target, err := os.CreateTemp(t.TempDir(), "target-*")
+	require.NoError(t, err)
+	targetNode := &repb.FileNode{Digest: blobDigest}
+	blobRN := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, blobRN, targetNode, target, openLocal))
+	require.NoError(t, target.Close())
+
+	got, err := os.ReadFile(target.Name())
+	require.NoError(t, err)
+	require.Equal(t, blob, got, "output must match full blob byte-for-byte")
+
+	wantBSReads := numChunks - len(localChunkDigests)
+	require.Equal(t, wantBSReads, bs.readCount-priorBSReads, "local chunks must not hit the bytestream")
 }
 
 func TestUploadReaderAndGetBlob(t *testing.T) {
@@ -775,12 +1035,12 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, 0 /*=avgChunkSizeBytes*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "concurrent mutation detected")
-			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
+			assert.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
 		})
 	}
 }
@@ -797,7 +1057,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, 0 /*=avgChunkSizeBytes*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1117,4 +1377,109 @@ func TestUploadWriter_CancelContext(t *testing.T) {
 	_, err = uw.Write(buf[half:])
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
+}
+
+func TestUploadFromReaderWithCompression(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		readerCompression repb.Compressor_Value
+		targetCompression repb.Compressor_Value
+		wantErr           bool
+	}{
+		{
+			name:              "IDENTITY reader to IDENTITY target",
+			readerCompression: repb.Compressor_IDENTITY,
+			targetCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:              "IDENTITY reader to ZSTD target",
+			readerCompression: repb.Compressor_IDENTITY,
+			targetCompression: repb.Compressor_ZSTD,
+		},
+		{
+			name:              "ZSTD reader to IDENTITY target",
+			readerCompression: repb.Compressor_ZSTD,
+			targetCompression: repb.Compressor_IDENTITY,
+			wantErr:           true,
+		},
+		{
+			name:              "ZSTD reader to ZSTD target",
+			readerCompression: repb.Compressor_ZSTD,
+			targetCompression: repb.Compressor_ZSTD,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, localGRPClis)
+			go runServer()
+
+			ctx := context.Background()
+			rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+
+			var readerData []byte
+			if tc.readerCompression == repb.Compressor_ZSTD {
+				readerData = compression.CompressZstd(nil, buf)
+			} else {
+				readerData = buf
+			}
+
+			uploadRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			if tc.targetCompression == repb.Compressor_ZSTD {
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			}
+
+			d, uploadedBytes, err := cachetools.UploadFromReaderWithCompression(
+				ctx, te.GetByteStreamClient(), uploadRN, bytes.NewReader(readerData), tc.readerCompression)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, d)
+			require.Greater(t, uploadedBytes, int64(0))
+
+			getRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			out := &bytes.Buffer{}
+			err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), getRN, out)
+			require.NoError(t, err)
+			require.Equal(t, buf, out.Bytes(), "downloaded blob should match original")
+		})
+	}
+}
+
+func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ctx := context.Background()
+	blobSize := int64(3 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.AvgChunkSizeBytes())
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
 }

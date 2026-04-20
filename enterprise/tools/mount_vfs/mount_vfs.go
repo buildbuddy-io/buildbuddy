@@ -132,18 +132,19 @@ func main() {
 			log.Fatalf("Could not create action script: %s", err)
 		}
 
-		script := "#!/bin/bash\n"
-		script += "cd " + filepath.Join(*dir, command.GetWorkingDirectory()) + "\n"
-		script += "env -i \\\n"
+		var script strings.Builder
+		script.WriteString("#!/bin/bash\n")
+		script.WriteString("cd " + filepath.Join(*dir, command.GetWorkingDirectory()) + "\n")
+		script.WriteString("env -i \\\n")
 		for _, e := range command.GetEnvironmentVariables() {
-			script += "  " + e.GetName() + "=" + e.GetValue() + " \\\n"
+			script.WriteString("  " + e.GetName() + "=" + e.GetValue() + " \\\n")
 		}
 		for _, a := range command.GetArguments() {
-			script += "  '" + a + "' \\\n"
+			script.WriteString("  '" + a + "' \\\n")
 		}
-		script += "\n"
+		script.WriteString("\n")
 
-		_, err = f.WriteString(script)
+		_, err = f.WriteString(script.String())
 		if err != nil {
 			log.Fatalf("Could not write action script: %s", err)
 			return

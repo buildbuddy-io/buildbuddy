@@ -30,6 +30,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gstatus "google.golang.org/grpc/status"
@@ -101,7 +102,7 @@ type counters struct {
 
 func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
 	env := enterprise_testenv.New(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	clock := clockwork.NewFakeClock()
 	env.SetClock(clock)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -222,6 +223,67 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 	}
 }
 
+func TestExecuteTaskAndStreamResults_InputFetchMetadata(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", true)
+
+	ctx := context.Background()
+	expected := &espb.InputFetchMetadata{
+		DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+	}
+	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
+		InputFetchMetadata: expected,
+	})
+	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, expected.GetDownloadedFileIndicesBitmap(), auxMeta.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap())
+}
+
+func TestExecuteTaskAndStreamResults_InputFetchMetadataDisabled(t *testing.T) {
+	flags.Set(t, "executor.record_input_download_metadata", false)
+
+	ctx := context.Background()
+	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
+		InputFetchMetadata: &espb.InputFetchMetadata{
+			DownloadedFileIndicesBitmap: []byte{9, 9, 9},
+		},
+	})
+	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Nil(t, auxMeta.GetInputFetchDetailedStats())
+}
+
 func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 	ctx := context.Background()
 	exec, env, execClient, mockServer, mockCounter := getExecutor(t, nil)
@@ -326,7 +388,12 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.NoError(t, err)
 	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
-	require.ErrorContains(t, err, "timed out waiting for Read response")
+	require.True(
+		t,
+		strings.Contains(err.Error(), "timed out waiting for Read response") || strings.Contains(err.Error(), "context deadline exceeded"),
+		"expected read timeout error, got: %v",
+		err,
+	)
 	require.False(t, retry, "bazel will retry Unavailable errors, so we should not retry internally")
 
 	<-mockServer.finished

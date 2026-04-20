@@ -282,6 +282,26 @@ func TestEnvOverridesError(t *testing.T) {
 	}
 }
 
+func TestSecretEnvOverridesError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{"not_base64_encode", "D=123"},
+		{"mixed_base64", base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`)) + "D=123"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "secret-env-overrides-base64", Value: tc.value},
+			}}
+			props, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.Error(t, err)
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
+			require.Nil(t, props)
+		})
+	}
+}
+
 func TestPersistentVolumes(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -341,4 +361,28 @@ func TestPersistentVolumes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParse_ExecrootPath(t *testing.T) {
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue string
+	}{
+		{"", ""},
+		{"/", "/"},
+		{"/custom-execroot", "/custom-execroot"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "execroot-path", Value: testCase.rawValue},
+		}}
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
+		assert.Equal(t, testCase.expectedValue, platformProps.ExecrootPath)
+	}
+
+	// Empty case
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	assert.Equal(t, "", platformProps.ExecrootPath)
 }

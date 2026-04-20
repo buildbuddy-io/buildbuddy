@@ -4,24 +4,28 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"hash"
 	"io"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -37,6 +41,10 @@ const (
 	// and non-executable files which have the same content digests.
 	executableSuffix = "executable"
 
+	// sharedDirectoryPrefix prefixes entries that are explicitly marked as
+	// safe to share across groups.
+	sharedDirectoryPrefix = "_SHARED_"
+
 	// hitMetricLabel is the prometheus metric label applied to filecache hits.
 	hitMetricLabel = "hit"
 	// missMetricLabel is the prometheus metric label applied to filecache misses.
@@ -44,12 +52,33 @@ const (
 
 	// Temporary directory under the filecache root.
 	tmpDir = "_tmp"
+
+	// lockFile is a file placed in the filecache root dir while the filecache
+	// is running. If this file is found on startup, it means the previous
+	// process exited uncleanly (e.g. power loss or crash), and the filecache
+	// contents may be in a corrupted state. In that case, the filecache root
+	// dir is wiped and rebuilt from scratch.
+	lockFile = "filecache.dirty"
+
+	// Threshold at which to log when the trash collection is backing up.
+	trashCollectionLogThreshold = 8
 )
 
+// Context key holding the shared directory name, if any. If set in the ctx,
+// filecache entries will be stored under a shared directory namespace instead
+// of the group-specific namespace.
+type sharedDirectoryContextKey struct{}
+
 var (
-	enableAlwaysClone   = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
-	subdirPrefixLength  = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableAlwaysClone                = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
+	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
+	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", false, "If true, write a marker file to the filecache directory while running. If the marker is present at startup, the filecache is wiped to avoid serving potentially corrupted files from a previous unclean shutdown (e.g. power loss).")
+
+	// testOnlyDisableInitialDirectoryScan disables startup scanning in tests.
+	// Keep this false in production paths.
+	testOnlyDisableInitialDirectoryScan bool
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -78,10 +107,19 @@ var (
 // outputPath and return true. If no file is found in the cache, fileCache
 // will return false.
 type fileCache struct {
-	rootDir     string
-	lock        sync.Mutex
-	l           *lru.LRU[*entry]
-	dirScanDone chan struct{}
+	rootDir      string
+	lock         sync.Mutex
+	l            lru.LRU[*entry]
+	dirScanDone  chan struct{}
+	scanComplete atomic.Bool
+	// Directories that are marked for deletion and are waiting for the last
+	// user to unlock the directory. The key is the directory path.
+	awaitingDeletion map[string]*entry
+	trashList        []string
+	trashCh          chan struct{}
+	closed           chan struct{}
+	isClosed         atomic.Bool
+	wg               sync.WaitGroup
 
 	linkFromFileCacheLatency prometheus.Observer
 	linkIntoFileCacheLatency prometheus.Observer
@@ -90,7 +128,7 @@ type fileCache struct {
 	requestCounter           map[bool]prometheus.Counter
 }
 
-// entry is used to hold a value in the evictList
+// entry is used to hold a value in the LRU.
 type entry struct {
 	// addedAtUsec is the time that the file was added to the file cache, in
 	// microseconds since the Unix epoch.
@@ -98,6 +136,10 @@ type entry struct {
 	// sizeBytes is the file size as reported by the original FileNode metadata
 	// when the file was added to the file cache.
 	sizeBytes int64
+
+	// directoryHandle contains a non-nil directory handle if this entry
+	// represents an external directory.
+	directoryHandle *directoryHandle
 }
 
 func sizeFn(v *entry) int64 {
@@ -105,10 +147,21 @@ func sizeFn(v *entry) int64 {
 }
 
 func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
+	// Note: this returned function will get called with the filecache lock
+	// held. This is because all LRU operations (Add/Contains etc.) are done
+	// with the lock held, and LRU operations are the only operations that can
+	// trigger eviction, and eviction is triggered synchronously as part of the
+	// LRU operation.
 	return func(key string, v *entry, reason lru.EvictionReason) {
-		fp := filecachePath(rootDir, key)
-		if err := syscall.Unlink(fp); err != nil {
-			log.Errorf("Failed to unlink filecache entry %q: %s", fp, err)
+		if v.directoryHandle != nil {
+			if err := tryMoveDirToTrash(v); err != nil {
+				log.Errorf("Failed to trash directory %q: %s", v.directoryHandle.path, err)
+			}
+		} else {
+			fp := filecachePath(rootDir, key)
+			if err := syscall.Unlink(fp); err != nil {
+				log.Errorf("Failed to unlink filecache entry %q: %s", fp, err)
+			}
 		}
 		if reason == lru.SizeEviction {
 			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
@@ -117,12 +170,84 @@ func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
 	}
 }
 
+type directoryHandle struct {
+	path      string
+	filecache *fileCache
+	refCount  int
+}
+
+func tryMoveDirToTrash(e *entry) error {
+	// Note: we don't need to acquire the filecache lock here, because this func
+	// should only be getting called via the evictFn, as part of an LRU
+	// operation, so the filecache lock should already be held.
+
+	dir := e.directoryHandle
+
+	if dir.refCount > 0 {
+		// Can't delete this directory since it's in use.
+		// Mark it for later deletion.
+		dir.filecache.awaitingDeletion[e.directoryHandle.path] = e
+		return nil
+	}
+
+	// No one is using the dir - we can safely move to trash.
+	return dir.moveToTrash()
+}
+
+// unlock releases the directoryHandle reference and moves it to trash if it
+// was awaiting deletion.
+func (h *directoryHandle) unlock() {
+	// This func is called externally, whenever the caller of
+	// TrackExternalDirectory is done with it. So we need to grab the filecache
+	// lock here as we're mutating some filecache state.
+	h.filecache.lock.Lock()
+	defer h.filecache.lock.Unlock()
+
+	h.refCount--
+	if _, ok := h.filecache.awaitingDeletion[h.path]; ok && h.refCount == 0 {
+		if err := h.moveToTrash(); err != nil {
+			log.Errorf("Failed to move directory to trash (path: %q): %s", h.path, err)
+		} else {
+			delete(h.filecache.awaitingDeletion, h.path)
+		}
+	}
+}
+
+func (h *directoryHandle) moveToTrash() error {
+	return h.filecache.trash(h.path)
+}
+
+// syncDir fsyncs the directory at path to ensure any pending metadata changes
+// (e.g. file creation or deletion) are durable on disk.
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	start := time.Now()
+	err = dir.Sync()
+	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
+	return err
+}
+
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.
 func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
+	}
+	if *deleteFilecacheOnUncleanShutdown {
+		// If a lock file exists from a previous run, the filecache did not shut
+		// down cleanly (e.g. power loss). Wipe the cache to avoid serving
+		// potentially corrupted files.
+		if !deleteContent {
+			if _, err := os.Stat(filepath.Join(rootDir, lockFile)); err == nil {
+				log.Warningf("filecache(%q): found lock file from previous unclean shutdown; wiping cache", rootDir)
+				deleteContent = true
+			}
+		}
 	}
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
@@ -133,7 +258,27 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	l, err := lru.NewLRU[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
+	if *deleteFilecacheOnUncleanShutdown {
+		// Create and sync the lock file so it is guaranteed to be on disk before
+		// any cache files are written. This ensures a subsequent power loss is
+		// detectable on the next boot.
+		lockFilePath := filepath.Join(rootDir, lockFile)
+		f, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to create filecache lock file")
+		}
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return nil, status.WrapErrorf(err, "failed to sync filecache lock file")
+		}
+		if err := f.Close(); err != nil {
+			return nil, status.WrapErrorf(err, "failed to close filecache lock file")
+		}
+		if err := syncDir(rootDir); err != nil {
+			return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
+		}
+	}
+	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +286,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		rootDir:                  rootDir,
 		l:                        l,
 		dirScanDone:              make(chan struct{}),
+		awaitingDeletion:         make(map[string]*entry),
+		closed:                   make(chan struct{}),
 		linkFromFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_filecache"}),
 		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
 		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
@@ -149,6 +296,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 			true:  metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel}),
 			false: metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel}),
 		},
+		trashCh: make(chan struct{}, 1),
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -156,12 +304,89 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := os.MkdirAll(c.TempDir(), 0755); err != nil {
 		return nil, status.WrapErrorf(err, "failed to create filecache temp dir")
 	}
-	go c.scanDir()
+	if !testOnlyDisableInitialDirectoryScan {
+		go c.scanDir()
+	}
+	c.wg.Go(c.handleTrashNotifications)
 	return c, nil
+}
+
+// Close stops accepting new requests, waits for background goroutines to exit,
+// then removes the lock file and syncs the directory to record a clean shutdown.
+func (c *fileCache) Close() error {
+	c.isClosed.Store(true)
+	close(c.closed)
+	c.wg.Wait()
+	if *deleteFilecacheOnUncleanShutdown {
+		// Flush all dirty pages to disk before removing the lock file. This
+		// ensures that all cache files written during this session are durable
+		// before we signal a clean shutdown. Without this, a power loss after the
+		// lock file is removed but before the OS flushes the page cache could
+		// leave corrupted files on disk with no lock file to detect them.
+		start := time.Now()
+		syncfsErr := syncFilesystem(c.rootDir)
+		log.Infof("filecache(%q): syncFilesystem took %s (err: %v)", c.rootDir, time.Since(start), syncfsErr)
+		lockFilePath := filepath.Join(c.rootDir, lockFile)
+		if err := os.Remove(lockFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warningf("filecache(%q): failed to remove lock file: %s", c.rootDir, err)
+		}
+		if err := syncDir(c.rootDir); err != nil {
+			log.Warningf("filecache(%q): failed to sync root dir after removing lock file: %s", c.rootDir, err)
+		}
+	}
+	return nil
 }
 
 func (c *fileCache) TempDir() string {
 	return filepath.Join(c.rootDir, tmpDir)
+}
+
+func (c *fileCache) handleTrashNotifications() {
+	for {
+		select {
+		case <-c.closed:
+			return
+		case <-c.trashCh:
+		}
+
+		c.lock.Lock()
+		trashList := c.trashList
+		c.trashList = nil
+		c.lock.Unlock()
+
+		// To get some visibility when trash collection is backing up,
+		// log when the list gets longer than a certain threshold.
+		if len(trashList) > trashCollectionLogThreshold {
+			log.Infof("Removing %d directories from trash", len(trashList))
+		}
+
+		for _, path := range trashList {
+			if err := os.RemoveAll(path); err != nil {
+				log.Errorf("Failed to remove trash directory %q: %s", path, err)
+			}
+		}
+	}
+}
+
+// trash moves the path to the TempDir and marks it for asynchronous background
+// removal.
+func (c *fileCache) trash(path string) error {
+	trashDir := c.TempDir()
+	dst := filepath.Join(trashDir, ".trash-"+strconv.Itoa(rand.Intn(1e18))+"-"+filepath.Base(path))
+	if err := os.Rename(path, dst); err != nil {
+		return err
+	}
+	c.trashList = append(c.trashList, dst)
+
+	// Notify the background worker. A non-blocking send here is sufficient
+	// because the worker drains the trash list completely each time it sees a
+	// notification.
+	select {
+	case c.trashCh <- struct{}{}:
+	default:
+	}
+
+	return nil
 }
 
 func filecachePath(rootDir, key string) string {
@@ -181,21 +406,21 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 	}
 
 	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
-	groupID, name := filepath.Split(subdirPath)
-	groupID = strings.Trim(groupID, sep)
+	keyPrefix, name := filepath.Split(subdirPath)
+	keyPrefix = strings.Trim(keyPrefix, sep)
 
 	// Backwards compatible: scan files that are written in the new
 	// format OR the old format.
 	//
 	// old format: GROUP/abcdefghijklmnopqrstuv
 	// new format: GROUP/abcd/abcdefghijklmnopqrstuv
-	if strings.Contains(groupID, sep) {
-		groupID = strings.TrimSuffix(groupID, sep)
-		groupID = strings.Trim(filepath.Dir(groupID), sep)
+	if strings.Contains(keyPrefix, sep) {
+		keyPrefix = strings.TrimSuffix(keyPrefix, sep)
+		keyPrefix = strings.Trim(filepath.Dir(keyPrefix), sep)
 	}
 
 	nameParts := strings.Split(name, ".")
-	return groupID, &repb.FileNode{
+	return keyPrefix, &repb.FileNode{
 		IsExecutable: len(nameParts) > 1 && nameParts[1] == executableSuffix,
 		Digest: &repb.Digest{
 			Hash:      nameParts[0],
@@ -216,14 +441,17 @@ func (c *fileCache) scanDir() {
 			return nil
 		}
 		fileCount += 1
-		// addFileToGroup uses the physical size, not the digest size, so just
+		// addFileWithKeyPrefix uses the physical size, not the digest size, so just
 		// pass 0 for size here.
-		groupID, node, err := c.nodeFromPathAndSize(path, 0)
+		keyPrefix, node, err := c.nodeFromPathAndSize(path, 0)
 		if err != nil {
 			return err
 		}
-		if err := c.addFileToGroup(groupID, node, path); err != nil {
-			// Any errors here are unexpected - this addFileToGroup call should
+		if !isValidScannedCachePath(c.rootDir, path, keyPrefix, node) {
+			return nil
+		}
+		if err := c.addFileWithKeyPrefix(keyPrefix, node, path); err != nil {
+			// Any errors here are unexpected - this addFileWithKeyPrefix call should
 			// just be updating LRU state. There is a chance that it will
 			// trigger an eviction, but any error from the associated unlink
 			// operation is just logged and not returned.
@@ -237,11 +465,10 @@ func (c *fileCache) scanDir() {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
 	}
 	for _, entry := range entries {
-		// Only scan the group-specific dirs (ignore _tmp and other dirs)
-		if entry.Name() != "ANON" && !strings.HasPrefix(entry.Name(), "GR") {
+		if !entry.IsDir() {
 			continue
 		}
-		if !entry.IsDir() {
+		if !isScannableCacheDir(entry.Name()) {
 			continue
 		}
 
@@ -256,14 +483,119 @@ func (c *fileCache) scanDir() {
 	c.lock.Unlock()
 
 	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
+	c.scanComplete.Store(true)
 	close(c.dirScanDone)
 }
 
-func groupSpecificKey(groupID string, node *repb.FileNode) string {
-	if node.GetIsExecutable() {
-		return groupID + "/" + node.GetDigest().GetHash() + "." + executableSuffix
+func externalDirectoryKey(path string) string {
+	return "external:" + path
+}
+
+func (c *fileCache) WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
+	return withSharedDirectory(ctx, sharedDirectory)
+}
+
+// withSharedDirectory returns a context that stores filecache entries under a
+// shared executor-local directory instead of the current group directory.
+//
+// Shared directories are intended for read-only data that may be safely reused
+// across groups. Invalid shared directory names are ignored and the original
+// context is returned unchanged.
+func withSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
+	if !isValidSharedDirectory(sharedDirectory) {
+		alert.CtxUnexpectedEvent(ctx, "filecache_invalid_shared_directory", "Invalid shared directory %s", sharedDirectory)
+		return ctx
 	}
-	return groupID + "/" + node.GetDigest().GetHash()
+	return context.WithValue(ctx, sharedDirectoryContextKey{}, sharedDirectory)
+}
+
+// isValidSharedDirectory returns true if the given shared directory name is
+// valid. This acts as a sanity check both when scanning the filecache directory
+// on startup and when the executor tries to store/link files from a shared
+// directory.
+func isValidSharedDirectory(sharedDirectory string) bool {
+	if sharedDirectory == "" || sharedDirectory == "." || sharedDirectory == ".." {
+		return false
+	}
+	if sharedDirectory == interfaces.AuthAnonymousUser || strings.HasPrefix(sharedDirectory, "GR") || strings.HasPrefix(sharedDirectory, sharedDirectoryPrefix) {
+		return false
+	}
+	return !strings.ContainsAny(sharedDirectory, `/\`)
+}
+
+func sharedDirectoryFromContext(ctx context.Context) (string, bool) {
+	sharedDirectory, ok := ctx.Value(sharedDirectoryContextKey{}).(string)
+	return sharedDirectory, ok && sharedDirectory != ""
+}
+
+// keyPrefixFromContext returns the namespace prefix for filecache keys.
+//
+// The returned string will follow one of these patterns:
+//   - <group_id> for authenticated group-scoped entries
+//   - "ANON" for unauthenticated entries
+//   - _SHARED_<namespace> for explicitly shared directories
+func keyPrefixFromContext(ctx context.Context) string {
+	if sharedDirectory, ok := sharedDirectoryFromContext(ctx); ok {
+		return sharedDirectoryPrefix + sharedDirectory
+	}
+	return groupIDStringFromContext(ctx)
+}
+
+func isScannableCacheDir(name string) bool {
+	if name == interfaces.AuthAnonymousUser || strings.HasPrefix(name, "GR") {
+		return true
+	}
+	if after, ok := strings.CutPrefix(name, sharedDirectoryPrefix); ok {
+		return isValidSharedDirectory(after)
+	}
+	return false
+}
+
+// isValidScannedCachePath returns whether the given on-disk path matches one of
+// the filecache path layouts we support scanning on startup.
+func isValidScannedCachePath(rootDir, fullPath, keyPrefix string, node *repb.FileNode) bool {
+	if strings.HasPrefix(keyPrefix, sharedDirectoryPrefix) && !isValidSharedDirectory(strings.TrimPrefix(keyPrefix, sharedDirectoryPrefix)) {
+		return false
+	}
+
+	relPath, err := filepath.Rel(rootDir, fullPath)
+	if err != nil {
+		return false
+	}
+	relDir, name := filepath.Split(relPath)
+	relDir = strings.Trim(relDir, sep)
+	if relDir == "" || name == "" {
+		return false
+	}
+
+	dirParts := strings.Split(relDir, sep)
+	if len(dirParts) == 0 || len(dirParts) > 2 {
+		return false
+	}
+	if dirParts[0] != keyPrefix {
+		return false
+	}
+	if len(dirParts) == 2 {
+		// Accept subdir-prefixed cache entries written with any historical prefix
+		// length, as long as the directory is still a prefix of the digest hash.
+		prefixDir := dirParts[1]
+		if prefixDir == "" || !strings.HasPrefix(node.GetDigest().GetHash(), prefixDir) {
+			return false
+		}
+	}
+
+	expectedName := node.GetDigest().GetHash()
+	if node.GetIsExecutable() {
+		expectedName += "." + executableSuffix
+	}
+	return name == expectedName
+}
+
+func namespacedKey(keyPrefix string, node *repb.FileNode) string {
+	if node.GetIsExecutable() {
+		return keyPrefix + "/" + node.GetDigest().GetHash() + "." + executableSuffix
+	}
+	return keyPrefix + "/" + node.GetDigest().GetHash()
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -277,9 +609,19 @@ func groupIDStringFromContext(ctx context.Context) string {
 }
 
 func key(ctx context.Context, node *repb.FileNode) string {
-	groupID := groupIDStringFromContext(ctx)
-	k := groupSpecificKey(groupID, node)
-	return k
+	return namespacedKey(keyPrefixFromContext(ctx), node)
+}
+
+func (c *fileCache) checkClosed() error {
+	// Close() functionality was added in unclean shutdown detection CL, so disable
+	// any checking of closed filecache when this feature is disabled.
+	if !*deleteFilecacheOnUncleanShutdown {
+		return nil
+	}
+	if c.isClosed.Load() {
+		return status.FailedPreconditionError("filecache is closed")
+	}
+	return nil
 }
 
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
@@ -287,17 +629,14 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		c.requestCounter[hit].Inc()
 	}()
 
-	groupID := groupIDStringFromContext(ctx)
-	key := groupSpecificKey(groupID, node)
+	keyPrefix := keyPrefixFromContext(ctx)
+	key := namespacedKey(keyPrefix, node)
 
-	c.lock.Lock()
-	ok := c.l.Contains(key)
-	c.lock.Unlock()
-	if !ok {
+	if !c.containsWithStatFallback(key) {
 		return false
 	}
 	start := time.Now()
-	if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
+	if err := cloneOrLink(keyPrefix, filecachePath(c.rootDir, key), outputPath); err != nil {
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
@@ -311,19 +650,16 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 		c.requestCounter[hit].Inc()
 	}()
 
-	groupID := groupIDStringFromContext(ctx)
-	key := groupSpecificKey(groupID, node)
+	keyPrefix := keyPrefixFromContext(ctx)
+	key := namespacedKey(keyPrefix, node)
 
-	c.lock.Lock()
-	ok := c.l.Contains(key)
-	c.lock.Unlock()
-	if !ok {
+	if !c.containsWithStatFallback(key) {
 		return nil, status.NotFoundError("not found")
 	}
 	return os.Open(filecachePath(c.rootDir, key))
 }
 
-func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existingFilePath string) error {
+func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, existingFilePath string) error {
 	// Remove any existing entry. We can't update in-place because if we
 	// overwrite an existing link with different contents, all pointers
 	// to the old link would suddenly change to point to the new content,
@@ -338,7 +674,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		return wrapOSError(err, "estimate disk usage")
 	}
 
-	k := groupSpecificKey(groupID, node)
+	k := namespacedKey(keyPrefix, node)
 	fp := filecachePath(c.rootDir, k)
 
 	// Ensure the parent directory exists. (We can skip this if the source and
@@ -372,7 +708,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		c.l.Remove(k)
 
 		start := time.Now()
-		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
+		if err := cloneOrLink(keyPrefix, existingFilePath, fp); err != nil {
 			return err
 		}
 		c.linkIntoFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
@@ -392,7 +728,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
 	metrics.FileCacheAddedFileBytesCount.With(prometheus.Labels{
-		metrics.GroupID: groupID,
+		metrics.GroupID: keyPrefix,
 	}).Add(float64(e.sizeBytes))
 	success := c.l.Add(k, e)
 	if !success {
@@ -402,10 +738,13 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	if err := c.checkClosed(); err != nil {
+		return err
+	}
 	start := time.Now()
-	groupID := groupIDStringFromContext(ctx)
-	// Locking happens in addFileToGroup().
-	err := c.addFileToGroup(groupID, node, existingFilePath)
+	keyPrefix := keyPrefixFromContext(ctx)
+	// Locking happens in addFileWithKeyPrefix().
+	err := c.addFileWithKeyPrefix(keyPrefix, node, existingFilePath)
 	if err != nil {
 		return err
 	}
@@ -413,15 +752,132 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 	return nil
 }
 
-func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	k := key(ctx, node)
+// TrackExternalDirectory atomically (1) tracks the given directory path using
+// the filecache, making it subject to LRU eviction, and (2) acquires a lock
+// preventing the directory from being evicted until the returned unlock
+// function is called. The caller MUST call the unlock function when the
+// directory is no longer actively being used, otherwise it will never be
+// evicted.
+//
+// After calling this function, ONLY the filecache may delete the directory; the
+// directory must not be deleted by any other means. If this is respected, then
+// this function provides the following guarantees:
+//
+// Guarantee 1: If the given path does not exist, then it is not currently being
+// tracked by the filecache, and calling this function will return NotFound.
+// Note: callers should be aware of potential race conditions, where goroutines
+// may concurrently be creating the directory, and manage their own
+// locking/singleflighting if needed.
+//
+// Guarantee 2: If this function succeeds (returns a nil error), then the
+// directory already exists, is being tracked by the filecache, and is protected
+// from deletion until the unlock function is called.
+//
+// The caller is responsible for providing the directory size estimate. This
+// allows using cheaply computed size estimates, such as the OCI layer tarball
+// size, which is "close enough" to the on-disk size of the extracted layer
+// tarball.
+//
+// For now, this function does NOT move the directory into the filecache
+// directory. This means that callers must perform their own initial directory
+// scan if needed, calling this function to manually add each directory to be
+// tracked. Usually, after calling this function during the initial scan, the
+// `unlock` function should be called immediately, in order to make the
+// directory eligible for eviction.
+//
+// Eviction is implemented by moving the file into the filecache temp dir and
+// asynchronously deleting all of its contents. This means that the given path
+// MUST be located on the same filesystem as the filecache. This renaming
+// approach ensures that eviction is both fast and atomic (the atomicity
+// property is required to uphold the invariants described above).
+func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error) {
+	if err := c.checkClosed(); err != nil {
+		return nil, err
+	}
+	path = filepath.Clean(path)
+	key := externalDirectoryKey(path)
 
+	e, err := c.initExternalDirectoryEntry(key, path, size, true /*=createIfMissing*/)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.directoryHandle.unlock, nil
+}
+
+// LookupExternalDirectory performs a lookup-only external directory lock. It
+// returns NotFound if the directory exists on disk but is not currently
+// tracked by filecache.
+func (c *fileCache) LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error) {
+	path = filepath.Clean(path)
+	key := externalDirectoryKey(path)
+
+	e, err := c.initExternalDirectoryEntry(key, path, 0 /*=size*/, false /*=createIfMissing*/)
+	if err != nil {
+		return nil, 0, err
+	}
+	return e.directoryHandle.unlock, e.sizeBytes, nil
+}
+
+func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, createIfMissing bool) (*entry, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return c.l.Contains(k)
+
+	// Need to check that the directory exists, with the lock held, before
+	// creating an LRU entry. Otherwise, invariants cannot be guaranteed.
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.NotFoundErrorf("path %q does not exist: %s", path, err)
+		}
+		return nil, status.UnavailableErrorf("stat %q: %s", path, err)
+	}
+
+	e, ok := c.l.Get(key)
+	if !ok {
+		// If the entry is waiting for deletion then move it back to the LRU to
+		// guarantee it doesn't get deleted until the unlock func is called.
+		e, ok = c.awaitingDeletion[path]
+		if ok {
+			delete(c.awaitingDeletion, path)
+			success := c.l.Add(key, e)
+			if !success {
+				return nil, status.InternalErrorf("could not add key %s to filecache lru", key)
+			}
+		} else {
+			if !createIfMissing {
+				return nil, status.NotFoundErrorf("path %q is not tracked", path)
+			}
+			// No existing entry was found in the LRU or awaitingDeletion -
+			// create a new entry.
+			e = &entry{
+				addedAtUsec: time.Now().UnixMicro(),
+				sizeBytes:   size,
+				directoryHandle: &directoryHandle{
+					path:      path,
+					filecache: c,
+					refCount:  0, // incremented below
+				},
+			}
+			success := c.l.Add(key, e)
+			if !success {
+				return nil, status.InternalErrorf("could not add key %s to filecache lru", key)
+			}
+		}
+	}
+
+	e.directoryHandle.refCount++
+	return e, nil
+}
+
+func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	k := key(ctx, node)
+	return c.containsWithStatFallback(k)
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
+	if err := c.checkClosed(); err != nil {
+		return false
+	}
 	k := key(ctx, node)
 
 	c.lock.Lock()
@@ -452,6 +908,9 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 
 // Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+	if err := c.checkClosed(); err != nil {
+		return 0, err
+	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return 0, err
@@ -559,6 +1018,9 @@ func (v *verifiedWriter) Close() error {
 }
 
 func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
+	if err := c.checkClosed(); err != nil {
+		return nil, err
+	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err
@@ -584,8 +1046,8 @@ func (c *fileCache) tempPath(name string) (string, error) {
 	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }
 
-func cloneOrLink(groupID, source, destination string) error {
-	if groupID == interfaces.AuthAnonymousUser || *enableAlwaysClone {
+func cloneOrLink(keyPrefix, source, destination string) error {
+	if keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone {
 		if err := fastcopy.Clone(source, destination); err != nil {
 			return wrapOSError(err, "clone")
 		}
@@ -597,9 +1059,65 @@ func cloneOrLink(groupID, source, destination string) error {
 	return nil
 }
 
+// containsWithStatFallback checks if the given key is in the cache. If the
+// initial directory scan is still in progress and the key is not found in the
+// LRU, the file may still be found on disk, so this falls back to checking the
+// filesystem and proactively hydrating the LRU in that case.
+func (c *fileCache) containsWithStatFallback(key string) bool {
+	c.lock.Lock()
+	ok := c.l.Contains(key)
+	c.lock.Unlock()
+	if ok {
+		return true
+	}
+	if c.scanComplete.Load() || !*enableDiskFallbackOnStartup {
+		return false
+	}
+
+	path := filecachePath(c.rootDir, key)
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+
+	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+	if err != nil {
+		log.Warningf("Failed to estimate filecache entry size for %q: %s", path, err)
+		return false
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.l.Contains(key) {
+		return true
+	}
+	success := c.l.Add(key, &entry{
+		addedAtUsec: time.Now().UnixMicro(),
+		sizeBytes:   sizeOnDisk,
+	})
+	if !success {
+		log.Warningf("Could not add key %q to filecache LRU after stat fallback", key)
+		return false
+	}
+	return true
+}
+
 func wrapOSError(err error, message string) error {
 	if os.IsNotExist(err) {
 		return status.NotFoundErrorf("%s: %s", message, err)
 	}
 	return status.InternalErrorf("%s: %s", message, err)
+}
+
+// DisableInitialDirectoryScanForTest disables startup scanning for newly
+// created filecache instances. Tests should pair this with
+// EnableInitialDirectoryScanForTest via t.Cleanup.
+func DisableInitialDirectoryScanForTest() {
+	testOnlyDisableInitialDirectoryScan = true
+}
+
+// EnableInitialDirectoryScanForTest re-enables startup scanning for newly
+// created filecache instances.
+func EnableInitialDirectoryScanForTest() {
+	testOnlyDisableInitialDirectoryScan = false
 }

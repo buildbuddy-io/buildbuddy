@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:buildbuddy_service_go_proto",
         "//server/capabilities_filter",
         "//server/environment",
         "//server/util/alert",
@@ -39,10 +40,13 @@ go_test(
         "//proto:ping_service_go_proto",
         "//server/testutil/testenv",
         "//server/testutil/testport",
+        "//server/util/clientip",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/random",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
     ],
 )

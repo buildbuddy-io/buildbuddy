@@ -3,11 +3,14 @@ package remotebazel
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
@@ -230,6 +233,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		localBranchExistsRemotely bool
 		localCommitExistsRemotely bool
+		unpushedLocalCommit       bool
 
 		expectedBranch  string
 		expectedCommit  string
@@ -261,6 +265,13 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
+		{
+			name:                "On master with an unpushed commit",
+			unpushedLocalCommit: true,
+			expectedBranch:      "master",
+			expectedCommit:      originalMasterHeadCommit,
+			expectedPatches:     []string{"local_only_commited_file.txt"},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -268,8 +279,11 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
 
-		if tc.localBranchExistsRemotely {
+		if tc.unpushedLocalCommit {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+		} else if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
@@ -288,9 +302,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
 		require.Equal(t, tc.expectedCommit, config.CommitSHA, tc.name)
-		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
+		require.Equal(t, len(tc.expectedPatches), len(config.Patches), tc.name)
 		if len(tc.expectedPatches) > 0 {
-			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
+			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0], tc.name)
 		}
 
 		// Reset remote repo for future test cases
@@ -326,6 +340,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
 
 		if tc.multipleRemotes {
 			testshell.Run(t, localRepoPath, "git remote add extra "+remoteUrl)
@@ -353,6 +368,7 @@ func TestGeneratingPatches(t *testing.T) {
 	// is set correctly
 	err := os.Chdir(localRepoPath)
 	require.NoError(t, err)
+	resetRepoRootPathForTest(t)
 
 	testshell.Run(t, localRepoPath, `
 		# Generate a diff on a pre-existing file
@@ -386,4 +402,57 @@ func TestGeneratingPatches(t *testing.T) {
 			require.FailNowf(t, "unexpected patch %s", p)
 		}
 	}
+}
+
+func TestWorkingDirectory(t *testing.T) {
+	rootDir := t.TempDir()
+	repoRoot := filepath.Join(rootDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "subdir", "nested"), 0755))
+
+	testCases := []struct {
+		name              string
+		workspaceFilePath string
+		expectedDir       string
+		expectedError     string
+	}{
+		{
+			name:              "Repo root workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "MODULE.bazel"),
+			expectedDir:       "",
+		},
+		{
+			name:              "Nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "MODULE.bazel"),
+			expectedDir:       "subdir",
+		},
+		{
+			name:              "Deeply nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "nested", "MODULE.bazel"),
+			expectedDir:       filepath.Join("subdir", "nested"),
+		},
+		{
+			name:              "Workspace outside repo root",
+			workspaceFilePath: filepath.Join(rootDir, "outside", "MODULE.bazel"),
+			expectedError:     "outside repo root",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := workingDirectory(repoRoot, tc.workspaceFilePath)
+			if tc.expectedError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedDir, dir)
+		})
+	}
+}
+
+func resetRepoRootPathForTest(t *testing.T) {
+	storage.RepoRootPath = sync.OnceValues(func() (string, error) {
+		return os.Getwd()
+	})
 }

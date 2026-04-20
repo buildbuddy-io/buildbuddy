@@ -116,8 +116,8 @@ func initializeEnv() *real_environment.RealEnv {
 func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.Listener) {
 	var lis net.Listener
 	var err error
-	if strings.HasPrefix(*listenAddr, "unix://") {
-		sockPath := strings.TrimPrefix(*listenAddr, "unix://")
+	if after, ok := strings.CutPrefix(*listenAddr, "unix://"); ok {
+		sockPath := after
 		lis, err = net.Listen("unix", sockPath)
 	} else {
 		lis, err = net.Listen("tcp", *listenAddr)
@@ -142,7 +142,7 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	targets := make([]string, 0)
-	for _, besBE := range strings.Split(*besBackend, ",") {
+	for besBE := range strings.SplitSeq(*besBackend, ",") {
 		besTarget := normalizeGrpcTarget(besBE)
 		targets = append(targets, besTarget)
 		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget, *besSynchronous))

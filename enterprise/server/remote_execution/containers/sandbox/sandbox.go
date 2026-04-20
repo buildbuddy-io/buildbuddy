@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -265,8 +266,12 @@ type Options struct {
 type Provider struct{}
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 	opts := &Options{
-		Network: args.Props.DockerNetwork,
+		Network: network,
 	}
 	return New(opts), nil
 }
@@ -309,7 +314,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 
 	sandboxCmd := command.CloneVT()
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
-	result = commandutil.Run(ctx, sandboxCmd, workDir, nil /*=statsListener*/, stdio)
+	result = commandutil.Run(ctx, sandboxCmd, filepath.Join(workDir, command.GetWorkingDirectory()), nil /*=statsListener*/, stdio)
 	return result
 }
 

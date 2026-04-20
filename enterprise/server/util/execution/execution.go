@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -215,27 +215,5 @@ func ExecutionListingColumns() []string {
 }
 
 func GetCachedExecuteResponse(ctx context.Context, ac repb.ActionCacheClient, taskID string) (*repb.ExecuteResponse, error) {
-	rn, err := digest.ParseUploadResourceName(taskID)
-	if err != nil {
-		return nil, err
-	}
-	d, err := digest.Compute(strings.NewReader(taskID), rn.GetDigestFunction())
-	if err != nil {
-		return nil, err
-	}
-	req := &repb.GetActionResultRequest{
-		ActionDigest:        d,
-		InstanceName:        rn.GetInstanceName(),
-		DigestFunction:      rn.GetDigestFunction(),
-		IncludeTimelineData: true,
-	}
-	rsp, err := ac.GetActionResult(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	executeResponse := &repb.ExecuteResponse{}
-	if err := proto.Unmarshal(rsp.StdoutRaw, executeResponse); err != nil {
-		return nil, err
-	}
-	return executeResponse, nil
+	return rexec.GetCachedExecuteResponse(ctx, ac, taskID)
 }

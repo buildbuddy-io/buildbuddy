@@ -13,7 +13,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/clickhouse/schema",
-        "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//types/known/timestamppb",

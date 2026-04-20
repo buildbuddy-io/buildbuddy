@@ -2,6 +2,7 @@ package help
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,24 +23,21 @@ const (
 // FindTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
 // Returns the command name if found, empty string otherwise.
 func FindTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
-	_, command := parsed.Find[*parsed.Command](orderedArgs.Args)
+	commandIndex, command := parsed.Find[*parsed.Command](orderedArgs.Args)
 	if command == nil {
 		return ""
 	}
 
-	// If the command is "help", look for the next positional argument
+	// If the command is "help", the target is the next positional argument
+	// after it. rc-file expansion may have injected options between "help"
+	// and the target, so skip over non-positional arguments.
 	if command.Value == "help" {
-		for i, arg := range orderedArgs.Args {
-			if pos, ok := arg.(*arguments.PositionalArgument); ok && pos.Value == "help" {
-				// Check the next argument
-				if i+1 < len(orderedArgs.Args) {
-					if nextPos, ok := orderedArgs.Args[i+1].(*arguments.PositionalArgument); ok {
-						return nextPos.Value
-					}
-				}
-				break
+		for _, arg := range orderedArgs.Args[commandIndex+1:] {
+			if pos, ok := arg.(*arguments.PositionalArgument); ok {
+				return pos.Value
 			}
 		}
+		return ""
 	}
 
 	// Otherwise return the command itself
@@ -53,12 +51,23 @@ func TryShowBBCommandHelp(targetCommand string) bool {
 		return false
 	}
 
-	if bbCommand := cli_command.GetCommand(targetCommand); bbCommand != nil {
-		fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
-		return true
+	bbCommand := cli_command.GetCommand(targetCommand)
+	if bbCommand == nil {
+		return false
 	}
-
-	return false
+	fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+	if bbCommand.Flags != nil {
+		hasFlags := false
+		bbCommand.Flags.VisitAll(func(*flag.Flag) { hasFlags = true })
+		if hasFlags {
+			fmt.Println("\nFlags:")
+			prevOutput := bbCommand.Flags.Output()
+			bbCommand.Flags.SetOutput(os.Stdout)
+			bbCommand.Flags.PrintDefaults()
+			bbCommand.Flags.SetOutput(prevOutput)
+		}
+	}
+	return true
 }
 
 // HandleHelp Valid cases to trigger help:
@@ -94,8 +103,8 @@ func HandleHelp(args parsed.Args) (exitCode int, err error) {
 	// Match example "bazel help ..." commands in "Getting more help" section
 	moreHelpPattern := regexp.MustCompile(`^(\s*)bazel( help\s+.*)$`)
 	// Get help output lines with trailing newlines removed
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n")
+	for line := range lines {
 		line = strings.TrimRight(line, "\r")
 
 		if line == "Available commands:" {

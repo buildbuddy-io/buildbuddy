@@ -16,6 +16,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   transition: all 0.5s ease;
+  background-color: hsl(var(--digest-hue), 50%, var(--color-digest-color-lightness));
 }
 
 .digest-component .digest-component-hash.fixed-width,

@@ -22,7 +22,7 @@ import (
 // the real enterprise app, performing queries against UserDB and AuthDB, rather
 // than using a static user mapping.
 func Configure(t *testing.T, env *real_environment.RealEnv) *testauth.TestAuthenticator {
-	a := testauth.NewTestAuthenticator(nil /*=testUsers*/)
+	a := testauth.NewTestAuthenticator(t, nil /*=testUsers*/)
 
 	a.UserProvider = func(ctx context.Context, userID string) (interfaces.UserInfo, error) {
 		// Fake the minimal auth context needed to look up the real user and

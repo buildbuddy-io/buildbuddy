@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -57,9 +58,10 @@ import (
 const (
 	BuildBuddyArtifactDir = "bb-out"
 
-	escapeSeq                  = "\u001B["
-	gitConfigSection           = "buildbuddy"
-	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	escapeSeq                         = "\u001B["
+	gitConfigSection                  = "buildbuddy"
+	gitConfigRemoteBazelRemote        = "remote-bazel-remote-name"
+	gitConfigRemoteBazelDefaultBranch = "remote-bazel-default-branch"
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
@@ -110,6 +112,19 @@ func consoleDeleteLines(n int) {
 	fmt.Print(escapeSeq + strconv.Itoa(n) + "M")
 }
 
+func resetTerminalStyles() {
+	// Streamed remote logs can include ANSI style sequences. Ensure styles are
+	// reset before returning so subsequent local CLI output and the shell prompt
+	// do not inherit stale formatting.
+	if terminal.IsTTY(os.Stderr) {
+		fmt.Fprint(os.Stderr, escapeSeq+"0m")
+		return
+	}
+	if terminal.IsTTY(os.Stdout) {
+		fmt.Fprint(os.Stdout, escapeSeq+"0m")
+	}
+}
+
 type RunOpts struct {
 	Server string
 	APIKey string
@@ -123,6 +138,7 @@ type RunOpts struct {
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
 	ExecArgs          []string
+	WorkingDirectory  string
 	WorkspaceFilePath string
 }
 
@@ -153,7 +169,7 @@ func determineRemote() (*gitRemote, error) {
 	}
 
 	remotes := make([]*gitRemote, 0)
-	for _, s := range strings.Split(remotesStr, "\n") {
+	for s := range strings.SplitSeq(remotesStr, "\n") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -203,7 +219,7 @@ func determineRemote() (*gitRemote, error) {
 		Options: remoteNames,
 	}
 	if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select git remote: %w", err)
 	}
 
 	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
@@ -239,24 +255,64 @@ func parseRemote(s string) (*gitRemote, error) {
 
 }
 
-// determineDefaultBranch parses `remoteData` (the output from `git ls-remote --symref origin`)
-// and returns the HEAD branch for the repo (often `main` or `master).
+// determineDefaultBranch returns the HEAD branch for the repo (often `main` or `master`).
 //
-// We expect `remoteData` to contain a string looking like
-// `ref: refs/heads/main	HEAD`
-// and this function would return `main`.
-func determineDefaultBranch(remoteData string) (string, error) {
+// Checks local state first and only falls back to `git ls-remote` when needed.
+func determineDefaultBranch(remoteName string) (string, error) {
 	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
 	if defaultBranch != "" {
 		return defaultBranch, nil
 	}
 
+	cachedDefaultBranch, _ := storage.ReadRepoConfig(gitConfigRemoteBazelDefaultBranch)
+	if cachedDefaultBranch != "" {
+		return cachedDefaultBranch, nil
+	}
+
+	// Fast path: try to read refs/remotes/<remote>/HEAD from local refs.
+	defaultBranchRef, err := runGit("symbolic-ref", "--short", fmt.Sprintf("refs/remotes/%s/HEAD", remoteName))
+	if err == nil {
+		defaultBranchRef = strings.TrimSpace(defaultBranchRef)
+		parts := strings.SplitN(defaultBranchRef, "/", 2)
+		if len(parts) == 2 {
+			defaultBranch = parts[1]
+			if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+				log.Warnf("Failed to cache default branch %q in .git/config: %s", defaultBranch, err)
+			}
+			return defaultBranch, nil
+		}
+		log.Debugf("Unexpected remote HEAD ref %q", defaultBranchRef)
+	}
+	if err != nil {
+		log.Debugf("Failed to parse local remote HEAD ref: %s", err)
+	}
+
+	// Secondary local fallback: check common default branch names in remote-tracking refs.
+	for _, candidate := range []string{"main", "master"} {
+		exists, _ := branchTrackedRemotely(remoteName, candidate)
+		if exists {
+			if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, candidate); err != nil {
+				log.Warnf("Failed to cache default branch %q in .git/config: %s", candidate, err)
+			}
+			return candidate, nil
+		}
+	}
+
+	// Last resort: query the remote. This is slow and should only be used as a fallback.
+	remoteData, err := runGit("ls-remote", "--symref", remoteName, "HEAD")
+	if err != nil {
+		return "", status.WrapErrorf(err, "git ls-remote --symref %s HEAD", remoteName)
+	}
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
+	if len(match) < 2 {
+		return "", fmt.Errorf("failed to parse default branch from:\n%s", remoteData)
 	}
-	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
+	defaultBranch = match[1]
+	if err := storage.WriteRepoConfig(gitConfigRemoteBazelDefaultBranch, defaultBranch); err != nil {
+		log.Warnf("Failed to cache default branch %q in .git/config: %s", defaultBranch, err)
+	}
+	return defaultBranch, nil
 }
 
 func runGit(args ...string) (string, error) {
@@ -282,7 +338,7 @@ func runCommand(name string, args ...string) (string, error) {
 func isBinaryFile(path string) (bool, error) {
 	fileDetails, err := runCommand("file", "--mime", path)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("inspect file mime: %w", err)
 	}
 	isBinary := strings.Contains(fileDetails, "charset=binary")
 	return isBinary, nil
@@ -291,7 +347,7 @@ func isBinaryFile(path string) (bool, error) {
 func diffUntrackedFile(path string) (string, error) {
 	isBinary, err := isBinaryFile(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("check whether %q is binary: %w", path, err)
 	}
 
 	args := []string{"diff", "--no-index", "/dev/null", path}
@@ -303,7 +359,7 @@ func diffUntrackedFile(path string) (string, error) {
 		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
 		// check for this case.
 		if !strings.Contains(patch, "diff --git") {
-			return "", err
+			return "", fmt.Errorf("diff untracked file %q: %w", path, err)
 		}
 	}
 
@@ -318,27 +374,14 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	// Fetching remote data from GitHub can be slow. If we don't need the data
-	// because the user has passed in enough information manually, skip the fetch.
-	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
-	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
-	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
-	var remoteData string
-	if shouldFetchRemote {
-		remoteData, err = runGit("ls-remote", "--symref", remote.name)
-		if err != nil {
-			return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
-		}
+	defaultBranch, err := determineDefaultBranch(remote.name)
+	if err != nil {
+		return nil, status.WrapError(err, "get default branch")
 	}
 
-	branch, commit, err := getBaseBranchAndCommit(remoteData)
+	branch, commit, err := getBaseBranchAndCommit(remote.name, defaultBranch)
 	if err != nil {
 		return nil, status.WrapError(err, "get base branch and commit")
-	}
-
-	defaultBranch, err := determineDefaultBranch(remoteData)
-	if err != nil {
-		log.Warnf("Failed to fetch default branch: %s", err)
 	}
 
 	repoConfig := &RepoConfig{
@@ -359,11 +402,8 @@ func Config() (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
-// getBaseBranchAndCommit returns the git branch and commit that the remote run
-// should be based off
-//
-// remoteData is the output from `git remote show origin`
-func getBaseBranchAndCommit(remoteData string) (branch string, commit string, err error) {
+// getBaseBranchAndCommit returns the git branch and commit that should be fetched on the remote runner.
+func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch string, commit string, err error) {
 	branch = *runFromBranch
 	commit = *runFromCommit
 	if branch != "" || commit != "" {
@@ -372,23 +412,20 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 
 	currentBranch, err := getCurrentRef()
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("get current ref: %w", err)
 	}
 
-	currentBranchExistsRemotely := branchExistsRemotely(remoteData, currentBranch)
+	currentBranchExistsRemotely, err := branchTrackedRemotely(remoteName, currentBranch)
+	if err != nil {
+		log.Warnf("Failed to check if branch %s exists remotely. Falling back to running on default branch: %s", currentBranch, err)
+	}
 	if currentBranchExistsRemotely {
-		currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
-		if err != nil {
-			return "", "", status.WrapError(err, "get current commit hash")
-		}
-		currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
-
-		remoteCommitOutput, err := runGit("branch", "-r", "--contains", currentCommitHash)
-		if err != nil {
-			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
-		}
-		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", currentBranch))
+		currentCommitExistsRemotely := commitTrackedInRemoteBranch(remoteName, currentBranch, "HEAD")
 		if currentCommitExistsRemotely {
+			currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
+			if err != nil {
+				return "", "", status.WrapError(err, "get current commit hash")
+			}
 			branch = currentBranch
 			commit = currentCommitHash
 		}
@@ -398,15 +435,14 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 	// not be able to fetch it. In this case, use the default branch for the repo.
 	// Your local changes will be applied as a patchset to the remote runner.
 	if branch == "" || commit == "" {
-		defaultBranch, err := determineDefaultBranch(remoteData)
-		if err != nil {
-			return "", "", status.WrapError(err, "get default branch")
-		}
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(branch + "@{upstream}")
 		if err != nil {
-			return "", "", err
+			defaultBranchCommitHash, err = getHeadCommitForLocalBranch(branch)
+			if err != nil {
+				return "", "", fmt.Errorf("get head commit for local branch %q: %w", branch, err)
+			}
 		}
 		commit = defaultBranchCommitHash
 	}
@@ -437,32 +473,35 @@ func getCurrentRef() (string, error) {
 	return strings.TrimSpace(matches[1]), nil
 }
 
-// branchExistsRemotely parses `remoteData` (the output from “git ls-remote --symref origin)
-// and returns whether `branch` is tracked remotely.
+// branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
+// the local git state.
 //
-// If the branch is tracked remotely, we expect `remoteData` to contain a string looking like
-// `abc123	refs/heads/my_branch`
-func branchExistsRemotely(remoteData string, branch string) bool {
-	regex := fmt.Sprintf("\\brefs/heads/%s\\b", regexp.QuoteMeta(branch))
-	re := regexp.MustCompile(regex)
-	return re.MatchString(remoteData)
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local
+// git state hasn't been updated, though this case should be rare.
+func branchTrackedRemotely(remoteName string, branch string) (bool, error) {
+	ref := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
+	_, err := runGit("show-ref", "--verify", ref)
+	if err != nil {
+		if strings.Contains(err.Error(), "not a valid ref") {
+			return false, nil
+		}
+		return false, status.WrapErrorf(err, "git show-ref --verify %s", ref)
+	}
+	return true, nil
 }
 
-// getHeadCommitForRemoteBranch parses `remoteData` (the output from “git ls-remote --symref origin)
-// and returns the commit at HEAD for the remote branch.
+// commitTrackedInRemoteBranch returns whether the given commit is tracked in the remote branch.
+// It is used as a proxy for whether the commit exists remotely, and can be fetched on the remote runner.
 //
-//	We expect `remoteData` to contain a string looking like
-//
-// `abc123	refs/heads/my_branch`
-// and this function would return `abc123`.
-func getHeadCommitForRemoteBranch(remoteData string, branch string) (string, error) {
-	regex := `\n(\S+)\s+refs/heads/` + branch + `\n`
-	re := regexp.MustCompile(regex)
-	match := re.FindStringSubmatch(remoteData)
-	if len(match) > 1 {
-		return match[1], nil
-	}
-	return "", status.NotFoundErrorf("failed to get HEAD commit for remote branch %s from:\n%s", branch, remoteData)
+// This will return false if there is a shallow clone and data for the requested branch
+// was not fetched.
+// This can be incorrect if the branch has been deleted remotely and the local git state hasn't been updated, though this case should be rare.
+func commitTrackedInRemoteBranch(remoteName, branch, commit string) bool {
+	remoteTrackingRef := fmt.Sprintf("refs/remotes/%s/%s", remoteName, branch)
+	_, err := runGit("merge-base", "--is-ancestor", commit, remoteTrackingRef)
+	return err == nil
 }
 
 // getHeadCommitForLocalBranch returns the commit at HEAD for the local branch.
@@ -512,7 +551,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	binaryFilesToExclude := make([]string, 0)
 	binaryFiles := make([]string, 0)
 	if modifiedFiles != "" {
-		for _, mf := range strings.Split(modifiedFiles, "\n") {
+		for mf := range strings.SplitSeq(modifiedFiles, "\n") {
 			isBinary, err := isBinaryFile(mf)
 			if err != nil {
 				return nil, status.WrapError(err, "check binary file")
@@ -556,7 +595,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	}
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
-		for _, uf := range strings.Split(untrackedFiles, "\n") {
+		for uf := range strings.SplitSeq(untrackedFiles, "\n") {
 			if strings.HasPrefix(uf, BuildBuddyArtifactDir+"/") {
 				continue
 			}
@@ -583,7 +622,7 @@ func splitLogBuffer(buf []byte) []string {
 	var lines []string
 
 	termWidth := getTermWidth()
-	for _, line := range strings.Split(string(buf), "\n") {
+	for line := range strings.SplitSeq(string(buf), "\n") {
 		for len(line) > termWidth {
 			lines = append(lines, line[0:termWidth])
 			line = line[termWidth:]
@@ -596,6 +635,8 @@ func splitLogBuffer(buf []byte) []string {
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 	moveBack := 0
 
@@ -629,7 +670,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			MinLines:     100,
 		})
 		if err != nil {
-			return err
+			return status.WrapError(err, "get event log chunk")
 		}
 
 		chunks = append(chunks, l)
@@ -661,6 +702,8 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 
 // printLogs prints the logs with real-time streaming updates disabled
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	defer resetTerminalStyles()
+
 	chunkID := ""
 
 	for {
@@ -670,7 +713,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			MinLines:     100,
 		})
 		if err != nil {
-			return err
+			return status.WrapError(err, "get event log chunk")
 		}
 
 		if l.GetLive() {
@@ -689,15 +732,15 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 
 func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
-		return err
+		return fmt.Errorf("create output dir for %q: %w", outFile, err)
 	}
 	out, err := os.Create(outFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("create output file %q: %w", outFile, err)
 	}
 	defer out.Close()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
-		return err
+		return status.WrapError(err, "download blob")
 	}
 	return nil
 }
@@ -705,7 +748,7 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
 	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
 	if err != nil {
-		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
+		return nil, status.WrapErrorf(err, "get invocation %q", invocationID)
 	}
 
 	if len(childInRsp.GetInvocation()) < 1 {
@@ -731,12 +774,12 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse bytestream uri %q: %w", uri, err)
 	}
 	r := strings.TrimPrefix(u.RequestURI(), "/")
 	rn, err := digest.ParseDownloadResourceName(r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse bytestream resource name %q: %w", r, err)
 	}
 	return rn, nil
 }
@@ -750,7 +793,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	download := func(f *bespb.File) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
-			return "", nil
+			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
 		}
 		outFile := filepath.Join(outputBaseDir, BuildBuddyArtifactDir)
 		for _, p := range f.GetPathPrefix() {
@@ -758,38 +801,38 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		outFile = filepath.Join(outFile, f.GetName())
 		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
-			return "", err
+			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
 		outFile, err := download(f)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download main output %q: %w", f.GetName(), err)
 		}
 		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
 	}
 	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
 	for _, f := range supportingOutputs {
 		if _, err := download(f); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output %q: %w", f.GetName(), err)
 		}
 	}
 	for _, d := range supportingDirs {
 		rn, err := bytestreamURIToResourceName(d.GetUri())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve supporting output dir uri %q: %w", d.GetName(), err)
 		}
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output dir metadata %q: %w", d.GetName(), err)
 		}
 		outDir := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, d.GetName())
 		if err := os.MkdirAll(outDir, 0755); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("create supporting output dir %q: %w", outDir, err)
 		}
 		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{RootDir: outDir}); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("download supporting output dir %q: %w", d.GetName(), err)
 		}
 	}
 
@@ -798,12 +841,44 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	for _, a := range mainLocalArtifacts {
 		rp, err := filepath.Rel(outputBaseDir, a)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compute relative artifact path for %q: %w", a, err)
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
 	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
 	return mainLocalArtifacts, nil
+}
+
+func getWorkingDirectory(workspaceFilePath string) (string, error) {
+	repoRootPath, err := storage.RepoRootPath()
+	if err != nil {
+		return "", status.WrapError(err, "locate git repo root")
+	}
+	return workingDirectory(repoRootPath, workspaceFilePath)
+}
+
+func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
+	repoRootPath, err := filepath.Abs(repoRootPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute repo root absolute path")
+	}
+	workspaceFilePath, err = filepath.Abs(workspaceFilePath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace absolute path")
+	}
+	workspaceDirPath := filepath.Dir(workspaceFilePath)
+	relPath, err := filepath.Rel(repoRootPath, workspaceDirPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace path relative to repo root")
+	}
+	relPath = filepath.Clean(relPath)
+	if relPath == "." {
+		return "", nil
+	}
+	if strings.Contains(relPath, "..") {
+		return "", status.InvalidArgumentErrorf("bazel workspace %q is outside repo root %q", workspaceDirPath, repoRootPath)
+	}
+	return relPath, nil
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
@@ -892,7 +967,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
-		Name: opts.Name,
+		Name:             opts.Name,
+		WorkingDirectory: opts.WorkingDirectory,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1002,19 +1078,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
 			if err != nil {
-				return 1, fmt.Errorf("could not communicate with sidecar: %s", err)
+				return 1, fmt.Errorf("dial sidecar: %w", err)
 			}
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
 			if err != nil {
-				return 1, err
+				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
 			}
 			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
 			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
-				return 1, err
+				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
 				if len(outputs) > 1 {
@@ -1022,7 +1098,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				}
 				binPath := outputs[0]
 				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
 				}
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
@@ -1036,7 +1112,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
 				} else if err != nil {
-					return 1, err
+					return 1, fmt.Errorf("run local output %q: %w", binPath, err)
 				}
 				return 0, nil
 			}
@@ -1054,7 +1130,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, status.WrapError(err, "start remote run")
 	}
 	iid := rsp.GetInvocationId()
 
@@ -1092,7 +1168,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		var err error
 		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 		if err != nil {
-			return fmt.Errorf("could not retrieve invocation: %w", err)
+			return status.WrapErrorf(err, "get invocation %q", iid)
 		}
 		if len(inRsp.GetInvocation()) == 0 {
 			return fmt.Errorf("invocation not found")
@@ -1100,14 +1176,26 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		return nil
 	})
 	eg.Go(func() error {
-		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-			InvocationId: iid,
-		}})
+		execution, err := retry.Do(ctx, &retry.Options{
+			InitialBackoff: 500 * time.Millisecond,
+			MaxBackoff:     5 * time.Second,
+			Multiplier:     2,
+		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
+			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+				InvocationId: iid,
+			}})
+			if err != nil {
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("could not retrieve ci_runner execution: %w", err)
+			}
+			if len(execution.GetExecution()) == 0 {
+				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+				return nil, fmt.Errorf("ci_runner execution not found")
+			}
+			return execution, nil
+		})
 		if err != nil {
-			return fmt.Errorf("could not retrieve ci_runner execution: %w", err)
-		}
-		if len(execution.GetExecution()) == 0 {
-			return fmt.Errorf("ci_runner execution not found")
+			return err
 		}
 		executionID := execution.GetExecution()[0].GetExecutionId()
 		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
@@ -1130,7 +1218,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 
 	err = eg.Wait()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("wait for run result: %w", err)
 	}
 
 	return inRsp, execRsp, nil
@@ -1144,7 +1232,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
-		return 1, err
+		return 1, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer func() {
 		os.RemoveAll(tempDir)
@@ -1159,6 +1247,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
+	}
+	workingDirectory, err := getWorkingDirectory(wsFilePath)
+	if err != nil {
+		return 1, status.WrapError(err, "determine working directory")
 	}
 
 	runner := *remoteRunner
@@ -1224,7 +1316,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		apiKey, err = login.GetAPIKey()
 		if err != nil {
 			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
-			return 1, err
+			return 1, fmt.Errorf("get api key: %w", err)
 		}
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
@@ -1235,6 +1327,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		Command:           cmd,
 		RunOutputLocally:  runOutputLocally,
 		ExecArgs:          localExecArgs,
+		WorkingDirectory:  workingDirectory,
 		FetchOutputs:      fetchOutputs,
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
@@ -1249,11 +1342,11 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 
 	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
 
 	// Ensure all bazel remote runs use the remote cache.
@@ -1332,7 +1425,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 					unparsedArgs = unparsedArgs[1:]
 				}
 			} else {
-				return nil, err
+				return nil, fmt.Errorf("parse remote flags: %w", err)
 			}
 		}
 	}

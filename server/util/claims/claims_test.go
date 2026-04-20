@@ -30,13 +30,19 @@ func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
 }
 
+func requireClaimsEqual(t *testing.T, expected *claims.Claims, actual *claims.Claims) {
+	expected.StandardClaims.ExpiresAt = 0
+	actual.StandardClaims.ExpiresAt = 0
+	require.Equal(t, expected, actual)
+}
+
 func TestJWT(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
 	testContext := contextWithUnverifiedJWT(c)
 
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 func TestInvalidJWTKey(t *testing.T) {
@@ -60,7 +66,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 
 	// Get JWT signed using new key.
 	testContext = contextWithUnverifiedJWT(c)
@@ -68,7 +74,7 @@ func TestJWTKeyRotation(t *testing.T) {
 	flags.Set(t, "auth.new_jwt_key", "new_jwt_key")
 	parsedClaims, err = claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
-	require.Equal(t, c, parsedClaims)
+	requireClaimsEqual(t, c, parsedClaims)
 }
 
 type fakeAPIKeyGroup struct {
@@ -246,7 +252,7 @@ func TestExperimentTargetingGroupID(t *testing.T) {
 			ctx := t.Context()
 			ctx = metadata.NewIncomingContext(ctx, tc.grpcMetadata)
 			env := testenv.GetTestEnv(t)
-			auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 				"US1", adminGroupID,
 				"US2", nonAdminGroupID,
 			))
@@ -294,38 +300,38 @@ func TestGroupStatusPropagation(t *testing.T) {
 	}
 }
 
-func TestAssembleJWT_RS256(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+func TestAssembleJWT_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
-	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
-	// Verify it's actually an RS256 token by parsing the header
+	// Verify it's actually an ES256 token by parsing the header
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &claims.Claims{})
 	require.NoError(t, err)
-	require.Equal(t, "RS256", token.Method.Alg())
+	require.Equal(t, "ES256", token.Method.Alg())
 }
 
-func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
-	keyPair1 := testkeys.GenerateRSAKeyPair(t)
-	keyPair2 := testkeys.GenerateRSAKeyPair(t)
+func TestAssembleJWT_ES256_UsesNewKeyWhenSet(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
 
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
 	flags.Set(t, "auth.sign_using_new_jwt_key", true)
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
-	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
 	// Verify the JWT was indeed signed with keyPair2
-	pubKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
+	pubKey, err := jwt.ParseECPublicKeyFromPEM([]byte(keyPair2.PublicKeyPEM))
 	require.NoError(t, err)
 
 	parsedClaims := &claims.Claims{}
@@ -336,59 +342,188 @@ func TestAssembleJWT_RS256_UsesNewKeyWhenSet(t *testing.T) {
 	require.Equal(t, "US123", parsedClaims.UserID)
 }
 
-func TestAssembleJWT_RS256_NoPrivateKey(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestAssembleJWT_ES256_NoPrivateKey(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
 	c := &claims.Claims{UserID: "US123"}
-	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
 	require.Error(t, err)
 }
 
 func TestAssembleJWT_UnsupportedSigningMethod(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
-	_, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	_, err := claims.AssembleJWT(c, jwt.SigningMethodRS256)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Unsupported JWT signing method")
 }
 
-func TestGetRSAPublicKeys_NoKeys(t *testing.T) {
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestGetES256PublicKeys_NoKeys(t *testing.T) {
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Empty(t, keys)
 }
 
-func TestGetRSAPublicKeys_OnlyOldKey(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", "")
+func TestGetES256PublicKeys_OnlyOldKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", "")
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 1)
 }
 
-func TestGetRSAPublicKeys_OnlyNewKey(t *testing.T) {
-	keyPair := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", "")
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair.PrivateKeyPEM)
+func TestGetES256PublicKeys_OnlyNewKey(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 1)
 }
 
-func TestGetRSAPublicKeys_BothKeys(t *testing.T) {
-	keyPair1 := testkeys.GenerateRSAKeyPair(t)
-	keyPair2 := testkeys.GenerateRSAKeyPair(t)
-	flags.Set(t, "auth.jwt_rsa_private_key", keyPair1.PrivateKeyPEM)
-	flags.Set(t, "auth.new_jwt_rsa_private_key", keyPair2.PrivateKeyPEM)
+func TestGetES256PublicKeys_BothKeys(t *testing.T) {
+	keyPair1 := testkeys.GenerateES256KeyPair(t)
+	keyPair2 := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair1.PrivateKeyPEM)
+	flags.Set(t, "auth.new_jwt_es256_private_key", keyPair2.PrivateKeyPEM)
 	require.NoError(t, claims.Init())
 
-	keys := claims.GetRSAPublicKeys()
+	keys := claims.GetES256PublicKeys()
 	require.Len(t, keys, 2)
+}
+
+func TestParseClaims_ES256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenString)
+
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	parsedClaims, err := parser.Parse(t.Context(), tokenString)
+	require.NoError(t, err)
+	require.Equal(t, "US123", parsedClaims.UserID)
+	require.Equal(t, "GR456", parsedClaims.GroupID)
+}
+
+func TestParseClaims_ES256_InvalidJWT(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	_, err = parser.Parse(t.Context(), "not-a-valid-jwt")
+	require.Error(t, err)
+
+	_, err = parser.Parse(t.Context(), "header.payload")
+	require.Error(t, err)
+}
+
+func TestClaimsFromContext_ReparseDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		authErr     error
+		expectedErr error
+	}{
+		{
+			name:        "UnauthenticatedError_PassedThrough",
+			authErr:     status.UnauthenticatedError("bad token"),
+			expectedErr: status.UnauthenticatedError("bad token"),
+		},
+		{
+			name:        "PermissionDeniedError_PassedThrough",
+			authErr:     status.PermissionDeniedError("no access"),
+			expectedErr: status.PermissionDeniedError("no access"),
+		},
+		{
+			name:        "OtherError_WrappedAsUnauthenticated",
+			authErr:     status.InternalError("internal error"),
+			expectedErr: status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, status.InternalError("internal error").Error()),
+		},
+		{
+			name:        "NoAuthError_ReturnsInternalError",
+			authErr:     status.UnauthenticatedError("bad token"),
+			expectedErr: status.UnauthenticatedError("bad token"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.reparse_jwts", false)
+
+			// Build a context with a JWT token string and an auth error.
+			ctx := context.WithValue(context.Background(), authutil.ContextTokenStringKey, "some.jwt.token")
+			if tc.authErr != nil {
+				ctx = authutil.AuthContextWithError(ctx, tc.authErr)
+			}
+
+			_, err := claims.ClaimsFromContext(ctx)
+			require.Error(t, err)
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
+func TestClaimsFromContext_ReparseError(t *testing.T) {
+	flags.Set(t, "auth.reparse_jwts", true)
+
+	// Build a context with a valid JWT token string and an auth error.
+	c := &claims.Claims{UserID: "US123"}
+	ctx := contextWithUnverifiedJWT(c)
+	ctx = authutil.AuthContextWithError(ctx, status.UnauthenticatedError("bad token"))
+
+	// Even though there's a valid JWT and reparseJWTs is true,
+	// ClaimsFromContext should skip re-parsing because an auth error is
+	// already set, and should return the original auth error.
+	_, err := claims.ClaimsFromContext(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err))
+	require.Contains(t, err.Error(), "bad token")
+}
+
+func TestClaimsFromContext_ReparseNoError(t *testing.T) {
+	flags.Set(t, "auth.reparse_jwts", true)
+
+	// Build a context with a valid JWT but no auth error.
+	c := &claims.Claims{UserID: "US123"}
+	ctx := contextWithUnverifiedJWT(c)
+
+	// With no auth error set, re-parsing should proceed and succeed.
+	parsedClaims, err := claims.ClaimsFromContext(ctx)
+	require.NoError(t, err)
+	requireClaimsEqual(t, c, parsedClaims)
+}
+
+func TestParseClaims_ES256_RejectsHS256(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	keyProvider := func(ctx context.Context) ([]claims.VerificationKey, error) {
+		return []claims.VerificationKey{{Key: keyPair.PublicKeyPEM, SigningMethod: jwt.SigningMethodES256}}, nil
+	}
+	parser, err := claims.NewClaimsParser(keyProvider)
+	require.NoError(t, err)
+
+	// Create an HS256-signed JWT
+	c := &claims.Claims{UserID: "US123", GroupID: "GR456"}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	hs256Token, err := token.SignedString([]byte("some-secret-key"))
+	require.NoError(t, err)
+
+	// Parsing should fail because the parser is configured with ES256 public keys
+	_, err = parser.Parse(t.Context(), hs256Token)
+	require.Error(t, err)
 }

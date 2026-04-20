@@ -8,17 +8,17 @@
 }
 
 .search-bar {
-  background-color: #eeeeee;
+  background-color: var(--color-search-bar-bg);
   border-radius: 0.5rem;
-  border: 1px solid #eeeeee;
+  border: 1px solid var(--color-search-bar-bg);
   max-height: 50vh;
   display: flex;
   flex-direction: column;
 }
 
 .search-bar-container.focused .search-bar {
-  background-color: #fff;
-  border: 1px solid #e5e7eb;
+  background-color: var(--color-search-bar-focused-bg);
+  border: 1px solid var(--color-search-bar-focused-border);
   box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.1),
     0 2px 4px -2px rgba(0, 0, 0, 0.1);
@@ -27,7 +27,7 @@
 .search-bar-results {
   padding: 4px 0;
   overflow-y: auto;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-search-bar-results-border);
 }
 
 .search-bar-result {
@@ -40,12 +40,12 @@
 }
 
 .search-bar-result.selected {
-  background-color: #f0f0f0;
+  background-color: var(--color-search-bar-selected-bg);
 }
 
 .search-bar-results-label {
   padding: 8px 16px 4px 16px;
-  color: #888;
+  color: var(--color-search-bar-label);
   font-size: 0.8em;
 }
 
@@ -60,7 +60,7 @@
   width: 16px;
   height: 16px;
   padding: 12px;
-  color: #888;
+  color: var(--color-search-bar-label);
 }
 
 .search-bar-input input {

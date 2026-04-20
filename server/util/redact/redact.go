@@ -54,7 +54,7 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
+	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\r\n]+:)[^@\r\n]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
@@ -104,6 +104,9 @@ var (
 		"remote_downloader_header",
 		"bes_header",
 	}
+	headerOptionRegexes = make(map[string]*regexp.Regexp, len(headerOptionNames))
+
+	sensitiveEnvVarTokens = []string{"SECRET", "TOKEN", "PASSWORD", "KEY", "CREDENTIALS"}
 )
 
 func init() {
@@ -120,6 +123,10 @@ func init() {
 	// Note: The quotes wrap the entire VAR_NAME=value part, not just the value
 	// Capture group 1: --flag_name= (without the env var name)
 	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=)(?:'[^']*'|"[^"]*"|\S+)`)
+
+	for _, header := range headerOptionNames {
+		headerOptionRegexes[header] = regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	}
 }
 
 func stripURLSecrets(input string) string {
@@ -236,11 +243,53 @@ func RedactCmdLine(tokens []string) {
 }
 
 func RedactText(txt string) string {
+	return RedactTextWithValues(txt, nil)
+}
+
+// RedactTextWithValues applies standard text redactions and then redacts any
+// additional literal values provided by callers.
+//
+// NOTE: Caller-provided values are sorted longest-first before replacement. This
+// avoids partial redaction leaks when one secret is a substring of another
+// (for example, redacting "abc" before "abcdef" would leave "def" behind).
+func RedactTextWithValues(txt string, redactionValues []string) string {
 	txt = stripURLSecrets(txt)
 	txt = redactRemoteHeaders(txt)
 	txt = redactBuildBuddyAPIKeys(txt)
 	txt = redactEnvVars(txt)
+	for _, value := range sortByLengthDesc(redactionValues) {
+		if value == "" {
+			continue
+		}
+		txt = strings.ReplaceAll(txt, value, redactedPlaceholder)
+	}
 	return txt
+}
+
+// sortByLengthDesc returns a deduplicated copy sorted by descending string
+// length (then lexicographically for stability).
+//
+// Longest-first ordering is required for safe redaction replacement: if a short
+// value is replaced before a longer overlapping value, the longer value may no
+// longer match and could be partially exposed in logs.
+func sortByLengthDesc(values []string) []string {
+	sorted := slices.Clone(values)
+	slices.SortFunc(sorted, func(a, b string) int {
+		if len(a) > len(b) {
+			return -1
+		}
+		if len(a) < len(b) {
+			return 1
+		}
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
+	})
+	return slices.Compact(sorted)
 }
 
 // redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.
@@ -265,8 +314,7 @@ func redactBuildBuddyAPIKeys(txt string) string {
 }
 
 func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+	for header, regex := range headerOptionRegexes {
 		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
 	}
 	return txt
@@ -327,9 +375,19 @@ func redactEnvVarPayload(payload string) string {
 func redactEnvVarAssignment(value string) string {
 	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
 		varName := assignment[1]
+		varValue := value[len(varName)+1:]
+		// Keep values unredacted that are clearly safe and potentially useful
+		// for debugging.
+		if varValue == "" ||
+			varValue == "0" || varValue == "1" ||
+			strings.EqualFold(varValue, "true") || strings.EqualFold(varValue, "false") {
+			return varName + "=" + varValue
+		}
 		return varName + "=" + redactedPlaceholder
 	}
-	return redactedPlaceholder
+	// Don't redact --action_env=FOO (inherit FOO) and --action_env==FOO (unset
+	// FOO). Environment variable names are not expected to be sensitive.
+	return value
 }
 
 // RedactEnvVar replaces the value portion of a Bazel environment variable flag
@@ -341,30 +399,26 @@ func redactEnvVarAssignment(value string) string {
 // `--action_env='FOO=bar baz'` to `--action_env='FOO=<REDACTED>'`.
 func RedactEnvVar(flag string) string {
 	if matches := envVarDoubleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarSingleQuotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarUnquotedPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	if matches := envVarAnyPattern.FindStringSubmatch(flag); matches != nil {
-		return redactEnvVarValue(matches[1], matches[2])
+		return redactEnvVarFlagAndAssignment(matches[1], matches[2])
 	}
 	return flag
 }
 
-// redactEnvVarValue rewrites an env var flag prefix plus payload so the payload
+// redactEnvVarFlagAndAssignment rewrites an env var flag prefix plus payload so the payload
 // becomes VAR=<REDACTED> when a VAR= is detected and otherwise collapses to the
 // placeholder. Example input: "--client_env=" as the prefix with
 // `FOO=bar baz` becomes "--client_env=FOO=<REDACTED>".
-func redactEnvVarValue(flagName, value string) string {
-	if assignment := envVarAssignmentRegex.FindStringSubmatch(value); assignment != nil {
-		varName := assignment[1]
-		return flagName + varName + "=" + redactedPlaceholder
-	}
-	return flagName + redactedPlaceholder
+func redactEnvVarFlagAndAssignment(flagName, value string) string {
+	return flagName + redactEnvVarAssignment(value)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -420,8 +474,8 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	for _, repoURLKey := range knownGitRepoURLKeys {
 		// assignmentPrefix is a string like "REPO_URL=" or "GIT_URL="
 		assignmentPrefix := repoURLKey + envVarSeparator
-		if strings.HasPrefix(option.OptionValue, assignmentPrefix) {
-			envVarValue := strings.TrimPrefix(option.OptionValue, assignmentPrefix)
+		if after, ok := strings.CutPrefix(option.OptionValue, assignmentPrefix); ok {
+			envVarValue := after
 			strippedValue := gitutil.StripRepoURLCredentials(envVarValue)
 			option.OptionValue = assignmentPrefix + strippedValue
 			option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + option.OptionValue
@@ -456,11 +510,11 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 //     "Q8s-=2")
 //   - The leading dashes are not required and will be omitted if not provided.
 func splitCombinedForm(cf string) (string, string) {
-	i := strings.Index(cf, "=")
-	if i < 0 {
+	before, after, ok := strings.Cut(cf, "=")
+	if !ok {
 		return cf, ""
 	}
-	return cf[:i], cf[i+1:]
+	return before, after
 }
 
 func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) error {
@@ -602,8 +656,8 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 // and returns a slice of the comma-separated values specified in the value of
 // ALLOW_ENV -- in this example, it would return {"A", "B", "C"}.
 func parseAllowedEnv(optionsDescription string) []string {
-	options := strings.Split(optionsDescription, " ")
-	for _, option := range options {
+	options := strings.SplitSeq(optionsDescription, " ")
+	for option := range options {
 		if !strings.HasPrefix(option, buildMetadataOptionPrefix) {
 			continue
 		}
@@ -872,4 +926,46 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 	}
 
 	return prototext.Unmarshal([]byte(txt), event)
+}
+
+// containsSensitiveEnvToken reports whether token appears as a distinct segment
+// of the env var name, using non-alphanumeric characters as delimiters.
+func containsSensitiveEnvToken(name string, token string) bool {
+	for _, segment := range strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
+		return (r < 'A' || r > 'Z') && (r < '0' || r > '9')
+	}) {
+		if segment == token {
+			return true
+		}
+	}
+	return false
+}
+
+// EnvNameLooksSensitive reports whether an environment variable name contains
+// one of the well-known secret-related tokens (case-insensitive).
+func EnvNameLooksSensitive(name string) bool {
+	for _, token := range sensitiveEnvVarTokens {
+		if containsSensitiveEnvToken(name, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// CollectSensitiveEnvValues scans the provided environment entries (in the
+// "KEY=value" format returned by os.Environ()) and returns the values of any
+// variables whose names look sensitive according to EnvNameLooksSensitive.
+// Empty values are omitted.
+func CollectSensitiveEnvValues(environ []string) []string {
+	var values []string
+	for _, env := range environ {
+		name, val, ok := strings.Cut(env, "=")
+		if !ok || val == "" {
+			continue
+		}
+		if EnvNameLooksSensitive(name) {
+			values = append(values, val)
+		}
+	}
+	return values
 }

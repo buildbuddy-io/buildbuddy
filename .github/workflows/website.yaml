@@ -18,15 +18,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
+        with:
+          fetch-depth: 2
 
       - name: Build Website
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk build --repository_cache='~/repo-cache/' //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
@@ -41,10 +36,46 @@ jobs:
           branch: gh-pages
           folder: website/build
 
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
+      - name: Build notification if there are new changelog entries
+        id: changelog-msg
+        shell: bash
+        run: |
+          prev_sha="${{ github.event.before }}"
+          modified_changelog_files=$(
+            git diff --name-status "$prev_sha" "${{ github.sha }}" -- "website/changelog/*.md" "website/changelog/*.mdx" \
+              | awk '$1 == "A" {print $2}'
+          )
+
+          if [[ -z "$modified_changelog_files" ]]; then
+            echo "No newly added changelog entries."
+            exit 0
+          fi
+
+          msg="*New changelog entries added:*\n"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            slug="$(basename "$file")"
+            slug="${slug%.*}"
+            msg="${msg}• https://www.buildbuddy.io/changelog/${slug}\n"
+          done <<< "$modified_changelog_files"
+
+          {
+            echo "text<<EOF"
+            echo -e "$msg"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post to Slack
+        if: steps.changelog-msg.outputs.text != ''
+        uses: 8398a7/action-slack@v3
         with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: '#1f883d',
+                text: `${{ steps.changelog-msg.outputs.text }}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CHANGELOG_WEBHOOK_URL }}

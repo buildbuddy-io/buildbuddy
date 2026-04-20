@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
@@ -227,14 +228,15 @@ func (rm *RangeMap[T]) Lookup(key []byte) (T, bool) {
 }
 
 func (rm *RangeMap[T]) String() string {
-	buf := "RangeMap:\n"
+	var buf strings.Builder
+	buf.WriteString("RangeMap:\n")
 	for i, r := range rm.ranges {
-		buf += r.String()
+		buf.WriteString(r.String())
 		if i != len(rm.ranges)-1 {
-			buf += "\n"
+			buf.WriteString("\n")
 		}
 	}
-	return buf
+	return buf.String()
 }
 
 // Ranges returns a list of ordered ranges that the RangeMap contains.

@@ -2,17 +2,21 @@ package claims
 
 import (
 	"context"
-	"crypto/rsa"
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -45,70 +49,74 @@ var (
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 
-	jwtRSAPrivateKey    = flag.String("auth.jwt_rsa_private_key", "", "PEM-encoded private key used to sign RSA-signed JWTs.", flag.Secret)
-	newJWTRSAPrivateKey = flag.String("auth.new_jwt_rsa_private_key", "", "PEM-encoded private key used to sign new RSA-signed JWTs during key rotation.", flag.Secret)
+	jwtES256PrivateKey    = flag.String("auth.jwt_es256_private_key", "", "PEM-encoded private key used to sign ES256-signed JWTs.", flag.Secret)
+	newJWTES256PrivateKey = flag.String("auth.new_jwt_es256_private_key", "", "PEM-encoded private key used to sign new ES256-signed JWTs during key rotation.", flag.Secret)
 
 	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+
+	reparseJWTs = flag.Bool("auth.reparse_jwts", true, "Whether to permit re-parsing JWTs or not.")
 )
 
 var (
 	// Generic permission denied error.
 	errPermissionDenied = status.PermissionDeniedError("permission denied")
 
-	rsaPrivateKey *rsa.PrivateKey
-	rsaPublicKeys []string = []string{}
+	es256PrivateKey *ecdsa.PrivateKey
+	es256PublicKeys []string = []string{}
+
+	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
 )
 
 func Init() error {
-	rsaPrivateKey = nil
-	rsaPublicKeys = []string{}
+	es256PrivateKey = nil
+	es256PublicKeys = []string{}
 
-	if *newJWTRSAPrivateKey == "" && *jwtRSAPrivateKey == "" {
+	if *newJWTES256PrivateKey == "" && *jwtES256PrivateKey == "" {
 		return nil
 	}
 
-	var newPrivateKey *rsa.PrivateKey
-	var oldPrivateKey *rsa.PrivateKey
+	var newPrivateKey *ecdsa.PrivateKey
+	var oldPrivateKey *ecdsa.PrivateKey
 	var newPublicKey string
 	var oldPublicKey string
 	var err error
 
 	// Make both public keys available so that clients can verify JWTs during
 	// app rollouts.
-	if *newJWTRSAPrivateKey != "" {
-		newPrivateKey, newPublicKey, err = getRSAKeyPair(*newJWTRSAPrivateKey)
+	if *newJWTES256PrivateKey != "" {
+		newPrivateKey, newPublicKey, err = getES256KeyPair(*newJWTES256PrivateKey)
 		if err != nil {
 			return err
 		}
 	}
 
-	if *jwtRSAPrivateKey != "" {
-		oldPrivateKey, oldPublicKey, err = getRSAKeyPair(*jwtRSAPrivateKey)
+	if *jwtES256PrivateKey != "" {
+		oldPrivateKey, oldPublicKey, err = getES256KeyPair(*jwtES256PrivateKey)
 		if err != nil {
 			return err
 		}
 	}
 
-	rsaPrivateKey = oldPrivateKey
+	es256PrivateKey = oldPrivateKey
 	if *signUsingNewJwtKey {
 		if newPrivateKey == nil {
-			return status.InvalidArgumentError("Requested signing with new RSA private key, but no new private key was specified.")
+			return status.InvalidArgumentError("Requested signing with new ES256 private key, but no new private key was specified.")
 		}
-		rsaPrivateKey = newPrivateKey
+		es256PrivateKey = newPrivateKey
 	}
 
 	if newPublicKey != "" {
-		rsaPublicKeys = append(rsaPublicKeys, newPublicKey)
+		es256PublicKeys = append(es256PublicKeys, newPublicKey)
 	}
 	if oldPublicKey != "" {
-		rsaPublicKeys = append(rsaPublicKeys, oldPublicKey)
+		es256PublicKeys = append(es256PublicKeys, oldPublicKey)
 	}
 
 	return nil
 }
 
-func getRSAKeyPair(key string) (*rsa.PrivateKey, string, error) {
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(key))
+func getES256KeyPair(key string) (*ecdsa.PrivateKey, string, error) {
+	privateKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(key))
 	if err != nil {
 		return nil, "", err
 	}
@@ -218,31 +226,52 @@ func (c *Claims) IsCustomerSSO() bool {
 	return c.SAML || c.CustomerSSO
 }
 
-func ParseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	c, method, err := parseClaimsInternal(ctx, token, keyProvider)
+	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+	return c, err
+}
+
+func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, string, error) {
+	method := "unknown"
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, method, err
+	}
+	if len(keys) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
+		return nil, method, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			method = token.Method.Alg()
+			if token.Method != key.SigningMethod {
+				return nil, fmt.Errorf("incorrect key signing method: %v", token.Method.Alg())
+			}
+			switch token.Method {
+			case jwt.SigningMethodHS256:
+				return []byte(key.Key), nil
+			case jwt.SigningMethodES256:
+				return jwt.ParseECPublicKeyFromPEM([]byte(key.Key))
+			default:
+				return nil, fmt.Errorf("unsupported signing method: %v", token.Method.Alg())
+			}
 		})
 		if err == nil {
-			return claims, nil
+			return claims, method, nil
 		}
 		lastErr = err
 
 		var validationErr *jwt.ValidationError
-		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+		if errors.As(err, &validationErr) && validationErr.Errors&(jwt.ValidationErrorSignatureInvalid|jwt.ValidationErrorUnverifiable) != 0 {
 			continue
 		}
-		return nil, err
+		return nil, method, err
 	}
-	return nil, lastErr
+	return nil, method, lastErr
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
@@ -297,11 +326,11 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
-	authDB := env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
+	userDB := env.GetUserDB()
+	if userDB == nil {
+		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := authDB.LookupUserFromSubID(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
@@ -410,8 +439,8 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
 		return assembleHS256JWT(token)
-	} else if method == jwt.SigningMethodRS256 {
-		return assembleRS256JWT(token)
+	} else if method == jwt.SigningMethodES256 {
+		return assembleES256JWT(token)
 	}
 	return "", status.InternalError("Unsupported JWT signing method")
 }
@@ -424,11 +453,11 @@ func assembleHS256JWT(token *jwt.Token) (string, error) {
 	return token.SignedString([]byte(key))
 }
 
-func assembleRS256JWT(token *jwt.Token) (string, error) {
-	if rsaPrivateKey == nil {
-		return "", status.UnimplementedError("RSA-signed JWTs are unsupported")
+func assembleES256JWT(token *jwt.Token) (string, error) {
+	if es256PrivateKey == nil {
+		return "", status.UnimplementedError("ES256-signed JWTs are unsupported")
 	}
-	return token.SignedString(rsaPrivateKey)
+	return token.SignedString(es256PrivateKey)
 }
 
 // Returns a context containing auth state for the provided Claims and auth
@@ -465,12 +494,21 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
-		if err != nil {
-			return nil, err
+	// Skip re-parsing if an auth error is already set, since that means
+	// authentication was already attempted and failed.
+	if authErr, _ := authutil.AuthErrorFromContext(ctx); authErr == nil && *reparseJWTs {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			caller := "unknown"
+			if _, file, line, ok := runtime.Caller(1); ok {
+				caller = fmt.Sprintf("%s:%d", file, line)
+			}
+			reparseLog.CtxDebugf(ctx, "Reparsing JWT (caller: %s)", caller)
+			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			if err != nil {
+				return nil, err
+			}
+			return claims, nil
 		}
-		return claims, nil
 	}
 
 	// If there's no error or we have an assertion failure; just return a
@@ -534,40 +572,69 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
-// and verified JWT claims.
+// VerificationKey pairs a key with its expected signing method.
+type VerificationKey struct {
+	Key           string
+	SigningMethod jwt.SigningMethod
+}
+
+// A lazily-evaluated provider of keys to use for verifying JWT signatures.
+type KeyProvider func(ctx context.Context) ([]VerificationKey, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]VerificationKey, error) {
+	var keys []VerificationKey
+	if *newJwtKey != "" {
+		keys = []VerificationKey{
+			{Key: *newJwtKey, SigningMethod: jwt.SigningMethodHS256},
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
+	} else {
+		keys = []VerificationKey{
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
+	}
+	for _, k := range es256PublicKeys {
+		keys = append(keys, VerificationKey{Key: k, SigningMethod: jwt.SigningMethodES256})
+	}
+	return keys, nil
+}
+
+// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
-// The JWTs used with this cache should have Expiration times rounded down to
-// the nearest minute, so that their cache key doesn't change as often and can
-// therefore be cached for longer.
-type ClaimsCache struct {
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
-	lru interfaces.LRU[*Claims]
+	lru lru.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
-// an error if there's an error constructing the cache.
-//
-// Note: this function can return (nil, nil)!
-func NewClaimsCache() (*ClaimsCache, error) {
+func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
-		return nil, nil
+		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
 	}
 
 	config := &lru.Config[*Claims]{
 		MaxSize: claimsCacheSize,
 		SizeFn:  func(v *Claims) int64 { return 1 },
 	}
-	lru, err := lru.NewLRU[*Claims](config)
+	lru, err := lru.New[*Claims](config)
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
+	if c.ttl <= 0 {
+		return parseClaims(ctx, token, c.keyProvider)
+	}
+
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -578,7 +645,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -590,6 +657,6 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	return claims, nil
 }
 
-func GetRSAPublicKeys() []string {
-	return rsaPublicKeys
+func GetES256PublicKeys() []string {
+	return es256PublicKeys
 }

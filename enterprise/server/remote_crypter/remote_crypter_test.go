@@ -166,13 +166,13 @@ func (f *fakeEncryptionService) GetEncryptionKey(ctx context.Context, req *enpb.
 	}, nil
 }
 
-func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, clockwork.FakeClock, *fakeEncryptionService) {
+func setup(t *testing.T) (*testauth.TestAuthenticator, interfaces.Crypter, *clockwork.FakeClock, *fakeEncryptionService) {
 	return setupWithIdentity(t, permittedClient)
 }
 
-func setupWithIdentity(t *testing.T, identity string) (*testauth.TestAuthenticator, interfaces.Crypter, clockwork.FakeClock, *fakeEncryptionService) {
+func setupWithIdentity(t *testing.T, identity string) (*testauth.TestAuthenticator, interfaces.Crypter, *clockwork.FakeClock, *fakeEncryptionService) {
 	te := testenv.GetTestEnv(t)
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2, user3, group3))
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2, user3, group3))
 	te.SetAuthenticator(authenticator)
 	clock := clockwork.NewFakeClock()
 	flags.Set(t, "app.client_identity.key", "key")

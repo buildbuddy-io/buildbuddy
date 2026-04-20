@@ -12,7 +12,7 @@ go_test(
     exec_properties = {
         # TODO: figure out why this test needs such a high resource request in
         # order to not be flaky.
-        "EstimatedComputeUnits": "16",
+        "test.EstimatedComputeUnits": "16",
     },
     shard_count = 11,
     tags = ["cpu:8"],
@@ -36,7 +36,6 @@ go_test(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/resources",
-        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

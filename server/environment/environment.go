@@ -127,13 +127,14 @@ type Env interface {
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	GetPromQuerier() interfaces.PromQuerier
 	GetAuditLogger() interfaces.AuditLogger
+	GetIPRulesEnforcer() interfaces.IPRulesEnforcer
 	GetIPRulesService() interfaces.IPRulesService
 	GetClientIdentityService() interfaces.ClientIdentityService
 	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator
 	GetServerNotificationService() interfaces.ServerNotificationService
 	GetGCPService() interfaces.GCPService
+	GetMCPService() interfaces.MCPService
 	GetSCIMService() interfaces.SCIMService
-	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
 	GetSnapshotService() interfaces.SnapshotService
@@ -141,7 +142,6 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
-	GetAtimeUpdater() interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer

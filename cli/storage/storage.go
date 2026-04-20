@@ -67,7 +67,7 @@ func ReadRepoConfig(key string) (string, error) {
 		return "", err
 	}
 	fullKey := gitConfigSection + "." + key
-	cmd := exec.Command("git", "config", "--local", "--get", fullKey)
+	cmd := exec.Command("git", "config", "--local", "--get", "--default=", fullKey)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

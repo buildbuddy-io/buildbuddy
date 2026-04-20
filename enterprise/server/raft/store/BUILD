@@ -38,6 +38,7 @@ go_library(
         "//server/util/canary",
         "//server/util/disk",
         "//server/util/grpc_server",
+        "//server/util/kuberesolver",
         "//server/util/lib/set",
         "//server/util/log",
         "//server/util/proto",

@@ -2,6 +2,7 @@ package distributed_client
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -14,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -40,6 +43,10 @@ const (
 	// should be slightly smaller than 2^N, to allow for proto and gRPC
 	// overhead.
 	writeBufSizeBytes = 512 * 1000 // 512 KB
+)
+
+var (
+	enableKubeResolver = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
 )
 
 type Proxy struct {
@@ -143,7 +150,13 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 		return dcpb.NewDistributedCacheClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialInternalWithPoolSize(c.env, "grpc://"+peer, 2)
+
+	resolverPrefix := "grpc://"
+	if kuberesolver.RunningInKubernetes() && *enableKubeResolver {
+		resolverPrefix = "kube:///"
+	}
+
+	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +176,7 @@ func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return ctx, err
 	}
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, c.env.GetAuthenticator())
 	return ctx, err
 }
 

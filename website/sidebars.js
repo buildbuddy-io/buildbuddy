@@ -1,6 +1,11 @@
 module.exports = {
   someSidebar: {
-    "Getting Started": ["introduction", "quickstart", "contributing"],
+    "Getting Started": [
+      "introduction",
+      "quickstart",
+      { type: "link", label: "Changelog", href: "/changelog" },
+      "contributing",
+    ],
     Guides: ["guides", "guide-auth", "guide-metadata"],
     Cache: ["cache-encryption-keys"],
     "Remote Build Execution": [
@@ -30,6 +35,7 @@ module.exports = {
       "enterprise-rbe",
       "enterprise-mac-rbe",
       "enterprise-api",
+      "enterprise-mcp",
     ],
     Monitoring: ["prometheus-metrics-on-prem", "prometheus-metrics-for-cloud"],
     Architecture: [

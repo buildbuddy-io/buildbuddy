@@ -46,6 +46,7 @@ go_deps.module_override(
     patches = [
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_extra_args.patch",
     ],
     path = "github.com/firecracker-microvm/firecracker-go-sdk",
 )
@@ -65,9 +66,6 @@ go_deps.module_override(
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
-        # Add more buffer sizes to grpc mem buffer pool to reduce allocations.
-        # This speeds up large reads/writes.
-        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_more_buffer_sizes.patch",
     ],
     path = "google.golang.org/grpc",
 )
@@ -103,6 +101,11 @@ go_deps.gazelle_override(
         "gazelle:proto disable",
     ],
     path = "github.com/jhump/protoreflect",
+)
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:build_tags dragonboat_monkeytest"],
+    path = "github.com/lni/dragonboat/v4",
 )
 go_deps.gazelle_override(
     directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
@@ -154,6 +157,7 @@ use_repo(
     go_deps,
     "co_honnef_go_tools",
     "com_github_alecaivazis_survey_v2",
+    "com_github_anishathalye_porcupine",
     "com_github_armon_circbuf",
     "com_github_aws_aws_sdk_go",
     "com_github_aws_aws_sdk_go_v2",
@@ -171,10 +175,14 @@ use_repo(
     "com_github_bits_and_blooms_bloom_v3",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
+    "com_github_buildbuddy_io_fastcdc2020",
     "com_github_buildbuddy_io_tensorflow_proto",
     "com_github_buildkite_terminal_to_html_v3",
     "com_github_cavaliergopher_cpio",
     "com_github_cespare_xxhash_v2",
+    "com_github_charmbracelet_bubbles",
+    "com_github_charmbracelet_bubbletea",
+    "com_github_charmbracelet_lipgloss",
     "com_github_clickhouse_clickhouse_go_v2",
     "com_github_cockroachdb_pebble",
     "com_github_coreos_go_oidc_v3",
@@ -187,7 +195,9 @@ use_repo(
     "com_github_dop251_goja",
     "com_github_elastic_gosigar",
     "com_github_firecracker_microvm_firecracker_go_sdk",
+    "com_github_fsnotify_fsnotify",
     "com_github_gabriel_vasile_mimetype",
+    "com_github_gliderlabs_ssh",
     "com_github_go_enry_go_enry_v2",
     "com_github_go_faker_faker_v4",
     "com_github_go_git_go_git_v5",
@@ -204,6 +214,7 @@ use_repo(
     "com_github_google_uuid",
     "com_github_googlecloudplatform_cloudsql_proxy",
     "com_github_gorilla_mux",
+    "com_github_grafana_grafana_foundation_sdk_go",
     "com_github_groob_plist",
     "com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus",
     "com_github_hanwen_go_fuse_v2",
@@ -214,7 +225,6 @@ use_repo(
     "com_github_jackc_pgx_v5",
     "com_github_jhump_protoreflect",
     "com_github_jonboulle_clockwork",
-    "com_github_jotfs_fastcdc_go",
     "com_github_jsimonetti_rtnetlink",
     "com_github_klauspost_compress",
     "com_github_klauspost_cpuid_v2",
@@ -268,13 +278,19 @@ use_repo(
     "com_google_cloud_go_longrunning",
     "com_google_cloud_go_secretmanager",
     "com_google_cloud_go_storage",
+    "com_zx2c4_golang_wireguard",
+    "dev_gvisor_gvisor",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
+    "io_cncf_tags_container_device_interface",
     "io_gorm_driver_clickhouse",
     "io_gorm_driver_mysql",
     "io_gorm_driver_postgres",
     "io_gorm_driver_sqlite",
     "io_gorm_gorm",
+    "io_k8s_api",
+    "io_k8s_apimachinery",
+    "io_k8s_client_go",
     "io_kythe",
     "io_opentelemetry_go_contrib_detectors_gcp",
     "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
@@ -302,10 +318,12 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_sys",
     "org_golang_x_telemetry",
+    "org_golang_x_term",
     "org_golang_x_text",
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_uber_go_atomic",
+    "org_uber_go_goleak",
 )
 
 inject_repo(

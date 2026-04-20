@@ -5,7 +5,6 @@ bazel_pkg_tar(
     name = "bazel_binaries_tar",
     versions = [
         "6.5.0",
-        "7.6.1",
         "7.7.1",
         "8.3.1",
         "8.4.2",

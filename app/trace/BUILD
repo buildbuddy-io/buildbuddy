@@ -14,6 +14,17 @@ ts_library(
 )
 
 ts_library(
+    name = "timing_profile_drop_target",
+    srcs = ["timing_profile_drop_target.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/trace:trace_events",
+    ],
+)
+
+ts_library(
     name = "trace_viewer",
     srcs = ["trace_viewer.tsx"],
     deps = [
@@ -77,6 +88,7 @@ ts_library(
         "//app/trace:trace_events",
         "//app/trace:trace_viewer_model",
         "//app/util:canvas",
+        "//app/util:color",
         "//app/util:dom",
         "//app/util:math",
     ],

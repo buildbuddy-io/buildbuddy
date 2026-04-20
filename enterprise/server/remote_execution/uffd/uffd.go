@@ -339,7 +339,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				}
 
 				// Mark affected chunks as partially mapped
-				for chunkStartOffset, _ := range affectedChunks {
+				for chunkStartOffset := range affectedChunks {
 					memoryStore.MarkPartiallyMapped(chunkStartOffset)
 				}
 			} else if e.pagefault != nil {

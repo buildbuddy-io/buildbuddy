@@ -110,12 +110,97 @@ var (
 	jobs              = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
 	outDir            = flag.String("out_dir", "", "Dir for writing results and artifacts for each action. If unset, a new temp directory is created and outputs are written there.")
 	slowTaskThreshold = flag.Duration("slow_task_threshold", 10*time.Minute, "If set, log a warning if the execution takes longer than this duration.")
+	printStats        = flag.Bool("print_stats", false, "If set, print aggregated timing statistics (mean and standard deviation) at the end of the run.")
 )
 
 const (
 	localCacheClientIdentityKey = "localhost"
 	bundleManifestFileName      = "bundle_manifest.json"
 )
+
+// ExecutionTimingStats holds timing information from a single execution.
+type ExecutionTimingStats struct {
+	QueueMs   int64
+	FetchMs   int64
+	ExecMs    int64
+	UploadMs  int64
+	CPUMillis int64
+}
+
+type StatsCollector struct {
+	mu    sync.Mutex
+	stats []ExecutionTimingStats
+}
+
+func (s *StatsCollector) Add(stats ExecutionTimingStats) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stats = append(s.stats, stats)
+}
+
+func (s *StatsCollector) Stats() []ExecutionTimingStats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stats
+}
+
+func meanAndStdDev(values []int64) (mean, stdDev float64) {
+	if len(values) == 0 {
+		return 0, 0
+	}
+	var sum int64
+	for _, v := range values {
+		sum += v
+	}
+	mean = float64(sum) / float64(len(values))
+	if len(values) == 1 {
+		return mean, 0
+	}
+	var variance float64
+	for _, v := range values {
+		diff := float64(v) - mean
+		variance += diff * diff
+	}
+	variance /= float64(len(values) - 1)
+	stdDev = math.Sqrt(variance)
+	return mean, stdDev
+}
+
+func printAggregatedStats(collector *StatsCollector) {
+	stats := collector.Stats()
+	if len(stats) == 0 {
+		return
+	}
+
+	queueMs := make([]int64, len(stats))
+	fetchMs := make([]int64, len(stats))
+	execMs := make([]int64, len(stats))
+	uploadMs := make([]int64, len(stats))
+	cpuMs := make([]int64, len(stats))
+
+	for i, s := range stats {
+		queueMs[i] = s.QueueMs
+		fetchMs[i] = s.FetchMs
+		execMs[i] = s.ExecMs
+		uploadMs[i] = s.UploadMs
+		cpuMs[i] = s.CPUMillis
+	}
+
+	qMean, qStd := meanAndStdDev(queueMs)
+	fMean, fStd := meanAndStdDev(fetchMs)
+	eMean, eStd := meanAndStdDev(execMs)
+	uMean, uStd := meanAndStdDev(uploadMs)
+	cMean, cStd := meanAndStdDev(cpuMs)
+
+	log.Infof("")
+	log.Infof("=== Aggregated Timing Statistics (n=%d) ===", len(stats))
+	log.Infof("           %10s  %10s", "Mean (ms)", "StdDev (ms)")
+	log.Infof("Queue:     %10.1f  %10.1f", qMean, qStd)
+	log.Infof("Fetch:     %10.1f  %10.1f", fMean, fStd)
+	log.Infof("Exec:      %10.1f  %10.1f", eMean, eStd)
+	log.Infof("Upload:    %10.1f  %10.1f", uMean, uStd)
+	log.Infof("CPU Total: %10.1f  %10.1f", cMean, cStd)
+}
 
 // Example usage:
 // $ bazel run //enterprise/tools/replay_action:replay_action -- \
@@ -127,7 +212,7 @@ func diffTimeProtos(start, end *tspb.Timestamp) time.Duration {
 	return end.AsTime().Sub(start.AsTime())
 }
 
-func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) {
+func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) ExecutionTimingStats {
 	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
 	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
@@ -135,6 +220,13 @@ func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) 
 	cpuMillis := md.GetUsageStats().GetCpuNanos() / 1e6
 	log.CtxInfof(ctx, "Completed [queue: %4dms, fetch: %4dms, exec: %4dms, upload: %4dms, cpu_total: %4dms]",
 		qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
+	return ExecutionTimingStats{
+		QueueMs:   qTime.Milliseconds(),
+		FetchMs:   fetchTime.Milliseconds(),
+		ExecMs:    execTime.Milliseconds(),
+		UploadMs:  uploadTime.Milliseconds(),
+		CPUMillis: cpuMillis,
+	}
 }
 
 func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.CASResourceName) error {
@@ -417,6 +509,10 @@ func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
 	}
 	defer destConn.Close()
 
+	var statsCollector *StatsCollector
+	if *printStats {
+		statsCollector = &StatsCollector{}
+	}
 	replayer := &Replayer{
 		sourceBSClient:  sourceBSClient,
 		sourceCASClient: sourceCASClient,
@@ -425,6 +521,7 @@ func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
 		destCASClient:   destCASClient,
 		destACClient:    destACClient,
 		execClient:      execClient,
+		statsCollector:  statsCollector,
 	}
 	replayer.uploadGroup.SetLimit(3)
 	replayer.executeGroup.SetLimit(*jobs)
@@ -606,6 +703,11 @@ func replayAll(rootCtx, srcCtx, targetCtx context.Context, replayer *Replayer, s
 			return fmt.Errorf("write target bundle manifest: %w", err)
 		}
 	}
+
+	// Print aggregated stats if enabled.
+	if replayer.statsCollector != nil {
+		printAggregatedStats(replayer.statsCollector)
+	}
 	return nil
 
 }
@@ -673,6 +775,9 @@ type Replayer struct {
 	// Map of upload keys to [func() error] objects which will upload the
 	// digest once.
 	uploads sync.Map
+
+	// statsCollector collects execution timing stats when print_stats is enabled.
+	statsCollector *StatsCollector
 }
 
 func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName, md *Execution) error {
@@ -979,7 +1084,7 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 	for i := 1; i <= *n; i++ {
 		i := i
 		r.executeGroup.Go(func() error {
-			err := execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq, md, action)
+			err := execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq, md, action, r.statsCollector)
 			executeErr <- err
 			return err
 		})
@@ -994,7 +1099,7 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 	return lastErr
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.CASResourceName, req *repb.ExecuteRequest, md *Execution, action *repb.Action) error {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.CASResourceName, req *repb.ExecuteRequest, md *Execution, action *repb.Action, statsCollector *StatsCollector) error {
 	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
 
 	actionId := sourceExecutionID.GetDigest().GetHash()
@@ -1068,7 +1173,10 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			if err := fetchStdoutOrStderr(ctx, bsClient, result.GetStderrDigest(), sourceExecutionID.GetDigestFunction(), runDir, "stderr"); err != nil {
 				log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 			}
-			logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
+			timingStats := logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
+			if statsCollector != nil {
+				statsCollector.Add(timingStats)
+			}
 			break
 		}
 	}

@@ -38,7 +38,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -58,6 +60,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
@@ -66,12 +69,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/stats"
 
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
@@ -184,6 +193,15 @@ func main() {
 	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	// Register KMS and crypter before caches because distributed.Register()
+	// starts a gRPC listener that can receive peer requests immediately,
+	// and those requests need the crypter to be available.
+	if err := kms.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -253,23 +271,23 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	libmain.RegisterLocalServersAndClients(realEnv)
+
 	if err := execution_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	// Needs to be registered after the execution server.
+	if err := capabilities_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	if err := kms.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := suggestion.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := crypter_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := dsingleflight.Register(realEnv); err != nil {
@@ -281,13 +299,19 @@ func main() {
 	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := iprules.Register(realEnv); err != nil {
+	if err := ip_rules_enforcer.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := scim.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := mcpserver.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := codesearch.Register(realEnv); err != nil {
@@ -300,9 +324,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := ociregistry.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := ocifetcher.RegisterServer(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -330,5 +351,17 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	trafficHandler, err := trafficstats.NewServerHandler()
+	if err != nil {
+		log.Fatalf("Error creating traffic stats handlers: %v", err)
+	}
+	libmain.StartAndRunServices(realEnv, grpc_server.GRPCServerConfig{
+		ExtraStatsHandlers:         []stats.Handler{trafficHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficHandler.StreamInterceptor},
+	}) // Returns after graceful shutdown
 }

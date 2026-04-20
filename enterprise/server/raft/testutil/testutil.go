@@ -10,9 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -20,11 +20,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -33,6 +36,8 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	guuid "github.com/google/uuid"
 	dbcl "github.com/lni/dragonboat/v4/client"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
@@ -58,6 +63,17 @@ func NewStoreFactory(t *testing.T) *StoreFactory {
 
 func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory {
 	rootDir := testfs.MakeTempDir(t)
+	return newStoreFactory(t, rootDir, clock)
+}
+
+// NewStoreFactoryWithRootDir creates a StoreFactory that uses the
+// given root directory for store data. Use t.TempDir() to write to
+// /tmp instead of TEST_TMPDIR when disk space is limited.
+func NewStoreFactoryWithRootDir(t *testing.T, rootDir string) *StoreFactory {
+	return newStoreFactory(t, rootDir, clockwork.NewRealClock())
+}
+
+func newStoreFactory(t *testing.T, rootDir string, clock clockwork.Clock) *StoreFactory {
 	fileDir := filepath.Join(rootDir, "files")
 	err := disk.EnsureDirectoryExists(fileDir)
 	require.NoError(t, err)
@@ -77,37 +93,19 @@ func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v d
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
-	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-		nhLog := log.NamedSubLogger(nhid)
-		r := registry.NewDynamicNodeRegistry(ts.gm, streamConnections, v, nhLog)
-		r.AddNode(nhid, ts.RaftAddress, ts.GRPCAddress)
-		ts.Registry = r
-		return r, nil
-	})
-
-	raftListener := listener.NewRaftListener()
-	nhc := dbConfig.NodeHostConfig{
-		WALDir:         filepath.Join(ts.RootDir, "wal"),
-		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
-		RTTMillisecond: 1,
-		RaftAddress:    ts.RaftAddress,
-		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: nrf,
-			LogDB:               dbConfig.GetSmallMemLogDBConfig(),
-		},
-		DefaultNodeRegistryEnabled: false,
-		RaftEventListener:          raftListener,
-		SystemEventListener:        raftListener,
+	// If the store was previously stopped, Stop() will have torn
+	// down the gossip manager. Create a fresh one on the same
+	// address so the node rejoins the cluster.
+	if ts.closed {
+		gm, err := gossip.NewWithArgs("name-"+ts.GossipAddress, ts.GossipAddress, sf.gossipAddrs)
+		require.NoError(t, err)
+		ts.gm = gm
+		ts.closed = false
 	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	require.NoError(t, err, "unexpected error creating NodeHost")
 
 	te := testenv.GetTestEnv(t)
 	te.SetClock(sf.clock)
-	apiClient := client.NewAPIClient(te, nodeHost.ID(), ts.Registry)
 
-	rc := rangecache.New()
-	s := sender.New(rc, apiClient)
 	partitions := sf.partitions
 	if len(partitions) == 0 {
 		partitions = []disk.Partition{
@@ -117,46 +115,81 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 			},
 		}
 	}
-	mc := &pebble.MetricsCollector{}
-	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{
-		EventListener: &pebble.EventListener{
-			WriteStallBegin: mc.WriteStallBegin,
-			WriteStallEnd:   mc.WriteStallEnd,
-			DiskSlow:        mc.DiskSlow,
-		},
-	})
-	require.NoError(t, err)
-	leaser := pebble.NewDBLeaser(db)
-	ts.leaser = leaser
 
+	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
+		nhLog := log.NamedSubLogger(nhid)
+		r := registry.NewDynamicNodeRegistry(ts.gm, streamConnections, v, nhLog)
+		r.AddNode(nhid, ts.RaftAddress, ts.GRPCAddress)
+		ts.Registry = r
+		return r, nil
+	})
+	pebbleOptionsGetter := func(mc *pebble.MetricsCollector) *pebble.Options {
+		return &pebble.Options{
+			EventListener: &pebble.EventListener{
+				WriteStallBegin: mc.WriteStallBegin,
+				WriteStallEnd:   mc.WriteStallEnd,
+				DiskSlow:        mc.DiskSlow,
+			},
+		}
+	}
+	registryGetter := func() registry.NodeRegistry {
+		return ts.Registry
+	}
 	mockGCS := mockgcs.New(sf.clock)
 	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, ts.Registry, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc, fileStorer)
+
+	serverConfig := &config.ServerConfig{
+		RootDir:           ts.RootDir,
+		RaftAddr:          ts.RaftAddress,
+		GRPCAddr:          ts.GRPCAddress,
+		GRPCListeningAddr: ts.GRPCAddress,
+		NHID:              ts.nhid,
+		Partitions:        partitions,
+		LogDBConfigType:   config.SmallMemLogDBConfigType,
+		FileStorer:        fileStorer,
+		GossipManager:     ts.gm,
+	}
+
+	store, err := store.New(te, serverConfig,
+		store.WithNodeRegistryFactory(nrf),
+		store.WithPebbleOptsGetter(pebbleOptionsGetter),
+		store.WithTestNodeHostConfig(),
+		store.WithRegistryGetter(registryGetter),
+		store.WithGRPCServerConfig(ts.GRPCServerConfig))
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
 	store.StartReplicaJanitor()
 	ts.Store = store
-
-	t.Cleanup(func() {
-		ts.Stop()
-	})
+	ts.leaser = store.LeaserForTest()
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
+	return sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{})
+}
+
+func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerConfig grpc_server.GRPCServerConfig) *TestingStore {
 	nodeAddr := localAddr(t)
-	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
+	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
+	id, err := guuid.NewRandom()
+	require.NoError(t, err)
 
 	ts := &TestingStore{
-		t:           t,
-		gm:          gm,
-		RaftAddress: localAddr(t),
-		GRPCAddress: localAddr(t),
-		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+		t:                t,
+		gm:               gm,
+		RaftAddress:      localAddr(t),
+		GRPCAddress:      localAddr(t),
+		GossipAddress:    nodeAddr,
+		RootDir:          filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+		nhid:             id.String(),
+		GRPCServerConfig: grpcServerConfig,
 	}
 	sf.RecreateStore(t, ts)
+	t.Cleanup(func() {
+		ts.Stop()
+	})
 	return ts
 }
 
@@ -177,13 +210,16 @@ type TestingStore struct {
 	*store.Store
 
 	leaser pebble.Leaser
+	nhid   string
 
-	gm          *gossip.GossipManager
-	Registry    registry.NodeRegistry
-	RootDir     string
-	RaftAddress string
-	GRPCAddress string
-	closed      bool
+	gm               *gossip.GossipManager
+	Registry         registry.NodeRegistry
+	RootDir          string
+	RaftAddress      string
+	GRPCAddress      string
+	GRPCServerConfig grpc_server.GRPCServerConfig
+	GossipAddress    string
+	closed           bool
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {
@@ -376,4 +412,64 @@ func (tr *TestingReplica) DB() pebble.IPebbleDB {
 		db.Close()
 	})
 	return db
+}
+
+// MetadataKey generates a pebble key for a FileRecord, matching the
+// key format used by the metadata server.
+func MetadataKey(t testing.TB, fr *sgpb.FileRecord) []byte {
+	fs := filestore.New()
+	pebbleKey, err := fs.PebbleKey(fr)
+	require.NoError(t, err)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	return keyBytes
+}
+
+// WriteRecord writes a single file record to the store using the same
+// format as the metadata server. Returns the FileRecord for later
+// reads.
+func WriteRecord(ctx context.Context, t testing.TB, ts *TestingStore, groupID string, sizeBytes int64) *sgpb.FileRecord {
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
+	fr := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   r.GetCacheType(),
+			PartitionId: groupID,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+
+	key := MetadataKey(t, fr)
+
+	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
+	require.NoError(t, err)
+
+	now := time.Now()
+	md := &sgpb.FileMetadata{
+		FileRecord: fr,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+				Data:          buf,
+				CreatedAtNsec: now.UnixNano(),
+			},
+		},
+		StoredSizeBytes: int64(len(buf)),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   key,
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := ts.Sender().SyncPropose(ctx, key, writeReq)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+
+	return fr
 }

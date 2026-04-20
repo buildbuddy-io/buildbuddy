@@ -16,10 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
@@ -27,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -48,8 +51,10 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
 
 func init() {
@@ -60,7 +65,8 @@ func init() {
 	log.Configure()
 }
 
-func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) {
+// Returns the invocation ID of the outer invocation.
+func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 			RequestContext: reqCtx,
@@ -71,14 +77,35 @@ func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildB
 		}
 		for _, in := range searchResp.GetInvocation() {
 			if in.GetRole() == "HOSTED_BAZEL" {
-				return
+				return in.GetInvocationId()
 			}
 		}
-
 		time.Sleep(delay)
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for workflow invocation to be created")
+	return ""
+}
+
+func waitForLogLine(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, invocationID string, s string) {
+	chunkID := ""
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+			InvocationId: invocationID,
+			ChunkId:      chunkID,
+			MinLines:     math.MaxInt32,
+		})
+		if err == nil {
+			if strings.Contains(string(logResp.GetBuffer()), s) {
+				return
+			}
+			if logResp.GetNextChunkId() != "" {
+				chunkID = logResp.GetNextChunkId()
+			}
+		}
+		time.Sleep(delay)
+	}
+	require.FailNowf(t, "timeout", "Timed out waiting for %s in invocation logs", s)
 }
 
 func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inspb.InvocationStatus) {
@@ -215,6 +242,12 @@ func TestWithPrivateRepo(t *testing.T) {
 }
 
 func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+	flags.Set(t, "executor.enable_bare_runner", true)
+	flags.Set(t, "github.app.enabled", true)
+
 	githubToken := ""
 	repoURL := ""
 	if mockPrivateGithubToken {
@@ -253,8 +286,6 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 
 	executors := env.AddExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
-	flags.Set(t, "executor.enable_bare_runner", true)
-	flags.Set(t, "github.app.enabled", true)
 
 	// Create a workflow for the repo - will be used to fetch the git token
 	if repoURL != "" {
@@ -280,16 +311,7 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 }
 
 func TestCancel(t *testing.T) {
-	repoDir, _ := makeLocalGitRepo(t, map[string]string{
-		"BUILD": `
-sh_binary(
-    name = "sleep_forever_test",
-    srcs = ["sleep_forever_test.sh"],
-)
-`,
-		"sleep_forever_test.sh": "sleep 2147483647",
-		"WORKSPACE":             "",
-	})
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
@@ -312,49 +334,39 @@ sh_binary(
 	require.NoError(t, err)
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiRsp.ApiKey.Value)
 
-	// Before the remote runner has a chance to complete, cancel the run
-	ctxWithCancel, cancel := context.WithCancel(ctx)
-	go func() {
-		waitForInvocationCreated(t, ctx, bbClient, reqCtx)
-		cancel()
-	}()
-
 	t.Chdir(repoDir)
-	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image="})
+	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image=", "--skip_auto_checkout=true"})
 	require.NoError(t, err)
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	require.NoError(t, err)
 	repoConfig, err := remotebazel.Config()
 	require.NoError(t, err)
-	_, err = remotebazel.Run(
-		ctxWithCancel,
-		remotebazel.RunOpts{
-			Server:            bbServer.GRPCAddress(),
-			Command:           "bazel run //:sleep_forever_test",
-			WorkspaceFilePath: wsFilePath,
-		}, repoConfig)
-	require.Contains(t, err.Error(), "context canceled")
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	// Check the invocation logs to make sure the invocation was canceled
-	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
-		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
-	})
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(searchRsp.GetInvocation()), 1)
+	// Start the run in the background because it will block as it runs.
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, runErr := remotebazel.Run(
+			ctxWithCancel,
+			remotebazel.RunOpts{
+				Server:            bbServer.GRPCAddress(),
+				Command:           "echo STARTING && sleep 2147483647",
+				WorkspaceFilePath: wsFilePath,
+			}, repoConfig)
+		runErrCh <- runErr
+	}()
 
-	// Find outer invocation because the inner invocation will report a successful
-	// status after the build has completed, and will not wait for the infinite
-	// script to run
-	var inv *inpb.Invocation
-	for _, i := range searchRsp.GetInvocation() {
-		if i.GetRole() == "HOSTED_BAZEL" {
-			inv = i
-		}
-	}
-	require.NotNil(t, inv)
-	invocationID := inv.InvocationId
+	// Don't cancel until the remote runner has printed "STARTING" to ensure that it's actually running.
+	invocationID := waitForInvocationCreated(t, ctx, bbClient, reqCtx)
+	waitForLogLine(t, ctx, bbClient, invocationID, "STARTING")
+	cancel()
 
+	runErr := <-runErrCh
+	require.Error(t, runErr)
+	require.Contains(t, runErr.Error(), "context canceled")
+
+	// Check the invocation was canceled.
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 }
 
@@ -519,8 +531,9 @@ sh_binary(
 		GroupId: env.GroupID1,
 	}
 
-	// Save a secret
+	// Save secrets
 	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_TARGET", ":hello_world")
+	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_MESSAGE", "super_secret_message_for_redaction_test")
 
 	// Run remote bazel
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
@@ -528,7 +541,7 @@ sh_binary(
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
+		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
@@ -555,6 +568,8 @@ sh_binary(
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.NotContains(t, string(logResp.GetBuffer()), "super_secret_message_for_redaction_test")
+	require.Contains(t, string(logResp.GetBuffer()), "secret=<REDACTED>")
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
@@ -653,4 +668,69 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
+}
+
+// In production, the apps upload the ci_runner and bb binaries to the cache so
+// executors can fetch the latest versions without upgrading. Writing to the cache
+// for tests is very slow, so this behavior is disabled by default.
+//
+// This test enables the behavior and verifies the binaries can be used correctly.
+func TestEmbeddedBinariesFromApp(t *testing.T) {
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+
+	// The flag is disabled in `runLocalServerAndExecutor`. Enable it here.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", true)
+
+	require.NotEmpty(t, bundle.CiRunnerBytes)
+	require.NotEmpty(t, cli_bundle.CLIBytes)
+	runnerBinDigest, err := digest.Compute(bytes.NewReader(bundle.CiRunnerBytes), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	cliDigest, err := digest.Compute(bytes.NewReader(cli_bundle.CLIBytes), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	// The binaries should not be in the cache to begin with.
+	casClient := env.GetContentAddressableStorageClient()
+	findReq := &repb.FindMissingBlobsRequest{
+		// Hosted runner uploads the CI runner inputs to the snapshot partition.
+		InstanceName:   snaputil.SnapshotPartitionPrefix,
+		BlobDigests:    []*repb.Digest{runnerBinDigest, cliDigest},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	findResp, err := casClient.FindMissingBlobs(ctx, findReq)
+	require.NoError(t, err)
+	require.Len(t, findResp.GetMissingBlobDigests(), 2)
+
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--os=linux",
+		"--arch=amd64",
+		"--script=echo HELLO!",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
+	)
+
+	// Verify invocation logs.
+	bbClient := env.GetBuildBuddyServiceClient()
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+		RequestContext: reqCtx,
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(searchRsp.GetInvocation()))
+
+	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: searchRsp.Invocation[0].InvocationId,
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(logResp.GetBuffer()), "HELLO!")
+
+	// Verify that the binaries were uploaded to the cache.
+	findResp, err = casClient.FindMissingBlobs(ctx, findReq)
+	require.NoError(t, err)
+	require.Empty(t, findResp.GetMissingBlobDigests())
 }

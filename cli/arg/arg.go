@@ -59,8 +59,8 @@ func Find(args []string, desiredArg string) (value string, index int, length int
 			return args[i+1], i, 2
 		}
 		// Handle "--name=value" form
-		if strings.HasPrefix(arg, prefix) {
-			return strings.TrimPrefix(arg, prefix), i, 1
+		if after, ok := strings.CutPrefix(arg, prefix); ok {
+			return after, i, 1
 		}
 	}
 	return "", -1, 0

@@ -701,7 +701,8 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := pebble.GetCopy(wb, req.GetKey())
+	key := sm.replicaLocalKey(req.GetKey())
+	buf, err := pebble.GetCopy(wb, key)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -715,7 +716,7 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	}
 	val += req.GetDelta()
 
-	if err := wb.Set(req.GetKey(), uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+	if err := wb.Set(key, uint64ToBytes(val), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 	return &rfpb.IncrementResponse{
@@ -999,6 +1000,9 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	if err != nil {
 		return nil, err
 	}
+	if fileMetadata.GetFileRecord() == nil {
+		log.Warningf("stored FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), fileMetadata)
+	}
 	return &rfpb.GetResponse{
 		FileMetadata: fileMetadata,
 	}, nil
@@ -1013,6 +1017,9 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 	// Check that value is non-nil.
 	if req.GetFileMetadata() == nil {
 		return nil, status.InvalidArgumentErrorf("Invalid (nil) FileMetadata for key %q", req.GetKey())
+	}
+	if req.GetFileMetadata().GetFileRecord() == nil {
+		log.Warningf("incoming FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), req.GetFileMetadata())
 	}
 	buf, err := proto.Marshal(req.GetFileMetadata())
 	if err != nil {
@@ -1837,6 +1844,9 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if inLocalRangeSection {
 			if isLocalKey(kv.Key) {
+				// When we save the snapshot, we removed the replica local prefix.
+				// Therefore, we can use the Equal directly here and also we need
+				// add the replicaPrefix before we write it to the db.
 				if bytes.Equal(kv.Key, constants.LocalRangeKey) {
 					rangeDescriptor := &rfpb.RangeDescriptor{}
 					if err := proto.Unmarshal(kv.Value, rangeDescriptor); err != nil {

@@ -25,10 +25,12 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
       <span
         className={`digest-component-hash ${props.hashWidth !== undefined ? "fixed-width" : ""}`}
         title={props.digest.hash}
-        style={{
-          backgroundColor: format.colorHash(props.digest.hash || ""),
-          ...(props.hashWidth !== undefined && { width: props.hashWidth }),
-        }}>
+        style={
+          {
+            "--digest-hue": format.colorHashHue(props.digest.hash || ""),
+            ...(props.hashWidth !== undefined && { width: props.hashWidth }),
+          } as React.CSSProperties
+        }>
         {props.digest.hash}
       </span>
       {props.digest.sizeBytes !== null && props.digest.sizeBytes !== undefined && (

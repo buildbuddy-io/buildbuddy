@@ -125,11 +125,13 @@ type RealEnv struct {
 	singleFlightDeduper                  interfaces.SingleFlightDeduper
 	promQuerier                          interfaces.PromQuerier
 	auditLog                             interfaces.AuditLogger
+	ipRulesEnforcer                      interfaces.IPRulesEnforcer
 	ipRulesService                       interfaces.IPRulesService
 	serverIdentityService                interfaces.ClientIdentityService
 	imageCacheAuthenticator              interfaces.ImageCacheAuthenticator
 	serverNotificationService            interfaces.ServerNotificationService
 	gcpService                           interfaces.GCPService
+	mcpService                           interfaces.MCPService
 	scimService                          interfaces.SCIMService
 	gossipService                        interfaces.GossipService
 	commandRunner                        interfaces.CommandRunner
@@ -139,7 +141,6 @@ type RealEnv struct {
 	registryService                      interfaces.RegistryService
 	pubsub                               interfaces.PubSub
 	clock                                clockwork.Clock
-	atimeUpdater                         interfaces.AtimeUpdater
 	cpuLeaser                            interfaces.CPULeaser
 	ociRegistry                          interfaces.OCIRegistry
 	ociFetcherClient                     ofpb.OCIFetcherClient
@@ -758,12 +759,20 @@ func (r *RealEnv) SetAuditLogger(l interfaces.AuditLogger) {
 	r.auditLog = l
 }
 
+func (r *RealEnv) GetIPRulesEnforcer() interfaces.IPRulesEnforcer {
+	return r.ipRulesEnforcer
+}
+
+func (r *RealEnv) SetIPRulesEnforcer(e interfaces.IPRulesEnforcer) {
+	r.ipRulesEnforcer = e
+}
+
 func (r *RealEnv) GetIPRulesService() interfaces.IPRulesService {
 	return r.ipRulesService
 }
 
-func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
-	r.ipRulesService = e
+func (r *RealEnv) SetIPRulesService(s interfaces.IPRulesService) {
+	r.ipRulesService = s
 }
 
 func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {
@@ -798,20 +807,20 @@ func (r *RealEnv) SetGCPService(service interfaces.GCPService) {
 	r.gcpService = service
 }
 
+func (r *RealEnv) GetMCPService() interfaces.MCPService {
+	return r.mcpService
+}
+
+func (r *RealEnv) SetMCPService(val interfaces.MCPService) {
+	r.mcpService = val
+}
+
 func (r *RealEnv) GetSCIMService() interfaces.SCIMService {
 	return r.scimService
 }
 
 func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
 	r.scimService = val
-}
-
-func (r *RealEnv) GetGossipService() interfaces.GossipService {
-	return r.gossipService
-}
-
-func (r *RealEnv) SetGossipService(g interfaces.GossipService) {
-	r.gossipService = g
 }
 
 func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
@@ -855,13 +864,6 @@ func (r *RealEnv) GetClock() clockwork.Clock {
 }
 func (r *RealEnv) SetClock(clock clockwork.Clock) {
 	r.clock = clock
-}
-
-func (r *RealEnv) GetAtimeUpdater() interfaces.AtimeUpdater {
-	return r.atimeUpdater
-}
-func (r *RealEnv) SetAtimeUpdater(updater interfaces.AtimeUpdater) {
-	r.atimeUpdater = updater
 }
 
 func (r *RealEnv) GetCPULeaser() interfaces.CPULeaser {

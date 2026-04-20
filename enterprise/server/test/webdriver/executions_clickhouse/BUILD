@@ -17,6 +17,7 @@ go_web_test_suite(
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",
+        "//proto/api/v1:common_go_proto",
         "//server/testutil/testbazel",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",

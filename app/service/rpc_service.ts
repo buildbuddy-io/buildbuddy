@@ -178,11 +178,19 @@ class RpcService {
     return this.getDownloadUrl(params, view);
   }
 
-  downloadLog(invocationId: string, attempt: number) {
+  downloadBuildLog(invocationId: string, attempt: number) {
     const params: Record<string, string> = {
       invocation_id: invocationId,
       attempt: attempt.toString(),
       artifact: "buildlog",
+    };
+    window.open(this.getDownloadUrl(params));
+  }
+
+  downloadRunLog(invocationId: string) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      artifact: "runlog",
     };
     window.open(this.getDownloadUrl(params));
   }

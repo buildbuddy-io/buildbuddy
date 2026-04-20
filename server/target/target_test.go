@@ -30,7 +30,7 @@ func TestGetTargetHistory(t *testing.T) {
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	testAuth := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	testAuth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(testAuth)
 
 	iid1Hex, iid1 := makeInvocationID('1')

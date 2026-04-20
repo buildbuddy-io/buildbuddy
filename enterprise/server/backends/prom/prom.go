@@ -91,7 +91,13 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes downloaded as measured over the last week
-sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))
+
+# Bytes downloaded internal to BuildBuddy between services
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes{origin="internal"}[1w]))
+
+# Bytes downloaded directly by your builds
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes{origin="external"}[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
@@ -102,7 +108,13 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes uploaded as measured over the last week
-sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))
+
+# Bytes uploaded internal to BuildBuddy between services
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes{origin="internal"}[1w]))
+
+# Bytes uploaded directly by your builds
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes{origin="external"}[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
@@ -342,6 +354,7 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(2)
 
 	for _, p := range queryParams {
 		p := p

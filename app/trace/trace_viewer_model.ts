@@ -1,4 +1,4 @@
-import { getLightMaterialChartColor, getMaterialChartColor, getUniformBrightnessColor } from "../util/color";
+import { getLightMaterialChartColor, getMaterialChartColor } from "../util/color";
 import * as constants from "./constants";
 import { Profile, TraceEvent, buildThreadTimelines, buildTimeSeries } from "./trace_events";
 
@@ -29,7 +29,7 @@ export type SectionModel = {
 export type TrackModel = {
   xs: number[];
   widths: number[];
-  colors: string[];
+  colorIds: string[];
   events: TraceEvent[];
 };
 
@@ -73,12 +73,12 @@ function buildEventsPanel(events: TraceEvent[], fitToContent?: boolean): PanelMo
       const track = (tracks[depth] ??= {
         xs: [],
         widths: [],
-        colors: [],
+        colorIds: [],
         events: [],
       });
       track.xs.push(ts);
       track.widths.push(dur);
-      track.colors.push(getUniformBrightnessColor(`${cat}#${name}`));
+      track.colorIds.push(`${cat}#${name}`);
       track.events.push(event);
     }
 

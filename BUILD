@@ -11,7 +11,9 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
+load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,7 +63,6 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/httpmux",
         "@org_golang_x_tools//go/analysis/passes/httpresponse",
         "@org_golang_x_tools//go/analysis/passes/ifaceassert",
-        "@org_golang_x_tools//go/analysis/passes/loopclosure",
         "@org_golang_x_tools//go/analysis/passes/lostcancel",
         "@org_golang_x_tools//go/analysis/passes/nilfunc",
         "@org_golang_x_tools//go/analysis/passes/nilness",
@@ -111,7 +112,7 @@ nogo(
         "-QF1011",
         "-QF1012",
         "-U1000",
-    ]),
+    ]) + MODERNIZE_ANALYZERS,
 )
 
 gazelle_binary(
@@ -122,9 +123,12 @@ gazelle_binary(
     ],
 )
 
-compile_pip_requirements(
+pip_compile(
     name = "requirements",
-    src = "requirements.txt",
+    exec_properties = {
+        "dockerNetwork": "bridge",
+    },
+    requirements_in = "requirements.txt",
     requirements_txt = "requirements.lock",
 )
 
@@ -182,6 +186,7 @@ gazelle_python_manifest(
 # gazelle:exclude website/**
 #
 # gazelle:python_library_naming_convention $package_name$_py_library
+# gazelle:python_generation_mode file
 #
 ## Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel

@@ -184,6 +184,10 @@ message ExecuteWorkflowRequest {
   // By default, the scheduler will automatically retry transient errors.
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 16;
+
+  // Tag that was pushed, if applicable.
+  // Ex. "v1.0.0"
+  string pushed_tag = 17;
 }
 
 message ExecuteWorkflowResponse {

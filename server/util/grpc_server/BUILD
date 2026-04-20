@@ -24,5 +24,6 @@ go_library(
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//mem",
         "@org_golang_google_grpc//reflection",
+        "@org_golang_google_grpc//stats",
     ],
 )

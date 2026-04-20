@@ -514,6 +514,7 @@ func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counte
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
+			metrics.GroupID:        groupID,
 			metrics.UsageTracked:   tracked,
 		}).Observe(bytesTransferredCache)
 		metrics.ServerUploadSizeBytes.With(prometheus.Labels{
@@ -540,6 +541,7 @@ func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counte
 	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.GroupID:        groupID,
 		metrics.UsageTracked:   tracked,
 	}).Observe(bytesTransferredCache)
 	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{

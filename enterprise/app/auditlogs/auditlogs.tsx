@@ -125,6 +125,9 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
       case auditlog.ResourceType.IP_RULE:
         res = "IP Rule";
         break;
+      case auditlog.ResourceType.USER_LIST:
+        res = "IAM Group";
+        break;
     }
     return (
       <>
@@ -163,6 +166,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Update IP Rules Config";
       case Action.INVALIDATE_VM_SNAPSHOT:
         return "Invalidate VM Snapshot";
+      case Action.UPDATE_SSO_CONFIG:
+        return "Update SSO Config";
     }
     return "";
   }
@@ -181,6 +186,13 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     }
     if (request.apiRequest.updateGroupUsers) {
       for (const update of request.apiRequest.updateGroupUsers.update) {
+        if (update.userId?.id && idDescriptors.has(update.userId.id)) {
+          update.userId.id += " (" + idDescriptors.get(update.userId.id) + ")";
+        }
+      }
+    }
+    if (request.apiRequest.updateUserListMembership) {
+      for (const update of request.apiRequest.updateUserListMembership.update) {
         if (update.userId?.id && idDescriptors.has(update.userId.id)) {
           update.userId.id += " (" + idDescriptors.get(update.userId.id) + ")";
         }

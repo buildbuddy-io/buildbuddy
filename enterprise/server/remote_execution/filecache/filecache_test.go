@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -62,6 +64,7 @@ func TestFilecache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 
 	baseDir := testfs.MakeTempDir(t)
@@ -131,6 +134,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		node = nodeFromString("my/evil/file", false)
 		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"))
 		require.NoError(t, err)
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Recreate filecache and wait for it to scan exsting files.
@@ -152,6 +156,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		assert.True(t, evilLinked, "existing file should link")
 		assert.FileExists(t, filepath.Join(baseDir, "my/evil/fastlinked-file"))
 		assertFileContents(t, filepath.Join(baseDir, "my/evil/fastlinked-file"), "my/evil/file")
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Recreate filecache and wait for it to scan exsting files.
@@ -160,6 +165,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		node := nodeFromString("my/fun/file", false)
@@ -171,6 +177,260 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		evilLinked := fc.FastLinkFile(ctx, evilNode, filepath.Join(baseDir, "my/unauthed/evil-file"))
 		assert.False(t, evilLinked, "unowned file should not link")
 		assert.NoFileExists(t, filepath.Join(baseDir, "my/unauthed/evil-file"))
+	}
+}
+
+func TestFileCacheSharedDirectoryAcrossGroups(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	sharedDirectoryCtx1 := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+	sharedDirectoryCtx2 := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+	otherSharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "other_images")
+
+	normalPath := writeFileContent(t, baseDir, "normal/file", "normal-content", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+	node := nodeFromString("same-logical-key", false)
+
+	// Seed both a group-local entry and a shared ext4_images entry with the
+	// same logical filecache key.
+	require.NoError(t, fc.AddFile(group1Ctx, node, normalPath))
+	require.NoError(t, fc.AddFile(sharedDirectoryCtx1, node, sharedPath))
+
+	// The shared ext4_images entry does not make the same digest visible via
+	// another group's namespace.
+	require.True(t, fc.ContainsFile(group1Ctx, node))
+	require.False(t, fc.ContainsFile(group2Ctx, node))
+
+	normalLinkPath := filepath.Join(baseDir, "normal-link")
+	require.True(t, fc.FastLinkFile(group1Ctx, node, normalLinkPath))
+	assertFileContents(t, normalLinkPath, "normal-content")
+
+	group2MissPath := filepath.Join(baseDir, "group2-miss-link")
+	require.False(t, fc.FastLinkFile(group2Ctx, node, group2MissPath))
+	assert.NoFileExists(t, group2MissPath)
+
+	// Any group should be able to access the entry when looking it up via
+	// ext4_images.
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx1, node))
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx2, node))
+
+	sharedLinkPath1 := filepath.Join(baseDir, "shared-link-1")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx1, node, sharedLinkPath1))
+	assertFileContents(t, sharedLinkPath1, "shared-content")
+
+	sharedLinkPath2 := filepath.Join(baseDir, "shared-link-2")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx2, node, sharedLinkPath2))
+	assertFileContents(t, sharedLinkPath2, "shared-content")
+
+	// Other shared directories should not see ext4_images entries.
+	require.False(t, fc.ContainsFile(otherSharedDirectoryCtx, node))
+
+	// Open should respect the same namespace boundaries as linking.
+	_, err = fc.Open(group2Ctx, node)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected non-shared group access to miss")
+
+	f, err := fc.Open(sharedDirectoryCtx2, node)
+	require.NoError(t, err)
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "shared-content", string(data))
+}
+
+func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+	node := nodeFromString("shared-only-key", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+
+	// Seed the cache with a shared entry before recreating the filecache.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+		require.NoError(t, fc.AddFile(sharedDirectoryCtx, node, sharedPath))
+		require.NoError(t, fc.Close())
+	}
+	// Reopen the filecache and verify the shared entry is visible across groups.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		t.Cleanup(func() { fc.Close() })
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+
+		require.False(t, fc.ContainsFile(group2Ctx, node))
+		require.True(t, fc.ContainsFile(sharedDirectoryCtx, node))
+
+		missPath := filepath.Join(baseDir, "group2-link")
+		require.False(t, fc.FastLinkFile(group2Ctx, node, missPath))
+		assert.NoFileExists(t, missPath)
+
+		sharedLinkPath := filepath.Join(baseDir, "shared-link")
+		require.True(t, fc.FastLinkFile(sharedDirectoryCtx, node, sharedLinkPath))
+		assertFileContents(t, sharedLinkPath, "shared-content")
+
+		f, err := fc.Open(sharedDirectoryCtx, node)
+		require.NoError(t, err)
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		require.NoError(t, err)
+		require.Equal(t, "shared-content", string(data))
+	}
+}
+
+func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+
+	tests := []struct {
+		name                    string
+		sharedDirName           string
+		startupDir              string
+		unexpectedSharedDirName string
+	}{
+		{
+			name:          "empty",
+			sharedDirName: "",
+			startupDir:    "_SHARED_",
+		},
+		{
+			name:          "dot",
+			sharedDirName: ".",
+			startupDir:    "_SHARED_.",
+		},
+		{
+			name:          "dotdot",
+			sharedDirName: "..",
+			startupDir:    "_SHARED_..",
+		},
+		{
+			name:          "anon",
+			sharedDirName: "ANON",
+			startupDir:    "_SHARED_ANON",
+		},
+		{
+			name:          "group_prefix",
+			sharedDirName: "GR_invalid",
+			startupDir:    "_SHARED_GR_invalid",
+		},
+		{
+			name:          "shared_prefix",
+			sharedDirName: "_SHARED_ext4_images",
+			startupDir:    "_SHARED__SHARED_ext4_images",
+		},
+		{
+			name:                    "forward_slash",
+			sharedDirName:           "ext4/images",
+			startupDir:              filepath.Join("_SHARED_ext4", "images"),
+			unexpectedSharedDirName: "ext4",
+		},
+		{
+			name:          "backslash",
+			sharedDirName: `ext4\images`,
+			startupDir:    "_SHARED_ext4\\images",
+		},
+	}
+
+	// Seed malformed shared-directory layouts on disk before startup scanning.
+	for _, test := range tests {
+		node := nodeFromString("invalid-shared-"+test.name, false)
+		writeFileContent(
+			t,
+			fcDir,
+			filepath.Join(test.startupDir, node.GetDigest().GetHash()),
+			"startup-"+test.name,
+			false,
+		)
+	}
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node := nodeFromString("invalid-shared-"+test.name, false)
+			invalidSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.sharedDirName)
+
+			// Startup scanning should ignore the malformed on-disk entries
+			// completely, regardless of whether lookups use the group's default
+			// namespace or the invalid shared-directory context.
+			require.False(t, fc.ContainsFile(group1Ctx, node))
+			require.False(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath := filepath.Join(baseDir, test.name, "group1-startup-link")
+			require.False(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assert.NoFileExists(t, group1LinkPath)
+
+			invalidLinkPath := filepath.Join(baseDir, test.name, "invalid-startup-link")
+			require.False(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assert.NoFileExists(t, invalidLinkPath)
+
+			_, err := fc.Open(group1Ctx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected group lookup to miss for invalid startup directory")
+
+			_, err = fc.Open(invalidSharedDirectoryCtx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected invalid shared-directory lookup to miss after startup scan")
+
+			if test.unexpectedSharedDirName != "" {
+				// Malformed nested paths should not be reinterpreted as some other
+				// valid shared namespace during startup scanning.
+				unexpectedSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.unexpectedSharedDirName)
+				require.False(t, fc.ContainsFile(unexpectedSharedDirectoryCtx, node))
+
+				unexpectedLinkPath := filepath.Join(baseDir, test.name, "unexpected-shared-link")
+				require.False(t, fc.FastLinkFile(unexpectedSharedDirectoryCtx, node, unexpectedLinkPath))
+				assert.NoFileExists(t, unexpectedLinkPath)
+
+				_, err := fc.Open(unexpectedSharedDirectoryCtx, node)
+				require.Error(t, err)
+				require.True(t, status.IsNotFoundError(err), "expected malformed startup directory to not hydrate another shared namespace")
+			}
+
+			// Supplying an invalid shared-directory name should fall back to the
+			// caller's normal group namespace on writes and subsequent reads.
+			// (This also logs an error, but we don't test for that.)
+			path := writeFileContent(t, baseDir, filepath.Join(test.name, "invalid", "file"), "invalid-"+test.name, false)
+			require.NoError(t, fc.AddFile(invalidSharedDirectoryCtx, node, path))
+
+			require.True(t, fc.ContainsFile(group1Ctx, node))
+			require.True(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath = filepath.Join(baseDir, test.name, "group1-link")
+			require.True(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assertFileContents(t, group1LinkPath, "invalid-"+test.name)
+
+			invalidLinkPath = filepath.Join(baseDir, test.name, "invalid-link")
+			require.True(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assertFileContents(t, invalidLinkPath, "invalid-"+test.name)
+
+			// Open should follow the same fallback-to-group behavior.
+			f, err := fc.Open(invalidSharedDirectoryCtx, node)
+			require.NoError(t, err)
+			defer f.Close()
+			data, err := io.ReadAll(f)
+			require.NoError(t, err)
+			require.Equal(t, "invalid-"+test.name, string(data))
+		})
 	}
 }
 
@@ -187,6 +447,7 @@ func TestFileCacheOverwrite(t *testing.T) {
 			filecacheRoot := testfs.MakeTempDir(t)
 			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
 			fc.WaitForDirectoryScanToComplete()
 			tempDir := testfs.MakeTempDir(t)
 
@@ -254,6 +515,7 @@ func TestFileCacheEviction(t *testing.T) {
 	filecacheRoot := testfs.MakeTempDir(t)
 	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
 	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 	tempDir := testfs.MakeTempDir(t)
 
@@ -292,6 +554,7 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	writeFileContent(t, filecacheRoot, "ANON/"+hash.String("A"), "A", false)
 	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize+1, false)
 	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 	tempDir := testfs.MakeTempDir(t)
 
@@ -342,6 +605,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 
 		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 		require.NoError(t, err)
+		t.Cleanup(func() { fc.Close() })
 
 		// While the directory scan is in progress, re-add a random file
 		// to trigger a race.
@@ -357,6 +621,36 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 			require.True(t, ok, "link node %d (test trial %d)", i, trial)
 		}
 	}
+}
+
+func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) {
+	ctx := context.Background()
+	filecache.DisableInitialDirectoryScanForTest()
+	t.Cleanup(filecache.EnableInitialDirectoryScanForTest)
+
+	filecacheRoot := testfs.MakeTempDir(t)
+	outDir := testfs.MakeTempDir(t)
+
+	node := nodeFromString("content", false)
+	writeFileContent(t, filecacheRoot, "ANON/"+node.GetDigest().GetHash(), "content", false)
+
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+
+	require.True(t, fc.ContainsFile(ctx, node), "expected disk fallback hit with initial scan disabled")
+
+	outPath := filepath.Join(outDir, "linked")
+	ok := fc.FastLinkFile(ctx, node, outPath)
+	require.True(t, ok, "expected filesystem fallback link to succeed before initial scan completes")
+	assertFileContents(t, outPath, "content")
+
+	f, err := fc.Open(ctx, node)
+	require.NoError(t, err, "expected Open to succeed via disk fallback before initial scan completes")
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "content", string(data))
 }
 
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
@@ -384,6 +678,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		}
 		log.Printf("Done adding initial files")
 		unprefixedNodes = nodes
+		require.NoError(t, fc.Close())
 	}
 
 	var prefixLength4Nodes []*repb.FileNode
@@ -438,6 +733,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 		// The disk usage should be the size of the new files.
 		require.Equal(t, int64(4096*10), fileDiskUsageRecursive(t, fcDir))
+		require.NoError(t, fc.Close())
 	}
 	{
 		// Now *decrease* the subdir prefix length from 4 -> 2; should be able
@@ -451,6 +747,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { fc.Close() })
 		fc.WaitForDirectoryScanToComplete()
 
 		// Ensure that the files from the previous iteration (prefix length 4)
@@ -492,6 +789,35 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	}
 }
 
+func TestFileCacheUncleanShutdown(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	// Create a filecache, add a file, then simulate an unclean shutdown by
+	// NOT calling Close() (leaving the lock file in place).
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	defer fc.Close()
+
+	fc.WaitForDirectoryScanToComplete()
+	writeFile(t, baseDir, "file", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	// Intentionally skip fc.Close() to simulate unclean shutdown.
+
+	// Re-open the filecache. The lock file should be detected, the cache
+	// directory wiped, and the previously-added file should no longer be found.
+	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	assert.False(t, linked, "cache should have been wiped after unclean shutdown")
+}
+
 func TestFileCacheWriter(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
@@ -500,6 +826,7 @@ func TestFileCacheWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 
 	baseDir := testfs.MakeTempDir(t)
@@ -632,6 +959,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 			root := testfs.MakeTempDir(b)
 			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 100_000_000, false /*=delete*/)
 			require.NoError(b, err)
+			b.Cleanup(func() { fc.Close() })
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
 
@@ -720,6 +1048,7 @@ func BenchmarkContainsAdd(b *testing.B) {
 			root := testfs.MakeTempDir(b)
 			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), test.MaxSize, false /*=delete*/)
 			require.NoError(b, err)
+			b.Cleanup(func() { fc.Close() })
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
 
@@ -826,6 +1155,7 @@ func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 
 	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
@@ -838,4 +1168,455 @@ func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 	matches, err := filepath.Glob(pattern)
 	require.NoError(t, err)
 	require.Empty(t, matches, "expected temp file(s) to be deleted: %v", matches)
+}
+
+func TestTrackExternalDirectory_Basic(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create a directory to track.
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file1.txt": "contents1",
+		"file2.txt": "contents2",
+	})
+
+	// Track the directory.
+	unlock, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	// Directory should still exist.
+	require.DirExists(t, extDir)
+
+	// Unlock.
+	unlock()
+
+	// Directory should still exist (not evicted yet since cache has room).
+	require.DirExists(t, extDir)
+
+	// Should be able to re-track the same directory.
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	unlock2()
+}
+
+func TestLookupExternalDirectory_DoesNotCreateNewEntry(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create a directory on disk but don't track it in filecache.
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// Lookup-only should not create an entry.
+	unlock, _, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+	require.Nil(t, unlock)
+}
+
+func TestLookupExternalDirectory_FindsTrackedEntry(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// Track the directory first.
+	unlock, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	unlock()
+
+	// Lookup-only should find and lock the existing tracked entry.
+	unlockLookupOnly, sizeBytes, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.NoError(t, err)
+	require.NotNil(t, unlockLookupOnly)
+	require.Equal(t, int64(1000), sizeBytes)
+	unlockLookupOnly()
+}
+
+func TestTrackExternalDirectory_NotFoundForNonExistentPath(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	nonExistentPath := filepath.Join(fcDir, "does-not-exist")
+	unlock, err := fc.TrackExternalDirectory(ctx, nonExistentPath, 1000)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+	require.Nil(t, unlock)
+}
+
+func TestTrackExternalDirectory_EvictionOnAddWhenUnlocked(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 3000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create and track a directory, then immediately unlock it.
+	extDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir1, map[string]string{"file.txt": "contents1"})
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir1, 2000)
+	require.NoError(t, err)
+	unlock1()
+
+	require.DirExists(t, extDir1, "dir should exist before eviction")
+
+	// Track a second directory that causes eviction of the first.
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir2, 2000)
+	require.NoError(t, err)
+	defer unlock2()
+
+	// dir1 had refCount=0, so eviction moves it to trash synchronously.
+	require.NoDirExists(t, extDir1, "unlocked directory should be moved to trash on eviction")
+}
+
+func TestTrackExternalDirectory_DeferredDeletion_SingleLock(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 3000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create and track a directory, keeping it locked.
+	extDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir1, map[string]string{"file.txt": "contents1"})
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir1, 2000)
+	require.NoError(t, err)
+
+	// Track a second directory that causes eviction of the first.
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir2, 2000)
+	require.NoError(t, err)
+	defer unlock2()
+
+	// dir1 is locked, so deletion is deferred.
+	require.DirExists(t, extDir1, "locked directory should not be deleted during eviction")
+
+	// Unlock triggers synchronous move to trash.
+	unlock1()
+	require.NoDirExists(t, extDir1, "directory should be moved to trash after unlocking")
+}
+
+func TestTrackExternalDirectory_DeferredDeletion_MultipleLocks(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 5000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create and track a directory, acquiring multiple locks.
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{"file.txt": "contents"})
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir, 2000)
+	require.NoError(t, err)
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir, 2000)
+	require.NoError(t, err)
+	unlock3, err := fc.TrackExternalDirectory(ctx, extDir, 2000)
+	require.NoError(t, err)
+
+	// Add a file that causes eviction. This also tests mixing files and
+	// directories in the same LRU.
+	scratchDir := testfs.MakeTempDir(t)
+	filePath := filepath.Join(scratchDir, "largefile")
+	err = os.WriteFile(filePath, make([]byte, 4000), 0644)
+	require.NoError(t, err)
+	node := nodeFromString(string(make([]byte, 4000)), false)
+	err = fc.AddFile(ctx, node, filePath)
+	require.NoError(t, err)
+
+	// Directory is locked, so deletion is deferred.
+	require.DirExists(t, extDir, "locked directory should not be deleted during eviction")
+
+	// Release locks one by one - directory should persist until all released.
+	unlock1()
+	require.DirExists(t, extDir, "dir should exist after releasing first lock")
+	unlock2()
+	require.DirExists(t, extDir, "dir should exist after releasing second lock")
+
+	// Final unlock triggers synchronous move to trash.
+	unlock3()
+	require.NoDirExists(t, extDir, "directory should be moved to trash after releasing all locks")
+}
+
+func TestTrackExternalDirectory_ResurrectionFromAwaitingDeletion(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Very small cache size to trigger eviction.
+	fc, err := filecache.NewFileCache(fcDir, 3000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create and track first directory, keeping it locked.
+	extDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir1, map[string]string{"file.txt": "contents1"})
+
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir1, 2000)
+	require.NoError(t, err)
+
+	// Create and track a second directory that will cause eviction of the first.
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir2, 2000)
+	require.NoError(t, err)
+
+	// First directory should be awaiting deletion (locked during eviction).
+	require.DirExists(t, extDir1)
+
+	// Re-track the first directory while it's awaiting deletion.
+	// This should "resurrect" it back to the LRU.
+	unlock1Resurrected, err := fc.TrackExternalDirectory(ctx, extDir1, 2000)
+	require.NoError(t, err, "should be able to re-track directory awaiting deletion")
+
+	// Unlock the original lock.
+	unlock1()
+
+	// Directory should still exist because we have a new lock.
+	time.Sleep(100 * time.Millisecond)
+	require.DirExists(t, extDir1, "resurrected directory should not be deleted while locked")
+
+	// Unlock all.
+	unlock2()
+	unlock1Resurrected()
+}
+
+func TestTrackExternalDirectory_LRUEvictionOrder(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Cache can hold 2 directories of size 1000 each, but not 3.
+	fc, err := filecache.NewFileCache(fcDir, 2500, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	// Create three directories.
+	extDir1 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir1, map[string]string{"file.txt": "contents1"})
+
+	extDir2 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir2, map[string]string{"file.txt": "contents2"})
+
+	extDir3 := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir3, map[string]string{"file.txt": "contents3"})
+
+	// Track directories in order: dir1, dir2, dir3.
+	unlock1, err := fc.TrackExternalDirectory(ctx, extDir1, 1000)
+	require.NoError(t, err)
+	unlock1()
+
+	unlock2, err := fc.TrackExternalDirectory(ctx, extDir2, 1000)
+	require.NoError(t, err)
+	unlock2()
+
+	// At this point, dir1 is LRU (oldest).
+	// Adding dir3 should evict dir1.
+	unlock3, err := fc.TrackExternalDirectory(ctx, extDir3, 1000)
+	require.NoError(t, err)
+	defer unlock3()
+
+	// dir1 should be evicted (oldest) and moved to trash synchronously.
+	require.NoDirExists(t, extDir1, "dir1 (oldest) should be moved to trash")
+
+	// dir2 should still exist.
+	require.DirExists(t, extDir2, "dir2 should not be evicted yet")
+
+	// dir3 should still exist.
+	require.DirExists(t, extDir3, "dir3 should not be evicted")
+}
+
+func TestFilecache_ConcurrentFileAndDirectoryOperations(t *testing.T) {
+	// This test runs many concurrent operations to try to trigger race conditions.
+	// Run with -race to detect data races.
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	const (
+		numFiles         = 50
+		numDirs          = 20
+		numGoroutines    = 100
+		opsPerRoutine    = 50
+		concurrencyLimit = 8
+	)
+
+	// Pre-create files in a scratch directory.
+	scratchDir := testfs.MakeTempDir(t)
+	var nodes [numFiles]*repb.FileNode
+	for i := range numFiles {
+		content := fmt.Sprintf("file-content-%d", i)
+		path := filepath.Join(scratchDir, fmt.Sprintf("file%d", i))
+		err := os.WriteFile(path, []byte(content), 0644)
+		require.NoError(t, err)
+		nodes[i] = nodeFromString(content, false)
+	}
+
+	// Pre-create directories.
+	var extDirs [numDirs]string
+	for i := range numDirs {
+		extDirs[i] = testfs.MakeTempDir(t)
+		testfs.WriteAllFileContents(t, extDirs[i], map[string]string{
+			"file.txt": fmt.Sprintf("dir-contents-%d", i),
+		})
+	}
+
+	// Track which directories have active locks.
+	var dirLocks [numDirs][]func()
+	var dirLocksMu sync.Mutex
+
+	eg := &errgroup.Group{}
+	eg.SetLimit(concurrencyLimit)
+
+	for g := range numGoroutines {
+		eg.Go(func() error {
+			rng := rand.New(rand.NewSource(int64(g)))
+			for op := range opsPerRoutine {
+				switch rng.Intn(6) {
+				case 0: // AddFile
+					fileIdx := rng.Intn(numFiles)
+					filePath := filepath.Join(scratchDir, fmt.Sprintf("file%d", fileIdx))
+					_ = fc.AddFile(ctx, nodes[fileIdx], filePath)
+
+				case 1: // FastLinkFile
+					fileIdx := rng.Intn(numFiles)
+					outPath := filepath.Join(fc.TempDir(), fmt.Sprintf("link-%d-%d-%d", g, op, fileIdx))
+					fc.FastLinkFile(ctx, nodes[fileIdx], outPath)
+					os.Remove(outPath) // Cleanup
+
+				case 2: // ContainsFile
+					fileIdx := rng.Intn(numFiles)
+					fc.ContainsFile(ctx, nodes[fileIdx])
+
+				case 3: // TrackExternalDirectory
+					dirIdx := rng.Intn(numDirs)
+					unlock, err := fc.TrackExternalDirectory(ctx, extDirs[dirIdx], 1000)
+					if err == nil {
+						dirLocksMu.Lock()
+						dirLocks[dirIdx] = append(dirLocks[dirIdx], unlock)
+						dirLocksMu.Unlock()
+					}
+
+				case 4: // Unlock a random directory
+					dirLocksMu.Lock()
+					for i := range numDirs {
+						dirIdx := (rng.Intn(numDirs) + i) % numDirs
+						if len(dirLocks[dirIdx]) > 0 {
+							unlock := dirLocks[dirIdx][0]
+							dirLocks[dirIdx] = dirLocks[dirIdx][1:]
+							dirLocksMu.Unlock()
+							unlock()
+							goto nextOp
+						}
+					}
+					dirLocksMu.Unlock()
+
+				case 5: // DeleteFile
+					fileIdx := rng.Intn(numFiles)
+					fc.DeleteFile(ctx, nodes[fileIdx])
+				}
+			nextOp:
+			}
+			return nil
+		})
+	}
+
+	err = eg.Wait()
+	require.NoError(t, err)
+
+	// Cleanup: release all remaining locks.
+	for i := range numDirs {
+		for _, unlock := range dirLocks[i] {
+			unlock()
+		}
+	}
+}
+
+func TestFilecache_ConcurrentDirectoryEvictionAndLocking(t *testing.T) {
+	// This test specifically targets race conditions between eviction and locking.
+	// It uses a small cache to force frequent evictions.
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Small cache: can only hold ~2 directories of size 1000.
+	fc, err := filecache.NewFileCache(fcDir, 2500, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	const (
+		numDirs       = 10
+		numGoroutines = 20
+		opsPerRoutine = 100
+	)
+
+	// Pre-create directories.
+	var extDirs [numDirs]string
+	for i := range numDirs {
+		extDirs[i] = testfs.MakeTempDir(t)
+		testfs.WriteAllFileContents(t, extDirs[i], map[string]string{
+			"file.txt": fmt.Sprintf("dir-contents-%d", i),
+		})
+	}
+
+	eg := &errgroup.Group{}
+	eg.SetLimit(numGoroutines)
+
+	for g := range numGoroutines {
+		eg.Go(func() error {
+			rng := rand.New(rand.NewSource(int64(g)))
+			for range opsPerRoutine {
+				dirIdx := rng.Intn(numDirs)
+
+				// Try to track the directory. It may fail if the directory
+				// was evicted and deleted.
+				unlock, err := fc.TrackExternalDirectory(ctx, extDirs[dirIdx], 1000)
+				if err != nil {
+					// NotFound is expected if the directory was evicted.
+					if !status.IsNotFoundError(err) {
+						return fmt.Errorf("unexpected error tracking dir %d: %w", dirIdx, err)
+					}
+					continue
+				}
+
+				// Hold the lock briefly to increase contention.
+				time.Sleep(time.Duration(rng.Intn(100)) * time.Microsecond)
+
+				unlock()
+			}
+			return nil
+		})
+	}
+
+	err = eg.Wait()
+	require.NoError(t, err)
 }

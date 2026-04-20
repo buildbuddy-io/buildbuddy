@@ -54,9 +54,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
@@ -159,6 +161,7 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
+	realEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(client))
 }
 
 func getExecutorHostID() string {
@@ -198,6 +201,15 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
 	metrics.RemoteExecutionAssignableRAMBytes.Set(math.Floor(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio))
+	customResources, err := resources.GetAllocatedCustomResources()
+	if err != nil {
+		log.Fatalf("Error getting allocated custom resources: %v", err)
+	}
+	for _, r := range customResources {
+		metrics.RemoteExecutionAssignableCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: r.GetName(),
+		}).Set(float64(r.GetValue()))
+	}
 
 	if err := auth.Register(context.Background(), realEnv); err != nil {
 		if err := auth.RegisterNullAuth(realEnv); err != nil {
@@ -239,9 +251,14 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
+		fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+		if err != nil {
+			log.Fatalf("Error initializing file cache: %s", err)
 		}
+		realEnv.SetFileCache(fc)
+		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			return fc.Close()
+		})
 	}
 
 	log.Infof("Connecting to app target: %s", *appTarget)

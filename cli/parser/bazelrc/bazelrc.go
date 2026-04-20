@@ -2,7 +2,9 @@ package bazelrc
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
-	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
+	"github.com/google/shlex"
 )
 
 const (
@@ -150,6 +152,7 @@ func AppendRcRulesFromFile(workspaceDir string, realPath string, namedConfigs ma
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Handle line continuations (lines can end with "\" to effectively
@@ -157,10 +160,18 @@ func AppendRcRulesFromFile(workspaceDir string, realPath string, namedConfigs ma
 		for strings.HasSuffix(line, `\`) && scanner.Scan() {
 			line = line[:len(line)-1] + scanner.Text()
 		}
-
-		line = stripCommentsAndWhitespace(line)
-
-		tokens := strings.Fields(line)
+		lexer := shlex.NewLexer(strings.NewReader(line))
+		tokens := []string{}
+		for {
+			token, err := lexer.Next()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return fmt.Errorf("Error parsing bazelrc: %s\nFailed to lex '%s'.", err, line)
+			}
+			tokens = append(tokens, token)
+		}
 		if len(tokens) == 0 {
 			// blank line
 			continue
@@ -210,14 +221,6 @@ func Realpath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Abs(directPath)
-}
-
-func stripCommentsAndWhitespace(line string) string {
-	index := strings.Index(line, "#")
-	if index >= 0 {
-		line = line[:index]
-	}
-	return strings.TrimSpace(line)
 }
 
 func parseRcRule(line string) (*RcRule, error) {

@@ -24,10 +24,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
+	_ "google.golang.org/grpc/xds"
 )
 
 const (
@@ -40,8 +42,7 @@ const (
 )
 
 var (
-	poolSize                       = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
-	enableGoogleDefaultCredentials = flag.Bool("grpc_client.enable_google_default_credentials", false, "Whether to enable Google default credentials for all outgoing RPCs.", flag.Internal)
+	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 
 	idsMu sync.Mutex
 	ids   = map[string]int{}
@@ -243,7 +244,7 @@ func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.Strea
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	return DialSimpleWithPoolSize(target, *poolSize, extraOptions...)
+	return DialSimpleWithPoolSize(target, fixedPoolSize(target), extraOptions...)
 }
 
 // DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
@@ -296,13 +297,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			if *enableGoogleDefaultCredentials {
-				log.Debugf("Initializing google default credentials")
-				dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
-				log.Debugf("Initialized google default credentials")
-			} else {
-				dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
-			}
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
@@ -311,7 +306,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" {
+		if u.Scheme != "unix" && u.Scheme != "kube" && u.Scheme != "xds" {
 			target = u.Host
 		}
 	}
@@ -325,7 +320,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
-	return DialInternalWithPoolSize(env, target, *poolSize, extraOptions...)
+	return DialInternalWithPoolSize(env, target, fixedPoolSize(target), extraOptions...)
 }
 
 // DialInternalWithPoolSize is similar to DialInternal, but with a specified
@@ -346,6 +341,17 @@ func DialInternalWithoutPooling(env environment.Env, target string, extraOptions
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
 	return DialSimpleWithoutPooling(target, opts...)
+}
+
+func fixedPoolSize(target string) int {
+	if strings.HasPrefix(target, "xds:") {
+		// With xDS, gRPC creates multiple connections to the same target under
+		// the hood and load balances between them, so can reduce our pool size.
+		// Also, there's no proxy in between us and the server, so we don't have
+		// to worry about hitting max concurrent stream limits on the proxy.
+		return 2
+	}
+	return *poolSize
 }
 
 func normalizeTarget(target string) string {

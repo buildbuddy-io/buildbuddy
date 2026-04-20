@@ -4,7 +4,7 @@ title: Terms & Conditions
 
 # Terms & Conditions
 
-<div class="pill">Updated April 21, 2020</div>
+<div class="pill">Updated February 21, 2026</div>
 
 The following terms and conditions govern all use of the BuildBuddy.io website, or any other website owned and operated by ITERATION, Inc. which incorporate these terms and conditions (the “Website”), including all content, services and support packages provided on via the Website. The Website is offered subject to your acceptance without modification of all of the terms and conditions contained herein and all other operating rules, policies including, without limitation, procedures that may be published from time to time on this Website by ITERATION, Inc. (collectively, the “Agreement”).
 
@@ -30,7 +30,7 @@ If you post material to the Website, post links on the Website, or otherwise mak
 
 ## 3. User Content License
 
-User contributions are licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License. Without limiting any of those representations or warranties, ITERATION, Inc. has the right (though not the obligation) to, in ITERATION, Inc.’s sole discretion (i) refuse or remove any content that, in ITERATION, Inc.’s reasonable opinion, violates any ITERATION, Inc. policy or is in any way harmful or objectionable, or (ii) terminate or deny access to and use of the Website to any individual or entity for any reason, in ITERATION, Inc.’s sole discretion. ITERATION, Inc. will have no obligation to provide a refund of any amounts previously paid.
+Without limiting any of those representations or warranties, ITERATION, Inc. has the right (though not the obligation) to, in ITERATION, Inc.’s sole discretion (i) refuse or remove any content that, in ITERATION, Inc.’s reasonable opinion, violates any ITERATION, Inc. policy or is in any way harmful or objectionable, or (ii) terminate or deny access to and use of the Website to any individual or entity for any reason, in ITERATION, Inc.’s sole discretion. ITERATION, Inc. will have no obligation to provide a refund of any amounts previously paid.
 
 ## 4. Payment and Renewal
 

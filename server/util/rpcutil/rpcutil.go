@@ -7,10 +7,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"google.golang.org/grpc/experimental"
+	"google.golang.org/grpc/mem"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
@@ -19,6 +22,26 @@ const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
 
 func init() {
 	vtprotocodec.Register()
+
+	// Change the default buffer pool. This is like the normal default, but with
+	// more tiers. This improves bytestream reads and writes by 10-20% in
+	// benchmarks, while allocating 10% less.
+	//
+	// With the previous tiers, payloads of 32KiB+1byte would fall in the 1MiB
+	// tier, so they would allocate a lot more memory, plus every time we would
+	// get a 1MiB from the pool, we would clear the whole thing, even though we
+	// only use a part of it.
+	experimental.SetDefaultBufferPool(mem.NewTieredBufferPool(
+		256,
+		4<<10,   // 4KiB
+		16<<10,  // 16KiB (max HTTP/2 frame size used by gRPC)
+		32<<10,  // 32KiB (default buffer size for io.Copy)
+		64<<10,  // 64KiB
+		128<<10, // 128KiB
+		256<<10, // 256KiB
+		512<<10, // 512KiB
+		1<<20,   // 1MiB
+	))
 }
 
 type StreamMsg[T proto.Message] struct {
@@ -78,33 +101,84 @@ func NewReceiver[T proto.Message](ctx context.Context, stream RecvStream[T]) Rec
 	return Receiver[T]{ctx, streamMsgs}
 }
 
-type SendStream[T proto.Message] interface {
-	Send(T) error
+type SendStream[S proto.Message, R proto.Message] interface {
+	Send(S) error
+	CloseAndRecv() (R, error)
 }
 
-type Sender[T proto.Message] struct {
+type Sender[S proto.Message, R proto.Message] struct {
 	ctx      context.Context
-	sendChan chan T
+	stream   SendStream[S, R]
+	sendChan chan S
 	errChan  chan error
+
+	// done channel that's closed when the sending goroutine exists, to ensure
+	// that there are no in-flight stream.Send calls when calling CloseAndRecv.
+	done chan struct{}
 }
 
 // SendWithTimeoutCause attempts to send a message on the underlying stream,
 // waiting a maximum of timeout. If timeout is reached, the given cause is
-// returned as the error.
+// returned as the error. If this function returns an error, it must not be
+// called again on the same Sender.
 //
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
-// acknowledge individual messages. A timeout wil only occur if the sender
+// acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
-func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause error) error {
+//
+// Must not be called after CloseAndRecvWithTimeoutCause.
+func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
+	if s.sendChan == nil {
+		return status.UnavailableError("Send channel closed")
+	}
 	s.sendChan <- msg
 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
 	select {
 	case err := <-s.errChan:
+		if err != nil {
+			close(s.sendChan)
+			s.sendChan = nil
+		}
 		return err
 	case <-ctx.Done():
+		close(s.sendChan)
+		s.sendChan = nil
 		return context.Cause(ctx)
+	}
+}
+
+// CloseAndRecvWithTimeoutCause calls CloseAndRecv on the underlying stream,
+// waiting a maximum of timeout. If timeout is reached, the given cause is
+// returned as the error.
+func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
+	if s.sendChan != nil {
+		close(s.sendChan)
+		s.sendChan = nil
+	}
+	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
+	defer cancel()
+
+	// gRPC client streams don't support concurrent Send and Close* operations.
+	// If a previous SendWithTimeoutCause timed out, the sending goroutine may
+	// be stuck in stream.Send — let it exit before touching the stream again.
+	select {
+	case <-s.done:
+	case <-ctx.Done():
+		return *new(R), context.Cause(ctx)
+	}
+
+	ch := make(chan StreamMsg[R], 1)
+	go func() {
+		rsp, err := s.stream.CloseAndRecv()
+		ch <- StreamMsg[R]{rsp, err}
+	}()
+	select {
+	case msg := <-ch:
+		return msg.Data, msg.Error
+	case <-ctx.Done():
+		return *new(R), context.Cause(ctx)
 	}
 }
 
@@ -113,27 +187,39 @@ func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause err
 //
 // Example usage:
 //
-// sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+// sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
 //
 //	for {
 //		err := sender.SendWithTimeoutCause(5 * time.Second, status.DeadlineExceededError("blah blah blah"))
 //		// handle err
 //	}
-func NewSender[T proto.Message](ctx context.Context, stream SendStream[T]) Sender[T] {
-	sendChan := make(chan T, 1)
-	errChan := make(chan error)
+func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
+	sendChan := make(chan S, 1)
+	errChan := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
-			case req := <-sendChan:
+			case req, ok := <-sendChan:
+				if !ok {
+					return
+				}
 				err := stream.Send(req)
-				errChan <- err
+				select {
+				case errChan <- err:
+					if err != nil {
+						return
+					}
+				case <-ctx.Done():
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	return Sender[T]{ctx, sendChan, errChan}
+	return Sender[S, R]{ctx, stream, sendChan, errChan, done}
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.

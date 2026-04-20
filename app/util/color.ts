@@ -210,6 +210,14 @@ export function getUniformBrightnessColor(id: string) {
   return UNIFORM_BRIGHTNESS_COLORS[Math.abs(hash(id) % UNIFORM_BRIGHTNESS_COLORS.length)];
 }
 
+export function computeTraceEventColor(id: string): string {
+  const hue = Math.abs(hash(id) % 360);
+  const style = getComputedStyle(document.documentElement);
+  const lightness = style.getPropertyValue("--trace-event-lightness").trim() || "65%";
+  const chroma = style.getPropertyValue("--trace-event-chroma").trim() || "80";
+  return `lch(${lightness} ${chroma} ${hue})`;
+}
+
 function hash(value: string) {
   let hash = 0;
   for (let i = 0; i < value?.length; i++) {
@@ -246,3 +254,63 @@ export const RED_TO_GREEN_SCALE = [
   "#43A047", // green 600
   "#388E3C", // green 700
 ];
+
+/**
+ * Parses a color like #fff or rgb(0, 0, 0) and returns the rgb values.
+ */
+export function parseColor(color: string): { r: number; g: number; b: number } | null {
+  const normalized = color.trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (normalized.startsWith("#")) {
+    const hex = normalized.slice(1);
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+      return { r, g, b };
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+      return { r, g, b };
+    }
+    return null;
+  }
+
+  const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/);
+  if (!rgbMatch) return null;
+  const channels = rgbMatch[1].split(",").map((part) => part.trim());
+  if (channels.length < 3) return null;
+  const parsed = channels.slice(0, 3).map((channel) => Number(channel));
+  if (parsed.some((c) => Number.isNaN(c))) return null;
+  return {
+    r: Math.max(0, Math.min(255, parsed[0])),
+    g: Math.max(0, Math.min(255, parsed[1])),
+    b: Math.max(0, Math.min(255, parsed[2])),
+  };
+}
+
+/**
+ * Parses a color like #FFF or rgb(0, 0, 0) and linearly interpolates between
+ * them (from 0-1)
+ */
+export function interpolateColor(from: string, to: string, progress: number): string {
+  const clampedProgress = Math.max(0, Math.min(1, progress));
+  const fromRgb = parseColor(from);
+  const toRgb = parseColor(to);
+  if (!fromRgb || !toRgb) {
+    return clampedProgress < 1 ? from : to;
+  }
+  const r = Math.round(lerp(fromRgb.r, toRgb.r, clampedProgress));
+  const g = Math.round(lerp(fromRgb.g, toRgb.g, clampedProgress));
+  const b = Math.round(lerp(fromRgb.b, toRgb.b, clampedProgress));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
+}

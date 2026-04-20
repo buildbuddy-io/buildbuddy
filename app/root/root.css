@@ -2,6 +2,22 @@
   --spinner-image: url("/image/loader.svg");
 }
 
+.dark {
+  --spinner-image: url("/image/loader-white.svg");
+
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  color-scheme: dark;
+}
+
+.dark .menu {
+  border-bottom: 1px solid var(--color-shelf-border);
+}
+
+.dark .side-menu {
+  border: 1px solid var(--color-shelf-border);
+}
+
 h1,
 h2,
 h3,
@@ -88,7 +104,7 @@ button {
   font-size: 24px;
   z-index: 2;
   position: relative;
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-header-bg);
   color: var(--color-text-inverted);
 }
 
@@ -173,7 +189,7 @@ button {
   position: absolute;
   top: 46px;
   right: 8px;
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-header-bg);
   color: var(--color-text-inverted);
   padding: 8px 32px 32px 32px;
   border-bottom-left-radius: 8px;
@@ -191,10 +207,14 @@ button {
 /** Shelf **/
 
 .shelf {
-  background-color: var(--color-shelf-bg);
+  background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-shelf-border);
   padding: 32px 0;
   font-size: 14px;
+}
+
+.dark .shelf {
+  background-color: initial; /* no special shelf color in dark mode. */
 }
 
 .shelf b {
@@ -375,8 +395,8 @@ svg.icon.yellow {
 }
 
 .tab.selected {
-  background: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background: var(--color-tab-selected-bg);
+  color: var(--color-tab-selected-text);
 }
 
 /** Runs **/
@@ -520,8 +540,8 @@ a.card:hover {
 }
 
 .card.dark {
-  background-color: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  background-color: var(--color-terminal-bg);
+  color: var(--color-terminal-text);
 }
 
 .card.light-terminal {
@@ -794,11 +814,16 @@ code .comment {
   font-weight: 600;
 }
 
+.setup .setup-api-key-settings-note {
+  margin-bottom: 16px;
+  color: var(--color-text-secondary);
+}
+
 .setup-controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
   /* negate 8px margin-top on children, to prevent the first row from having a top margin */
   margin-top: -8px;
 }
@@ -849,7 +874,8 @@ code .comment {
 }
 
 .setup .no-api-keys {
-  background: var(--color-light-blue-50);
+  background: var(--color-banner-info-bg);
+  color: var(--color-banner-info-text);
   padding: 16px;
   border-radius: 8px;
 }
@@ -869,17 +895,9 @@ code .comment {
 
 .setup .downloads {
   display: flex;
+  gap: 8px;
   margin-top: 16px;
   margin-bottom: 16px;
-}
-
-.setup .downloads a {
-  background-color: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
-  padding: 7px 16px;
-  margin-right: 8px;
-  border-radius: 8px;
-  text-decoration: none;
 }
 
 .setup-notice {
@@ -984,11 +1002,12 @@ code .comment {
 
 .role-badge.CI_RUNNER {
   background: var(--color-bg-inverted);
-  color: var(--color-text-inverted);
+  color: var(--color-badge-workflow-text);
 }
 
 .role-badge.CI {
   background: var(--color-blue-gray-100);
+  color: var(--color-text-on-light-bg);
 }
 
 .role-badge.HOSTED_BAZEL {
@@ -999,7 +1018,7 @@ code .comment {
 .empty-state .button {
   width: 100%;
   padding: 16px 32px;
-  border: 2px solid var(--color-black);
+  border: 2px solid var(--color-guide-button-border);
   font-size: 16px;
   font-weight: 600;
   border-radius: 64px;
@@ -1846,6 +1865,26 @@ code .comment {
   background-color: var(--color-bg-primary);
 }
 
+.root-main.root-main-settings {
+  position: relative;
+  isolation: isolate;
+}
+
+.root-main.root-main-settings > :not(.settings-underlay) {
+  position: relative;
+  z-index: 1;
+}
+
+.root-main.root-main-settings > .settings-underlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .root-code,
 .root-login {
   overflow-y: initial;
@@ -1882,7 +1921,7 @@ code .comment {
 .sticky-loading-overlay .loading {
   height: 100vh;
   position: absolute;
-  background: var(--color-white-translucent);
+  background: var(--color-loading-overlay-bg);
 }
 
 .loading:before {
@@ -1892,7 +1931,7 @@ code .comment {
   width: 32px;
   height: 32px;
   opacity: 0.8;
-  background-image: url("/image/loader.svg");
+  background-image: var(--spinner-image);
   background-size: cover;
 }
 
@@ -1947,4 +1986,20 @@ code .comment {
 /* Chart styling */
 .recharts-pie-sector path {
   stroke: var(--color-chart-stroke);
+}
+
+.recharts-cartesian-axis-tick-value {
+  fill: var(--color-chart-axis);
+}
+
+.recharts-cartesian-grid line {
+  stroke: var(--color-chart-grid);
+}
+
+.recharts-legend-item-text {
+  color: var(--color-text-primary);
+}
+
+.recharts-tooltip-cursor {
+  fill: var(--color-chart-hover-cursor);
 }

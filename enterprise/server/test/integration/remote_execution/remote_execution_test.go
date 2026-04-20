@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -163,7 +162,6 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 }
 
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -761,12 +759,12 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
+	var expectedOutput strings.Builder
 	for _, dir := range dirs {
-		expectedOutput += "777 " + dir + "\n"
+		expectedOutput.WriteString("777 " + dir + "\n")
 	}
 
-	require.Equal(t, expectedOutput, res.Stdout)
+	require.Equal(t, expectedOutput.String(), res.Stdout)
 }
 
 func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
@@ -804,12 +802,12 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
+	var expectedOutput strings.Builder
 	for _, dir := range dirs {
-		expectedOutput += "777 " + dir + "\n"
+		expectedOutput.WriteString("777 " + dir + "\n")
 	}
 
-	require.Equal(t, expectedOutput, res.Stdout)
+	require.Equal(t, expectedOutput.String(), res.Stdout)
 }
 
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {

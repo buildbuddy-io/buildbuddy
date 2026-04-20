@@ -24,6 +24,7 @@ go_library(
         "//server/util/tracing",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -37,9 +38,14 @@ go_test(
     tags = ["block-network"],
     deps = [
         "//enterprise/server/raft/testutil",
+        "//proto:raft_go_proto",
         "//server/util/disk",
+        "//server/util/grpc_server",
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

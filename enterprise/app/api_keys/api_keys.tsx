@@ -2,7 +2,9 @@ import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
+import CertificateDownloadLink from "../../../app/auth/certificate_download_link";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -42,6 +44,10 @@ interface State {
 
   updateForm: FormState<api_key.UpdateApiKeyRequest>;
 
+  createdApiKey: api_key.ApiKey | null;
+  createdApiKeyCertificate: api_key.Certificate | null;
+  isCertGenerationEnabled: boolean | null;
+
   keyToDelete: api_key.ApiKey | null;
   isDeleteModalOpen: boolean;
   isDeleteModalSubmitting: boolean;
@@ -54,6 +60,10 @@ const INITIAL_STATE: State = {
   createForm: newFormState(api_key.CreateApiKeyRequest.create()),
 
   updateForm: newFormState(api_key.UpdateApiKeyRequest.create()),
+
+  createdApiKey: null,
+  createdApiKeyCertificate: null,
+  isCertGenerationEnabled: null,
 
   keyToDelete: null,
   isDeleteModalOpen: false,
@@ -161,11 +171,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ createForm: { ...this.state.createForm, isSubmitting: true } });
-      await this.props.create(
+      const response = await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
         })
       );
+      if (response.apiKey) {
+        const shouldFetchCreatedApiKeyCertificate = !this.isCertGenerationExplicitlyDisabled();
+        this.setState({ createdApiKey: response.apiKey, createdApiKeyCertificate: null });
+        if (shouldFetchCreatedApiKeyCertificate) {
+          this.fetchCreatedApiKeyCertificate(response.apiKey.id);
+        }
+      }
     } catch (e) {
       this.setState({ createForm: { ...this.state.createForm, isSubmitting: false } });
       errorService.handleError(e);
@@ -255,6 +272,33 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange(e.target.name, e.target.value);
   }
 
+  private onDismissCreatedApiKey() {
+    this.setState({ createdApiKey: null, createdApiKeyCertificate: null });
+  }
+
+  private async fetchCreatedApiKeyCertificate(apiKeyId: string) {
+    try {
+      const response = await rpcService.service.getApiKey(
+        api_key.GetApiKeyRequest.create({
+          apiKeyId,
+          includeCertificate: true,
+        })
+      );
+      if (this.state.createdApiKey?.id !== apiKeyId) return;
+      const certificate = response.apiKey?.certificate ? api_key.Certificate.create(response.apiKey.certificate) : null;
+      this.setState({
+        createdApiKeyCertificate: certificate,
+        isCertGenerationEnabled: Boolean(certificate?.cert && certificate?.key),
+      });
+    } catch (e) {
+      const error = BuildBuddyError.parse(e);
+      if (error.code === "FailedPrecondition" || error.code === "Unimplemented") {
+        this.setState({ isCertGenerationEnabled: false });
+        return;
+      }
+    }
+  }
+
   private onSelectReadOnly(onChange: (name: string, value: any) => any) {
     onChange("capability", []);
   }
@@ -299,6 +343,14 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
   private canEdit(): boolean {
     return this.props.userOwnedOnly || this.props.user.canCall("updateApiKey");
+  }
+
+  private isAPIKeyValueReadbackExplicitlyDisabled(): boolean {
+    return capabilities.config.apiKeyValueReadbackEnabled === false;
+  }
+
+  private isCertGenerationExplicitlyDisabled(): boolean {
+    return this.state.isCertGenerationEnabled === false;
   }
 
   private renderModal<T extends ApiKeyFields>({
@@ -458,7 +510,17 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   render() {
     if (!this.props.user) return <></>;
 
-    const { keyToDelete, createForm, updateForm, getApiKeysResponse, isDeleteModalOpen, initialLoadError } = this.state;
+    const {
+      keyToDelete,
+      createForm,
+      updateForm,
+      createdApiKey,
+      createdApiKeyCertificate,
+      getApiKeysResponse,
+      isDeleteModalOpen,
+      initialLoadError,
+    } = this.state;
+    const apiKeyValueReadbackEnabled = !this.isAPIKeyValueReadbackExplicitlyDisabled();
 
     if (!getApiKeysResponse) {
       return (
@@ -483,6 +545,31 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               Create new API key
             </FilledButton>
           </div>
+        )}
+        {createdApiKey?.value && (
+          <Banner type="success" className="api-key-created-banner" onDismiss={this.onDismissCreatedApiKey.bind(this)}>
+            <div className="api-key-created-banner-content">
+              <div>
+                Created API key <b title={createdApiKey.label || undefined}>{createdApiKey.label || "Untitled key"}</b>
+                {apiKeyValueReadbackEnabled ? "." : " (save this value - it will not be accessible later)."}
+              </div>
+              <div className="api-key-created-value-row">
+                <ApiKeyField apiKey={createdApiKey} />
+                {createdApiKeyCertificate?.cert && (
+                  <>
+                    <CertificateDownloadLink filename="buildbuddy-cert.pem" contents={createdApiKeyCertificate.cert}>
+                      Download cert (.pem)
+                    </CertificateDownloadLink>
+                    {createdApiKeyCertificate?.key && (
+                      <CertificateDownloadLink filename="buildbuddy-key.pem" contents={createdApiKeyCertificate.key}>
+                        Download cert (.key)
+                      </CertificateDownloadLink>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </Banner>
         )}
 
         {this.renderModal({
@@ -524,7 +611,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
                 <span>{describeCapabilities(key)}</span>
               </div>
-              <ApiKeyField apiKey={key} />
+              {apiKeyValueReadbackEnabled && <ApiKeyField apiKey={key} />}
               {this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey") && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit

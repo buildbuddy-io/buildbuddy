@@ -35,15 +35,9 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk build \
             --config=release \
@@ -55,11 +49,3 @@ jobs:
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
           gh release upload ${{ inputs.version_tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}

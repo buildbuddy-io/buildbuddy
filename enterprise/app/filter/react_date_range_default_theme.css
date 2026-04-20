@@ -1,10 +1,10 @@
 .rdrCalendarWrapper {
-  color: #000000;
+  color: var(--color-datepicker-text);
   font-size: 12px;
 }
 
 .rdrDateDisplayWrapper {
-  background-color: rgb(239, 242, 247);
+  background-color: var(--color-datepicker-header-bg);
 }
 
 .rdrDateDisplay {
@@ -13,8 +13,8 @@
 
 .rdrDateDisplayItem {
   border-radius: 4px;
-  background-color: rgb(255, 255, 255);
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.21);
+  background-color: var(--color-datepicker-input-bg);
+  box-shadow: 0 1px 2px 0 var(--color-datepicker-input-shadow);
   border: 1px solid transparent;
 }
 
@@ -24,13 +24,13 @@
   border: 0px;
   background: transparent;
   width: 100%;
-  color: black;
+  color: var(--color-datepicker-text-alt);
   text-align: left;
   padding: 0 8px;
 }
 
 .rdrDateDisplayItem input::placeholder {
-  color: #bdbdbd;
+  color: var(--color-datepicker-placeholder);
 }
 
 .rdrDateDisplayItemActive {
@@ -38,7 +38,7 @@
 }
 
 .rdrDateDisplayItemActive input {
-  color: black;
+  color: var(--color-datepicker-text-alt);
 }
 
 .rdrMonthAndYearWrapper {
@@ -60,7 +60,7 @@
   padding: 10px 30px 10px 10px;
   border-radius: 4px;
   outline: 0;
-  color: #3e484f;
+  color: var(--color-datepicker-select-text);
   background: url("data:image/svg+xml;utf8,<svg width='9px' height='6px' viewBox='0 0 9 6' version='1.1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'><g id='Artboard' stroke='none' stroke-width='1' fill='none' fill-rule='evenodd' transform='translate(-636.000000, -171.000000)' fill-opacity='0.368716033'><g id='input' transform='translate(172.000000, 37.000000)' fill='%230E242F' fill-rule='nonzero'><g id='Group-9' transform='translate(323.000000, 127.000000)'><path d='M142.280245,7.23952813 C141.987305,6.92353472 141.512432,6.92361662 141.219585,7.23971106 C140.926739,7.5558055 140.926815,8.06821394 141.219755,8.38420735 L145.498801,13 L149.780245,8.38162071 C150.073185,8.0656273 150.073261,7.55321886 149.780415,7.23712442 C149.487568,6.92102998 149.012695,6.92094808 148.719755,7.23694149 L145.498801,10.7113732 L142.280245,7.23952813 Z' id='arrow'></path></g></g></g></svg>")
     no-repeat;
   background-position: right 8px center;
@@ -69,7 +69,7 @@
 }
 
 .rdrMonthAndYearPickers select:hover {
-  background-color: rgba(0, 0, 0, 0.07);
+  background-color: var(--color-datepicker-select-hover);
 }
 
 .rdrMonthPicker,
@@ -85,11 +85,11 @@
   padding: 0;
   border: 0;
   border-radius: 5px;
-  background: #eceff1;
+  background: var(--color-datepicker-button-bg);
 }
 
 .rdrNextPrevButton:hover {
-  background: #e1e7f0;
+  background: var(--color-datepicker-button-hover);
 }
 
 .rdrNextPrevButton i {
@@ -105,14 +105,14 @@
 
 .rdrPprevButton i {
   border-width: 4px 6px 4px 4px;
-  border-color: transparent rgb(52, 73, 94) transparent transparent;
+  border-color: transparent var(--color-datepicker-nav-arrow) transparent transparent;
   transform: translate(-3px, 0px);
 }
 
 .rdrNextButton i {
   margin: 0 0 0 7px;
   border-width: 4px 4px 4px 6px;
-  border-color: transparent transparent transparent rgb(52, 73, 94);
+  border-color: transparent transparent transparent var(--color-datepicker-nav-arrow);
   transform: translate(3px, 0px);
 }
 
@@ -135,7 +135,7 @@
 .rdrWeekDay {
   font-weight: 400;
   line-height: 2.667em;
-  color: rgb(132, 144, 149);
+  color: var(--color-datepicker-muted);
 }
 
 .rdrDay {
@@ -149,7 +149,7 @@
   line-height: 3em;
   height: 3em;
   text-align: center;
-  color: #1d2429;
+  color: var(--color-datepicker-day);
 }
 
 .rdrDay:focus {
@@ -184,28 +184,28 @@
   width: 18px;
   height: 2px;
   border-radius: 2px;
-  background: #3d91ff;
+  background: var(--color-datepicker-today-marker);
 }
 
 .rdrDayToday:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span:after,
 .rdrDayToday:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span:after,
 .rdrDayToday:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span:after,
 .rdrDayToday:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span:after {
-  background: #fff;
+  background: var(--color-white);
 }
 
 .rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-datepicker-selected-text);
 }
 
 .rdrSelected,
 .rdrInRange,
 .rdrStartEdge,
 .rdrEndEdge {
-  background: currentColor;
+  background: var(--color-datepicker-selection-bg);
   position: absolute;
   top: 5px;
   left: 0;
@@ -278,7 +278,7 @@
 .rdrDayStartPreview,
 .rdrDayInPreview,
 .rdrDayEndPreview {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--color-datepicker-preview-bg);
   position: absolute;
   top: 3px;
   left: 0px;
@@ -316,8 +316,8 @@
 .rdrDefinedRangesWrapper {
   font-size: 12px;
   width: 226px;
-  border-right: solid 1px #eceff1;
-  background: #fff;
+  border-right: solid 1px var(--color-datepicker-border);
+  background: var(--color-datepicker-bg);
 }
 
 .rdrDefinedRangesWrapper .rdrStaticRangeSelected {
@@ -325,19 +325,24 @@
   font-weight: 600;
 }
 
+.rdrDefinedRangesWrapper .rdrStaticRangeSelected .rdrStaticRangeLabel {
+  color: var(--color-datepicker-text);
+}
+
 .rdrStaticRange {
   border: 0;
   cursor: pointer;
   display: block;
   outline: 0;
-  border-bottom: 1px solid #eceff1;
+  border-bottom: 1px solid var(--color-datepicker-border);
   padding: 0;
-  background: #fff;
+  background: var(--color-datepicker-bg);
+  color: var(--color-datepicker-text);
 }
 
 .rdrStaticRange:hover .rdrStaticRangeLabel,
 .rdrStaticRange:focus .rdrStaticRangeLabel {
-  background: #eceff1;
+  background: var(--color-datepicker-button-bg);
 }
 
 .rdrStaticRangeLabel {
@@ -363,16 +368,16 @@
   line-height: 30px;
   border-radius: 4px;
   text-align: center;
-  border: solid 1px rgb(222, 231, 235);
+  border: solid 1px var(--color-datepicker-input-border);
   margin-right: 10px;
-  color: rgb(108, 118, 122);
+  color: var(--color-datepicker-input-range-text);
 }
 
 .rdrInputRangeInput:focus,
 .rdrInputRangeInput:hover {
-  border-color: rgb(180, 191, 196);
+  border-color: var(--color-datepicker-input-border-hover);
   outline: 0;
-  color: #333;
+  color: var(--color-datepicker-input-text);
 }
 
 .rdrCalendarWrapper:not(.rdrDateRangeWrapper) .rdrDayHovered .rdrDayNumber:after {
@@ -392,7 +397,7 @@
 }
 
 .rdrDayPassive .rdrDayNumber span {
-  color: #d5dce0;
+  color: var(--color-datepicker-passive);
 }
 
 .rdrDayPassive .rdrInRange,
@@ -406,11 +411,11 @@
 }
 
 .rdrDayDisabled {
-  background-color: rgb(248, 248, 248);
+  background-color: var(--color-datepicker-disabled-bg);
 }
 
 .rdrDayDisabled .rdrDayNumber span {
-  color: #aeb9bf;
+  color: var(--color-datepicker-disabled-text);
 }
 
 .rdrDayDisabled .rdrInRange,
@@ -426,6 +431,6 @@
 .rdrMonthName {
   text-align: left;
   font-weight: 600;
-  color: #849095;
+  color: var(--color-datepicker-month-name);
   padding: 0.833em;
 }

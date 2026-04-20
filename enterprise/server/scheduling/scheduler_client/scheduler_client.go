@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	pool                        = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
 	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", false, "Whether the executor supports proactive task cancellation.", flag.Internal)
 )
 

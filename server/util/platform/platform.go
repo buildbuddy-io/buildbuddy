@@ -62,6 +62,7 @@ const (
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
 	containerRegistryBypassPropertyName   = "container-registry-bypass"
+	useOCIFetcherPropertyName             = "use-oci-fetcher"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
@@ -71,37 +72,53 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                      = "runner-recycling-key"
-	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
-	runnerCrashedExitCodesPropertyName      = "runner-crashed-exit-codes"
-	transientErrorExitCodes                 = "transient-error-exit-codes"
-	SnapshotSavePolicyPropertyName          = "remote-snapshot-save-policy"
-	SnapshotReadPolicyPropertyName          = "snapshot-read-policy"
-	MaxStaleFallbackSnapshotAgePropertyName = "max-stale-fallback-snapshot-age"
-	PreserveWorkspacePropertyName           = "preserve-workspace"
-	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
-	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
-	persistentWorkerPropertyName            = "persistent-workers"
-	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
-	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
-	WorkflowIDPropertyName                  = "workflow-id"
-	WorkloadIsolationPropertyName           = "workload-isolation-type"
-	initDockerdPropertyName                 = "init-dockerd"
-	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
-	enableVFSPropertyName                   = "enable-vfs"
-	HostedBazelAffinityKeyPropertyName      = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName      = "use-self-hosted-executors"
-	disableMeasuredTaskSizePropertyName     = "debug-disable-measured-task-size"
-	disablePredictedTaskSizePropertyName    = "debug-disable-predicted-task-size"
-	extraArgsPropertyName                   = "extra-args"
-	EnvOverridesPropertyName                = "env-overrides"
-	EnvOverridesBase64PropertyName          = "env-overrides-base64"
-	IncludeSecretsPropertyName              = "include-secrets"
-	DefaultTimeoutPropertyName              = "default-timeout"
-	TerminationGracePeriodPropertyName      = "termination-grace-period"
-	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
-	RetryPropertyName                       = "retry"
-	PersistentVolumesPropertyName           = "persistent-volumes"
+	RunnerRecyclingKey                       = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
+	transientErrorExitCodes                  = "transient-error-exit-codes"
+	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
+	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
+	MinTimeBetweenSnapshotWritesPropertyName = "min-time-between-snapshot-writes"
+	PreserveWorkspacePropertyName            = "preserve-workspace"
+	overlayfsWorkspacePropertyName           = "overlayfs-workspace"
+	cleanWorkspaceInputsPropertyName         = "clean-workspace-inputs"
+	persistentWorkerPropertyName             = "persistent-workers"
+	PersistentWorkerKeyPropertyName          = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
+	WorkflowIDPropertyName                   = "workflow-id"
+	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	initDockerdPropertyName                  = "init-dockerd"
+	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
+	enableVFSPropertyName                    = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName       = "hosted-bazel-affinity-key"
+	UseSelfHostedExecutorsPropertyName       = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName      = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName     = "debug-disable-predicted-task-size"
+	extraArgsPropertyName                    = "extra-args"
+	EnvOverridesPropertyName                 = "env-overrides"
+	EnvOverridesBase64PropertyName           = "env-overrides-base64"
+	SecretEnvOverridesPropertyName           = "secret-env-overrides"
+	SecretEnvOverridesBase64PropertyName     = "secret-env-overrides-base64"
+	IncludeSecretsPropertyName               = "include-secrets"
+	EnvSecretsPropertyName                   = "env-secrets"
+	DefaultTimeoutPropertyName               = "default-timeout"
+	TerminationGracePeriodPropertyName       = "termination-grace-period"
+	SnapshotKeyOverridePropertyName          = "snapshot-key-override"
+	RetryPropertyName                        = "retry"
+	PersistentVolumesPropertyName            = "persistent-volumes"
+	execrootPathPropertyName                 = "execroot-path"
+	// RunUnderPropertyName specifies a wrapper command to run the action
+	// under. The value is shell-tokenized and the resulting tokens are
+	// prepended to the command arguments, so the original executable becomes
+	// the first argument of the wrapper.
+	//
+	// The path to the wrapper must be either relative to the execroot or
+	// absolute.
+	//
+	// When using exec_properties in a BUILD file, use "test.run-under" to
+	// restrict this property to test actions only.
+	RunUnderPropertyName = "run-under"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -120,6 +137,21 @@ const (
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
+
+	// Whether external network access should be enabled. Valid values are:
+	// - "off": no network access
+	// - "external": network access via a network namespace routed thru the host
+	//
+	// By default, this property is not set. If it is set, its value always
+	// applies (even if "dockerNetwork" is set). If this property is not set,
+	// the isolated action's network settings will be applied from the
+	// "dockerNetwork" platform property EXCEPT for Firecracker actions which
+	// will have "external" network access (for backwards compatibility).
+	networkPropertyName = "network"
+
+	// NetworkEnableIPv6PropertyName specifies whether Firecracker guests should
+	// boot with IPv6 enabled.
+	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -215,6 +247,9 @@ type Properties struct {
 	DockerInit                bool
 	DockerUser                string
 	DockerNetwork             string
+	ExecrootPath              string
+	Network                   string
+	NetworkEnableIPv6         bool
 	RecycleRunner             bool
 	RunnerRecyclingMaxWait    time.Duration
 
@@ -228,6 +263,9 @@ type Properties struct {
 
 	EnableVFS      bool
 	IncludeSecrets bool
+	// EnvSecrets is a list of specific secret names to inject as env vars.
+	// Takes precedence over IncludeSecrets for targeted injection.
+	EnvSecrets []string
 
 	// OriginalPool can be set to inform BuildBuddy about the original pool name
 	// from another remote execution platform. This allows configuring task
@@ -293,6 +331,10 @@ type Properties struct {
 	// applied as overrides to the action.
 	EnvOverrides []string
 
+	// SecretEnvOverrides contains environment variables in the form NAME=VALUE to be
+	// applied as overrides to the action. These are always redacted in logs/UI.
+	SecretEnvOverrides []string
+
 	// OverrideSnapshotKey specifies a snapshot key that the action should start
 	// from.
 	// Only applies to recyclable firecracker actions.
@@ -317,6 +359,16 @@ type Properties struct {
 	// This property can only be used by server admins, otherwise the execution
 	// request will be rejected.
 	ContainerRegistryBypass bool
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
+
+	// RunUnder specifies a wrapper command (shell-tokenized) to prepend to
+	// the command arguments. The original executable becomes the first
+	// argument of the wrapper. The wrapper path must be relative to the
+	// execroot or absolute.
+	RunUnder string
 }
 
 type PersistentVolume struct {
@@ -392,6 +444,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		envOverrides = append(envOverrides, string(b))
 	}
 
+	secretEnvOverrides := stringListProp(m, SecretEnvOverridesPropertyName)
+	for _, prop := range stringListProp(m, SecretEnvOverridesBase64PropertyName) {
+		b, err := base64.StdEncoding.DecodeString(prop)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("decode secret env override as base64: %s", err)
+		}
+		secretEnvOverrides = append(secretEnvOverrides, string(b))
+	}
+
 	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
 	if err != nil {
 		return nil, err
@@ -408,8 +469,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	// Parse custom resources
 	var customResources []*scpb.CustomResource
 	for k, v := range m {
-		if strings.HasPrefix(k, customResourcePrefix) {
-			name := strings.TrimPrefix(k, customResourcePrefix)
+		if after, ok := strings.CutPrefix(k, customResourcePrefix); ok {
+			name := after
 			value, err := strconv.ParseFloat(v, 32)
 			if err != nil {
 				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float32", k)
@@ -422,7 +483,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	poolType := PoolTypeDefault
-	if val, ok := m[strings.ToLower(useSelfHostedExecutorsPropertyName)]; ok {
+	if val, ok := m[strings.ToLower(UseSelfHostedExecutorsPropertyName)]; ok {
 		if strings.EqualFold(val, "true") {
 			poolType = PoolTypeSelfHosted
 		} else {
@@ -479,12 +540,16 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
+		Network:                   stringProp(m, networkPropertyName, ""),
+		NetworkEnableIPv6:         boolProp(m, NetworkEnableIPv6PropertyName, false),
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
+		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
@@ -497,14 +562,17 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
+		SecretEnvOverrides:        secretEnvOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
 		SnapshotReadPolicy:        snapshotReadPolicy,
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
+		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
 		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
+		RunUnder:                  stringProp(m, RunUnderPropertyName, ""),
 	}, nil
 }
 
@@ -627,7 +695,7 @@ func milliCPUProp(props map[string]string, name string, defaultValue int64) int6
 
 func stringListProp(props map[string]string, name string) []string {
 	vals := []string{}
-	for _, item := range strings.Split(props[strings.ToLower(name)], ",") {
+	for item := range strings.SplitSeq(props[strings.ToLower(name)], ",") {
 		item := strings.TrimSpace(item)
 		if item != "" {
 			vals = append(vals, item)
@@ -642,7 +710,7 @@ func intListProp(props map[string]string, name string) []int {
 		return nil
 	}
 	vals := []int{}
-	for _, item := range strings.Split(p, ",") {
+	for item := range strings.SplitSeq(p, ",") {
 		item := strings.TrimSpace(item)
 		i, err := strconv.Atoi(item)
 		if err != nil {
@@ -766,4 +834,26 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 func Retryable(task *repb.ExecutionTask) bool {
 	v := FindEffectiveValue(task, RetryPropertyName)
 	return v == "true" || v == ""
+}
+
+func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
+	// The network platform property takes precedence and values are renamed
+	// for backwards compatibility.
+	if network == "off" {
+		return "none", nil
+	} else if network == "external" {
+		return "bridge", nil
+	} else if network != "" {
+		return "", status.InvalidArgumentErrorf(
+			"Unsupported network property value: %s", network)
+	}
+
+	if dockerNetwork == "" || dockerNetwork == "off" ||
+		dockerNetwork == "none" || dockerNetwork == "bridge" ||
+		dockerNetwork == "host" {
+		return dockerNetwork, nil
+	}
+
+	return "", status.InvalidArgumentErrorf(
+		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }

@@ -38,11 +38,11 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
 	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
 	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
-	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces (maps to the standard 'service.name' attribute, like the OTEL_SERVICE_NAME environment variable, but allows for env substitution).")
+	traceResourceAttributes   = flag.Slice("app.trace_resource_attributes", []ResourceAttribute{}, "Resource attributes to add to all traces (similar to the OTEL_RESOURCE_ATTRIBUTES environment variable, but more structured, and allows for env substitution). Where possible, follow the resource semantic conventions: https://opentelemetry.io/docs/specs/semconv/resource/")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
@@ -60,6 +60,11 @@ const (
 	forceTraceHeaderValue         = "force"
 )
 
+type ResourceAttribute struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
+
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
 // Based on TraceIDRatioBased sampler from the OpenTelemetry library.
 type fractionSampler struct {
@@ -70,17 +75,18 @@ type fractionSampler struct {
 }
 
 func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
-	configDescription := fmt.Sprintf("default=%f", fraction)
+	var configDescription strings.Builder
+	configDescription.WriteString(fmt.Sprintf("default=%f", fraction))
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
 		boundOverrides[n] = uint64(f * math.MaxInt64)
-		configDescription += fmt.Sprintf(",%s=%f", n, f)
+		configDescription.WriteString(fmt.Sprintf(",%s=%f", n, f))
 	}
 
 	return &fractionSampler{
 		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
-		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
+		description:                fmt.Sprintf("FractionSampler(%s)", configDescription.String()),
 		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
 	}
 }
@@ -221,6 +227,9 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
 
 	var resourceAttrs []attribute.KeyValue
+	for _, attr := range *traceResourceAttributes {
+		resourceAttrs = append(resourceAttrs, attribute.String(attr.Key, attr.Value))
+	}
 	if *traceServiceName != "" {
 		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(*traceServiceName))
 	}
@@ -242,7 +251,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
+		sdktrace.WithSampler(sdktrace.ParentBased(sampler, sdktrace.WithRemoteParentNotSampled(sampler))),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names

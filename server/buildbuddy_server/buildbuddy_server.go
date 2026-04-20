@@ -3,7 +3,7 @@ package buildbuddy_server
 import (
 	"context"
 	"encoding/base64"
-	"flag"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
@@ -38,11 +39,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -65,9 +66,11 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -87,14 +90,27 @@ import (
 )
 
 var (
-	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+	disableCertConfig              = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations            = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
 )
 
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
 )
+
+var (
+	WriteEventLogTimeout = 1 * time.Hour
+)
+
+func (s *BuildBuddyServer) apiKeyValueReadbackEnabled() bool {
+	if s.env.GetAuthDB() == nil {
+		// Keep default behavior if auth DB is not configured.
+		return true
+	}
+	return s.env.GetAuthDB().GetAPIKeyValueReadbackEnabled()
+}
 
 type BuildBuddyServer struct {
 	env        environment.Env
@@ -387,8 +403,8 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
-		if irs := s.env.GetIPRulesService(); irs != nil {
-			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
+		if irs := s.env.GetIPRulesEnforcer(); irs != nil {
+			_, err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
 			if status.IsPermissionDeniedError(err) {
 				selectedGroupAccess = uspb.SelectedGroup_DENIED_BY_IP_RULES
 			} else if err != nil {
@@ -428,6 +444,13 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		}
 		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 	}
+	allowedRPCs := capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID)
+	// Keep GetUserResponse.allowed_rpc in its legacy bare-method format so the
+	// existing web auth flow can keep treating these values as BuildBuddyService
+	// method names.
+	for i, rpc := range allowedRPCs {
+		allowedRPCs[i] = path.Base(rpc)
+	}
 
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
@@ -437,7 +460,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			GroupId: selectedGroupID,
 			Access:  selectedGroupAccess,
 		},
-		AllowedRpc:       capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID),
+		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
@@ -545,6 +568,9 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if *restrictMultiGroupToEnterprise && (u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS) {
+		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations. Please contact support@buildbuddy.io if you need multiple organizations.")
 	}
 
 	groupName := strings.TrimSpace(req.GetName())
@@ -675,6 +701,111 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	return &grpb.SetGroupStatusResponse{}, nil
 }
 
+func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return &grpb.GetSSOConfigResponse{
+		Config: &grpb.SSOConfig{
+			SamlIdpMetadataUrl: group.SamlIdpMetadataUrl,
+		},
+	}, nil
+}
+
+func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOConfigRequest) (*grpb.SetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
+	if metadataURL != "" {
+		if err := validateSamlIdpMetadataURL(ctx, metadataURL); err != nil {
+			return nil, err
+		}
+	}
+	if err := userDB.UpdateGroupSamlIdpMetadataUrl(ctx, groupID, metadataURL); err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, groupID, alpb.Action_UPDATE_SSO_CONFIG, req)
+	}
+	return &grpb.SetSSOConfigResponse{}, nil
+}
+
+// validateSamlIdpMetadataURL verifies that the given URL points to a valid
+// SAML 2.0 IdP metadata document. It performs a syntactic check on the URL
+// and then fetches the document and confirms the XML root element is
+// EntityDescriptor or EntitiesDescriptor in the SAML metadata namespace.
+func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return status.InvalidArgumentError("metadata URL must use http or https")
+	}
+	if u.Host == "" {
+		return status.InvalidArgumentError("metadata URL must include a host")
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to fetch metadata URL: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return status.InvalidArgumentErrorf("metadata URL returned HTTP %d", resp.StatusCode)
+	}
+	// Limit how much we read to avoid pulling down an unbounded response.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to read metadata response: %s", err)
+	}
+	const samlMetadataNS = "urn:oasis:names:tc:SAML:2.0:metadata"
+	decoder := xml.NewDecoder(strings.NewReader(string(body)))
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			return status.InvalidArgumentErrorf("response is not valid SAML metadata: %s", err)
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if se.Name.Space != samlMetadataNS {
+			return status.InvalidArgumentErrorf("response root element is not in the SAML metadata namespace (got %q)", se.Name.Space)
+		}
+		if se.Name.Local != "EntityDescriptor" && se.Name.Local != "EntitiesDescriptor" {
+			return status.InvalidArgumentErrorf("response root element must be EntityDescriptor or EntitiesDescriptor (got %q)", se.Name.Local)
+		}
+		return nil
+	}
+}
+
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -731,12 +862,16 @@ func (s *BuildBuddyServer) CreateUserList(ctx context.Context, request *ulpb.Cre
 		return nil, err
 	}
 
-	err = udb.CreateUserList(ctx, &tables.UserList{
+	ul := &tables.UserList{
 		GroupID: u.GetGroupID(),
 		Name:    request.GetName(),
-	})
+	}
+	err = udb.CreateUserList(ctx, ul)
 	if err != nil {
 		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.UserListID, ul.Name, alpb.Action_CREATE, request)
 	}
 	return &ulpb.GetUserListsResponse{}, nil
 }
@@ -747,11 +882,19 @@ func (s *BuildBuddyServer) DeleteUserList(ctx context.Context, request *ulpb.Del
 		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
 	}
 
-	err := udb.DeleteUserList(ctx, request.GetUserListId())
+	// Look up the list before deleting so we can log its name.
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
 	if err != nil {
 		return nil, err
 	}
 
+	err = udb.DeleteUserList(ctx, request.GetUserListId())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.GetUserListId(), ul.GetName(), alpb.Action_DELETE, request)
+	}
 	return &ulpb.DeleteUserListResponse{}, nil
 }
 
@@ -773,6 +916,9 @@ func (s *BuildBuddyServer) UpdateUserList(ctx context.Context, request *ulpb.Upd
 	if err != nil {
 		return nil, err
 	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, request.GetUserList().GetUserListId(), request.GetUserList().GetName(), alpb.Action_UPDATE, request)
+	}
 	return &ulpb.UpdateUserListResponse{}, nil
 }
 
@@ -782,11 +928,19 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 		return nil, status.FailedPreconditionErrorf("UserDB not enabled")
 	}
 
-	err := udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	// Look up the list to get the name for audit logging.
+	ul, err := udb.GetUserList(ctx, request.GetUserListId())
 	if err != nil {
 		return nil, err
 	}
 
+	err = udb.UpdateUserListMembers(ctx, request.GetUserListId(), request.GetUpdate())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForUserList(ctx, ul.GetUserListId(), ul.GetName(), alpb.Action_UPDATE_MEMBERSHIP, request)
+	}
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
@@ -831,10 +985,14 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
+	value := ""
+	if s.apiKeyValueReadbackEnabled() {
+		value = key.Value
+	}
 	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
-			Value:               key.Value,
+			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
@@ -1031,10 +1189,14 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
+	value := ""
+	if s.apiKeyValueReadbackEnabled() {
+		value = key.Value
+	}
 	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
-			Value:               key.Value,
+			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
@@ -1293,6 +1455,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		resultsURL = assembleURL(req.Host, req.Protocol, "")
 		resultsURL += "/invocation/"
 	}
+	// Use "build" rather than "common" because non-build commands (e.g. mod/query) don't have good BES support.
 	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", replaceSubdomain(resultsURL)))
 
 	grpcPort := "1985"
@@ -1308,6 +1471,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		return nil, err
 	}
 
+	// Use "build" rather than "common" because non-build commands (e.g. mod/query) don't have good BES support.
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", replaceSubdomain(eventsAPIURL)))
 
 	if s.env.GetCache() != nil {
@@ -1315,7 +1479,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", replaceSubdomain(cacheAPIURL)))
+		configOptions = append(configOptions, makeConfigOption("common", "remote_cache", replaceSubdomain(cacheAPIURL)))
 	}
 
 	if remote_execution_config.RemoteExecutionEnabled() {
@@ -1323,7 +1487,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", replaceSubdomain(remoteExecutionAPIURL)))
+		configOptions = append(configOptions, makeConfigOption("common", "remote_executor", replaceSubdomain(remoteExecutionAPIURL)))
 	}
 
 	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))
@@ -1419,6 +1583,40 @@ func (s *BuildBuddyServer) WaitExecution(req *espb.WaitExecutionRequest, stream 
 	return status.UnimplementedError("Not implemented")
 }
 
+type getTreeStreamAdapter struct {
+	bbspb.BuildBuddyService_GetTreeServer
+}
+
+func (s *getTreeStreamAdapter) Send(rsp *repb.GetTreeResponse) error {
+	return s.BuildBuddyService_GetTreeServer.Send(&capb.GetTreeResponse{
+		Directories:   rsp.GetDirectories(),
+		NextPageToken: rsp.GetNextPageToken(),
+	})
+}
+
+func (s *BuildBuddyServer) GetTree(req *capb.GetTreeRequest, stream bbspb.BuildBuddyService_GetTreeServer) error {
+	casServer := s.env.GetCASServer()
+	if casServer == nil {
+		return status.UnimplementedError("Not implemented")
+	}
+	return casServer.GetTree(&repb.GetTreeRequest{
+		InstanceName:   req.GetInstanceName(),
+		RootDigest:     req.GetRootDigest(),
+		PageSize:       req.GetPageSize(),
+		PageToken:      req.GetPageToken(),
+		DigestFunction: req.GetDigestFunction(),
+	}, &getTreeStreamAdapter{BuildBuddyService_GetTreeServer: stream})
+}
+
+// GetExecutionDownloads proxies paginated execution-download lookups to the
+// configured execution service.
+func (s *BuildBuddyServer) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecutionDownloads(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
 	return directory_size.GetTreeDirectorySizes(ctx, s.env, req)
 }
@@ -1484,7 +1682,11 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	logsUpdated := make(<-chan string)
 	pubsub := s.env.GetPubSub()
 	if pubsub != nil {
-		subscriber := pubsub.Subscribe(ctx, eventlog.GetEventLogPubSubChannel(req.GetInvocationId()))
+		pubsubChannel := eventlog.GetEventLogPubSubChannel(req.GetInvocationId())
+		if req.GetType() == elpb.LogType_RUN_LOG {
+			pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetInvocationId())
+		}
+		subscriber := pubsub.Subscribe(ctx, pubsubChannel)
 		defer subscriber.Close()
 		logsUpdated = subscriber.Chan()
 	}
@@ -1530,6 +1732,138 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 			req.ChunkId = rsp.GetNextChunkId()
 		}
 	}
+}
+
+func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEventLogServer) error {
+	ctx := stream.Context()
+
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	gid := authenticatedUser.GetGroupID()
+
+	ctx, cancel := context.WithTimeout(ctx, WriteEventLogTimeout)
+	defer cancel()
+
+	// Stream requests from the client in the background to ensure we don't block if the client stops sending requests.
+	type recvResult struct {
+		req *elpb.WriteEventLogRequest
+		err error
+	}
+	recvCh := make(chan recvResult)
+	go func() {
+		defer close(recvCh)
+		for {
+			req, err := stream.Recv()
+			select {
+			case recvCh <- recvResult{req, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	var eventLogWriter *eventlog.EventLogWriter
+	for {
+		var req *elpb.WriteEventLogRequest
+		select {
+		case <-ctx.Done():
+			return status.DeadlineExceededErrorf("event log streaming only supported for up to 1 hour")
+		case result, ok := <-recvCh:
+			if !ok {
+				return status.InternalErrorf("unexpected channel close")
+			}
+			if result.err == io.EOF {
+				return stream.SendAndClose(&elpb.WriteEventLogResponse{})
+			} else if result.err != nil {
+				return result.err
+			}
+			req = result.req
+		}
+
+		if eventLogWriter == nil {
+			var pubsubChannel string
+			var eventLogPath string
+
+			switch req.GetType() {
+			case elpb.LogType_RUN_LOG:
+				if req.GetMetadata().GetInvocationId() == "" {
+					return status.InvalidArgumentErrorf("missing invocation ID")
+				}
+
+				inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetMetadata().GetInvocationId())
+				if err != nil {
+					return status.NotFoundError("invocation not found")
+				}
+
+				acl := perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)
+				if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+					return err
+				}
+
+				pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetMetadata().GetInvocationId())
+				eventLogPath = eventlog.GetRunLogPathFromInvocationId(req.GetMetadata().GetInvocationId())
+			default:
+				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
+			}
+			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			if err != nil {
+				return err
+			}
+			defer eventLogWriter.Close(ctx)
+		}
+
+		n, err := eventLogWriter.Write(ctx, req.GetData())
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			metrics.EventLogBytesWritten.With(map[string]string{
+				metrics.EventName: "run_log",
+				metrics.GroupID:   gid,
+			}).Add(float64(n))
+		}
+	}
+}
+
+func (s *BuildBuddyServer) UpdateRunStatus(ctx context.Context, req *elpb.UpdateRunStatusRequest) (*elpb.UpdateRunStatusResponse, error) {
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	inv, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	acl := perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)
+	if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+		return nil, err
+	}
+
+	switch inspb.OverallStatus(inv.RunStatus) {
+	case inspb.OverallStatus_SUCCESS, inspb.OverallStatus_FAILURE, inspb.OverallStatus_DISCONNECTED:
+		return nil, status.FailedPreconditionErrorf("run is already complete, cannot be updated")
+	default:
+	}
+
+	switch req.GetStatus() {
+	case inspb.OverallStatus_SUCCESS, inspb.OverallStatus_FAILURE, inspb.OverallStatus_DISCONNECTED, inspb.OverallStatus_IN_PROGRESS:
+	default:
+		return nil, status.InvalidArgumentErrorf("invalid status")
+	}
+
+	inv.RunStatus = int64(req.GetStatus())
+	if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, inv); err != nil {
+		return nil, err
+	}
+
+	return &elpb.UpdateRunStatusResponse{}, nil
 }
 
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
@@ -1926,24 +2260,11 @@ func (s *BuildBuddyServer) RepoStatus(ctx context.Context, req *csinpb.RepoStatu
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146): Requests should be routed to the cache client for the cache proxy if applicable.
 func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
-	if err != nil {
-		return nil, err
-	}
-
-	resourceName := req.GetResourceName()
-	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
-	if err != nil {
-		return nil, err
-	}
-
-	return &capb.GetCacheMetadataResponse{
-		StoredSizeBytes: metadata.StoredSizeBytes,
-		DigestSizeBytes: metadata.DigestSizeBytes,
-		LastAccessUsec:  metadata.LastAccessTimeUsec,
-		LastModifyUsec:  metadata.LastModifyTimeUsec,
-	}, nil
+	return s.env.GetCacheClient().GetMetadata(ctx, &capb.GetCacheMetadataRequest{
+		ResourceName: req.GetResourceName(),
+	})
 }
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
@@ -2112,6 +2433,19 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, attempt)
 		if _, err = io.Copy(w, c.Reader(ctx, path)); err != nil {
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	case "runlog":
+		c := chunkstore.New(
+			s.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{},
+		)
+		// Stream the file back to our client
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s-run.log", iid))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		path := eventlog.GetRunLogPathFromInvocationId(iid)
+		if _, err := io.Copy(w, c.Reader(ctx, path)); err != nil {
+			log.Warningf("Error serving invocation-%s-run.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	case "execution_profile":
@@ -2290,7 +2624,7 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 	return al.GetLogs(ctx, request)
 }
 
-func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")

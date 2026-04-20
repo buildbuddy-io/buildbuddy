@@ -30,6 +30,7 @@ ts_library(
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:group_status",
+        "//enterprise/app/settings:sso_config",
         "//enterprise/app/settings:user_github_link",
     ],
 )
@@ -134,5 +135,36 @@ ts_library(
         "//app/components/select",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "sso_config",
+    srcs = ["sso_config.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
+        "//app/components/button",
+        "//app/components/dialog",
+        "//app/components/input",
+        "//app/components/modal",
+        "//app/components/spinner",
+        "//app/service:rpc_service",
+        "//proto:group_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "settings_theme_transition",
+    srcs = ["settings_theme_transition.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//app/util:animation_loop",
+        "//app/util:color",
+        "//app/util:math",
     ],
 )

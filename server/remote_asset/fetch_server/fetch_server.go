@@ -105,9 +105,6 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 }
 
 func checkPreconditions(env environment.Env) error {
-	if env.GetBuildBuddyServiceClient() == nil {
-		return status.FailedPreconditionError("missing BuildBuddyServiceClient")
-	}
 	if env.GetByteStreamClient() == nil {
 		return status.FailedPreconditionError("missing ByteStreamClient")
 	}
@@ -145,8 +142,8 @@ func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *d
 func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Value, string, error) {
 	for _, digestFunc := range digest.SupportedDigestFunctions() {
 		pr := fmt.Sprintf("%s-", strings.ToLower(repb.DigestFunction_Value_name[int32(digestFunc)]))
-		if strings.HasPrefix(qualifier.GetValue(), pr) {
-			b64hash := strings.TrimPrefix(qualifier.GetValue(), pr)
+		if after, ok := strings.CutPrefix(qualifier.GetValue(), pr); ok {
+			b64hash := after
 			decodedHash, err := base64.StdEncoding.DecodeString(b64hash)
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
@@ -181,15 +178,15 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier) {
+		if after, ok := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier); ok {
 			sharedHeader.Add(
-				strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier),
+				after,
 				qualifier.GetValue(),
 			)
 			continue
 		}
-		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier) {
-			idxAndKey := strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier)
+		if after, ok := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier); ok {
+			idxAndKey := after
 			halves := strings.Split(idxAndKey, ":")
 			if len(halves) != 2 {
 				// The http_header_url qualifier should be in the form
@@ -241,6 +238,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
+	// Don't send Referer headers on redirects. Go's http.Client adds these
+	// automatically, but some sites (e.g. SourceForge) use the Referer to
+	// detect non-browser clients and serve HTML instead of the file download.
+	// Curl doesn't automatically set this after redirects either.
+	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		req.Header.Del("Referer")
+		return nil
+	}
 	bsClient := getByteStreamClient(p.env)
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))

@@ -28,7 +28,7 @@ func TestEventBufferDeliveryScenarios(t *testing.T) {
 		{
 			name:   "subscribeBeforeAdd",
 			before: []*bepb.BuildEvent{},
-			after:  []*bepb.BuildEvent{
+			after: []*bepb.BuildEvent{
 				regularEvent(),
 				regularEvent(),
 				finishedEvent(),
@@ -49,7 +49,7 @@ func TestEventBufferDeliveryScenarios(t *testing.T) {
 		{
 			name:   "finishOnly",
 			before: []*bepb.BuildEvent{},
-			after: []*bepb.BuildEvent{finishedEvent()},
+			after:  []*bepb.BuildEvent{finishedEvent()},
 		},
 	}
 

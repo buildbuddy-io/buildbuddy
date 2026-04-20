@@ -4,3 +4,6 @@ cache:
   raft:
     atime_update_threshold: 1m
     enable_registry_preload: true
+auth:
+  remote:
+    target: "grpc://127.0.0.1:1985"

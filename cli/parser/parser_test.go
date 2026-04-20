@@ -47,7 +47,9 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 			Name: "ExpandStarlarkFlagsFromCommonConfig",
 			Args: []string{"build", "--no@io_bazel_rules_docker//transitions:enable=foo"},
 			Expanded: []string{
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--no@io_bazel_rules_docker//transitions:enable=foo",
 			},
@@ -86,7 +88,9 @@ func TestParseBazelrc_Simple(t *testing.T) {
 			Bazelrc: "common --@io_bazel_rules_docker//transitions:enable=false",
 			Args:    []string{"build"},
 			Expanded: []string{
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--@io_bazel_rules_docker//transitions:enable=false",
 			},
@@ -176,7 +180,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"query"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"query",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -189,7 +195,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"query",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -204,7 +212,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"query",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -242,11 +252,20 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
+			args: []string{"--ignore_all_rc_files", "query"},
+			expectedExpandedArgs: []string{
+				"--ignore_all_rc_files",
+				"query",
+			},
+		},
+		{
 			args: []string{"--explicit_startup_flag", "query"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--explicit_startup_flag",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"query",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -256,7 +275,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"build"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -267,7 +288,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"build", "--explicit_flag"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -279,7 +302,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"build", "--config=foo"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -295,7 +320,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"build", "--config=foo", "--config", "bar"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -313,7 +340,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"test"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"test",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -327,7 +356,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			args: []string{"build", "--config=workspace_status_with_space"},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -344,7 +375,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -361,7 +394,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 			expectedExpandedArgs: []string{
 				"--startup_flag_1",
-				"--ignore_all_rc_files",
+				"--nohome_rc",
+				"--noworkspace_rc",
+				"--nosystem_rc",
 				"build",
 				"--build_metadata=VALID_COMMON_FLAG=1",
 				"--build_metadata=VALID_COMMON_FLAG=2",
@@ -466,32 +501,32 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		{
 			name:                 "ShouldIgnoreDuplicateBazelrcWithExactPathMatch",
 			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1, "test"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "test", "--test_arg=1", "--test_arg=2"},
 		},
 		{
 			name:                 "ShouldIgnoreDuplicateBazelrcWithEquivalentPathMatch",
 			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1AltPath, "test"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "test", "--test_arg=1", "--test_arg=2"},
 		},
 		{
 			name:                 "ShouldIgnoreDuplicateBazelrcWithEquivalentSymlinkTargetPathMatch",
 			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1Symlink, "test"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "test", "--test_arg=1", "--test_arg=2"},
 		},
 		{
 			name:                 "ShouldIgnoreExplicitWorkspacercReference",
 			args:                 []string{"--bazelrc=" + workspacerc, "run"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "run", "--build_metadata=WORKSPACERC=1"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "run", "--build_metadata=WORKSPACERC=1"},
 		},
 		{
 			name:                 "ShouldNotIgnoreDuplicateBazelrcWithHardlinkTargetMatch",
 			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1Hardlink, "test"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
 		},
 		{
 			name:                 "ShouldNotIgnoreDuplicateBazelrcImportedExplicitly",
 			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + importsRC1, "test"},
-			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
+			expectedExpandedArgs: []string{"--nohome_rc", "--noworkspace_rc", "--nosystem_rc", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -708,7 +743,9 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	}
 
 	expectedExpandedArgs := []string{
-		"--ignore_all_rc_files",
+		"--nohome_rc",
+		"--noworkspace_rc",
+		"--nosystem_rc",
 		"build",
 		"--experimental_skip_ttvs_for_genquery",
 	}
@@ -732,7 +769,9 @@ func TestCommonPositionalArgument(t *testing.T) {
 	}
 
 	expectedExpandedArgs := []string{
-		"--ignore_all_rc_files",
+		"--nohome_rc",
+		"--noworkspace_rc",
+		"--nosystem_rc",
 		"build",
 		"foo",
 	}
@@ -742,4 +781,72 @@ func TestCommonPositionalArgument(t *testing.T) {
 
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+}
+
+func TestBazelrcLexing(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE": "",
+		".bazelrc":  "common targetwitha#",
+	})
+
+	args := []string{
+		"build",
+	}
+
+	expectedExpandedArgs := []string{
+		"--nohome_rc",
+		"--noworkspace_rc",
+		"--nosystem_rc",
+		"build",
+		"targetwitha#",
+	}
+	parsedArgs, err := ParseArgs(args)
+	require.NoError(t, err)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
+
+	require.NoError(t, err, "error expanding %s", args)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
+}
+
+func TestGetRemoteHeaderVal(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		headerKey string
+		expected  string
+	}{
+		{
+			name:      "Multiple headers",
+			args:      []string{"build", "//...", "--remote_header=unrelated-header-key=XXXXX", "--remote_header=x-buildbuddy-api-key=abc123"},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "abc123",
+		},
+		{
+			name:      "Header not set",
+			args:      []string{"build", "//...", "--remote_header=x-buildbuddy-api-key=abc123"},
+			headerKey: "unrelated-header-key",
+			expected:  "",
+		},
+		{
+			name:      "No remote headers",
+			args:      []string{"build", "//..."},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "",
+		},
+		{
+			name:      "Returns last value set",
+			args:      []string{"build", "--remote_header=x-buildbuddy-api-key=first", "--remote_header=x-buildbuddy-api-key=second"},
+			headerKey: "x-buildbuddy-api-key",
+			expected:  "second",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsedArgs, err := ParseArgs(tc.args)
+			require.NoError(t, err)
+
+			result := GetRemoteHeaderVal(parsedArgs, tc.headerKey)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }

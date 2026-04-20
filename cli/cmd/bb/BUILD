@@ -1,5 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+# NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
+# target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
+# run `bazel run //tools/bb:update_version` after your release to pick them up.
+
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
@@ -29,6 +33,8 @@ go_library(
         "//cli/plugin",
         "//cli/runscript",
         "//cli/setup",
+        "//cli/stream_run_logs",
+        "//cli/stream_run_logs/option_definitions",
         "//cli/watcher",
         "//cli/watcher/option_definitions",
         "//server/util/lib/seq",

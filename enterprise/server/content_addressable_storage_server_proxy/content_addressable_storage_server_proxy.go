@@ -31,10 +31,10 @@ var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", fals
 
 type CASServerProxy struct {
 	supportsEncryption func(context.Context) bool
-	atimeUpdater       interfaces.AtimeUpdater
 	authenticator      interfaces.Authenticator
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
+	localCache         interfaces.Cache
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -47,10 +47,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CASServerProxy, error) {
-	atimeUpdater := env.GetAtimeUpdater()
-	if atimeUpdater == nil {
-		return nil, fmt.Errorf("An AtimeUpdater is required to enable the ContentAddressableStorageServerProxy")
-	}
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable the ContentAddressableStorageServerProxy")
@@ -65,10 +61,10 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	}
 	proxy := CASServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
-		atimeUpdater:       atimeUpdater,
 		authenticator:      authenticator,
 		local:              local,
 		remote:             remote,
+		localCache:         env.GetCache(),
 	}
 	return &proxy, nil
 }
@@ -239,7 +235,6 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			mergedDigests = append(mergedDigests, resp.Digest)
 		}
 	}
-	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
 
 	cacheMetrics := newCacheMetrics().addReadMetrics(metrics.HitStatusLabel, mergedResp.GetResponses())
 	if len(mergedResp.Responses) == len(req.Digests) {
@@ -414,9 +409,23 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not supported for skipping remote")
+	}
+
+	return s.remote.SpliceBlob(ctx, req)
 }
 
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedErrorf("SplitBlob RPC is not supported for skipping remote")
+	}
+
+	return s.remote.SplitBlob(ctx, req)
 }

@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -53,6 +53,7 @@ ts_library(
         "//app/target",
         "//app/target:target_v2",
         "//app/util:errors",
+        "//proto:eventlog_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
@@ -160,6 +161,7 @@ ts_library(
         "//app/util:proto",
         "//app/util:rpc",
         "//app/util:shlex",
+        "//proto:cache_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:firecracker_ts_proto",
         "//proto:grpc_code_ts_proto",
@@ -501,6 +503,17 @@ ts_library(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "invocation_model_test",
+    srcs = ["invocation_model_test.ts"],
+    deps = [
+        ":invocation_model",
+        "//:node_modules/tslib",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:invocation_ts_proto",
+    ],
+)
+
 ts_library(
     name = "invocation_not_found",
     srcs = ["invocation_not_found.tsx"],
@@ -668,6 +681,7 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
+        "//app/trace:timing_profile_drop_target",
         "//app/trace:trace_events",
         "//app/trace:trace_viewer",
         "//proto:build_event_stream_ts_proto",
@@ -806,6 +820,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/select",
         "//app/errors:error_service",

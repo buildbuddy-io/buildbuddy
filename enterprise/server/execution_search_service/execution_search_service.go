@@ -96,6 +96,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
+	q.AddWhereClause("invocation_uuid != ''")
 
 	if user := req.GetQuery().GetInvocationUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)
@@ -214,11 +215,11 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		Execution: make([]*expb.ExecutionWithInvocationMetadata, len(olapExecutions)),
 	}
 	for i, ex := range olapExecutions {
-		ex, err := clickhouseExecutionToProto(ex)
+		converted, err := clickhouseExecutionToProto(ex)
 		if err != nil {
 			return nil, status.WrapError(err, "convert clickhouse execution to proto")
 		}
-		rsp.Execution[i] = ex
+		rsp.Execution[i] = converted
 	}
 	if int64(len(rsp.Execution)) == limitSize {
 		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limitSize, 10)

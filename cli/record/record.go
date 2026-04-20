@@ -28,6 +28,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("record", flag.ContinueOnError)
+	Flags = flags
 
 	besBackend   = flags.String("bes_backend", "remote.buildbuddy.io", "BuildBuddy BES backend target")
 	resultsURL   = flags.String("results_url", "https://app.buildbuddy.io", "BuildBuddy results URL")
@@ -92,7 +93,7 @@ func record(cmdArgs []string) (int, error) {
 	log.Debugf("Starting recording session with invocation ID: %s", iid)
 
 	invocationURL := fmt.Sprintf("%s/invocation/%s", *resultsURL, iid)
-	streamingLog := fmt.Sprintf(terminal.Esc(32) + "INFO:" + terminal.Esc() + fmt.Sprintf(" Streaming results to: %s", terminal.Esc(4, 34)+invocationURL+terminal.Esc()))
+	streamingLog := terminal.Esc(32) + "INFO:" + terminal.Esc() + fmt.Sprintf(" Streaming results to: %s", terminal.Esc(4, 34)+invocationURL+terminal.Esc())
 
 	fmt.Fprintln(os.Stderr, streamingLog)
 

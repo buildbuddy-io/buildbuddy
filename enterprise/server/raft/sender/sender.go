@@ -3,6 +3,7 @@ package sender
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -98,27 +100,6 @@ func scanPartitionDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.He
 	return res, nil
 }
 
-func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
-	req := &rfpb.ScanRequest{
-		Start:    keys.RangeMetaKey(key),
-		End:      constants.SystemPrefix,
-		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
-		Limit:    1,
-	}
-	res, err := scanRangeDescriptors(ctx, c, h, req)
-	if err != nil {
-		return nil, err
-	}
-	if len(res) == 0 {
-		return nil, status.NotFoundErrorf("range descriptor not found for key %q", key)
-	}
-	r := rangemap.Range{Start: res[0].GetStart(), End: res[0].GetEnd()}
-	if !r.Contains(key) {
-		return nil, status.NotFoundErrorf("range descriptor not found for key %q", key)
-	}
-	return res[0], nil
-}
-
 func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
 	batchReq, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
@@ -138,20 +119,67 @@ func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 	return s.rangeCache.Get(constants.MetaRangePrefix)
 }
 
-func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
-	var rangeDescriptor *rfpb.RangeDescriptor
+// fetchRangeDescriptorsFromMetaRange looks up range descriptors for
+// one or more keys in a single batch RPC to the meta range. On
+// success, the returned slice has exactly len(keysToFetch) non-nil
+// elements. If any key's descriptor is not found, an error is
+// returned.
+func (s *Sender) fetchRangeDescriptorsFromMetaRange(ctx context.Context, keysToFetch [][]byte) (returnedRDs []*rfpb.RangeDescriptor, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	spn.SetAttributes(attribute.Int("num_keys", len(keysToFetch)))
+	defer func() {
+		tracing.RecordErrorToSpan(spn, returnedErr)
+		spn.End()
+	}()
+	var results []*rfpb.RangeDescriptor
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		rd, err := lookupRangeDescriptor(ctx, c, h, key)
+		batch := rbuilder.NewBatchBuilder()
+		for _, key := range keysToFetch {
+			batch.Add(&rfpb.ScanRequest{
+				Start:    keys.RangeMetaKey(key),
+				End:      constants.SystemPrefix,
+				ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+				Limit:    1,
+			})
+		}
+		batchReq, err := batch.ToProto()
 		if err != nil {
 			return err
 		}
-		rangeDescriptor = rd
+		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: h,
+			Batch:  batchReq,
+		})
+		if err != nil {
+			return err
+		}
+		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+		results = make([]*rfpb.RangeDescriptor, len(keysToFetch))
+		for i, key := range keysToFetch {
+			scanRsp, err := batchRsp.ScanResponse(i)
+			if err != nil {
+				return status.WrapErrorf(err, "scan range descriptor for key %q", key)
+			}
+			kvs := scanRsp.GetKvs()
+			if len(kvs) == 0 {
+				return status.NotFoundErrorf("range descriptor not found for key %q", key)
+			}
+			rd := &rfpb.RangeDescriptor{}
+			if err := proto.Unmarshal(kvs[0].GetValue(), rd); err != nil {
+				return status.InternalErrorf("scan returned unparsable kv (key=%q): %w", kvs[0].GetKey(), err)
+			}
+			r := rangemap.Range{Start: rd.GetStart(), End: rd.GetEnd()}
+			if !r.Contains(key) {
+				return status.NotFoundErrorf("range descriptor not found for key %q", key)
+			}
+			results[i] = rd
+		}
 		return nil
 	}
 	if err := s.runOnMetaRange(ctx, fn); err != nil {
 		return nil, err
 	}
-	return rangeDescriptor, nil
+	return results, nil
 }
 
 // LookupRangeDescriptorsForPartition looks up range descriptors associated with
@@ -199,12 +227,12 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	}
 	rangeDescriptor := s.rangeCache.Get(key)
 	if rangeDescriptor == nil || skipCache {
-		rd, err := s.fetchRangeDescriptorFromMetaRange(ctx, key)
+		rds, err := s.fetchRangeDescriptorsFromMetaRange(ctx, [][]byte{key})
 		if err != nil {
 			return nil, err
 		}
-		s.rangeCache.UpdateRange(rd)
-		rangeDescriptor = rd
+		s.rangeCache.UpdateRange(rds[0])
+		rangeDescriptor = rds[0]
 	}
 	return rangeDescriptor, nil
 }
@@ -216,6 +244,7 @@ func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
 		metaRangeDescriptor := s.GetMetaRangeDescriptor()
 		if metaRangeDescriptor == nil {
 			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
+			lastError = status.UnavailableError("RangeCache did not have meta range yet")
 			continue
 		}
 		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
@@ -227,7 +256,7 @@ func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
 		}
 		lastError = err
 	}
-	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %s", lastError)
+	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %v", lastError)
 }
 
 // FetchRangeDescriptors fetches range descriptors.
@@ -296,6 +325,7 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 	spn.SetAttributes(
 		attribute.Int64("range_id", int64(replica.GetRangeId())),
 		attribute.Int64("replica_id", int64(replica.GetReplicaId())),
+		attribute.String("nhid", replica.GetNhid()),
 		attribute.String("consistency_mode", header.GetConsistencyMode().String()),
 	)
 
@@ -461,15 +491,42 @@ type rangeKeys struct {
 func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skipRangeCache bool) (map[uint64]*rangeKeys, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	keysByRange := make(map[uint64]*rangeKeys)
-	for _, keyMeta := range keys {
-		rd, err := s.LookupRangeDescriptor(ctx, keyMeta.Key, skipRangeCache)
+
+	// First pass: check the range cache for all keys and collect
+	// cache misses.
+	rds := make([]*rfpb.RangeDescriptor, len(keys))
+	var missIndices []int
+	var missKeys [][]byte
+	for i, keyMeta := range keys {
+		if !skipRangeCache {
+			if rd := s.rangeCache.Get(keyMeta.Key); rd != nil {
+				rds[i] = rd
+				continue
+			}
+		}
+		missIndices = append(missIndices, i)
+		missKeys = append(missKeys, keyMeta.Key)
+	}
+
+	// Batch-fetch all cache misses in a single meta range RPC.
+	if len(missKeys) > 0 {
+		fetched, err := s.fetchRangeDescriptorsFromMetaRange(ctx, missKeys)
 		if err != nil {
 			return nil, err
 		}
+		for j, idx := range missIndices {
+			s.rangeCache.UpdateRange(fetched[j])
+			rds[idx] = fetched[j]
+		}
+	}
+
+	// Partition keys by range.
+	keysByRange := make(map[uint64]*rangeKeys)
+	for i, keyMeta := range keys {
+		rd := rds[i]
 		if v, ok := keysByRange[rd.GetRangeId()]; ok {
-			// Uncommon, but means range information changed while we were
-			// partitioning.
+			// Uncommon, but means range information changed while we
+			// were partitioning.
 			if !proto.Equal(v.rd, rd) {
 				return s.partitionKeysByRange(ctx, keys, skipRangeCache)
 			}
@@ -502,6 +559,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
+	var mu sync.Mutex
 	var rsps []any
 	remainingKeys := keys
 	var lastError error
@@ -514,37 +572,48 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// We'll repopulate remaining keys below.
 		remainingKeys = nil
 
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(100)
 		for _, rk := range keysByRange {
-			var rangeRsp any
-			i, err := s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-				rsp, err := fn(ctx, c, h, rk.keys)
+			eg.Go(func() error {
+				var rangeRsp any
+				i, err := s.tryReplicas(egCtx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+					rsp, err := fn(ctx, c, h, rk.keys)
+					if err != nil {
+						return err
+					}
+					rangeRsp = rsp
+					return nil
+				}, opts.ConsistencyMode)
 				if err != nil {
-					return err
+					if !status.IsOutOfRangeError(err) {
+						return err
+					}
+					mu.Lock()
+					remainingKeys = append(remainingKeys, rk.keys...)
+					lastError = err
+					mu.Unlock()
+				} else {
+					if i != 0 {
+						replica := rk.rd.GetReplicas()[i]
+						s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
+					}
+					mu.Lock()
+					rsps = append(rsps, rangeRsp)
+					mu.Unlock()
 				}
-				rangeRsp = rsp
 				return nil
-			}, opts.ConsistencyMode)
-			if err != nil {
-				if !status.IsOutOfRangeError(err) {
-					return nil, err
-				}
-				skipRangeCache = true
-				// No luck for the keys in the range on this try, let's try them
-				// on the next attempt.
-				remainingKeys = append(remainingKeys, rk.keys...)
-			} else {
-				if i != 0 {
-					replica := rk.rd.GetReplicas()[i]
-					s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
-				}
-				rsps = append(rsps, rangeRsp)
-			}
-			lastError = err
+			})
+		}
+
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 
 		if len(remainingKeys) == 0 {
 			return rsps, nil
 		}
+		skipRangeCache = true
 	}
 	return nil, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
 }

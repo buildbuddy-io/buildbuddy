@@ -317,6 +317,26 @@ export default class InvocationModel {
     return rawVal !== "0";
   }
 
+  booleanBuildMetadata(name: string): boolean | undefined {
+    const rawVal = this.buildMetadataMap.get(name);
+    if (rawVal === undefined) return undefined;
+
+    switch (rawVal.trim().toLowerCase()) {
+      case "1":
+      case "true":
+      case "yes":
+      case "on":
+        return true;
+      case "0":
+      case "false":
+      case "no":
+      case "off":
+        return false;
+      default:
+        return Boolean(rawVal);
+    }
+  }
+
   stringCommandLineOption(name: string, defaultValue = ""): string {
     const rawVal = this.optionsMap.get(name);
     if (rawVal === undefined) return defaultValue;
@@ -487,6 +507,10 @@ export default class InvocationModel {
   }
 
   getIsRBEEnabled() {
+    const remoteExecutionEnabled = this.booleanBuildMetadata("REMOTE_EXECUTION_ENABLED");
+    if (remoteExecutionEnabled !== undefined) {
+      return remoteExecutionEnabled;
+    }
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }
 
@@ -533,9 +557,17 @@ export default class InvocationModel {
   }
 
   getPullRequestNumber(): number | undefined {
-    return this.buildMetadataMap.get("PULL_REQUEST_NUMBER")
-      ? Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"))
-      : undefined;
+    if (this.buildMetadataMap.get("PULL_REQUEST_NUMBER")) {
+      return Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"));
+    }
+
+    // If the build metadata is not set, get PR from GITHUB_REF (e.g. "refs/pull/123/merge")
+    const githubRef = this.clientEnvMap.get("GITHUB_REF") ?? "";
+    const match = githubRef.match(/^refs\/pull\/(\d+)\//);
+    if (match) {
+      return Number(match[1]);
+    }
+    return undefined;
   }
 
   getGithubUser() {
@@ -548,6 +580,15 @@ export default class InvocationModel {
     }
 
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
+  }
+
+  // https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+  getGithubActionsUrl() {
+    if (this.getGithubRepo() && this.clientEnvMap.get("GITHUB_RUN_ID")) {
+      return `${this.getGithubRepo()}/actions/runs/${this.clientEnvMap.get("GITHUB_RUN_ID")}`;
+    }
+
+    return undefined;
   }
 
   getGithubRepo(): string {
@@ -684,6 +725,19 @@ export default class InvocationModel {
   }
 
   getStatus() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "Succeeded";
+        case invocation_status.OverallStatus.FAILURE:
+          return "Run failed";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "Run in progress...";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "Run disconnected";
+        default:
+      }
+    }
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
@@ -697,6 +751,20 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "disconnected";
+        default:
+      }
+    }
+
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
@@ -720,6 +788,10 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isRunInProgress() {
+    return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
+  }
+
   /**
    * Returns whether basic invocation metadata has been received yet, such as
    * user, bazel command, target pattern etc.
@@ -732,6 +804,20 @@ export default class InvocationModel {
   }
 
   getFaviconType() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return IconType.Success;
+        case invocation_status.OverallStatus.FAILURE:
+          return IconType.Failure;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return IconType.InProgress;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return IconType.Unknown;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
@@ -749,6 +835,20 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
@@ -1068,6 +1168,18 @@ export default class InvocationModel {
       rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
     } catch {
       console.error("Error downloading execution log");
+    }
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
     }
   }
 }

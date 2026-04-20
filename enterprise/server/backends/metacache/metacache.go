@@ -394,7 +394,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.CommitFn = func(bytesWritten int64) error {
+	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := c.opts.Clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
 			FileRecord:         fileRecord,
@@ -410,7 +410,7 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 		return fn(md)
-	}
+	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
 	shouldEncrypt, err := c.encryptionEnabled(ctx)
@@ -517,10 +517,15 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 	if err != nil {
 		return nil, err
 	}
+
 	if len(mds) != 1 {
-		return nil, status.NotFoundErrorf("Found %d records for metadata: %+v", len(mds), r)
+		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
+		return nil, status.InternalError("only one metadata record should match query")
 	}
 	md := mds[0]
+	if md.GetFileRecord() == nil {
+		return nil, status.NotFoundErrorf("Metadata not found for %v", r)
+	}
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetFileRecord().GetDigest().GetSizeBytes(),
@@ -595,6 +600,10 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 
 	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
 	for _, md := range mds {
+		if md.GetFileRecord() == nil {
+			// Missing metadata, skip
+			continue
+		}
 		k := keyFromFileRecord(md.GetFileRecord())
 		keyToMetadata[k] = md
 	}
@@ -700,7 +709,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 	storageMetadata := md.GetStorageMetadata()
 
 	if chunkedMD := storageMetadata.GetChunkedMetadata(); chunkedMD == nil && md.GetStoredSizeBytes() == 0 {
-		log.Infof("Ignoring zero-length file. md: %+v", md)
+		log.CtxInfof(ctx, "Ignoring zero-length file. md: %+v, resource: %v", md, r)
 		return nil, status.NotFoundError("object not found (zero-length)")
 	}
 
@@ -808,10 +817,19 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 		return nil, err
 	}
 	if len(mds) != 1 {
-		log.Errorf("File record %v found multiple metadatas: %v", fileRecord, mds)
+		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
 		return nil, status.InternalError("only one metadata record should match query")
 	}
 	md := mds[0]
+	if md.GetFileRecord() == nil {
+		// MetadataService.Get doesn't have an explicit "not found" response,
+		// but it returns an empty FileMetadata if the record is not found.
+		// Because proto marshalling and unmarshalling turns a repeated field
+		// with nils into a repeated field with empty structs, we need to check
+		// if the proto is empty rather than nil. The easiest way to do this is
+		// check if a field that should always be set is nil.
+		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
+	}
 
 	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit)
 
@@ -819,6 +837,11 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (cwc interfaces.CommittedWriteCloser, resultErr error) {
 	return c.writerWithImmediateCommit(ctx, r, r.GetDigest().GetSizeBytes())
+}
+
+func (c *Cache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	_, partitionID := c.lookupGroupAndPartitionID(ctx, remoteInstanceName)
+	return partitionID, nil
 }
 
 // SupportsCompressor returns whether the cache supports storing data compressed
@@ -842,4 +865,8 @@ func (c *Cache) recordMetrics(method string, err error, start time.Time) {
 		metrics.CacheNameLabel: c.opts.Name,
 		metrics.CacheMethod:    method,
 	}).Observe(float64(c.opts.Clock.Since(start).Microseconds()))
+}
+
+func (c *Cache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	return status.UnimplementedError("metacache.RegisterAtimeUpdater() unsupported")
 }

@@ -148,7 +148,7 @@ func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHit
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	te := testenv.GetTestEnv(t)
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(authenticator)
 	hitTrackerService := newTestHitTracker(t, authenticator)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)

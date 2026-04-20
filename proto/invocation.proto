@@ -29,7 +29,7 @@ enum DownloadOutputsOption {
   MINIMAL = 4;
 }
 
-// Next tag: 37
+// Next tag: 40
 message Invocation {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -160,6 +160,10 @@ message Invocation {
 
   // DEPRECATED: Use parent_run_id instead.
   string parent_invocation_id = 35 [deprecated = true];
+
+  // Status of the executable run for `bazel run` commands that uploaded run
+  // logs.
+  invocation_status.OverallStatus run_status = 39;
 }
 
 message InvocationEvent {

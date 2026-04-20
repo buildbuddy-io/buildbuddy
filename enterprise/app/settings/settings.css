@@ -1,5 +1,9 @@
-.settings .title.settings-title {
-  margin-bottom: 0;
+.settings .shelf {
+  transition: 250ms ease-out 250ms;
+}
+
+.dark .settings .shelf {
+  transition: 100ms ease-out;
 }
 
 .settings-section {
@@ -26,6 +30,30 @@
 
 .settings-option-description {
   margin-bottom: 16px;
+}
+
+.settings-option-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background-color: var(--color-banner-warning-bg);
+  border-radius: 4px;
+  color: var(--color-banner-warning-text);
+  font-size: 14px;
+}
+
+.settings-option-warning .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--color-banner-warning-icon);
+}
+
+.settings-option-warning a {
+  color: var(--color-banner-warning-text);
+  text-decoration: underline;
 }
 
 .settings .settings-button,
@@ -244,7 +272,7 @@
   padding: 8px 16px;
   position: relative;
   overflow: hidden;
-  transition: box-shadow 100ms ease-out;
+  transition: 100ms ease-out;
 }
 
 .settings .settings-tab .icon {
@@ -316,6 +344,7 @@
   padding: 12px;
   border-radius: 8px;
   background-color: var(--color-settings-internal-bg);
+  color: var(--color-text-on-light-bg);
 }
 
 .settings-button-group {
@@ -335,4 +364,17 @@
 .settings .settings-tab.active-tab {
   background: var(--color-settings-tab-active-bg);
   color: var(--color-settings-tab-active-text);
+}
+
+.sso-config-form {
+  margin-top: 16px;
+}
+
+.sso-config-form .sso-config-input {
+  width: 100%;
+  max-width: 640px;
+}
+
+.sso-config-form .sso-config-actions {
+  margin-top: 12px;
 }

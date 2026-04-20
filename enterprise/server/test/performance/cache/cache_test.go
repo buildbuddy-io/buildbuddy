@@ -78,7 +78,7 @@ func getUserContext(t testing.TB, env environment.Env) context.Context {
 func getTestEnv(b *testing.B) *real_environment.RealEnv {
 	te := testenv.GetTestEnv(b)
 	setExperimentProvider(b, te)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1")))
+	te.SetAuthenticator(testauth.NewTestAuthenticator(b, testauth.TestUsers("user1", "group1")))
 	return te
 }
 
@@ -150,7 +150,7 @@ func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, l
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc.StartListening()
+	require.NoError(t, dc.StartListening())
 	t.Cleanup(func() { dc.Shutdown(context.Background()) })
 	return dc
 }

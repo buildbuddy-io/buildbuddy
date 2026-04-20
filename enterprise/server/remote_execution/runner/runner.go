@@ -64,6 +64,7 @@ var (
 	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupDefaultImages    = flag.Bool("executor.warmup_default_images", false, "Whether to warm up default container images on executor startup.")
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
@@ -76,7 +77,8 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
-	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", false, "Whether to warmup the default podman images or not.")
+	ociWarmupDefaultImages    = flag.Bool("executor.oci.warmup_default_images", false, "Whether to warmup the default oci images or not.")
 	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
@@ -275,6 +277,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
+		r.PlatformProperties.UseOCIFetcher,
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -296,6 +299,13 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 		r.task.GetExecuteRequest().GetDigestFunction())
+	// NOTE: If we switch this code path to download inputs incrementally from
+	// GetTree instead of buffering the full GetTree response from the server,
+	// the downloadsBitmap implementation will probably break. The
+	// implementation currently depends on the tree being fully buffered in
+	// memory, in order for the bitmap indexes to be
+	// deterministic (so that they can be interpreted properly by both clients
+	// and servers)
 	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
 		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {
@@ -317,7 +327,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	}
 	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
-		if err := r.Workspace.AddCIRunner(ctx); err != nil {
+		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
 		}
 	}
@@ -399,6 +409,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
+			if dirtools.InputFetchMetadataEnabled() {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
@@ -427,6 +440,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		err = container.PullImageIfNecessary(
 			ctx, r.env,
 			r.Container, creds, r.PlatformProperties.ContainerImage,
+			r.PlatformProperties.UseOCIFetcher,
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
@@ -937,13 +951,22 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 		defer cancel()
-		_ = ws.Remove(ctx)
+		if err := ws.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+		}
 	}()
 	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
 		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
 		return err
 	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		if err := c.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup container: %s", err)
+		}
+	}()
 
 	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
@@ -952,8 +975,21 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
 	// the auth result, since it makes it tricker to debug per-action
 	// misconfiguration.
-	if err := c.PullImage(ctx, creds); err != nil {
-		return err
+	onDisk, _ := c.IsImageCached(ctx)
+	pullStart := time.Now()
+	pullErr := c.PullImage(ctx, creds)
+	container.RecordImageFetchMetrics(
+		c.IsolationType(),
+		oci.RegistryETLDPlusOne(platProps.ContainerImage),
+		metrics.ImageFetchTriggerWarmup,
+		onDisk,
+		!creds.IsEmpty(),
+		platProps.UseOCIFetcher,
+		pullErr,
+		time.Since(pullStart),
+	)
+	if pullErr != nil {
+		return pullErr
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
 	return nil
@@ -1000,7 +1036,13 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			})
 		}
 
-		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+		if (isolation == platform.OCIContainerType) && !*ociWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.PodmanContainerType) && !*podmanWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.DockerContainerType || isolation == platform.FirecrackerContainerType) && !*warmupDefaultImages {
 			continue
 		}
 

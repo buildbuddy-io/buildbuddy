@@ -18,6 +18,7 @@ go_library(
         "//cli/parser/parsed",
         "//cli/shortcuts",
         "//cli/storage",
+        "//cli/stream_run_logs/option_definitions",
         "//cli/watcher/option_definitions",
         "//cli/workspace",
         "//proto:bazel_flags_go_proto",
@@ -26,6 +27,7 @@ go_library(
         "//server/util/disk",
         "//server/util/lib/set",
         "//server/util/proto",
+        "//server/util/status",
     ],
 )
 

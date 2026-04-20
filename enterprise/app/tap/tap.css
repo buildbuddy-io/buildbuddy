@@ -162,6 +162,7 @@
   white-space: nowrap;
   height: 24px;
   background: var(--color-bg-info-subtle);
+  color: var(--color-hovercard-text);
   border-radius: 12px;
   height: inherit;
   padding: 2px 8px;
@@ -381,7 +382,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-3 {
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-4 {
@@ -405,7 +406,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-9 {
-  background-color: var(--color-bg-inverted);
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-10 {

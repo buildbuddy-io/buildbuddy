@@ -29,16 +29,13 @@ var (
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
 
-const (
-	// Version of the bb CLI to use for 'bb fix' commands.
-	bbCLIVersion = "5.0.266"
-)
+// BB CLI version is now pinned in deps.bzl (BB_CLI_VERSION) and downloaded
+// as a prebuilt binary via //tools/bb.
 
 // Set via x_defs in BUILD file.
 var (
 	goimportsRlocationpath                     string
 	goRlocationpath                            string
-	gazelleRlocationpath                       string
 	clangFormatRlocationpath                   string
 	bbCLIRlocationpath                         string
 	prettierRlocationpath                      string
@@ -62,6 +59,8 @@ var (
 		// Runs exclusively because this might change deps.bzl which GoDeps
 		// might also change.
 		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
+		// Ensures that MODULE.bazel.lock is up to date.
+		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
 
 	// File extensions handled by prettier.
@@ -91,8 +90,6 @@ type Tool struct {
 }
 
 func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// TODO: use a static build of 'bb' here so that we can use this tool to fix
-	// problems with the CLI itself.
 	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get bb command: %w", err)
@@ -104,6 +101,12 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 	stdoutCounter := &ioutil.Counter{}
 	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
+	// bb fix runs gazelle, which needs 'go' in PATH to resolve imports.
+	goPath, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run bb fix: %w", err)
 	}
@@ -163,7 +166,8 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 		cmd.Args = append(cmd.Args, "-d")
 	}
 	cmd.Args = append(cmd.Args, files...)
-	cmd.Stdout = stdout
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
 	// goimports requires 'go' to be in PATH.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
@@ -172,7 +176,13 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	path := os.Getenv("PATH")
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+path)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	if stdoutCounter.Count() > 0 {
+		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
 }
 
 func runClangFormat(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -231,6 +241,31 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	// https://github.com/aspect-build/rules_js/tree/dbb5af0d2a9a2bb50e4cf4a96dbc582b27567155#running-nodejs-programs
 	cmd.Env = append(cmd.Env, "BAZEL_BINDIR=.")
 	return cmd.Run()
+}
+
+func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get bb command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "mod", "deps")
+	if fix {
+		cmd.Args = append(cmd.Args, "--lockfile_mode=update")
+	} else {
+		cmd.Args = append(cmd.Args, "--lockfile_mode=error")
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	// bb mod deps may need 'go' in PATH.
+	goPath, err := runfiles.Rlocation(goRlocationpath)
+	if err != nil {
+		return fmt.Errorf("find go in runfiles: %w", err)
+	}
+	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run bb mod deps: %w", err)
+	}
+	return nil
 }
 
 func main() {
@@ -385,11 +420,12 @@ func getDiffBase() (string, error) {
 // gitListFilesWithExtensions lists all files known to git with the given
 // extensions.
 func gitListFilesWithExtensions(extensions []string) ([]string, error) {
-	cmd := "git ls-files --"
+	var cmd strings.Builder
+	cmd.WriteString("git ls-files --")
 	for _, ext := range extensions {
-		cmd += fmt.Sprintf(" '*%s'", ext)
+		cmd.WriteString(fmt.Sprintf(" '*%s'", ext))
 	}
-	files, err := sh(cmd)
+	files, err := sh(cmd.String())
 	if err != nil {
 		return nil, fmt.Errorf("list files with extensions: %w", err)
 	}

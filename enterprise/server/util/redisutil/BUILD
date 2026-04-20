@@ -9,9 +9,11 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_dgryski_go_rendezvous//:go-rendezvous",

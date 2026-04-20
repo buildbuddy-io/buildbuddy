@@ -114,17 +114,6 @@ type enqueuedDigests struct {
 	digestFunction repb.DigestFunction_Value
 }
 
-type DigestOperator interface {
-	// Enqueues digests for the provided instanceName, digestFunction,
-	// and set of digests provided. Returns true if the digests were
-	// successfully enqueued, false if not.
-	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
-
-	// Enqueues the digest for the provided resource name. Returns true if
-	// the digest was successfully enqueued, false if not.
-	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
-}
-
 type noopDigestOperator struct{}
 
 func (n *noopDigestOperator) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
@@ -135,12 +124,12 @@ func (n *noopDigestOperator) EnqueueByResourceName(ctx context.Context, rn *dige
 	return true
 }
 
-func NewNoopDigestOperator() DigestOperator {
+func NewNoopDigestOperator() interfaces.DigestOperator {
 	return &noopDigestOperator{}
 }
 
 type BatchDigestOperator interface {
-	DigestOperator
+	interfaces.DigestOperator
 
 	Start(hc interfaces.HealthChecker)
 
@@ -149,7 +138,7 @@ type BatchDigestOperator interface {
 	ForceShutdownForTesting()
 }
 
-func NewImmediateDigestOperator(authenticator interfaces.Authenticator, name string, f OperatorFunc, timeout time.Duration) DigestOperator {
+func NewImmediateDigestOperator(authenticator interfaces.Authenticator, name string, f OperatorFunc, timeout time.Duration) interfaces.DigestOperator {
 	return &immediateDigestOperator{
 		name:          name,
 		op:            f,

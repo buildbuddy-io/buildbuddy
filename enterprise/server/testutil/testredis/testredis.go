@@ -257,8 +257,8 @@ func waitUntilHealthy(t testing.TB, target string) {
 type logWriter struct{}
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	lines := strings.Split(string(b), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(b), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}

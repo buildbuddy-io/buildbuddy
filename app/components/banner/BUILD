@@ -12,5 +12,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/button",
     ],
 )

@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -103,7 +104,7 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	r := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
@@ -118,13 +119,14 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 
 	tasksize.Register(env)
 
+	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
 	env.SetUsageTracker(testusage.NewTracker())
 
-	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
-	testcache.Setup(t, env, lis)
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
@@ -196,6 +198,88 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
+func TestDispatch_RecordsClientIP(t *testing.T) {
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	const testClientIP = "192.168.1.100"
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	ctx = context.WithValue(ctx, clientip.ContextKey, testClientIP)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.NoError(t, err)
+
+	exec, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, testClientIP, exec.GetClientIp())
+}
+
+func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		wd      string
+		wantErr bool
+	}{
+		{name: "empty", wd: "", wantErr: false},
+		{name: "valid_subdir", wd: "src/main", wantErr: false},
+		{name: "path_traversal", wd: "../escape", wantErr: true},
+		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
+		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
+		{name: "dot_dot_only", wd: "..", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			cmd := &repb.Command{
+				Arguments:        []string{"test"},
+				WorkingDirectory: tc.wd,
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			taskID := arn.NewUploadString()
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
@@ -223,7 +307,8 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
   }
 }
 `)
-	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
@@ -274,6 +359,118 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 			},
 		},
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
+}
+
+func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		containerImage        string
+		wantContainerImage    string
+		wantExperimentVariant string
+	}{
+		{
+			name:                  "matching prefix is rewritten",
+			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
+			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
+			wantExperimentVariant: "bbcr",
+		},
+		{
+			name:                  "non-matching prefix is not rewritten",
+			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
+			wantContainerImage:    "",
+			wantExperimentVariant: "bbcr",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.container_image_rewrite": {
+      "state": "ENABLED",
+      "variants": {
+        "bbcr": {
+          "prefix": "gcr.io/flame-public/",
+          "replacement": "buildbuddy.bbcr.io/public/"
+        },
+        "default": {}
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          true,
+          "bbcr"
+        ]
+      }
+    }
+  }
+}
+`)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			openfeature.SetProviderAndWait(provider)
+			fp, err := experiments.NewFlagProvider("test")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: iid,
+			})
+			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{
+							Name:  "container-image",
+							Value: tc.containerImage,
+						},
+					},
+				},
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Equal(t, 1, len(sched.scheduleReqs))
+			b := sched.scheduleReqs[0].SerializedTask
+			task := &repb.ExecutionTask{}
+			err = proto.Unmarshal(b, task)
+			require.NoError(t, err)
+
+			// Check that the container image override is present (or absent).
+			var imageOverride string
+			for _, p := range task.GetPlatformOverrides().GetProperties() {
+				if p.GetName() == "container-image" {
+					imageOverride = p.GetValue()
+				}
+			}
+			assert.Equal(t, tc.wantContainerImage, imageOverride)
+
+			// Check experiment tracking.
+			if tc.wantExperimentVariant != "" {
+				assert.Contains(t, task.GetExperiments(), "remote_execution.container_image_rewrite:"+tc.wantExperimentVariant)
+			} else {
+				for _, exp := range task.GetExperiments() {
+					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
+				}
+			}
+		})
+	}
 }
 
 func TestCancel(t *testing.T) {
@@ -538,7 +735,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
@@ -889,7 +1086,7 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	env, conn, _ := setupEnv(t)
 	ctx := context.Background()
 
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -980,6 +1177,15 @@ func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealE
 	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
+func uploadActionWithCommand(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command) *digest.CASResourceName {
+	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
+	require.NoError(t, err)
+	action.CommandDigest = cd
+	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
+	require.NoError(t, err)
+	return digest.NewCASResourceName(ad, instanceName, df)
+}
+
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
@@ -1050,6 +1256,17 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 			expectedAuxiliaryMetadata: []*anypb.Any{
 				makeAuxAny(t, []*repb.Platform_Property{
 					{Name: "env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts secret-env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "secret-env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "secret-env-overrides", Value: "<REDACTED>"},
 				}),
 			},
 		},

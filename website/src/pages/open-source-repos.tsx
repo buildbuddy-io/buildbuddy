@@ -2,7 +2,7 @@ import Layout from "@theme/Layout";
 import React from "react";
 import OSSList from "../components/oss/oss-list";
 import common from "../css/common.module.css";
-import message from "../util/message";
+import { sendFormsMessage } from "../util/message";
 import contact from "./contact.module.css";
 import styles from "./open-source-repos.module.css";
 
@@ -58,7 +58,7 @@ function OpenSource() {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Open Source Repo!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nRepo URL: ${form.repo.current.value}`
   );
 

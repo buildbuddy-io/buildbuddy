@@ -8,6 +8,8 @@ The BuildBuddy API let's you programmatically obtain information about your Baze
 
 Requests can be made via JSON or using Protobuf. The examples below are using the JSON API. For a full overview of the service, you can view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
 
+If you're configuring a coding agent or MCP client, see the [BuildBuddy MCP Server docs](enterprise-mcp.md).
+
 ## GetInvocation
 
 The `GetInvocation` endpoint allows you to fetch invocations associated with a commit SHA or invocation ID. View full [Invocation proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/invocation.proto).
@@ -318,6 +320,116 @@ message Log {
   string contents = 3;
 }
 ```
+
+## GetAuditLog
+
+The `GetAuditLog` endpoint provides a stable, paginated API for exporting organization audit logs. View full [Audit Log proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/audit_log.proto).
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Service
+
+```protobuf
+// Retrieves a page of audit log entries.
+rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+```
+
+### Access Requirements
+
+- Use an **Org API key** of type **Audit log reader key** (recommended) or **Org admin key**.
+- If the key does not meet the access requirements, the request returns `PermissionDenied`.
+
+### Example cURL request
+
+```bash
+curl -d '{
+  "selector": {
+    "start_time": "2026-02-01T00:00:00Z",
+    "end_time": "2026-02-02T00:00:00Z"
+  },
+  "page_size": 500
+}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Example cURL response
+
+```json
+{
+  "entry": [
+    {
+      "eventTime": "2026-02-01T03:45:21.123456Z",
+      "action": "UPDATE",
+      "resource": {
+        "type": "GROUP",
+        "id": "GR1234567890"
+      }
+    }
+  ],
+  "nextPageToken": "eyJzdGFydF90aW1lX3VzZWMiOjE3MzgzNjgwMDAwMDAwMDAsImVuZF90aW1lX3VzZWMiOjE3Mzg0NTQ0MDAwMDAwMDAsImV2ZW50X3RpbWVfdXNlYyI6MTczODM3MTkyMTIzNDU2LCJhdWRpdF9sb2dfaWQiOiJBTDE4ODQ3Mzk5Mjg0OTkzMiJ9"
+}
+```
+
+### GetAuditLogRequest
+
+```protobuf
+// Request passed into GetAuditLog.
+message GetAuditLogRequest {
+  // Optional selector used to constrain results.
+  AuditLogSelector selector = 1;
+
+  // Opaque cursor returned by a previous request, if any.
+  string page_token = 2;
+
+  // Maximum number of entries to return in this page.
+  // If unset or less than 1, a server default is used.
+  // Values greater than 1000 are capped at 1000.
+  int32 page_size = 3;
+}
+```
+
+### AuditLogSelector
+
+```protobuf
+// The selector used to specify which audit logs to return.
+message AuditLogSelector {
+  // Optional inclusive lower bound for event time.
+  google.protobuf.Timestamp start_time = 1;
+
+  // Optional exclusive upper bound for event time.
+  google.protobuf.Timestamp end_time = 2;
+}
+```
+
+### GetAuditLogResponse
+
+```protobuf
+// Response from calling GetAuditLog.
+message GetAuditLogResponse {
+  // Audit log entries matching the request. Entry payload fields may evolve
+  // over time (new fields may be added and old fields may be removed), so
+  // clients should tolerate unknown/missing fields.
+  repeated auditlog.Entry entry = 1;
+
+  // Cursor to retrieve the next page, or empty if there are no more results.
+  string next_page_token = 2;
+}
+```
+
+### Polling Recommendations
+
+- Treat `next_page_token` as opaque. Do not parse it.
+- Keep `start_time` / `end_time` fixed while paginating through one window. If
+  `end_time` is omitted on the first page, the server pins it into the returned
+  cursor.
+- Resume by passing the returned `next_page_token` until it is empty.
+- For continuous export, query bounded windows (for example every minute) and checkpoint the last successful window end.
 
 ## GetTarget
 
@@ -945,13 +1057,24 @@ https://app.buildbuddy.io/api/v1/Run
 rpc Run(RunRequest) returns (RunResponse);
 ```
 
-### Example cURL request
+### Example cURL requests
 
 ```bash
+# Run commands in a git repository
 curl -d '{
-    "repo”: "git@github.com:buildbuddy-io/buildbuddy.git",
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
     "branch":"main",
     "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+```bash
+# Run commands in an empty directory (no git repo)
+curl -d '{
+    "steps": [{"run": "echo hello world"}]
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -962,14 +1085,15 @@ https://app.buildbuddy.io/api/v1/Run
 
 ```protobuf
 message RunRequest {
-  // URL of the repo the remote workspace should be initialized for
+  // URL of the repo the remote workspace should be initialized for.
   // Ex. "https://github.com/some-user/acme"
+  // If not provided, commands will run in an empty directory.
   string repo = 1;
 
-  // Git refs to configure the remote git workspace (at least one of `branch` or
-  // `commit_sha` must be set). If only `branch` is set, will run from the tip
-  // of the branch. If only `commit_sha` is set, reporting will not contain the
-  // branch name.
+  // Git refs to configure the remote git workspace. At least one of `branch` or
+  // `commit_sha` must be set when `repo` is provided. If only `branch` is set,
+  // will run from the tip of the branch. If only `commit_sha` is set, reporting
+  // will not contain the branch name.
   string branch = 2;
   string commit_sha = 3;
 
@@ -997,7 +1121,7 @@ message RunRequest {
   // runner.
   //
   // Can be used to set platform properties containing secrets.
-  // Ex. ["x-buildbuddy-platform.env-overrides=SECRET_NAME=SECRET_VALUE"]
+  // Ex. ["x-buildbuddy-platform.secret-env-overrides=SECRET_NAME=SECRET_VALUE"]
   repeated string remote_headers = 10;
 
   // Max time before run should be canceled.

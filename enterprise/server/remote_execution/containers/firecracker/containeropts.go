@@ -37,10 +37,6 @@ type ContainerOpts struct {
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
 
-	// CPUWeightMillis is the CPU weight to assign to this VM, expressed as
-	// CPU-millis. This is set to the task size.
-	CPUWeightMillis int64
-
 	// CgroupParent is the parent cgroup path relative to the cgroup root.
 	CgroupParent string
 
@@ -61,6 +57,11 @@ type ContainerOpts struct {
 	// in the guest. It is the marshalled form of []*networking.DNSOverride
 	MarshalledDNSOverrides string
 
+	// HostResolvConf is the contents of the host's /etc/resolv.conf, passed
+	// to the VM via MMDS so it uses the same DNS configuration. Empty if the
+	// file could not be read; goinit falls back to hardcoded nameservers.
+	HostResolvConf string
+
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.
@@ -69,4 +70,8 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }
