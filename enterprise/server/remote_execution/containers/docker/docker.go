@@ -202,10 +202,8 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
-func (c *dockerCommandContainer) ImageSizeBytes() int64 {
-	// ImageSizer interface doesn't take a context; this is only called once
-	// per execution so context.TODO() is acceptable.
-	ii, err := c.client.ImageInspect(context.TODO(), c.image, dockerclient.ImageInspectWithRawResponse(nil))
+func (c *dockerCommandContainer) ImageSizeBytes(ctx context.Context) int64 {
+	ii, err := c.client.ImageInspect(ctx, c.image, dockerclient.ImageInspectWithRawResponse(nil))
 	if err != nil {
 		return 0
 	}

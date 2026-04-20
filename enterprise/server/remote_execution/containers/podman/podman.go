@@ -368,9 +368,9 @@ func (c *podmanCommandContainer) IsolationType() string {
 	return "podman"
 }
 
-func (c *podmanCommandContainer) ImageSizeBytes() int64 {
+func (c *podmanCommandContainer) ImageSizeBytes(ctx context.Context) int64 {
 	stdout := &bytes.Buffer{}
-	res := c.runPodman(context.TODO(), "image", &interfaces.Stdio{Stdout: stdout}, "inspect", c.image, "--format", "{{.Size}}")
+	res := c.runPodman(ctx, "image", &interfaces.Stdio{Stdout: stdout}, "inspect", c.image, "--format", "{{.Size}}")
 	if res.Error != nil || res.ExitCode != 0 {
 		return 0
 	}

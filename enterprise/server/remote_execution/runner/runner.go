@@ -239,8 +239,8 @@ func (r *taskRunner) Metadata() *espb.RunnerMetadata {
 	return r.metadata.CloneVT()
 }
 
-func (r *taskRunner) ContainerImageInfo() (ref string, sizeBytes int64) {
-	return r.PlatformProperties.ContainerImage, r.Container.ImageSizeBytes()
+func (r *taskRunner) ContainerImageInfo(ctx context.Context) (ref string, sizeBytes int64) {
+	return r.PlatformProperties.ContainerImage, r.Container.ImageSizeBytes(ctx)
 }
 
 func (r *taskRunner) String() string {

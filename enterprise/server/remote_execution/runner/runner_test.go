@@ -160,7 +160,7 @@ type fakeImageSizingContainer struct {
 	imageSize int64
 }
 
-func (c *fakeImageSizingContainer) ImageSizeBytes() int64 {
+func (c *fakeImageSizingContainer) ImageSizeBytes(ctx context.Context) int64 {
 	return c.imageSize
 }
 
@@ -1266,7 +1266,7 @@ func TestContainerImageInfo_WithImageSizer(t *testing.T) {
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 
-	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo()
+	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo(ctx)
 	// Bare runner normalizes container-image to "".
 	assert.Equal(t, "", ref)
 	assert.Equal(t, expectedSize, sizeBytes)
@@ -1282,7 +1282,7 @@ func TestContainerImageInfo_WithoutImageSizer(t *testing.T) {
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 
-	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo()
+	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo(ctx)
 	assert.Equal(t, "", ref)
 	assert.Equal(t, int64(0), sizeBytes)
 }
