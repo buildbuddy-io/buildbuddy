@@ -61,5 +61,6 @@
   },
   "resolutions": {
     "cheerio": "1.0.0-rc.12"
-  }
+  },
+  "packageManager": "yarn@4.14.1"
 }
