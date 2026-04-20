@@ -467,6 +467,13 @@ type CommandContainer interface {
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
+// ImageSizer is an optional interface implemented by a [CommandContainer]
+// that returns the estimated on-disk size of the pulled container image.
+// This should be called after PullImage.
+type ImageSizer interface {
+	ImageSizeBytes() int64
+}
+
 // StatsRecorder is an optional interface implemented by a [CommandContainer]
 // that allows tracking usage stats outside of normal execution.
 //
@@ -716,6 +723,13 @@ type TracedCommandContainer struct {
 
 func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
+}
+
+func (t *TracedCommandContainer) ImageSizeBytes() int64 {
+	if sizer, ok := t.Delegate.(ImageSizer); ok {
+		return sizer.ImageSizeBytes()
+	}
+	return 0
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {

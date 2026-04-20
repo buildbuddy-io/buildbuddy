@@ -202,6 +202,14 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
+func (c *dockerCommandContainer) ImageSizeBytes() int64 {
+	ii, err := c.client.ImageInspect(context.TODO(), c.image, dockerclient.ImageInspectWithRawResponse(nil))
+	if err != nil {
+		return 0
+	}
+	return ii.Size
+}
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),

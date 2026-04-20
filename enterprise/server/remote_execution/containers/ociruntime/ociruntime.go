@@ -629,6 +629,17 @@ func (c *ociContainer) IsolationType() string {
 	return "oci" // TODO: make const in platform.go
 }
 
+func (c *ociContainer) ImageSizeBytes() int64 {
+	if c.lockedImage == nil {
+		return 0
+	}
+	var total int64
+	for _, layer := range c.lockedImage.Layers {
+		total += layer.EstimatedDiskUsageBytes
+	}
+	return total
+}
+
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 	if c.lockedImage != nil {
 		return true, nil
