@@ -11,8 +11,11 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -123,6 +126,45 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 		RunInterceptor: runFunc,
 		RecycleInterceptor: func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original rbetest.TryRecycleFunc) {
 			// Simulate that recycling takes 1min.
+			clock.Advance(1 * time.Minute)
+			c.countRecycled++
+			if finishedCleanly {
+				c.countFinishedCleanly++
+			}
+		},
+	})
+	exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
+	require.NoError(t, err)
+
+	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := repb.NewExecutionClient(conn)
+
+	return exec, env, client, mockServer, c
+}
+
+func getExecutorWithPoolOptions(t *testing.T, runOverride rbetest.RunInterceptor, poolOpts *runner.PoolOptions) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
+	env := enterprise_testenv.New(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	clock := clockwork.NewFakeClock()
+	env.SetClock(clock)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	mockServer := &mockExecutionServer{finished: make(chan struct{})}
+	repb.RegisterExecutionServer(env.GetGRPCServer(), mockServer)
+	go runServer()
+
+	c := &counters{}
+	cacheRoot := testfs.MakeTempDir(t)
+	runFunc := rbetest.RunNoop()
+	if runOverride != nil {
+		runFunc = runOverride
+	}
+	runnerPool := rbetest.NewTestRunnerPool(t, env, cacheRoot, rbetest.TestRunnerOverrides{
+		RunInterceptor: runFunc,
+		PoolOptions:    poolOpts,
+		RecycleInterceptor: func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original rbetest.TryRecycleFunc) {
 			clock.Advance(1 * time.Minute)
 			c.countRecycled++
 			if finishedCleanly {
@@ -490,4 +532,58 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 		})
 	}
+}
+
+// imageSizingContainer wraps a bare container and also implements
+// container.ImageSizer, reporting a configurable on-disk image size.
+type imageSizingContainer struct {
+	container.CommandContainer
+	imageSize int64
+}
+
+func (c *imageSizingContainer) ImageSizeBytes() int64 {
+	return c.imageSize
+}
+
+type imageSizingContainerProvider struct {
+	imageSize int64
+}
+
+func (p *imageSizingContainerProvider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	return &imageSizingContainer{
+		CommandContainer: bare.NewBareCommandContainer(&bare.Opts{}),
+		imageSize:        p.imageSize,
+	}, nil
+}
+
+func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
+	ctx := context.Background()
+	const expectedImageSize int64 = 7_500_000_000
+
+	poolOpts := &runner.PoolOptions{
+		ContainerProvider: &imageSizingContainerProvider{imageSize: expectedImageSize},
+	}
+	exec, _, execClient, mockServer, _ := getExecutorWithPoolOptions(t, nil, poolOpts)
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	// The bare runner normalizes container-image to "" since no image is
+	// configured. The image size should still come through from the
+	// ImageSizer implementation on the container.
+	require.Equal(t, "", auxMeta.GetContainerImage())
+	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageSizeBytes())
 }
