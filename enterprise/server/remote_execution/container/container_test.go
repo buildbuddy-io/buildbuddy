@@ -420,6 +420,30 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
 }
 
+// FakeContainerWithImageSize is a FakeContainer that also implements ImageSizer.
+type FakeContainerWithImageSize struct {
+	FakeContainer
+	Size int64
+}
+
+func (c *FakeContainerWithImageSize) ImageSizeBytes() int64 {
+	return c.Size
+}
+
+func TestTracedCommandContainer_ImageSizeBytes_WithImageSizer(t *testing.T) {
+	delegate := &FakeContainerWithImageSize{Size: 1234567890}
+	traced := container.NewTracedCommandContainer(delegate)
+
+	assert.Equal(t, int64(1234567890), traced.ImageSizeBytes())
+}
+
+func TestTracedCommandContainer_ImageSizeBytes_WithoutImageSizer(t *testing.T) {
+	delegate := &FakeContainer{}
+	traced := container.NewTracedCommandContainer(delegate)
+
+	assert.Equal(t, int64(0), traced.ImageSizeBytes())
+}
+
 func makePSI(someTotal, fullTotal int64) *repb.PSI {
 	return &repb.PSI{
 		Some: &repb.PSI_Metrics{

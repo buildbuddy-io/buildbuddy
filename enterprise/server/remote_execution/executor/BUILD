@@ -49,7 +49,10 @@ go_test(
     deps = [
         ":executor",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/runner",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:execution_stats_go_proto",
