@@ -1456,6 +1456,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
+
+			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 		}
 		data, err := proto.Marshal(op)
 		if err != nil {
@@ -1496,6 +1498,20 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				}
 			}
 		}
+	}
+}
+
+// records prometheus metrics about the response + metadata sizes.
+func recordResponseMetrics(rsp *repb.ExecuteResponse, auxMD *espb.ExecutionAuxiliaryMetadata, groupID string) {
+	if timeline := rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetTimeline(); timeline != nil {
+		metrics.RemoteExecutionResourceUsageTimelineMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(timeline)))
+	}
+	if inputFetchMetadata := auxMD.GetInputFetchDetailedStats(); inputFetchMetadata != nil {
+		metrics.RemoteExecutionInputDownloadBitmapMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(inputFetchMetadata)))
 	}
 }
 

@@ -1228,6 +1228,26 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RemoteExecutionResourceUsageTimelineMetadataSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "resource_usage_timeline_metadata_size_bytes",
+		Help:      "Total size of resource usage timeline payloads received from executors.",
+		Buckets:   exponentialBucketRange(1, 100e6, 1.5),
+	}, []string{
+		GroupID,
+	})
+
+	RemoteExecutionInputDownloadBitmapMetadataSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "input_download_bitmap_metadata_size_bytes",
+		Help:      "Total size of input download bitmaps received from executors.",
+		Buckets:   exponentialBucketRange(1, 100e6, 1.5),
+	}, []string{
+		GroupID,
+	})
+
 	RemoteExecutionEnqueuedTaskMilliCPU = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
