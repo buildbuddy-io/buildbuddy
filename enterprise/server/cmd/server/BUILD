@@ -1,7 +1,8 @@
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_distroless//distroless:defs.bzl", "flatten")
+load("@rules_img//img:image.bzl", "image_index", "image_manifest")
+load("@rules_img//img:layer.bzl", "layer_from_tar", "image_layer")
+load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//rules:utils.bzl", "runfiles_directory")
 
@@ -98,8 +99,34 @@ go_library(
     ],
 )
 
+BINARY_NAME = "buildbuddy"
+
+filegroup(
+    name = "licenses",
+    data = [
+        "//enterprise:licenses",
+    ],
+)
+
+filegroup(
+    name = "runfiles",
+    data = [
+        "//enterprise/app:app_bundle",
+        "//enterprise/app:sha",
+        "//enterprise/app:style",
+        "//static",
+    ],
+)
+
+filegroup(
+    name = "config_files",
+    data = [
+        "//enterprise/config:config_files",
+    ],
+)
+
 go_binary(
-    name = "buildbuddy",
+    name = BINARY_NAME,
     args = [
         "--config_file=enterprise/config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
@@ -107,71 +134,171 @@ go_binary(
         "--app_directory=/enterprise/app",
     ],
     data = [
-        "//enterprise:licenses",
-        "//enterprise/app:app_bundle",
-        "//enterprise/app:sha",
-        "//enterprise/app:style",
-        "//enterprise/config:config_files",
-        "//static",
+        ":config_files",
+        ":runfiles",
     ],
     embed = [":server_lib"],
 )
 
-container_image(
-    name = "base_image",
-    base = "@buildbuddy_go_image_base//image",
+PACKAGE_ROOT = "app/enterprise"
+
+image_layer(
+    name = "symlink_layer",
+    annotations = {
+        "org.opencontainers.image.title": "`/buildbuddy` -> `/tmp`",
+        "org.opencontainers.image.description": (
+            "Contains a symlink from `/buildbuddy` to `/tmp`."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
     },
-    tags = ["manual"],
 )
 
-# The go_image below can be used to build and run the server image.
-# The container_image target just builds and tags the image without running it.
-
-go_image(
-    name = "buildbuddy_go_image",
-    base = ":base_image",
-    binary = ":buildbuddy",
-    tags = ["manual"],
+image_layer(
+    name = "binary_layer",
+    srcs = {PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
+        "org.opencontainers.image.description": (
+            "Contains the enterprise BuildBuddy server binary."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    # Do not include runfiles so that we can separate configuration files out
+    # into a separate layer. This lets us use a base image without those files
+    # when building our production images.
+    include_runfiles = False,
+    compress = "gzip",
 )
 
-container_image(
-    name = "buildbuddy_image",
-    base = ":buildbuddy_go_image",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-# TODO(sluongng): Verify the layering of the image.
 pkg_tar(
-    name = "tar",
+    name = "runfiles_tar",
     srcs = [
-        ":buildbuddy",
+        ":runfiles",
+        ":licenses",
     ],
     include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
     remap_paths = {
-        "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
+    portable_mtime = False,
+)
+
+layer_from_tar(
+    name = "runfiles_layer",
+    src = "runfiles_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Runfiles",
+        "org.opencontainers.image.description": (
+            "Contains the runfiles necessary to run the enterprise " +
+            "BuildBuddy server. Does not include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    compress = "gzip",
+)
+
+image_manifest(
+    name = "base_image_manifest",
+    base = "//images/distroless/base-nossl:manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy binary, runfiles, and symlinks " +
+            "necessary to run the enterprise BuildBuddy server. Does not " +
+            "include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    entrypoint = [
+        "/%s/%s" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+        ),
+    ],
+    layers = [
+        ":symlink_layer",
+        ":runfiles_layer",
+        ":binary_layer",
+    ],
+)
+
+pkg_tar(
+    name = "config_files_tar",
+    srcs = [
+        ":config_files",
+    ],
+    include_runfiles = True,
+    package_dir = PACKAGE_ROOT,
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
+)
+
+pkg_tar(
+    name = "config_symlink_tar",
+    mode = "0755",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
-        "buildbuddy": "tmp",
+        "config.yaml": "/%s/%s.runfiles/%s/enterprise/config/buildbuddy.local.yaml" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+            runfiles_directory(),
+        ),
     },
 )
 
-oci_image(
-    name = "oci_image",
-    base = "@buildbuddy_go_oci_image_base",
-    entrypoint = ["/app/enterprise/server/cmd/server/buildbuddy"],
-    target_compatible_with = ["@platforms//os:linux"],
-    tars = [":tar"],
-    visibility = ["//visibility:public"],
+flatten(
+    name = "config_tar",
+    tars = [
+        ":config_files_tar",
+        ":config_symlink_tar",
+    ],
 )
 
-oci_load(
-    name = "oci_load",
-    image = ":oci_image",
-    repo_tags = ["enterprise/server:oci_image"],
-    tags = ["manual"],
+
+layer_from_tar(
+    name = "config_layer",
+    src = "config_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Configuration (FOSS)",
+        "org.opencontainers.image.description": (
+            "Contains the FOSS enterprise BuildBuddy server configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+)
+
+image_manifest(
+    name = "image_manifest",
+    base = ":base_image_manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy binary, runfiles, configuration files, " +
+            "and symlinks necessary to run the enterprise BuildBuddy server. " +
+            "Does not include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    layers = [
+        ":config_layer",
+    ],
+)
+
+image_load(
+    name = "buildbuddy_image",
+    # Explicitly use containerd for clarity. The container will be accessible
+    # via `nerdctl` in the "moby" namespace.
+    #
+    # We use containerd, as advised by `rules_img`, to avoid `docker load`,
+    # which, if the host system is not using the containerd backend for docker,
+    # will create a custom docker manifest.
+    # Loading into containerd allows us to load the exact OCI image we've built
+    # with the expected digest.
+    daemon = "containerd",
+    image = ":image_manifest",
+    tag = "buildbuddy_image:latest",
 )

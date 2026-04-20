@@ -1,0 +1,25 @@
+bazel_dep(name = "rules_img", version = "0.3.4")
+
+bazel_dep(name = "rules_img_tool", version = "0.3.4")
+register_toolchains("@rules_img_tool//toolchain:all")
+
+bazel_dep(name = "rules_distroless", version = "0.6.2")
+single_version_override(
+    module_name = "rules_distroless",
+    patch_strip = 1,
+    patches = ["//buildpatches:rules_distroless.patch"],
+)
+
+# Configure apt for Debian packages
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+
+# Configure Debian debian13 packages
+apt.install(
+    name = "debian13",
+    lock = "//apt:debian13.lock.json",
+    manifest = "//apt:debian13.yaml",
+    mergedusr = True,
+    package_template = "apt/package.BUILD.tmpl",
+    resolve_transitive = False,
+)
+use_repo(apt, "debian13")
