@@ -153,6 +153,7 @@ go_test(
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",
+        "//enterprise/server/testutil/testregistry",
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",

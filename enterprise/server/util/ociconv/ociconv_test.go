@@ -228,9 +228,8 @@ func TestLinkCachedImage_SharesAcrossGroups(t *testing.T) {
 
 	ctx2 := claims.AuthContextWithJWT(context.Background(), &claims.Claims{GroupID: "GR2"}, nil)
 	linkedPath := filepath.Join(root, "linked.ext4")
-	_, ok, err := ociconv.LinkCachedImage(ctx2, fc, root, ref, linkedPath)
+	err = ociconv.LinkCachedImage(ctx2, fc, root, ref, linkedPath)
 	require.NoError(t, err)
-	require.True(t, ok)
 	require.FileExists(t, linkedPath)
 }
 
@@ -256,9 +255,8 @@ func TestCreateDiskImage_LegacyStorage(t *testing.T) {
 	require.FileExists(t, materializedPath)
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	_, ok, err := ociconv.LinkCachedImage(ctx, fc, root, ref, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, ref, linkedPath)
 	require.NoError(t, err)
-	require.True(t, ok)
 	require.FileExists(t, linkedPath)
 }
 
@@ -276,14 +274,13 @@ func TestMigrateImagesToFileCache(t *testing.T) {
 	require.NoError(t, os.Chtimes(filepath.Dir(legacyPathA), time.Unix(10, 0), time.Unix(10, 0)))
 	require.NoError(t, os.Chtimes(filepath.Dir(legacyPathB), time.Unix(20, 0), time.Unix(20, 0)))
 
-	require.NoError(t, ociconv.MigrateImagesToFileCache(ctx, fc))
+	require.NoError(t, ociconv.MigrateImagesToFileCache(ctx, fc, root))
 	require.False(t, fc.ContainsFile(ctx, sharedDiskImageNode(containerImage)))
 	require.True(t, fc.ContainsFile(sharedCtx, sharedDiskImageNode(containerImage)))
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	_, ok, err := ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	content, err := os.ReadFile(linkedPath)
 	require.NoError(t, err)
@@ -303,13 +300,12 @@ func TestLinkCachedImage_LegacyStorageWhenFileCacheDisabled(t *testing.T) {
 
 	require.FileExists(t, legacyPath)
 
-	require.NoError(t, ociconv.MigrateImagesToFileCache(ctx, fc))
+	require.NoError(t, ociconv.MigrateImagesToFileCache(ctx, fc, root))
 	require.DirExists(t, filepath.Join(root, "images", "ext4"))
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	_, ok, err := ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	content, err := os.ReadFile(linkedPath)
 	require.NoError(t, err)

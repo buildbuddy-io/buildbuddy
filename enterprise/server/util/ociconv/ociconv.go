@@ -190,8 +190,9 @@ func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCach
 }
 
 // LinkCachedImage links a cached OCI ext4 image.
-//
 // If outputPath is non-empty, the cached image is hardlinked there.
+//
+// IMPORTANT: Callers are responsible for authorizing access to the image.
 func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage, outputPath string) error {
 	if *localCacheStoreExt4Images {
 		sharedCtx := sharedFileCacheContext(ctx, fileCache)

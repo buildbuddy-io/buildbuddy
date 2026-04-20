@@ -2197,10 +2197,16 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
 	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
 
-	// Hardlink the ext4 image to the chroot at containerFSPath.
-	err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
-	if err != nil {
-		return status.UnavailableErrorf("link cached image: %s", err)
+	// Hardlink the ext4 image to the chroot at containerFSPath, if we haven't
+	// already. Normally it will only exist if we got a cache miss and had to
+	// call PullImage; otherwise we expect to find it in cache.
+	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+		return status.UnavailableErrorf("check containerfs exists: %s", err)
+	} else if !exists {
+		err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+		if err != nil {
+			return status.UnavailableErrorf("link cached image: %s", err)
+		}
 	}
 
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
@@ -2718,9 +2724,8 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
 
-	// PullImageIfNecessary may have already called IsImageCached, which eagerly
-	// hardlinks the cached image into the chroot. In that case we still need to
-	// re-authenticate before using the cached image.
+	// We normally don't expect the containerFSPath to already exist at this
+	// point, but handle this case gracefully anyway.
 	exists, err := disk.FileExists(ctx, containerFSPath)
 	if err != nil {
 		return status.UnavailableErrorf("stat container FS path: %s", err)
