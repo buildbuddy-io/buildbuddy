@@ -3,6 +3,7 @@ package byte_stream_server_proxy
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"strconv"
@@ -42,6 +43,8 @@ import (
 const (
 	defaultChunkUploadConcurrency = 32
 )
+
+var disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 
 func groupIDForMetrics(ctx context.Context) string {
 	c, err := claims.ClaimsFromContext(ctx)
@@ -232,6 +235,9 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 }
 
 func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) bool {
+	if *disableCDC {
+		return false
+	}
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		// TODO(buildbuddy-internal#6426): Read and write chunked blobs for encrypted requests.
 		return false
@@ -807,14 +813,14 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	if s.localCache == nil || s.remoteCAS == nil {
+	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}
 	return chunking.Enabled(ctx, s.efp) &&
-		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+		(s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true))
 }
 
 type writeChunkedResult struct {
@@ -1057,7 +1063,10 @@ type chunkUploader struct {
 
 // newChunkUploader batches chunks into FMB groups and upload requests of up to 2 MiB.
 func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceName string, digestFunction repb.DigestFunction_Value) (*chunkUploader, error) {
-	concurrency := int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkUploadConcurrency))
+	concurrency := defaultChunkUploadConcurrency
+	if s.efp != nil {
+		concurrency = int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkUploadConcurrency))
+	}
 	if concurrency <= 0 {
 		concurrency = defaultChunkUploadConcurrency
 	}

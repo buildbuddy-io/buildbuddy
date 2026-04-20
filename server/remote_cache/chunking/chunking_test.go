@@ -557,7 +557,7 @@ func TestEnabled_HeaderOverridesExperimentFlag(t *testing.T) {
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
 	ctx := context.Background()
-	assert.False(t, chunking.Enabled(ctx, nil))
+	assert.True(t, chunking.Enabled(ctx, nil))
 }
 
 func BenchmarkStore(b *testing.B) {

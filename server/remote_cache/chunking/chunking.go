@@ -77,8 +77,7 @@ func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}
-	return efp != nil &&
-		efp.Boolean(ctx, "cache.chunking_enabled", false)
+	return efp == nil || efp.Boolean(ctx, "cache.chunking_enabled", true)
 }
 
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
@@ -93,7 +92,8 @@ func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlag
 	return digestSizeBytes > MaxChunkSizeBytes() &&
 		limit == 0 &&
 		(cdc.EnabledViaHeader(ctx) ||
-			(efp != nil && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", false)))
+			efp == nil ||
+			efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
 
 type WriteFunc func([]byte) error
