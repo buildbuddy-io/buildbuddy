@@ -28,6 +28,8 @@ type FakeContainer struct {
 	RequiredPullCredentials oci.Credentials
 	PullCount               int
 	pullDelay               time.Duration
+	imageSizeBytes          int64
+	imageSizeErr            error
 }
 
 func (c *FakeContainer) IsolationType() string {
@@ -62,7 +64,9 @@ func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
 }
-func (c *FakeContainer) ImageSizeBytes(context.Context) int64 { return 0 }
+func (c *FakeContainer) ImageSizeBytes(context.Context) (int64, error) {
+	return c.imageSizeBytes, c.imageSizeErr
+}
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
@@ -421,10 +425,12 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
 }
 
-func TestTracedCommandContainer_ImageSizeBytes(t *testing.T) {
-	delegate := &FakeContainer{}
+func TestTracedCommandContainer_ImageSizeBytes_Error(t *testing.T) {
+	delegate := &FakeContainer{imageSizeErr: status.InternalError("image inspect failed")}
 	traced := container.NewTracedCommandContainer(delegate)
-	assert.Equal(t, int64(0), traced.ImageSizeBytes(context.Background()))
+	_, err := traced.ImageSizeBytes(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "image inspect failed")
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

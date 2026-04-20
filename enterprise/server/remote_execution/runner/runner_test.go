@@ -139,7 +139,7 @@ func (c *fakeContainer) Pause(ctx context.Context) error {
 func (c *fakeContainer) Unpause(ctx context.Context) error {
 	return nil
 }
-func (c *fakeContainer) ImageSizeBytes(ctx context.Context) int64 { return 0 }
+func (c *fakeContainer) ImageSizeBytes(ctx context.Context) (int64, error) { return 0, nil }
 
 // fakeFirecrackerContainer behaves like a bare container except it returns
 // 0 mem / CPU resources, like Firecracker.
@@ -158,11 +158,12 @@ func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error
 // fakeImageSizingContainer is a bare container that also reports an image size.
 type fakeImageSizingContainer struct {
 	container.CommandContainer
-	imageSize int64
+	imageSize    int64
+	imageSizeErr error
 }
 
-func (c *fakeImageSizingContainer) ImageSizeBytes(ctx context.Context) int64 {
-	return c.imageSize
+func (c *fakeImageSizingContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
+	return c.imageSize, c.imageSizeErr
 }
 
 func (c *fakeImageSizingContainer) Stats(context.Context) (*repb.UsageStats, error) {
@@ -1267,23 +1268,37 @@ func TestContainerImageInfo_WithImageSizer(t *testing.T) {
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 
-	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo(ctx)
+	ref, sizeBytes, err := r.(*taskRunner).ContainerImageInfo(ctx)
+	require.NoError(t, err)
 	// Bare runner normalizes container-image to "".
 	assert.Equal(t, "", ref)
 	assert.Equal(t, expectedSize, sizeBytes)
 }
 
-func TestContainerImageInfo_WithoutImageSizer(t *testing.T) {
+func TestContainerImageInfo_ImageSizeError(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg())
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions: &PoolOptions{
+			ContainerProvider: &ImageSizingContainerProvider{
+				ImageSize: 0,
+			},
+		},
+		MaxRunnerCount:            unlimited,
+		MaxRunnerDiskSizeBytes:    unlimited,
+		MaxRunnerMemoryUsageBytes: unlimited,
+	})
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
-	// bare container does not implement ImageSizer
 	task := newTask()
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 
-	ref, sizeBytes := r.(*taskRunner).ContainerImageInfo(ctx)
+	imageSizingContainer := r.(*taskRunner).Container.Delegate.(*fakeImageSizingContainer)
+	imageSizingContainer.imageSizeErr = status.InternalError("image size unavailable")
+
+	ref, sizeBytes, err := r.(*taskRunner).ContainerImageInfo(ctx)
+	require.Error(t, err)
 	assert.Equal(t, "", ref)
 	assert.Equal(t, int64(0), sizeBytes)
+	assert.Contains(t, err.Error(), "image size unavailable")
 }

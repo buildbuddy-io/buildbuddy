@@ -202,12 +202,12 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
-func (c *dockerCommandContainer) ImageSizeBytes(ctx context.Context) int64 {
+func (c *dockerCommandContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
 	ii, err := c.client.ImageInspect(ctx, c.image, dockerclient.ImageInspectWithRawResponse(nil))
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	return ii.Size
+	return ii.Size, nil
 }
 
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
