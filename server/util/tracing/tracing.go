@@ -41,6 +41,7 @@ var (
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
 	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
 	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
+	traceBatchTimeout         = flag.Duration("app.trace_batch_timeout", -1, "Maximum delay before exporting a batch of spans. Negative values defer to the OpenTelemetry SDK's default batch timeout logic; other values are passed through as an explicit batch timeout.")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces (maps to the standard 'service.name' attribute, like the OTEL_SERVICE_NAME environment variable, but allows for env substitution).")
 	traceResourceAttributes   = flag.Slice("app.trace_resource_attributes", []ResourceAttribute{}, "Resource attributes to add to all traces (similar to the OTEL_RESOURCE_ATTRIBUTES environment variable, but more structured, and allows for env substitution). Where possible, follow the resource semantic conventions: https://opentelemetry.io/docs/specs/semconv/resource/")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
@@ -144,6 +145,15 @@ func (e *noopExporter) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+func batchSpanProcessorOptions() []sdktrace.BatchSpanProcessorOption {
+	if *traceBatchTimeout < 0 {
+		return nil
+	}
+	return []sdktrace.BatchSpanProcessorOption{
+		sdktrace.WithBatchTimeout(*traceBatchTimeout),
+	}
+}
+
 func Configure(env environment.Env) error {
 	if *traceFraction <= 0 {
 		return nil
@@ -234,7 +244,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(*traceServiceName))
 	}
 
-	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+	bsp := sdktrace.NewBatchSpanProcessor(traceExporter, batchSpanProcessorOptions()...)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return bsp.Shutdown(ctx)
 	})
