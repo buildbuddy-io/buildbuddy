@@ -1486,6 +1486,9 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 	}
 
 	authCtx := ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
+	// but for correctness we could use page_token to make sure we don't miss any.
+	// By default, this query returns up to 15 invocations.
 	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(authCtx, &inpb.SearchInvocationRequest{
 		Query: &inpb.InvocationQuery{
 			GroupId:    wf.GroupID,

@@ -125,6 +125,33 @@ actions:
 	}
 }
 
+func repoWithMultipleSlowActions() map[string]string {
+	return map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "sleep_forever_test",
+    srcs = ["sleep_forever_test.sh"],
+)
+`,
+		"sleep_forever_test.sh": "tail -f /dev/null",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Action 1"
+    bazel_use_cli: false
+    triggers: { push: { branches: [ "*" ] } }
+    bazel_commands: [ "run //:sleep_forever_test" ]
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+  - name: "Action 2"
+    bazel_use_cli: false
+    triggers: { push: { branches: [ "*" ] } }
+    bazel_commands: [ "run //:sleep_forever_test" ]
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+`,
+	}
+}
+
 func repoWithInvalidConfig() map[string]string {
 	// Note the missing close-quote in the bazel command.
 	return map[string]string{
@@ -628,72 +655,59 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 	}
 }
 
-func ATestCancelOlderRunsOnSameBranch_MultipleWorkflows(t *testing.T) {
+func TestCancelOlderRunsOnSameBranch_MultipleWorkflows(t *testing.T) {
 	flags.Set(t, "remote_execution.workflows_cancel_duplicates", true)
 
-	for _, branch := range []string{"test-branch"} {
-		for _, newCommit := range []bool{true} {
-			fakeGitProvider := testgit.NewFakeProvider()
-			env, workflowService := setup(t, fakeGitProvider)
+	repoContents := repoWithMultipleSlowActions()
 
-			bb := env.GetBuildBuddyServiceClient()
+	fakeGitProvider := testgit.NewFakeProvider()
+	fakeGitProvider.FileContents = repoContents
+	env, wfService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
 
-			// Set up a workflow that hangs, so the workflow doesn't accidentally complete before we can cancel it.
-			repoContentsMap := repoWithSlowScript()
-			repoPath, commitSHA := makeRepo(t, repoContentsMap)
-			repoURL := fmt.Sprintf("file://%s", repoPath)
-
-			ctx := env.WithUserID(context.Background(), env.UserID1)
-			reqCtx := &ctxpb.RequestContext{
-				UserId:  &uidpb.UserId{Id: env.UserID1},
-				GroupId: env.GroupID1,
-			}
-			repo := createWorkflow(t, env, repoURL)
-
-			// Trigger run #1 of the workflow on a branch.
-			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
-			firstOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
-			waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
-
-			if newCommit {
-				// Make sure that a second workflow on a different commit but same branch still cancels the first workflow.
-				commitSHA = testgit.CommitFiles(t, repoPath, map[string]string{
-					"rerun.txt": "new commit on the same branch\n",
-				})
-			}
-
-			// Trigger a second workflow on the same branch.
-			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
-			secondOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, firstOuterIID)
-			// On feature branches, we expect the second workflow to cancel the first workflow.
-			if branch == "test-branch" {
-				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
-			}
-
-			// Make sure the second workflow was not accidentally cancelled too.
-			waitForInvocationStatus(t, ctx, bb, reqCtx, secondOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
-
-			// On the default branch, we expect the second workflow to not cancel the first workflow.
-			if branch == "master" {
-				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
-			}
-
-			// Kill any still-running workflows. Otherwise the shutdown functions will waste some time waiting for it to complete.
-			_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
-				RequestContext: reqCtx,
-				InvocationId:   secondOuterIID,
-			})
-			require.NoError(t, err)
-
-			if branch == "master" {
-				_, err = bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
-					RequestContext: reqCtx,
-					InvocationId:   firstOuterIID,
-				})
-				require.NoError(t, err)
-			}
-		}
+	repoPath, commitSHA := makeRepo(t, repoContents)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
 	}
+	repo := createWorkflow(t, env, repoURL)
+
+	// Trigger both workflows to run.
+	triggerWebhookOnBranch(t, ctx, fakeGitProvider, wfService, repo, repoContents, repoURL, "my-branch", commitSHA)
+
+	// Both workflows should be running. Neither should have accidentally canceled the other,
+	// even though they're running on the same branch.
+	iidA := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidA, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+	iidB := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, iidA)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidB, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	// Trigger another webhook for the same branch. This should cancel the original workflows.
+	triggerWebhookOnBranch(t, ctx, fakeGitProvider, wfService, repo, repoContents, repoURL, "my-branch", commitSHA)
+
+	// Wait for the new workflows to start running.
+	iidA2 := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, iidA, iidB)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidA2, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+	iidB2 := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, iidA, iidB, iidA2)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidB2, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	// The original workflows should be cancelled.
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidA, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+	waitForInvocationStatus(t, ctx, bb, reqCtx, iidB, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+
+	// Cleanup. Kill any still-running workflows.
+	_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		RequestContext: reqCtx,
+		InvocationId:   iidA2,
+	})
+	require.NoError(t, err)
+	_, err = bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		RequestContext: reqCtx,
+		InvocationId:   iidB2,
+	})
+	require.NoError(t, err)
 }
 
 func TestInvalidYAML(t *testing.T) {
