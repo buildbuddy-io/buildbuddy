@@ -3063,4 +3063,11 @@ message StoredExecution {
   // CPU architecture that the execution targeted (e.g. "amd64", "arm64").
   // Sourced from the Arch platform property.
   string arch = 82;
+
+  // The container image used for execution.
+  string container_image = 83;
+
+  // The on-disk size of the container image in bytes, after pulling and
+  // extracting.
+  int64 container_image_size_bytes = 84;
 }

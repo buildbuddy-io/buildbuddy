@@ -239,6 +239,14 @@ func (r *taskRunner) Metadata() *espb.RunnerMetadata {
 	return r.metadata.CloneVT()
 }
 
+func (r *taskRunner) ContainerImageInfo() (ref string, sizeBytes int64) {
+	ref = r.PlatformProperties.ContainerImage
+	if sizer, ok := r.Container.Delegate.(container.ImageSizer); ok {
+		sizeBytes = sizer.ImageSizeBytes()
+	}
+	return ref, sizeBytes
+}
+
 func (r *taskRunner) String() string {
 	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.getState().ShortString(), r.metadata.GetTaskNumber(), keyString(r.key))
 }

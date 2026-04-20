@@ -327,6 +327,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "prepare runner filesystem"))
 	}
 
+	// Record container image metadata after pulling.
+	auxMetadata.ContainerImage, auxMetadata.ContainerImageSizeBytes = r.ContainerImageInfo()
+
 	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 
 	log.CtxDebugf(ctx, "Downloading inputs.")
