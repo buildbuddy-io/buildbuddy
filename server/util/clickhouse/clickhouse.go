@@ -421,7 +421,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
-		ContainerImage:                     in.GetContainerImage(),
+		ContainerImageRef:                  in.GetContainerImageRef(),
 		ContainerImageSizeBytes:            in.GetContainerImageSizeBytes(),
 	}
 }

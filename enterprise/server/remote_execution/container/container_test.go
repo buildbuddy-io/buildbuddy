@@ -62,6 +62,7 @@ func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
 }
+func (c *FakeContainer) ImageSizeBytes(context.Context) int64 { return 0 }
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
@@ -420,27 +421,9 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
 }
 
-// FakeContainerWithImageSize is a FakeContainer that also implements ImageSizer.
-type FakeContainerWithImageSize struct {
-	FakeContainer
-	Size int64
-}
-
-func (c *FakeContainerWithImageSize) ImageSizeBytes(ctx context.Context) int64 {
-	return c.Size
-}
-
-func TestTracedCommandContainer_ImageSizeBytes_WithImageSizer(t *testing.T) {
-	delegate := &FakeContainerWithImageSize{Size: 1234567890}
-	traced := container.NewTracedCommandContainer(delegate)
-
-	assert.Equal(t, int64(1234567890), traced.ImageSizeBytes(context.Background()))
-}
-
-func TestTracedCommandContainer_ImageSizeBytes_WithoutImageSizer(t *testing.T) {
+func TestTracedCommandContainer_ImageSizeBytes(t *testing.T) {
 	delegate := &FakeContainer{}
 	traced := container.NewTracedCommandContainer(delegate)
-
 	assert.Equal(t, int64(0), traced.ImageSizeBytes(context.Background()))
 }
 

@@ -175,8 +175,8 @@ message ExecutionAuxiliaryMetadata {
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
 
-  // The container image used for execution.
-  string container_image = 12;
+  // The container image ref used for execution.
+  string container_image_ref = 12;
 
   // The on-disk size of the container image in bytes, after pulling and
   // extracting.

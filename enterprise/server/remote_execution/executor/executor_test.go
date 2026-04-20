@@ -584,6 +584,6 @@ func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
 	// The bare runner normalizes container-image to "" since no image is
 	// configured. The image size should still come through from the
 	// ImageSizer implementation on the container.
-	require.Equal(t, "", auxMeta.GetContainerImage())
+	require.Equal(t, "", auxMeta.GetContainerImageRef())
 	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageSizeBytes())
 }
