@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -116,7 +117,7 @@ sh_binary(
 actions:
   - name: "Slow test action"
     bazel_use_cli: false
-    triggers: { push: { branches: [ master ] } }
+    triggers: { push: { branches: [ "*" ] } }
     bazel_commands: [ "run //:sleep_forever_test" ]
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
@@ -228,7 +229,7 @@ func triggerWebhookOnBranch(t *testing.T, ctx context.Context, gitProvider *test
 		PushedBranch:            branch,
 		SHA:                     commitSHA,
 		TargetRepoURL:           repoURL,
-		TargetBranch:            "master",
+		TargetBranch:            branch,
 		TargetRepoDefaultBranch: "master",
 	}
 	err := workflowService.HandleRepositoryEvent(ctx, repo, gitProvider.WebhookData, "faketoken")
@@ -256,17 +257,24 @@ func triggerLegacyWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workf
 	workflowService.ServeHTTP(testhttp.NewResponseWriter(t), req)
 }
 
-func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
+func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, excludeInvocationIDs ...string) string {
+	excluded := set.From(excludeInvocationIDs...)
+
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 			RequestContext: reqCtx,
 			Query:          &inpb.InvocationQuery{GroupId: reqCtx.GetGroupId()},
 		})
-		if err != nil && !strings.Contains(err.Error(), "not found") {
-			require.NoError(t, err)
+		if err != nil && strings.Contains(err.Error(), "not found") {
+			continue
 		}
+		require.NoError(t, err)
+
 		for _, in := range searchResp.GetInvocation() {
 			if in.GetRole() == "CI_RUNNER" {
+				if excluded.Contains(in.GetInvocationId()) {
+					continue
+				}
 				return in.GetInvocationId()
 			}
 		}
@@ -275,33 +283,6 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for workflow invocation to be created")
-	return ""
-}
-
-func waitForAnyInvocationCreatedMatching(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, query *inpb.InvocationQuery, excludeInvocationIDs ...string) string {
-	excluded := make(map[string]struct{}, len(excludeInvocationIDs))
-	for _, invocationID := range excludeInvocationIDs {
-		excluded[invocationID] = struct{}{}
-	}
-	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
-			RequestContext: reqCtx,
-			Query:          query,
-		})
-		if err != nil && !strings.Contains(err.Error(), "not found") {
-			require.NoError(t, err)
-		}
-		for _, in := range searchResp.GetInvocation() {
-			if _, ok := excluded[in.GetInvocationId()]; ok {
-				continue
-			}
-			return in.GetInvocationId()
-		}
-
-		time.Sleep(delay)
-	}
-
-	require.FailNowf(t, "timeout", "Timed out waiting for matching invocation to be created")
 	return ""
 }
 
@@ -580,7 +561,7 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancelOlderRunsOnSameBranch(t *testing.T) {
-	flags.Set(t, "workflows.cancel_duplicates", true)
+	flags.Set(t, "remote_execution.workflows_cancel_duplicates", true)
 
 	for _, branch := range []string{"test-branch", "master"} {
 		for _, newCommit := range []bool{true, false} {
@@ -603,11 +584,7 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 
 			// Trigger run #1 of the workflow on a branch.
 			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
-			firstOuterIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
-				GroupId: reqCtx.GetGroupId(),
-				RepoUrl: repoURL,
-				Role:    []string{"CI_RUNNER"},
-			})
+			firstOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
 			waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 
 			if newCommit {
@@ -619,12 +596,7 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 
 			// Trigger a second workflow on the same branch.
 			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
-			secondOuterIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
-				GroupId: reqCtx.GetGroupId(),
-				RepoUrl: repoURL,
-				Role:    []string{"CI_RUNNER"},
-			}, firstOuterIID)
-
+			secondOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, firstOuterIID)
 			// On feature branches, we expect the second workflow to cancel the first workflow.
 			if branch == "test-branch" {
 				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
@@ -638,7 +610,75 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 			}
 
-			// Kill the second workflow. Otherwise the shutdown functions will waste some time waiting for it to complete.
+			// Kill any still-running workflows. Otherwise the shutdown functions will waste some time waiting for it to complete.
+			_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+				RequestContext: reqCtx,
+				InvocationId:   secondOuterIID,
+			})
+			require.NoError(t, err)
+
+			if branch == "master" {
+				_, err = bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+					RequestContext: reqCtx,
+					InvocationId:   firstOuterIID,
+				})
+				require.NoError(t, err)
+			}
+		}
+	}
+}
+
+func ATestCancelOlderRunsOnSameBranch_MultipleWorkflows(t *testing.T) {
+	flags.Set(t, "remote_execution.workflows_cancel_duplicates", true)
+
+	for _, branch := range []string{"test-branch"} {
+		for _, newCommit := range []bool{true} {
+			fakeGitProvider := testgit.NewFakeProvider()
+			env, workflowService := setup(t, fakeGitProvider)
+
+			bb := env.GetBuildBuddyServiceClient()
+
+			// Set up a workflow that hangs, so the workflow doesn't accidentally complete before we can cancel it.
+			repoContentsMap := repoWithSlowScript()
+			repoPath, commitSHA := makeRepo(t, repoContentsMap)
+			repoURL := fmt.Sprintf("file://%s", repoPath)
+
+			ctx := env.WithUserID(context.Background(), env.UserID1)
+			reqCtx := &ctxpb.RequestContext{
+				UserId:  &uidpb.UserId{Id: env.UserID1},
+				GroupId: env.GroupID1,
+			}
+			repo := createWorkflow(t, env, repoURL)
+
+			// Trigger run #1 of the workflow on a branch.
+			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
+			firstOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+			waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+			if newCommit {
+				// Make sure that a second workflow on a different commit but same branch still cancels the first workflow.
+				commitSHA = testgit.CommitFiles(t, repoPath, map[string]string{
+					"rerun.txt": "new commit on the same branch\n",
+				})
+			}
+
+			// Trigger a second workflow on the same branch.
+			triggerWebhookOnBranch(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, branch, commitSHA)
+			secondOuterIID := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx, firstOuterIID)
+			// On feature branches, we expect the second workflow to cancel the first workflow.
+			if branch == "test-branch" {
+				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+			}
+
+			// Make sure the second workflow was not accidentally cancelled too.
+			waitForInvocationStatus(t, ctx, bb, reqCtx, secondOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+			// On the default branch, we expect the second workflow to not cancel the first workflow.
+			if branch == "master" {
+				waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+			}
+
+			// Kill any still-running workflows. Otherwise the shutdown functions will waste some time waiting for it to complete.
 			_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
 				RequestContext: reqCtx,
 				InvocationId:   secondOuterIID,

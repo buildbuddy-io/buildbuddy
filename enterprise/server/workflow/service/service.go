@@ -84,7 +84,7 @@ var (
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
 	// TODO(Maggie): Make this configurable per-workflow.
-	cancelDuplicateWorkflows = flag.Bool("workflows.cancel_duplicates", false, "Whether to cancel duplicate workflows on the same branch.")
+	cancelDuplicateWorkflows = flag.Bool("remote_execution.workflows_cancel_duplicates", false, "Whether to cancel duplicate workflows on the same branch.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -1475,7 +1475,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
-func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, wfName string, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
 	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
 		return nil
 	}
@@ -1491,6 +1491,7 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 			GroupId:    wf.GroupID,
 			RepoUrl:    wf.RepoURL,
 			BranchName: wd.PushedBranch,
+			Pattern:    wfName,
 			Role:       []string{"CI_RUNNER"},
 			Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
 		},
@@ -1547,7 +1548,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 		}
 
 		if *cancelDuplicateWorkflows {
-			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, key, wf, wd, invocationID); err != nil {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action.Name, key, wf, wd, invocationID); err != nil {
 				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 			}
 		}
