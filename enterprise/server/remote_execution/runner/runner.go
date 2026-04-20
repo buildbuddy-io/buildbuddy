@@ -409,9 +409,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
-			if dirtools.InputFetchMetadataEnabled() {
-				res.InputFetchMetadata = txInfo.InputFetchMetadata
-			}
+			res.InputFetchMetadata = txInfo.InputFetchMetadata
 		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
