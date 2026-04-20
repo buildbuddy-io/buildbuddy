@@ -183,41 +183,51 @@ func BenchmarkDirectoryToImage(b *testing.B) {
 			os.Remove(outputFile)
 		}
 	})
-	b.Run("parallel_mount_exec", func(b *testing.B) {
+	b.Run("parallel_0", func(b *testing.B) {
 		b.SetBytes(imageSize)
-		outputFile := filepath.Join(outputDir, "exec.ext4")
+		outputFile := filepath.Join(outputDir, "exec0.ext4")
 		for b.Loop() {
-			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{ParallelCopy: ext4.MountMethodExec, CopyWorkers: 4}); err != nil {
+			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{CopyWorkers: -1}); err != nil {
 				b.Fatal(err)
 			}
 			os.Remove(outputFile)
 		}
 	})
-	b.Run("parallel_mount_exec_2", func(b *testing.B) {
+	b.Run("parallel_1", func(b *testing.B) {
 		b.SetBytes(imageSize)
-		outputFile := filepath.Join(outputDir, "exec.ext4")
+		outputFile := filepath.Join(outputDir, "exec1.ext4")
 		for b.Loop() {
-			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{ParallelCopy: ext4.MountMethodExec, CopyWorkers: 2}); err != nil {
+			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{CopyWorkers: 1}); err != nil {
 				b.Fatal(err)
 			}
 			os.Remove(outputFile)
 		}
 	})
-	b.Run("parallel_mount_exec_8", func(b *testing.B) {
+	b.Run("parallel_2", func(b *testing.B) {
 		b.SetBytes(imageSize)
-		outputFile := filepath.Join(outputDir, "exec.ext4")
+		outputFile := filepath.Join(outputDir, "exec2.ext4")
 		for b.Loop() {
-			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{ParallelCopy: ext4.MountMethodExec, CopyWorkers: 8}); err != nil {
+			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{CopyWorkers: 2}); err != nil {
 				b.Fatal(err)
 			}
 			os.Remove(outputFile)
 		}
 	})
-	b.Run("parallel_mount_exec_num_cpu", func(b *testing.B) {
+	b.Run("parallel_4", func(b *testing.B) {
 		b.SetBytes(imageSize)
-		outputFile := filepath.Join(outputDir, "exec.ext4")
+		outputFile := filepath.Join(outputDir, "exec4.ext4")
 		for b.Loop() {
-			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{ParallelCopy: ext4.MountMethodExec}); err != nil {
+			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{CopyWorkers: 4}); err != nil {
+				b.Fatal(err)
+			}
+			os.Remove(outputFile)
+		}
+	})
+	b.Run("parallel_8", func(b *testing.B) {
+		b.SetBytes(imageSize)
+		outputFile := filepath.Join(outputDir, "exec8.ext4")
+		for b.Loop() {
+			if err := ext4.DirectoryToImage(ctx, inputDir, outputFile, imageSize, ext4.ImageOptions{CopyWorkers: 8}); err != nil {
 				b.Fatal(err)
 			}
 			os.Remove(outputFile)

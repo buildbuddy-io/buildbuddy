@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -61,25 +60,8 @@ func EnsureDependencies() error {
 	return nil
 }
 
-// MountMethod specifies how to mount the ext4 image for parallel copy.
-type MountMethod int
-
-const (
-	// MountMethodNone disables parallel copy (use mke2fs -d instead).
-	MountMethodNone MountMethod = iota
-	// MountMethodExec uses the mount/umount commands.
-	MountMethodExec
-)
-
 // ImageOptions configures ext4 image creation.
 type ImageOptions struct {
-	// ParallelCopy specifies the mount method to use for parallel file
-	// copying. When set to MountMethodNone (default), mke2fs -d is used.
-	// Other values mount the image and copy files in parallel, which
-	// requires root or CAP_SYS_ADMIN.
-	ParallelCopy MountMethod
-	// CopyWorkers is the number of parallel copy workers to use when
-	// ParallelCopy is enabled. Defaults to runtime.NumCPU() if 0.
 	CopyWorkers int
 }
 
@@ -90,13 +72,12 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
-
-	if opt.ParallelCopy != MountMethodNone {
-		return directoryToImageParallel(ctx, inputDir, outputFile, sizeBytes, opt)
-	}
-
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
+	}
+
+	if opt.CopyWorkers > 0 {
+		return directoryToImageParallel(ctx, inputDir, outputFile, sizeBytes, opt)
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
@@ -232,10 +213,6 @@ func sendfileAll(dstFd, srcFd int, size int64) (int64, error) {
 }
 
 func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, sizeBytes int64, opt ImageOptions) error {
-	if err := checkImageOutputPath(outputFile); err != nil {
-		return err
-	}
-
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -251,7 +228,7 @@ func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, 
 	}
 	defer os.Remove(mountDir)
 
-	unmount, err := mountImage(ctx, opt.ParallelCopy, outputFile, mountDir)
+	unmount, err := mountImage(ctx, outputFile, mountDir)
 	if err != nil {
 		return err
 	}
@@ -261,13 +238,14 @@ func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, 
 	// Directories are created synchronously during the walk so they exist
 	// before any file copies land in them. File and symlink copies are
 	// dispatched to workers as the walk progresses.
-	workers := opt.CopyWorkers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
+	serial := false
+	if opt.CopyWorkers < 0 {
+		serial = true
+		opt.CopyWorkers = 1
 	}
 
 	eg, _ := errgroup.WithContext(ctx)
-	eg.SetLimit(workers)
+	eg.SetLimit(opt.CopyWorkers)
 	err = filepath.WalkDir(inputDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -292,9 +270,15 @@ func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, 
 			if err != nil {
 				return err
 			}
-			eg.Go(func() error {
-				return os.Symlink(target, dstPath)
-			})
+			if serial {
+				if err := os.Symlink(target, dstPath); err != nil {
+					return err
+				}
+			} else {
+				eg.Go(func() error {
+					return os.Symlink(target, dstPath)
+				})
+			}
 			return nil
 		}
 
@@ -303,6 +287,9 @@ func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, 
 		}
 
 		mode := info.Mode().Perm()
+		if serial {
+			return copyFile(path, dstPath, mode)
+		}
 		eg.Go(func() error {
 			return copyFile(path, dstPath, mode)
 		})
@@ -323,19 +310,7 @@ func directoryToImageParallel(ctx context.Context, inputDir, outputFile string, 
 	return nil
 }
 
-// mountImage mounts an ext4 image file at mountDir using the specified method.
-// It returns an unmount function that must be called to clean up. The unmount
-// function is safe to call multiple times; only the first call takes effect.
-func mountImage(ctx context.Context, method MountMethod, imageFile, mountDir string) (unmount func() error, err error) {
-	switch method {
-	case MountMethodExec:
-		return mountImageExec(ctx, imageFile, mountDir)
-	default:
-		return nil, status.InternalErrorf("unsupported mount method: %d", method)
-	}
-}
-
-func mountImageExec(ctx context.Context, imageFile, mountDir string) (func() error, error) {
+func mountImage(ctx context.Context, imageFile, mountDir string) (func() error, error) {
 	mountCmd := exec.CommandContext(ctx, "mount", "-o", "loop,noatime", imageFile, mountDir)
 	if out, err := mountCmd.CombinedOutput(); err != nil {
 		return nil, status.InternalErrorf("mount: %s: %s", err, out)
@@ -491,4 +466,3 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 	}
 	return nil
 }
-
