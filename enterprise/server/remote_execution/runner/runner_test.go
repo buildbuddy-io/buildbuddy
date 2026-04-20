@@ -139,6 +139,7 @@ func (c *fakeContainer) Pause(ctx context.Context) error {
 func (c *fakeContainer) Unpause(ctx context.Context) error {
 	return nil
 }
+func (c *fakeContainer) ImageSizeBytes(ctx context.Context) int64 { return 0 }
 
 // fakeFirecrackerContainer behaves like a bare container except it returns
 // 0 mem / CPU resources, like Firecracker.

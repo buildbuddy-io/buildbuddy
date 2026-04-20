@@ -286,7 +286,7 @@ type Execution struct {
 	CommandSnippet string `gorm:"codec:ZSTD(1)"`
 
 	// Container image
-	ContainerImage          string
+	ContainerImageRef       string
 	ContainerImageSizeBytes int64
 
 	// Fields from Invocations
@@ -391,7 +391,7 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",
-		"ContainerImage",
+		"ContainerImageRef",
 		"ContainerImageSizeBytes",
 	}
 }

@@ -3064,8 +3064,8 @@ message StoredExecution {
   // Sourced from the Arch platform property.
   string arch = 82;
 
-  // The container image used for execution.
-  string container_image = 83;
+  // The container image ref used for execution.
+  string container_image_ref = 83;
 
   // The on-disk size of the container image in bytes, after pulling and
   // extracting.
