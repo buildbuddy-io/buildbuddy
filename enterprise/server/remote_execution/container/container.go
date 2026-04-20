@@ -469,7 +469,7 @@ type CommandContainer interface {
 	// ImageSizeBytes returns the estimated on-disk size of the pulled
 	// container image in bytes. Should be called after PullImage.
 	// Returns 0 if unknown or not applicable.
-	ImageSizeBytes(ctx context.Context) int64
+	ImageSizeBytes(ctx context.Context) (int64, error)
 }
 
 // StatsRecorder is an optional interface implemented by a [CommandContainer]
@@ -723,7 +723,7 @@ func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
 }
 
-func (t *TracedCommandContainer) ImageSizeBytes(ctx context.Context) int64 {
+func (t *TracedCommandContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
 	return t.Delegate.ImageSizeBytes(ctx)
 }
 

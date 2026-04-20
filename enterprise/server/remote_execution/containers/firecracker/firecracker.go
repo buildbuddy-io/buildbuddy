@@ -2102,19 +2102,22 @@ func (c *FirecrackerContainer) IsolationType() string {
 	return "firecracker"
 }
 
-func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) int64 {
+func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
 	if !c.pulled {
-		return 0
+		return 0, nil
 	}
 	imagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil || imagePath == "" {
-		return 0
+	if err != nil {
+		return 0, err
+	}
+	if imagePath == "" {
+		return 0, nil
 	}
 	info, err := os.Stat(imagePath)
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	return info.Size()
+	return info.Size(), nil
 }
 
 // Run the given command within the container and remove the container after
