@@ -240,11 +240,7 @@ func (r *taskRunner) Metadata() *espb.RunnerMetadata {
 }
 
 func (r *taskRunner) ContainerImageInfo() (ref string, sizeBytes int64) {
-	ref = r.PlatformProperties.ContainerImage
-	if sizer, ok := r.Container.Delegate.(container.ImageSizer); ok {
-		sizeBytes = sizer.ImageSizeBytes()
-	}
-	return ref, sizeBytes
+	return r.PlatformProperties.ContainerImage, r.Container.ImageSizeBytes()
 }
 
 func (r *taskRunner) String() string {

@@ -2077,6 +2077,8 @@ func (c *FirecrackerContainer) ImageSizeBytes() int64 {
 	if !c.pulled {
 		return 0
 	}
+	// ImageSizer interface doesn't take a context; this is only called once
+	// per execution so context.TODO() is acceptable.
 	imagePath, err := ociconv.CachedDiskImagePath(context.TODO(), c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil || imagePath == "" {
 		return 0
