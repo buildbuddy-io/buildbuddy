@@ -1203,6 +1203,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
 		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
 			return true
 		}
 		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
@@ -1250,6 +1251,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
 		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
 			return true
 		}
 		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)

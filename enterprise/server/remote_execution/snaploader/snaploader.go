@@ -464,7 +464,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		manifest, err := l.GetLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil {
 			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
-				log.CtxInfof(ctx, "Using local manifest")
+				log.CtxInfof(ctx, "Using local manifest for key %s", key)
 				return manifest, snaputil.ChunkSourceLocalFilecache, nil
 			}
 		} else {
@@ -500,6 +500,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		}
 	}
 
+	log.CtxInfof(ctx, "Using remote manifest for key %s", key)
 	return manifest, snaputil.ChunkSourceRemoteCache, nil
 }
 
