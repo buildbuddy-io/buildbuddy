@@ -20,6 +20,7 @@ go_test(
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",
+        "//server/backends/memory_kvstore",
         "//server/backends/repo_downloader",
         "//server/endpoint_urls/build_buddy_url",
         "//server/interfaces",

@@ -52,6 +52,7 @@ type Action struct {
 	GitCleanExclude    []string          `yaml:"git_clean_exclude"`
 	GitFetchFilters    []string          `yaml:"git_fetch_filters"`
 	GitFetchDepth      *int              `yaml:"git_fetch_depth"`
+	SkipAutoCheckout   bool              `yaml:"skip_auto_checkout"`
 	BazelWorkspaceDir  string            `yaml:"bazel_workspace_dir"`
 	Env                map[string]string `yaml:"env"`
 	Visibility         string            `yaml:"visibility"`

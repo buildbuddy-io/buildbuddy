@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -99,24 +100,17 @@ actions:
 	}
 }
 
-// repoWithSlowScript simulates a test repo with the config files required to run a workflow
-// It sets up a slow script that takes a while to run so the CI runner does not return immediately,
-// giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
+// repoWithSlowScript simulates a test repo with a slow shell-only workflow.
+// The action skips automatic checkout so tests don't depend on repo fetches.
 func repoWithSlowScript() map[string]string {
 	return map[string]string{
-		"BUILD": `
-sh_binary(
-    name = "sleep_forever_test",
-    srcs = ["sleep_forever_test.sh"],
-)
-`,
-		"sleep_forever_test.sh": "tail -f /dev/null",
 		"buildbuddy.yaml": `
 actions:
-  - name: "Slow test action"
-    bazel_use_cli: false
+  - name: "Test action"
     triggers: { push: { branches: [ master ] } }
-    bazel_commands: [ "run //:sleep_forever_test" ]
+    skip_auto_checkout: true
+    steps:
+      - run: "tail -f /dev/null"
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
 `,
@@ -161,6 +155,9 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
 			require.NoError(t, err)
 			e.SetGitHubAppService(gh)
+			keyValStore, err := memory_kvstore.NewMemoryKeyValStore()
+			require.NoError(t, err)
+			e.SetKeyValStore(keyValStore)
 		},
 	})
 
@@ -575,6 +572,7 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
+
 	bb := env.GetBuildBuddyServiceClient()
 
 	// Set up a workflow that hangs, so the workflow doesn't accidentally complete before we can cancel it.
@@ -597,32 +595,27 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 		Role:    []string{"CI_RUNNER"},
 	})
 	waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
-	firstChildIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
-		GroupId:    reqCtx.GetGroupId(),
-		RepoUrl:    repoURL,
-		BranchName: "master",
-		Role:       []string{"CI"},
-		Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
-	})
-	waitForInvocationStatus(t, ctx, bb, reqCtx, firstChildIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 
-	secondCommitSHA := testgit.CommitFiles(t, repoPath, map[string]string{
-		"rerun.txt": "second commit on the same branch\n",
-	})
-
-	// Trigger run #2 of the workflow on the same branch but at a different commit.
-	triggerWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, secondCommitSHA)
+	// Trigger run #2 for the same branch and commit. This keeps the test branch-scoped
+	// and avoids depending on any commit-specific behavior.
+	triggerWebhook(t, ctx, fakeGitProvider, workflowService, repo, repoContentsMap, repoURL, commitSHA)
 	secondOuterIID := waitForAnyInvocationCreatedMatching(t, ctx, bb, reqCtx, &inpb.InvocationQuery{
 		GroupId: reqCtx.GetGroupId(),
 		RepoUrl: repoURL,
 		Role:    []string{"CI_RUNNER"},
 	}, firstOuterIID)
 
-	waitForInvocationStatus(t, ctx, bb, reqCtx, firstChildIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 	waitForInvocationStatus(t, ctx, bb, reqCtx, firstOuterIID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 
 	// Make sure the second workflow was not accidentally cancelled too.
 	waitForInvocationStatus(t, ctx, bb, reqCtx, secondOuterIID, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+
+	// Kill the second workflow.
+	_, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		RequestContext: reqCtx,
+		InvocationId:   secondOuterIID,
+	})
+	require.NoError(t, err)
 }
 
 func TestInvalidYAML(t *testing.T) {

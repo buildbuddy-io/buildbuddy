@@ -396,6 +396,9 @@ A named group of Bazel commands that run when triggered.
   workspace that are excluded when running `git clean` across actions that
   are executed in the same runner instance. This is an advanced option and
   is not recommended for most users.
+- **`skip_auto_checkout`** (`boolean`): Whether to skip the CI runner's
+  automatic git checkout and workspace setup. This is useful for actions
+  that only run shell steps and do not need a local repo checkout.
 - **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
   containing the bazel workspace for this action. By default, this is
   assumed to be the repo root directory.

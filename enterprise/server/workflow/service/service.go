@@ -1142,6 +1142,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	for _, path := range workflowAction.GitCleanExclude {
 		args = append(args, "--git_clean_exclude="+path)
 	}
+	if workflowAction.SkipAutoCheckout {
+		args = append(args, "--skip_auto_checkout=true")
+	}
 	args = append(args, extraArgs...)
 
 	cmd := &repb.Command{
@@ -1520,7 +1523,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
-		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, env, shouldRetry)
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
