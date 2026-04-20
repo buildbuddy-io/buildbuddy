@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
-load("@rules_img//img:layer.bzl", "layer_from_tar")
+load("@rules_img//img:layer.bzl", "layer_from_tar", "image_layer")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//rules:utils.bzl", "runfiles_directory")
@@ -142,9 +142,41 @@ go_binary(
 
 PACKAGE_ROOT = "app/enterprise"
 
+image_layer(
+    name = "symlink_layer",
+    annotations = {
+        "org.opencontainers.image.title": "`/buildbuddy` -> `/tmp`",
+        "org.opencontainers.image.description": (
+            "Contains a symlink from `/buildbuddy` to `/tmp`."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    symlinks = {
+        "buildbuddy": "tmp",
+    },
+)
+
+image_layer(
+    name = "binary_layer",
+    srcs = {PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
+        "org.opencontainers.image.description": (
+            "Contains the enterprise BuildBuddy server binary."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    # Do not include runfiles so that we can separate configuration files out
+    # into a separate layer. This lets us use a base image without those files
+    # when building our production images.
+    include_runfiles = False,
+    compress = "gzip",
+)
+
 pkg_tar(
-    name = "licenses_tar",
+    name = "runfiles_tar",
     srcs = [
+        ":runfiles",
         ":licenses",
     ],
     include_runfiles = True,
@@ -152,52 +184,17 @@ pkg_tar(
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
-)
-
-pkg_tar(
-    name = "binary_tar",
-    srcs = [":buildbuddy"],
-    package_dir = PACKAGE_ROOT,
-)
-
-pkg_tar(
-    name = "runfiles_tar",
-    srcs = [
-        ":runfiles",
-    ],
-    include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
-    remap_paths = {
-        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
-    },
-)
-
-pkg_tar(
-    name = "symlinks_tar",
-    symlinks = {
-        "buildbuddy": "tmp",
-    },
-)
-
-flatten(
-    name = "base_image_tar",
-    tars = [
-        ":licenses_tar",
-        ":binary_tar",
-        ":runfiles_tar",
-        ":symlinks_tar",
-    ],
+    portable_mtime = False,
 )
 
 layer_from_tar(
-    name = "base_image_layer",
-    src = "base_image_tar",
+    name = "runfiles_layer",
+    src = "runfiles_tar",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Runfiles",
         "org.opencontainers.image.description": (
-            "Contains the BuildBuddy binary, runfiles, and symlinks " +
-            "necessary to run the enterprise BuildBuddy server. Does not " +
-            "include configuration files."
+            "Contains the runfiles necessary to run the enterprise " +
+            "BuildBuddy server. Does not include configuration files."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
@@ -207,6 +204,15 @@ layer_from_tar(
 image_manifest(
     name = "base_image_manifest",
     base = "//images/distroless/base-nossl:manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy binary, runfiles, and symlinks " +
+            "necessary to run the enterprise BuildBuddy server. Does not " +
+            "include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     entrypoint = [
         "/%s/%s" % (
             PACKAGE_ROOT,
@@ -214,7 +220,9 @@ image_manifest(
         ),
     ],
     layers = [
-        ":base_image_layer",
+        ":symlink_layer",
+        ":runfiles_layer",
+        ":binary_layer",
     ],
 )
 
@@ -230,13 +238,34 @@ pkg_tar(
     },
 )
 
+pkg_tar(
+    name = "config_symlink_tar",
+    mode = "0755",
+    symlinks = {
+        "config.yaml": "/%s/%s.runfiles/%s/enterprise/config/buildbuddy.local.yaml" % (
+            PACKAGE_ROOT,
+            BINARY_NAME,
+            runfiles_directory(),
+        ),
+    },
+)
+
+flatten(
+    name = "config_tar",
+    tars = [
+        ":config_files_tar",
+        ":config_symlink_tar",
+    ],
+)
+
+
 layer_from_tar(
     name = "config_layer",
-    src = "config_files_tar",
+    src = "config_tar",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Configuration (FOSS)",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Configuration (FOSS)",
         "org.opencontainers.image.description": (
-            "Contains the FOSS BuildBuddy enterprise configuration files."
+            "Contains the FOSS enterprise BuildBuddy server configuration files."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
@@ -245,6 +274,15 @@ layer_from_tar(
 image_manifest(
     name = "image_manifest",
     base = ":base_image_manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy binary, runfiles, configuration files, " +
+            "and symlinks necessary to run the enterprise BuildBuddy server. " +
+            "Does not include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     layers = [
         ":config_layer",
     ],
