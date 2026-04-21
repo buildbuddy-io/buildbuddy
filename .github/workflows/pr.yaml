@@ -16,7 +16,10 @@ jobs:
 
       - name: Test
         run: |
-          bazelisk test \
-            --config=untrusted-ci \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-            //...
+          API_KEY="${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
+          if [[ "$API_KEY" ]]; then
+            echo >user.bazelrc "common --config=untrusted-ci --remote_header=x-buildbuddy-api-key=$API_KEY"
+          else
+            echo >user.bazelrc "common --config=ci-anon"
+          fi
+          bazelisk test //...

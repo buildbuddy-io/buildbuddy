@@ -3,12 +3,20 @@ declare function require(path: string): any;
 class FakeStorage {
   private values = new Map<string, string>();
 
+  get length() {
+    return this.values.size;
+  }
+
   clear() {
     this.values.clear();
   }
 
   getItem(key: string) {
     return this.values.get(key) ?? null;
+  }
+
+  key(index: number) {
+    return Array.from(this.values.keys())[index] ?? null;
   }
 
   removeItem(key: string) {
@@ -46,10 +54,17 @@ testGlobal.window = {
     pathname: "/invocation/123",
     search: "",
     hash: "",
+  } as Location & {
+    href: string;
+    origin: string;
+    host: string;
+    pathname: string;
+    search: string;
+    hash: string;
   },
 };
-testGlobal.localStorage = new FakeStorage();
-testGlobal.sessionStorage = new FakeStorage();
+testGlobal.localStorage = new FakeStorage() as Storage & FakeStorage;
+testGlobal.sessionStorage = new FakeStorage() as Storage & FakeStorage;
 
 const AuthService = require("./auth_service").AuthService as typeof import("./auth_service").AuthService;
 
