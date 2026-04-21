@@ -28,7 +28,7 @@ class FakeStorage {
   }
 }
 
-const testGlobal = globalThis as typeof globalThis & {
+const testGlobal = globalThis as unknown as {
   localStorage: FakeStorage;
   sessionStorage: FakeStorage;
   window: {
