@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
@@ -390,6 +391,58 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	n := testmetrics.GaugeValueForLabels(
 		t, metrics.COWSnapshotMemoryMappedBytes,
 		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)})
+	require.Equal(t, float64(0), n)
+}
+
+func TestCOW_LocalMmapLRUBoundsSequentialMemoryWrites(t *testing.T) {
+	copy_on_write.ResetMmmapedBytesMetricForTest()
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	const chunkSize = int64(1 * 1024 * 1024)
+	const chunkCount = int64(8)
+	const maxMappedChunks = int64(2)
+
+	parentDir := testfs.MakeTempDir(t)
+	chunkDir := filepath.Join(parentDir, snaputil.MemoryFileName)
+	require.NoError(t, os.Mkdir(chunkDir, 0755))
+
+	cow, err := copy_on_write.NewCOWStore(
+		ctx,
+		env,
+		snaputil.MemoryFileName,
+		nil,
+		chunkSize,
+		chunkSize*chunkCount,
+		chunkDir,
+		"",
+		false,
+		&copy_on_write.COWStoreOptions{
+			ChunkMmapMaxSizeBytes: maxMappedChunks * chunkSize,
+		},
+	)
+	require.NoError(t, err)
+
+	for i := int64(0); i < chunkCount; i++ {
+		_, err := cow.WriteAt([]byte{byte(i + 1)}, i*chunkSize)
+		require.NoError(t, err)
+	}
+
+	require.Eventually(t, func() bool {
+		n := testmetrics.GaugeValueForLabels(
+			t, metrics.COWSnapshotMemoryMappedBytes,
+			prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)},
+		)
+		return n <= float64(maxMappedChunks*chunkSize)
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, cow.Close())
+
+	n := testmetrics.GaugeValueForLabels(
+		t, metrics.COWSnapshotMemoryMappedBytes,
+		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)},
+	)
 	require.Equal(t, float64(0), n)
 }
 

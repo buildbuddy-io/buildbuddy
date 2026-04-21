@@ -966,7 +966,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled, nil)
 	if err != nil {
 		return nil, err
 	}

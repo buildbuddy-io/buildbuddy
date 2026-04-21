@@ -146,6 +146,9 @@ const (
 	diffMemSnapshotName = "diff-mem.snap"
 	// Directory storing the memory file chunks.
 	memoryChunkDirName = snaputil.MemoryFileName
+	// Full snapshot export writes the memory file linearly, so only a small
+	// number of dirty chunks need to remain mmapped at a time.
+	fullSnapshotExportMmapChunkCount = 4
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
@@ -3239,7 +3242,9 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		if memorySizeBytes <= 0 {
 			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 		}
-		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, &copy_on_write.COWStoreOptions{
+			ChunkMmapMaxSizeBytes: fullSnapshotExportMmapChunkCount * cowChunkSizeBytes(),
+		})
 		if err != nil {
 			return nil, status.WrapError(err, "create memory COWStore")
 		}

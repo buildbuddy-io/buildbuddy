@@ -85,6 +85,14 @@ type usageSummary struct {
 	totalDuration time.Duration
 }
 
+// COWStoreOptions controls optional behaviors for a COWStore instance.
+type COWStoreOptions struct {
+	// ChunkMmapMaxSizeBytes bounds the total size of chunks that may remain
+	// mmapped for this store at once. If zero, chunks use the default policy for
+	// their data dir.
+	ChunkMmapMaxSizeBytes int64
+}
+
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -146,6 +154,11 @@ type COWStore struct {
 	// Concurrency-safe pool of buffers that can be used for copying chunks
 	copyBufPool sync.Pool
 
+	// Optional store-local LRU used for chunks created by this store. This is
+	// useful for write-heavy paths that want a tighter bound than the shared
+	// default mmap policy.
+	chunkMmapLRU *MmapLRU
+
 	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
 	// structure so that if the buffer is full, a new item can still be appended,
 	// evicting the least recently added chunk.
@@ -161,10 +174,17 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool, opts *COWStoreOptions) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
+	}
+	var chunkMmapLRU *MmapLRU
+	if opts != nil && opts.ChunkMmapMaxSizeBytes > 0 {
+		chunkMmapLRU, err = newMmapLRU(opts.ChunkMmapMaxSizeBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	chunkMap := make(map[int64]*Mmap, len(chunks))
 	for _, c := range chunks {
@@ -172,6 +192,9 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 	}
 	eagerFetchStack, err := boundedstack.New[int64](eagerFetchBufferCapacity)
 	if err != nil {
+		if chunkMmapLRU != nil {
+			_ = chunkMmapLRU.Close()
+		}
 		return nil, err
 	}
 	s := &COWStore{
@@ -191,6 +214,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 				return &b
 			},
 		},
+		chunkMmapLRU:                 chunkMmapLRU,
 		zeroBuf:                      make([]byte, chunkSizeBytes),
 		chunkSizeBytes:               chunkSizeBytes,
 		totalSizeBytes:               totalSizeBytes,
@@ -484,6 +508,11 @@ func (s *COWStore) Close() error {
 			lastErr = err
 		}
 	}
+	if s.chunkMmapLRU != nil {
+		if err := s.chunkMmapLRU.Close(); err != nil {
+			lastErr = err
+		}
+	}
 
 	_ = s.chunkLock.Close()
 
@@ -660,7 +689,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		}
 		chunkSource = ogChunk.source
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
+	newChunk, err = newMmapFdWithLRU(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled, s.chunkMmapLRU)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -921,7 +950,7 @@ chunkLoop:
 	}
 
 	name := filepath.Base(filePath)
-	return NewCOWStore(ctx, env, name, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
+	return NewCOWStore(ctx, env, name, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled, nil)
 }
 
 func getFileSize(filePath string) (totalSizeBytes int64, err error) {
@@ -946,6 +975,13 @@ func getMmapLRU(dataDir string) (*MmapLRU, error) {
 		return getSharedLRU()
 	}
 	return nil, nil
+}
+
+func defaultMmapLRU(dataDir string, override *MmapLRU) (*MmapLRU, error) {
+	if override != nil {
+		return override, nil
+	}
+	return getMmapLRU(dataDir)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -995,7 +1031,7 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 	if digest == nil {
 		return nil, status.FailedPreconditionError("missing digest")
 	}
-	lru, err := getMmapLRU(dataDir)
+	lru, err := defaultMmapLRU(dataDir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1017,6 +1053,10 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 
 // NewMmapFd returns an eagerly mmapped instance from the given fd.
 func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	return newMmapFdWithLRU(ctx, env, dataDir, dirty, fd, size, offset, source, remoteInstanceName, remoteEnabled, nil)
+}
+
+func newMmapFdWithLRU(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool, overrideLRU *MmapLRU) (*Mmap, error) {
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
@@ -1024,7 +1064,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 	if err != nil {
 		return nil, err
 	}
-	lru, err := getMmapLRU(dataDir)
+	lru, err := defaultMmapLRU(dataDir, overrideLRU)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,7 +1092,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 // NewMmapLocalFile returns an unmapped instance from the given directory and
 // offset.
 func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
-	lru, err := getMmapLRU(dataDir)
+	lru, err := defaultMmapLRU(dataDir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1306,12 +1346,17 @@ type MmapLRU struct {
 }
 
 func NewMmapLRU() (*MmapLRU, error) {
-	// Sanity check that the LRU size is not too small.
-	// Just using 64MB here for now as a reasonable threshold.
 	maxSize := resources.GetAllocatedMmapRAMBytes()
 	const threshold = 64 * 1024 * 1024
 	if maxSize < threshold {
 		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
+	}
+	return newMmapLRU(maxSize)
+}
+
+func newMmapLRU(maxSize int64) (*MmapLRU, error) {
+	if maxSize <= 0 {
+		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit must be positive (got %d bytes)", maxSize)
 	}
 	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
 	l, err := lru.New(&lru.Config[*Mmap]{
