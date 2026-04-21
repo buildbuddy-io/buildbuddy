@@ -259,6 +259,10 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 			return fc.Close()
 		})
+
+		if err := migrateExt4ImagesToFileCache(fc, cacheRoot); err != nil {
+			log.Fatalf("Error migrating ext4 images to file cache: %s", err)
+		}
 	}
 
 	log.Infof("Connecting to app target: %s", *appTarget)
