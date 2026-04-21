@@ -362,8 +362,7 @@ func (c *fileCache) handleTrashNotifications() {
 // removal.
 func (c *fileCache) trash(path string) error {
 	trashDir := c.TempDir()
-	// Keep trash path suffixes effectively unique without relying on Intn, whose
-	// upper bound must fit in int and breaks 32-bit builds such as windows_386.
+	// Note: rand.Intn doesn't compile on windows/386
 	dst := filepath.Join(trashDir, ".trash-"+strconv.FormatInt(rand.Int63n(1e18), 10)+"-"+filepath.Base(path))
 	if err := os.Rename(path, dst); err != nil {
 		return err

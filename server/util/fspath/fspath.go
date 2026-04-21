@@ -52,8 +52,7 @@ func IsParent(parent, c string, isCaseInsensitive bool) bool {
 func IsCaseInsensitiveFS(dirPath string) (bool, error) {
 	// Create a test file with a globally unique name and which includes
 	// uppercase characters.
-	// Keep the suffix space large, but use Int63n because Intn(1e18) does not
-	// compile on 32-bit targets such as windows_386.
+	// Note: rand.Intn doesn't compile on windows/386
 	nameUpper := fmt.Sprintf(".CASE_SENSITIVITY_CHECK_%d", rand.Int63n(1e18))
 	pathUpper := filepath.Join(dirPath, nameUpper)
 	if err := os.WriteFile(pathUpper, nil, 0644); err != nil {
