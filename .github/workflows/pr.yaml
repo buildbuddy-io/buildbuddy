@@ -21,9 +21,9 @@ jobs:
             echo >user.bazelrc "common --config=untrusted-ci --remote_header=x-buildbuddy-api-key=$API_KEY"
           else
             echo >user.bazelrc "
+            common --config=ci-anon
             common --bes_backend=
-            common --remote_cache=
-            common --remote_executor=
+            common --bes_results_url=
             "
           fi
           bazelisk test //...
