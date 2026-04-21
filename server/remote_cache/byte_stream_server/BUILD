@@ -42,7 +42,9 @@ go_test(
     deps = [
         "//enterprise/server/experiments",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
+        "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
@@ -52,6 +54,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/bazel_request",
+        "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/prefix",
         "//server/util/random",
