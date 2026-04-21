@@ -5,7 +5,7 @@ authors: maggie
 tags: [bazel]
 ---
 
-In addition to build logs, you can now use our CLI to stream `bazel run` executable output to our servers and view live-updating run logs from the UI.
+In addition to build logs, you can now use the [`bb` CLI](https://buildbuddy.io/cli) to stream `bazel run` executable output to our servers and view live-updating run logs from the UI.
 
 ![run log streaming](../static/img/changelog/run-log-streaming.webp)
 
