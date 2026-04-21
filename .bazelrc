@@ -43,7 +43,7 @@ common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 # Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
 common:ci-anon --config=ci
 common:ci-anon --bes_backend=remote.buildbuddy.io
-common:ci-anon --remote_downloader=remote.buildbuddy.io
+common:ci-anon --experimental_remote_downloader=remote.buildbuddy.io
 common:ci-anon --remote_cache=remote.buildbuddy.io
 common:ci-anon --remote_executor=remote.buildbuddy.io
 
