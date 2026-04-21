@@ -73,6 +73,7 @@ var (
 	userListsUIEnabled                     = flag.Bool("app.user_lists_ui_enabled", false, "If set, show show user list management options in the UI.")
 	darkModeEnabled                        = flag.Bool("app.dark_mode_enabled", false, "If set, show dark mode option in user preferences.")
 	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
+	disableOIDCLogin                       = flag.Bool("app.disable_oidc_login", false, "If set, hide OIDC login options from the web UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -234,6 +235,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
 		DarkModeEnabled:                        *darkModeEnabled,
+		DisableOidcLogin:                       *disableOIDCLogin,
 	}
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {

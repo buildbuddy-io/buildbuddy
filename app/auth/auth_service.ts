@@ -130,7 +130,8 @@ export class AuthService {
     }
     // If we haven't tried to auto-relogin already, try it.
     localStorage.setItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY, "true");
-    window.location.href = `/login/?${new URLSearchParams({
+    const loginPath = capabilities.config.disableOidcLogin ? "/" : "/login/";
+    window.location.href = `${loginPath}?${new URLSearchParams({
       redirect_url: window.location.href,
     })}`;
   }

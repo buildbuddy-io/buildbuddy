@@ -24,6 +24,8 @@ sidebar_label: App
 
 - `default_to_dense_mode` Enables Dense UI mode by default.
 
+- `disable_oidc_login` Hides OIDC login buttons from the web UI so users must sign in through other configured options such as SSO.
+
 ## Example section
 
 ```yaml title="config.yaml"
