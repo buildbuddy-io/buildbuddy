@@ -261,17 +261,8 @@ button {
   border-bottom: 6px solid var(--color-border-neutral);
 }
 
-.breadcrumbs {
+.shelf .breadcrumbs {
   font-size: 16px;
-  color: var(--color-text-tertiary);
-  margin-bottom: 8px;
-}
-
-.breadcrumbs > :not(:last-child)::after {
-  content: "›";
-  padding: 0 8px;
-  color: var(--color-gray-400-alt);
-  font-weight: 600;
 }
 
 .shelf .details {

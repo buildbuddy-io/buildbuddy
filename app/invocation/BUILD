@@ -427,6 +427,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/breadcrumbs",
     ],
 )
 
@@ -522,6 +523,7 @@ ts_library(
         "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/errors:error_service",
         "//app/service:rpc_service",
@@ -538,6 +540,7 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//app/auth:auth_service",
+        "//app/components/breadcrumbs",
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_buttons",

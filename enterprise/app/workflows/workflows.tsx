@@ -3,6 +3,7 @@ import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button, { FilledButton, OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
@@ -234,10 +235,10 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
         <div className="shelf">
           <div className="container">
             <div>
-              <div className="breadcrumbs">
+              <Breadcrumbs>
                 {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
                 <span>Workflows</span>
-              </div>
+              </Breadcrumbs>
               <div className="title">Workflows</div>
             </div>
             {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repos?.length) && (

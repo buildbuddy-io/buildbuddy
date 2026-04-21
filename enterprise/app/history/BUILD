@@ -14,6 +14,7 @@ ts_library(
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
         "//app/auth:auth_service",
+        "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/link",
