@@ -11,10 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 var (
@@ -90,18 +93,48 @@ func HandleView(args []string) (exitCode int, err error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	resp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+	// If the invocation has run logs, only print the run logs and not the build logs.
+	req := &elpb.GetEventLogChunkRequest{
 		InvocationId: invocationID,
 		MinLines:     int32(*lines),
-	})
-	if err != nil {
-		return -1, fmt.Errorf("failed to get log chunk: %w", err)
+		Type:         elpb.LogType_RUN_LOG,
+	}
+	header := "RUN LOGS"
+	resp, err := bbClient.GetEventLogChunk(ctx, req)
+	if err != nil && !status.IsNotFoundError(err) {
+		log.Debugf("failed to get run logs: %s", err)
+	}
+
+	if err != nil || len(resp.Buffer) == 0 {
+		req.Type = elpb.LogType_BUILD_LOG
+		header = "BUILD LOGS"
+		resp, err = bbClient.GetEventLogChunk(ctx, req)
+		if err != nil {
+			return -1, fmt.Errorf("failed to get build logs: %w", err)
+		}
 	}
 
 	// Print the log chunk
 	if len(resp.Buffer) > 0 {
+		fmt.Printf("===== %s =====\n", header)
 		fmt.Print(string(resp.Buffer))
 	}
 
 	return 0, nil
+}
+
+func hasRunLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) (bool, error) {
+	resp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: invocationID,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(resp.GetInvocation()) == 0 {
+		return false, fmt.Errorf("invocation %s not found", invocationID)
+	}
+	inv := resp.GetInvocation()[0]
+	return inv.GetRunStatus() != inspb.OverallStatus_UNKNOWN_OVERALL_STATUS, nil
 }
