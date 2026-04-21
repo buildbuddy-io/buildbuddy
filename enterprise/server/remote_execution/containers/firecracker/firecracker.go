@@ -2197,16 +2197,16 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
 	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
 
-	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return status.UnavailableErrorf("container image is unavailable: %s", err)
-	}
-	if imageExt4Path == "" {
-		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
-	}
-	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
-		return err
+	// Hardlink the ext4 image to the chroot at containerFSPath, if we haven't
+	// already. Normally it will only exist if we got a cache miss and had to
+	// call PullImage; otherwise we expect to find it in cache.
+	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+		return status.UnavailableErrorf("check containerfs exists: %s", err)
+	} else if !exists {
+		err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+		if err != nil {
+			return status.UnavailableErrorf("link cached image: %s", err)
+		}
 	}
 
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
@@ -2691,11 +2691,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return false, err
-	}
-	return diskImagePath != "", nil
+	return ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
 }
 
 // PullImage pulls the container image from the remote. It always
@@ -2722,7 +2718,25 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher)
+	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "authenticate with registry")
+	}
+
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+
+	// We normally don't expect the containerFSPath to already exist at this
+	// point, but handle this case gracefully anyway.
+	exists, err := disk.FileExists(ctx, containerFSPath)
+	if err != nil {
+		return status.UnavailableErrorf("stat container FS path: %s", err)
+	} else if exists {
+		return nil
+	}
+
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.UnavailableErrorf("create chroot dir: %s", err)
+	}
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}

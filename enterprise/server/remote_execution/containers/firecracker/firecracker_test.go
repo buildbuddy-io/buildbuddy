@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -441,6 +442,107 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		t.Fatal(res.Error)
 	}
 	assertCommandResult(t, expectedResult, res)
+}
+
+func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.local_cache_store_ext4_images", true)
+
+	env := getTestEnv(ctx, t, envOpts{})
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+
+	registryCreds := &testregistry.BasicAuthCreds{
+		Username: "test",
+		Password: "test",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{Creds: registryCreds})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+	imageRef, _ := reg.PushNamedImage(t, "firecracker-private-image:latest", registryCreds)
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: testfs.MakeTempDir(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	newContainer := func(ctx context.Context) *firecracker.FirecrackerContainer {
+		containerOpts := opts
+		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, containerOpts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, c.Remove(context.Background()))
+		})
+		return c
+	}
+	requireCached := func(ctx context.Context, c *firecracker.FirecrackerContainer) {
+		cached, err := c.IsImageCached(ctx)
+		require.NoError(t, err)
+		require.True(t, cached, "sanity check: image should already be cached")
+	}
+
+	authedCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	// Do an authorized pull as GR1.
+	gr1Container := newContainer(authedCtx)
+	require.NoError(t, container.PullImageIfNecessary(
+		authedCtx, env, gr1Container,
+		oci.Credentials{Username: registryCreds.Username, Password: registryCreds.Password},
+		opts.ContainerImage, opts.UseOCIFetcher,
+	))
+	requireCached(ctx, gr1Container)
+
+	// Try an unauthorized pull as GR1 (with wrong creds). Should fail
+	gr1WrongCredsContainer := newContainer(authedCtx)
+	requireCached(ctx, gr1WrongCredsContainer)
+	err = gr1WrongCredsContainer.PullImage(
+		authedCtx,
+		oci.Credentials{Username: registryCreds.Username, Password: "wrong"},
+	)
+	require.Error(t, err)
+	require.True(
+		t,
+		status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err),
+		"expected auth error for cached image access with wrong creds, got %s",
+		err,
+	)
+
+	// Try to do an unauthorized pull as ANON (should fail)
+	anonymousContainer := newContainer(ctx)
+	requireCached(ctx, anonymousContainer)
+	err = container.PullImageIfNecessary(ctx, env, anonymousContainer, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+	require.Error(t, err)
+	require.True(
+		t,
+		status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err),
+		"expected auth error for cached image access without re-auth, got %s",
+		err,
+	)
+
+	// Try to do an unauthorized pull as GR2 (should fail)
+	gr2Ctx, err := ta.WithAuthenticatedUser(ctx, "US2")
+	require.NoError(t, err)
+	gr2Container := newContainer(gr2Ctx)
+	requireCached(ctx, gr2Container)
+	err = container.PullImageIfNecessary(gr2Ctx, env, gr2Container, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+	require.Error(t, err)
+	require.True(
+		t,
+		status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err),
+		"expected auth error for cached image access from another group without re-auth, got %s",
+		err,
+	)
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
@@ -3824,6 +3926,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 			assert.FailNowf(t, "pause failed", "%s", err)
 			return err
 		}
+
 		vm.Runs++
 		if vm.Runs < maxRunsPerVM {
 			pool <- vm

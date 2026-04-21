@@ -71,6 +71,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
+            "//enterprise/server/util/ociconv",
             "//server/util/networking",
         ],
         "//conditions:default": [],
