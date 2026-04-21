@@ -29,6 +29,7 @@ jobs:
 
       - name: Run tests
         run: |
+          API_KEY="${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           echo > user.bazelrc "
           common --config=cache
           common --repository_cache=~/repo-cache
@@ -40,8 +41,10 @@ jobs:
           common --build_metadata=ROLE=CI
           common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
           common --color=yes
-          common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           "
+          if [[ "$API_KEY" ]]; then
+            echo >> user.bazelrc "common --remote_header=x-buildbuddy-api-key=$API_KEY"
+          fi
 
           bazel test --test_tag_filters=-performance,-docker \
             -- \
