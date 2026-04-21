@@ -465,6 +465,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 }
 
