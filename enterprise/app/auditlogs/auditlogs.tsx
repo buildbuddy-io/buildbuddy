@@ -3,6 +3,7 @@ import moment from "moment";
 import React from "react";
 import { DateRangePicker, Range, RangeKeyDict } from "react-date-range";
 import { User } from "../../../app/auth/user";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import Spinner from "../../../app/components/spinner/spinner";
@@ -242,9 +243,9 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
       <div className="audit-logs-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               <span>{this.props.user.selectedGroupName()}</span>
-            </div>
+            </Breadcrumbs>
             <div className="title">Audit logs</div>
           </div>
         </div>

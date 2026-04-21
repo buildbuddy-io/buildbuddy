@@ -136,6 +136,16 @@ ts_library(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "react_test",
+    srcs = ["react_test.tsx"],
+    deps = [
+        ":react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+    ],
+)
+
 ts_library(
     name = "cache",
     srcs = ["cache.tsx"],

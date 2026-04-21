@@ -3,6 +3,7 @@ import React from "react";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
 import Banner from "../../../app/components/banner/banner";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
@@ -242,12 +243,12 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       <div className="workflows-github-import">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               <span>
                 <TextLink href="/workflows/">Workflows</TextLink>
               </span>
               <span>Link GitHub repo</span>
-            </div>
+            </Breadcrumbs>
             <div className="title">Link GitHub repo</div>
           </div>
         </div>

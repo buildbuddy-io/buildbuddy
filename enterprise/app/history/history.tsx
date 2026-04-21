@@ -13,6 +13,7 @@ import {
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import Link from "../../../app/components/link/link";
@@ -485,7 +486,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         <div className="shelf">
           <div className="container">
             <div className="top-bar">
-              <div className="breadcrumbs">
+              <Breadcrumbs>
                 {this.props.user && this.props.user?.selectedGroupName() && (
                   <Link className="clickable" href={Path.home}>
                     {this.props.user?.selectedGroupName()}
@@ -520,7 +521,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 {!this.props.username && !this.props.hostname && this.props.tab == "" && (
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
-              </div>
+              </Breadcrumbs>
               <FilterComponent search={this.props.search} />
             </div>
             <div className="titles">

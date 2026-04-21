@@ -16,6 +16,7 @@ ts_library(
         "//:node_modules/react-date-range",
         "//:node_modules/tslib",
         "//app/auth:user",
+        "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/components/popup",
         "//app/components/spinner",
