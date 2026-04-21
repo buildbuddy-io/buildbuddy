@@ -2116,6 +2116,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
 
+	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
+	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
+		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
+	}
+
 	return taskProto
 }
 

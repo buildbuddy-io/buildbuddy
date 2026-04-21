@@ -44,20 +44,13 @@ import (
 )
 
 var (
-	enableDownloadCompression   = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	recordInputDownloadMetadata = flag.Bool("executor.record_input_download_metadata", false, "If true, record and report metadata describing which action inputs were fetched from remote CAS.")
-	linkParallelism             = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism   = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
 )
-
-// InputFetchMetadataEnabled reports whether executors should record and publish
-// input fetch metadata.
-func InputFetchMetadataEnabled() bool {
-	return *recordInputDownloadMetadata
-}
 
 const (
 	// Size of the queue for input tree structure manipulation ops.
@@ -768,6 +761,11 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 	for k := range filesToFetch {
 		remainingFetches[k] = struct{}{}
 	}
+	var downloadsBitmap *roaring.Bitmap
+	if opts.RecordInputFetchMetadata {
+		downloadsBitmap = roaring.New()
+	}
+
 	return &BatchFileFetcher{
 		ctx:                     ctx,
 		env:                     env,
@@ -780,12 +778,7 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		doneErr:                 make(chan error, 1),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
-		downloadsBitmap: func() *roaring.Bitmap {
-			if InputFetchMetadataEnabled() {
-				return roaring.New()
-			}
-			return nil
-		}(),
+		downloadsBitmap:         downloadsBitmap,
 	}, nil
 }
 
@@ -1288,6 +1281,9 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 	// ChunkedInputFiles enables SplitBlob-based input downloads for large files.
 	ChunkedInputFiles bool
+	// RecordInputFetchMetadata controls whether to record which inputs were
+	// fetched from remote CAS while materializing the tree.
+	RecordInputFetchMetadata bool
 }
 
 type inputTreeRequest interface {
@@ -1519,7 +1515,6 @@ func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName strin
 func (f *TreeFetcher) Start() (*InputsState, error) {
 	ctx := f.ctx
 	treeWrangler := getInputTreeWrangler(f.env)
-	recordInputDownloadMetadata := InputFetchMetadataEnabled()
 
 	f.fetchStartTime = time.Now()
 
@@ -1559,7 +1554,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, f.opts.RootDir)
 				bitsetIndex := uint32(0)
-				if recordInputDownloadMetadata {
+				if f.opts.RecordInputFetchMetadata {
 					bitsetIndex = nextBitsetIndex
 					nextBitsetIndex++
 				}
@@ -1651,7 +1646,7 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	f.txInfo.LinkCount = stats.GetLocalCacheHits()
 	f.txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
 	f.txInfo.TransferDuration = time.Since(f.fetchStartTime)
-	if InputFetchMetadataEnabled() {
+	if f.opts.RecordInputFetchMetadata {
 		bitmap, bitmapErr := f.ff.downloadedFileIndicesBitmap()
 		if bitmapErr != nil && err == nil {
 			err = status.WrapError(bitmapErr, "marshal input download bitmap")

@@ -1056,8 +1056,6 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 }
 
 func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {
-	flags.Set(t, "executor.record_input_download_metadata", true)
-
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	fileCacheTmpDir := testfs.MakeTempDir(t)
@@ -1128,7 +1126,10 @@ func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T)
 			subDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		RootDir:                  tmpDir,
+		RecordInputFetchMetadata: true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.NotNil(t, info.InputFetchMetadata)
@@ -1150,8 +1151,6 @@ func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T)
 }
 
 func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) {
-	flags.Set(t, "executor.record_input_download_metadata", true)
-
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
@@ -1169,7 +1168,10 @@ func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) 
 			},
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		RootDir:                  tmpDir,
+		RecordInputFetchMetadata: true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.NotNil(t, info.InputFetchMetadata)
@@ -1182,8 +1184,6 @@ func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) 
 }
 
 func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) {
-	flags.Set(t, "executor.record_input_download_metadata", true)
-
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	fileCacheTmpDir := testfs.MakeTempDir(t)
@@ -1229,7 +1229,8 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 		},
 	}
 	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
-		RootDir: tmpDir,
+		RootDir:                  tmpDir,
+		RecordInputFetchMetadata: true,
 		Skip: map[fspath.Key]*repb.FileNode{
 			fspath.NewKey("preserved.txt", false): preservedNode,
 		},
