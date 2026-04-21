@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/mocksaml"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -53,16 +54,24 @@ func startApp(t *testing.T, idpCertPath string, extraArgs ...string) buildbuddy_
 
 // Creates the org with slug "saml-test" and configures the SAML IDP metadata
 // URL in the DB.
-func setupSAMLTestOrg(t *testing.T, wt *webtester.WebTester, bb buildbuddy_enterprise.WebTarget, idp *mocksaml.IDP) {
-	// Temporarily log in with self-auth, then configure an org slug in settings
-	// (it's empty by default).
-	webtester.Login(wt, bb)
-	webtester.UpdateSelectedOrg(wt, bb.HTTPURL(), "SAML Test Org", slug, webtester.EnableUserOwnedAPIKeys)
-	webtester.Logout(wt)
+func setupSAMLTestOrg(t *testing.T, bb buildbuddy_enterprise.WebTarget, idp *mocksaml.IDP) {
+	appTarget := bb.(*app.App)
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, appTarget)
+
+	// Configure the default self-auth org with a stable slug so the SAML login
+	// tests can target it directly, without depending on webdriver bootstrap.
+	err := webClient.RPC("UpdateGroup", &grpb.UpdateGroupRequest{
+		RequestContext:       webClient.RequestContext,
+		Id:                   webClient.RequestContext.GetGroupId(),
+		Name:                 "SAML Test Org",
+		UrlIdentifier:        slug,
+		UserOwnedKeysEnabled: true,
+	}, &grpb.UpdateGroupResponse{})
+	require.NoError(t, err)
 
 	// Now that the org has a slug, set up SAML by manually executing a DB
 	// query. After this is done, we can use SAML login instead of self-auth.
-	res := bb.(*app.App).DB().Exec(`
+	res := appTarget.DB().Exec(`
 		UPDATE "Groups"
 		SET saml_idp_metadata_url = ?
 		WHERE url_identifier = ?
@@ -82,7 +91,7 @@ func TestSAMLBasicLogin(t *testing.T) {
 	idp, idpCertPath := startIDP(t)
 	bb := startApp(t, idpCertPath)
 	wt := webtester.New(t)
-	setupSAMLTestOrg(t, wt, bb, idp)
+	setupSAMLTestOrg(t, bb, idp)
 
 	// Log into the org using SSO login.
 	wt.Get(idp.BuildBuddyLoginURL(bb.HTTPURL(), slug))
@@ -105,7 +114,7 @@ func TestSAMLViewInvocation(t *testing.T) {
 	// accesses via the UI work when logged in with SAML.
 	bb := startApp(t, idpCertPath, "--storage.disable_persist_cache_artifacts=true")
 	wt := webtester.New(t)
-	setupSAMLTestOrg(t, wt, bb, idp)
+	setupSAMLTestOrg(t, bb, idp)
 
 	// Log into the org using SSO login.
 	wt.Get(idp.BuildBuddyLoginURL(bb.HTTPURL(), slug))
@@ -128,6 +137,50 @@ func TestSAMLViewInvocation(t *testing.T) {
 	wt.Get(bb.HTTPURL() + "/invocation/" + buildResult.InvocationID)
 	wt.Find(`[href="#timing"]`).Click()
 	wt.Find(`.trace-viewer`)
+}
+
+func TestSAMLDefaultLoginSlugHidesOIDCLogin(t *testing.T) {
+	buildbuddy_enterprise.MarkTestLocalOnly(t)
+
+	idp, idpCertPath := startIDP(t)
+	bb := startApp(t, idpCertPath, "--app.default_login_slug="+slug)
+	wt := webtester.New(t)
+	setupSAMLTestOrg(t, bb, idp)
+
+	wt.Get(bb.HTTPURL())
+	wt.FindByDebugID("sso-button")
+	wt.AssertNotFound(`[debug-id="login-button"]`)
+}
+
+func TestSAMLDisableOIDCLoginHidesOIDCLogin(t *testing.T) {
+	buildbuddy_enterprise.MarkTestLocalOnly(t)
+
+	idp, idpCertPath := startIDP(t)
+	bb := startApp(t, idpCertPath, "--app.disable_oidc_login=true")
+	wt := webtester.New(t)
+	setupSAMLTestOrg(t, bb, idp)
+
+	wt.Get(bb.HTTPURL())
+	wt.FindByDebugID("sso-button")
+	wt.AssertNotFound(`[debug-id="login-button"]`)
+}
+
+func TestSAMLDisableOIDCLoginMenuUsesSPALogin(t *testing.T) {
+	buildbuddy_enterprise.MarkTestLocalOnly(t)
+
+	idp, idpCertPath := startIDP(t)
+	bb := startApp(t, idpCertPath, "--app.disable_oidc_login=true")
+	wt := webtester.New(t)
+	setupSAMLTestOrg(t, bb, idp)
+
+	wt.Get(bb.HTTPURL() + "/invocation/does-not-exist")
+	wt.FindByDebugID("invocation-not-found")
+	wt.FindByDebugID("menu-button").Click()
+	wt.FindByDebugID("login-menu-item").Click()
+
+	require.Contains(t, wt.CurrentURL(), "/?redirect_url=")
+	wt.FindByDebugID("sso-button")
+	wt.AssertNotFound(`[debug-id="login-button"]`)
 }
 
 func createSelfSignedCert(t *testing.T) (cert, key []byte) {

@@ -44,6 +44,13 @@ export default class MenuComponent extends React.Component<Props, State> {
   }
 
   handleLoginClicked() {
+    if (capabilities.config.disableOidcLogin) {
+      window.location.href = `/?${new URLSearchParams({
+        redirect_url: window.location.href,
+      })}`;
+      this.dismissMenu();
+      return;
+    }
     authService.login();
     this.dismissMenu();
   }
@@ -72,7 +79,7 @@ export default class MenuComponent extends React.Component<Props, State> {
               </a>
             </div>
             {this.props.showHamburger && (!capabilities.auth || !this.props.user) && (
-              <Menu onClick={this.handleMenuClicked.bind(this)} className="icon white" />
+              <Menu debug-id="menu-button" onClick={this.handleMenuClicked.bind(this)} className="icon white" />
             )}
             {this.props.showHamburger && capabilities.auth && this.props.user && (
               <img
@@ -116,7 +123,11 @@ export default class MenuComponent extends React.Component<Props, State> {
                       </a>
                     </li>
                   )}
-                  {capabilities.auth && !this.props.user && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
+                  {capabilities.auth && !this.props.user && (
+                    <li debug-id="login-menu-item" onClick={this.handleLoginClicked.bind(this)}>
+                      Login
+                    </li>
+                  )}
                   {capabilities.auth && this.props.user && (
                     <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>
                   )}
