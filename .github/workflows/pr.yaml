@@ -20,6 +20,10 @@ jobs:
           if [[ "$API_KEY" ]]; then
             echo >user.bazelrc "common --config=untrusted-ci --remote_header=x-buildbuddy-api-key=$API_KEY"
           else
-            echo >user.bazelrc "common --config=ci-anon"
+            echo >user.bazelrc "
+            common --bes_backend=
+            common --remote_cache=
+            common --remote_executor=
+            "
           fi
           bazelisk test //...
