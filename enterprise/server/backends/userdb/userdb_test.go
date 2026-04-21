@@ -1874,6 +1874,25 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }
 
+func TestRequestToJoinGroup_Disabled(t *testing.T) {
+	flags.Set(t, "app.group_membership_requests_enabled", false)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	require.False(t, udb.GetGroupMembershipRequestsEnabled())
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Equal(t, "Organization membership requests are disabled.", status.Message(err))
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+}
+
 func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)

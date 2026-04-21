@@ -42,9 +42,10 @@ const (
 )
 
 var (
-	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
-	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
-	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	addUserToDomainGroup           = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
+	createGroupPerUser             = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
+	noDefaultUserGroup             = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	groupMembershipRequestsEnabled = flag.Bool("app.group_membership_requests_enabled", true, "If true, users may request membership in organizations via the /join flow.")
 
 	orgName   = flag.String("org.name", "Organization", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
@@ -111,6 +112,12 @@ func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 		}
 	}
 	return db, nil
+}
+
+// GetGroupMembershipRequestsEnabled returns whether membership requests via
+// the /join flow are enabled.
+func (d *UserDB) GetGroupMembershipRequestsEnabled() bool {
+	return *groupMembershipRequestsEnabled
 }
 
 func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
@@ -535,6 +542,9 @@ func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userL
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
+	if !d.GetGroupMembershipRequestsEnabled() {
+		return 0, status.PermissionDeniedError("Organization membership requests are disabled.")
+	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return 0, err

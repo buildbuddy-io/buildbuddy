@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -22,7 +23,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
-	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
@@ -582,6 +582,9 @@ type UserDB interface {
 	UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
+	// GetGroupMembershipRequestsEnabled returns whether membership requests via
+	// the /join flow are enabled.
+	GetGroupMembershipRequestsEnabled() bool
 
 	// RequestToJoinGroup performs an attempt for the authenticated user to join
 	// the given group. If the user email matches the group's owned domain, the

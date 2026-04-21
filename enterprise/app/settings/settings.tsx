@@ -285,7 +285,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId === TabId.OrgMembers && (
                     <>
-                      <OrgJoinRequests user={this.props.user} />
+                      {capabilities.config.groupMembershipRequestsEnabled && <OrgJoinRequests user={this.props.user} />}
                       <div className="settings-option-title">Members of {this.props.user.selectedGroupName()}</div>
                       <OrgMembersComponent user={this.props.user} />
                     </>

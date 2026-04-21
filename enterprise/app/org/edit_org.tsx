@@ -54,7 +54,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
   }
 
   getInviteLink() {
-    if (!this.state.initialRequest.urlIdentifier) {
+    if (!capabilities.config.groupMembershipRequestsEnabled || !this.state.initialRequest.urlIdentifier) {
       return "";
     }
     const port = window.location.port ? ":" + window.location.port : "";

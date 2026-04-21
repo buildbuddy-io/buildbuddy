@@ -230,7 +230,10 @@ export default class EnterpriseRootComponent extends React.Component {
     let cliLogin = this.state.user && this.state.path.startsWith("/cli-login");
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
-    let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
+    let orgJoinAuthenticated =
+      capabilities.config.groupMembershipRequestsEnabled &&
+      this.state.path.startsWith(Path.joinOrgPath) &&
+      this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let targets = this.state.user && this.state.path.startsWith("/targets");

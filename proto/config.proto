@@ -202,6 +202,11 @@ message FrontendConfig {
   // be omitted from read APIs.
   // If this field is absent, clients should treat it as true.
   optional bool api_key_value_readback_enabled = 66;
+
+  // Whether organization membership requests via the /join flow are enabled.
+  // If this field is absent, clients should treat membership requests as
+  // enabled.
+  optional bool group_membership_requests_enabled = 67;
 }
 
 message Region {
