@@ -119,6 +119,14 @@ jobs:
                    //enterprise/server/cmd/executor:executor
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
+                   build `
+                   --config=untrusted-ci-windows `
+                   --platforms=@io_bazel_rules_go//go/toolchain:windows_386 `
+                   @authArgs `
+                   -- `
+                   //enterprise/server/cmd/executor:executor
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
                    test `
                    --config=untrusted-ci-windows `
                    --test_tag_filters=-performance `
