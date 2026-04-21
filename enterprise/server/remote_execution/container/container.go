@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -498,7 +499,13 @@ type VM interface {
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
 	statusLabel := metrics.OCIFetcherStatusOK
 	if err != nil {
-		statusLabel = metrics.OCIFetcherStatusError
+		if errors.Is(err, context.DeadlineExceeded) {
+			statusLabel = metrics.OCIFetcherStatusTimeout
+		} else if errors.Is(err, context.Canceled) {
+			statusLabel = metrics.OCIFetcherStatusCanceled
+		} else {
+			statusLabel = metrics.OCIFetcherStatusError
+		}
 	}
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
