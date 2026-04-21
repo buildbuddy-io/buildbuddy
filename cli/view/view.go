@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -92,25 +93,25 @@ func HandleView(args []string) (exitCode int, err error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	hasRunLogs, err := hasRunLogs(ctx, bbClient, invocationID)
-	if err != nil {
-		return -1, fmt.Errorf("failed to check if invocation has run logs: %w", err)
-	}
-
+	// If the invocation has run logs, only print the run logs and not the build logs.
 	req := &elpb.GetEventLogChunkRequest{
 		InvocationId: invocationID,
 		MinLines:     int32(*lines),
+		Type:         elpb.LogType_RUN_LOG,
 	}
-	header := "BUILD LOGS"
-	// If the invocation has run logs, the build must have been successful. Only print the run logs in this case.
-	if hasRunLogs {
-		req.Type = elpb.LogType_RUN_LOG
-		header = "RUN LOGS"
+	header := "RUN LOGS"
+	resp, err := bbClient.GetEventLogChunk(ctx, req)
+	if err != nil && !status.IsNotFoundError(err) {
+		log.Debugf("failed to get run logs: %s", err)
 	}
 
-	resp, err := bbClient.GetEventLogChunk(ctx, req)
-	if err != nil {
-		return -1, fmt.Errorf("failed to get log chunk: %w", err)
+	if err != nil || len(resp.Buffer) == 0 {
+		req.Type = elpb.LogType_BUILD_LOG
+		header = "BUILD LOGS"
+		resp, err = bbClient.GetEventLogChunk(ctx, req)
+		if err != nil {
+			return -1, fmt.Errorf("failed to get build logs: %w", err)
+		}
 	}
 
 	// Print the log chunk
