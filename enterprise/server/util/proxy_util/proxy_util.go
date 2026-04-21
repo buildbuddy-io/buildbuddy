@@ -25,6 +25,7 @@ var (
 		authutil.ContextTokenStringKey,
 		usageutil.ClientHeaderName,
 		usageutil.OriginHeaderName,
+		authutil.ClientIdentityHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.EnabledHeaderName,
 	}
