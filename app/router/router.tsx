@@ -86,7 +86,7 @@ class Router {
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
       !path.startsWith(Path.profilePath) &&
-      !path.startsWith(Path.joinOrgPath) &&
+      !(capabilities.config.groupMembershipRequestsEnabled && path.startsWith(Path.joinOrgPath)) &&
       !path.startsWith(Path.orgAccessDeniedPath)
     ) {
       const params = new URLSearchParams({

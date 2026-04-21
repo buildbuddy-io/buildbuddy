@@ -13,6 +13,7 @@ import {
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
@@ -662,9 +663,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
-          <OrgJoinRequestsComponent user={this.props.user} includeMargin={true} />
-        )}
+        {this.props.tab === "#users" &&
+          capabilities.config.groupMembershipRequestsEnabled &&
+          this.props.user?.canCall("getGroupUsers") && (
+            <OrgJoinRequestsComponent user={this.props.user} includeMargin={true} />
+          )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
