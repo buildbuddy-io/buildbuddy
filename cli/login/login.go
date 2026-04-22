@@ -315,7 +315,12 @@ func (s *server) Close() error {
 	// redirect back to the "CLI login complete" page, since the process
 	// would exit immediately after the handler returns but before the
 	// response bytes are flushed.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	//
+	// Once the handler returns, the connection becomes idle and Shutdown
+	// closes it immediately, so this should complete in milliseconds on
+	// localhost. The timeout is just a safety net so that a stuck client
+	// connection can't hang the CLI on exit.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return s.srv.Shutdown(ctx)
 }
