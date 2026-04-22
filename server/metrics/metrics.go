@@ -413,6 +413,8 @@ const (
 	OCIFetcherRoleWaiter      = "waiter"
 	OCIFetcherStatusOK        = "ok"
 	OCIFetcherStatusError     = "error"
+	OCIFetcherStatusTimeout   = "timeout"
+	OCIFetcherStatusCanceled  = "canceled"
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
