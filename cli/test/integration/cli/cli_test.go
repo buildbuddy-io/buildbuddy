@@ -47,7 +47,7 @@ func TestBazelVersion(t *testing.T) {
 func TestBazelRun(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "fail", srcs = ["fail.sh"])`,
 		"fail.sh": `exit 1`,
 	})
@@ -61,7 +61,7 @@ sh_binary(name = "fail", srcs = ["fail.sh"])`,
 func TestParseGlobalFlags(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": `echo $@`,
 	})
@@ -317,7 +317,7 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": "echo $@",
 	})
@@ -401,7 +401,7 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":  `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh": "",
 	})
@@ -524,7 +524,7 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 func TestQueryFile(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":       `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh":      "",
 		"targets.txt": "//:nop",

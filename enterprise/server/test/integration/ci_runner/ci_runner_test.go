@@ -97,7 +97,7 @@ actions:
 	}
 
 	workspaceContentsWithRunScript = map[string]string{
-		"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -139,7 +139,7 @@ actions:
 	}
 
 	workspaceContentsWithLocalEnvironmentalErrorAction = map[string]string{
-		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "exit", srcs = ["exit.sh"])`,
 		"exit.sh": `exit "$1"`,
 		"buildbuddy.yaml": `
@@ -154,7 +154,7 @@ actions:
 	}
 
 	workspaceContentsWithExitScriptAndMergeDisabled = map[string]string{
-		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "exit", srcs = ["exit.sh"])`,
 		"exit.sh": `exit "$1"`,
 		"buildbuddy.yaml": `
@@ -449,7 +449,7 @@ func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			workspaceContents := map[string]string{
-				"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+				"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"print_args.sh": "echo 'args: {{' $@ '}}'",
 				"buildbuddy.yaml": `
@@ -494,7 +494,7 @@ func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
 				".bazelrc": `
 common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
-				"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+				"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"print_args.sh": "echo 'args: {{' $@ '}}'",
 				"buildbuddy.yaml": `
@@ -514,7 +514,7 @@ actions:
 		{
 			name: "Does not have a workspace .bazelrc",
 			workspaceContents: map[string]string{
-				"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+				"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"print_args.sh": "echo 'args: {{' $@ '}}'",
 				"buildbuddy.yaml": `
@@ -538,7 +538,7 @@ actions:
 				"subdir/.bazelrc": `
 common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
-				"subdir/BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+				"subdir/BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"subdir/print_args.sh": "echo 'args: {{' $@ '}}'",
 				"buildbuddy.yaml": `
@@ -631,7 +631,7 @@ func TestCIRunner_StartupOptionsDontRestartBazelServer(t *testing.T) {
 
 	// Run a bazel command with a startup option
 	workspaceContents := map[string]string{
-		"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -669,7 +669,7 @@ actions:
 func TestCIRunner_SetsMaxIdleSecsToZero(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	workspaceContents := map[string]string{
-		"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -1578,7 +1578,7 @@ func TestBazelWorkspaceDir(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	repoPath, _ := makeGitRepo(t, map[string]string{
-		"subdir/BUILD":   `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+		"subdir/BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "pass", srcs = ["pass.sh"])`,
 		"subdir/pass.sh": "",
 		"subdir/.bazelrc": `
@@ -1625,7 +1625,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, map[string]string{
-		"BUILD":   `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "pass", srcs = ["pass.sh"])`,
 		"pass.sh": "exit 0",
 	})
@@ -2052,7 +2052,7 @@ func TestTimeout(t *testing.T) {
 func TestBazelLock(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, _ := makeGitRepo(t, map[string]string{
-		"BUILD":         `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "sleep_test", srcs = ["sleep_test.sh"], tags = ["no-sandbox"])`,
 		"sleep_test.sh": `touch "$TEST_STARTED" && sleep 99999999`,
 		"buildbuddy.yaml": `
