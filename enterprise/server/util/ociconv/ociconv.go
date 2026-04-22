@@ -245,12 +245,6 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
-	start := time.Now()
-	defer func() {
-		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
-	}()
-
 	// Note: creds are included in the singleflight key here, so it looks like
 	// we might be doing unnecessary concurrent pulls for the same image. In
 	// practice however, container.PullImageIfNecessary only allows one
@@ -332,6 +326,12 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
 func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
+	start := time.Now()
+	defer func() {
+		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
+	}()
+
 	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
 		return "", err
