@@ -373,6 +373,7 @@ func TestCancel(t *testing.T) {
 func TestFetchRemoteBuildOutputs(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
+load("@rules_cc//cc:defs.bzl", "cc_binary")
 cc_binary(
     name = "main",
     srcs = ["main.c"],
@@ -386,7 +387,8 @@ int main() {
     return 0;
 }
 `,
-		"WORKSPACE": "",
+		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
+		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -402,8 +404,6 @@ int main() {
 		"--digest_function=BLAKE3",
 		"build",
 		":main",
-		"--noenable_bzlmod",
-		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
@@ -443,6 +443,7 @@ int main() {
 func TestBuildRemotelyRunLocally(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
+load("@rules_cc//cc:defs.bzl", "cc_binary")
 cc_binary(
     name = "main",
     srcs = ["main.c"],
@@ -456,7 +457,8 @@ int main() {
     return 0;
 }
 `,
-		"WORKSPACE": "",
+		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
+		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -474,8 +476,6 @@ int main() {
 		"--run_remotely=0",
 		"run",
 		":main",
-		"--noenable_bzlmod",
-		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check that the remote runner didn't run the script
@@ -511,6 +511,7 @@ int main() {
 func TestAccessingSecrets(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(
     name = "hello_world",
     srcs = ["hello_world.sh"],
