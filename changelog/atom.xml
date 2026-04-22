@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/changelog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-04-15T10:00:00.000Z</updated>
+    <updated>2026-04-21T10:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Run log streaming]]></title>
+        <id>https://www.buildbuddy.io/changelog/cli-run-log-streaming</id>
+        <link href="https://www.buildbuddy.io/changelog/cli-run-log-streaming"/>
+        <updated>2026-04-21T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[In addition to build logs, you can now use the bb CLI to stream bazel run executable output to our servers and view live-updating run logs from the UI.]]></summary>
+        <author>
+            <name>Maggie Lou</name>
+            <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[BuildBuddy MCP server]]></title>
         <id>https://www.buildbuddy.io/changelog/buildbuddy-mcp-server</id>
@@ -17,6 +29,7 @@
             <name>Brandon Duffany</name>
             <uri>https://www.linkedin.com/in/brandon-duffany-39b7217a</uri>
         </author>
+        <category label="AI" term="AI"/>
     </entry>
     <entry>
         <title type="html"><![CDATA[Improved handling of short-lived secrets in remote execution]]></title>
