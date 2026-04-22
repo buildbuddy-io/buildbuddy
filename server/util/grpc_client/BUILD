@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/metrics",
+        "//server/resources",
         "//server/rpc/interceptors",
         "//server/util/canary",
         "//server/util/flag",
@@ -15,6 +16,9 @@ go_library(
         "//server/util/log",
         "//server/util/rpcutil",
         "//server/util/status",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//connectivity",
@@ -38,6 +42,10 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/grpc_server",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//kubernetes/fake",
     ],
 )
