@@ -11,8 +11,6 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -145,6 +143,10 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 }
 
 func getExecutorWithPoolOptions(t *testing.T, runOverride rbetest.RunInterceptor, poolOpts *runner.PoolOptions) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
+	return getExecutorWithRunnerPoolWrapper(t, runOverride, poolOpts, nil)
+}
+
+func getExecutorWithRunnerPoolWrapper(t *testing.T, runOverride rbetest.RunInterceptor, poolOpts *runner.PoolOptions, wrapRunnerPool func(interfaces.RunnerPool) interfaces.RunnerPool) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
 	env := enterprise_testenv.New(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	clock := clockwork.NewFakeClock()
@@ -172,6 +174,9 @@ func getExecutorWithPoolOptions(t *testing.T, runOverride rbetest.RunInterceptor
 			}
 		},
 	})
+	if wrapRunnerPool != nil {
+		runnerPool = wrapRunnerPool(runnerPool)
+	}
 	exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
 	require.NoError(t, err)
 
@@ -534,36 +539,53 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 	}
 }
 
-// imageSizingContainer wraps a bare container and also implements
-// container.ImageSizer, reporting a configurable on-disk image size.
-type imageSizingContainer struct {
-	container.CommandContainer
+type containerImageInfoRunner struct {
+	interfaces.Runner
+	imageRef  string
 	imageSize int64
 }
 
-func (c *imageSizingContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
-	return c.imageSize, nil
+func (r *containerImageInfoRunner) ContainerImageInfo(ctx context.Context) (string, int64, error) {
+	return r.imageRef, r.imageSize, nil
 }
 
-type imageSizingContainerProvider struct {
+type containerImageInfoRunnerPool struct {
+	interfaces.RunnerPool
+	imageRef  string
 	imageSize int64
 }
 
-func (p *imageSizingContainerProvider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	return &imageSizingContainer{
-		CommandContainer: bare.NewBareCommandContainer(&bare.Opts{}),
-		imageSize:        p.imageSize,
+func (p *containerImageInfoRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
+	r, err := p.RunnerPool.Get(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return &containerImageInfoRunner{
+		Runner:    r,
+		imageRef:  p.imageRef,
+		imageSize: p.imageSize,
 	}, nil
+}
+
+func (p *containerImageInfoRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	if wrapped, ok := r.(*containerImageInfoRunner); ok {
+		r = wrapped.Runner
+	}
+	p.RunnerPool.TryRecycle(ctx, r, finishedCleanly)
 }
 
 func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
 	ctx := context.Background()
+	const expectedImageRef = "docker.io/library/busybox:latest"
 	const expectedImageSize int64 = 7_500_000_000
 
-	poolOpts := &runner.PoolOptions{
-		ContainerProvider: &imageSizingContainerProvider{imageSize: expectedImageSize},
-	}
-	exec, _, execClient, mockServer, _ := getExecutorWithPoolOptions(t, nil, poolOpts)
+	exec, _, execClient, mockServer, _ := getExecutorWithRunnerPoolWrapper(t, nil, nil, func(runnerPool interfaces.RunnerPool) interfaces.RunnerPool {
+		return &containerImageInfoRunnerPool{
+			RunnerPool: runnerPool,
+			imageRef:   expectedImageRef,
+			imageSize:  expectedImageSize,
+		}
+	})
 	task := getTask()
 
 	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
@@ -581,9 +603,6 @@ func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
 	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
 	require.NoError(t, err)
 	require.True(t, ok)
-	// The bare runner normalizes container-image to "" since no image is
-	// configured. The image size should still come through from the
-	// ImageSizer implementation on the container.
-	require.Equal(t, "", auxMeta.GetContainerImageRef())
+	require.Equal(t, expectedImageRef, auxMeta.GetContainerImageRef())
 	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageSizeBytes())
 }
