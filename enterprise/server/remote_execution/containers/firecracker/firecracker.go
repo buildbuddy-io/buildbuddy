@@ -3258,11 +3258,12 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		if err := os.Mkdir(memChunkDir, 0755); err != nil {
 			return nil, status.WrapError(err, "make memory chunk dir")
 		}
-
 		memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
 		if memorySizeBytes <= 0 {
 			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 		}
+
+		snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
 		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
 			ChunkSizeBytes:     cowChunkSizeBytes(),
 			TotalSizeBytes:     memorySizeBytes,
@@ -3271,7 +3272,9 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 			RemoteEnabled:      c.supportsRemoteSnapshots,
 			// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
 			// because they won't be accessed again.
-			UseLimitedPrivateMmapLRU: true,
+			// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
+			// accessed at a time.
+			MaxMmappedChunks: snapshotWriteConcurrency + 4,
 		})
 		if err != nil {
 			return nil, status.WrapError(err, "create memory COWStore")

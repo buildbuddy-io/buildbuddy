@@ -167,15 +167,19 @@ type COWOptions struct {
 	DataDir            string
 	RemoteInstanceName string
 	RemoteEnabled      bool
+
 	// By default, mmapped chunks are managed by the executor-wide shared LRU.
 	//
-	// If UseLimitedPrivateMmapLRU is true, this store uses its own LRU sized to hold
-	// at most 4 chunks. This is useful for sequential access patterns where we
+	// If MaxMmappedChunks is set, this store will create its own LRU sized to hold
+	// a max of that many chunks. This is useful for sequential access patterns where we
 	// don't want recently touched chunks to stay mmapped longer than necessary.
 	// This is useful when we're writing a snapshot file, for example, but should
 	// never be set for a COWStore that is being used by a guest and will have
 	// non-sequential access patterns.
-	UseLimitedPrivateMmapLRU bool
+	//
+	// When this is set, we disable eager fetching. If chunks are expected to be accessed sequentially,
+	// pre-fetching farther ahead could cause unnecessary churn in the LRU.
+	MaxMmappedChunks int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -193,10 +197,10 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 
 	var lru *MmapLRU
 	var eagerFetchStack *boundedstack.BoundedStack[int64]
-	if opts.UseLimitedPrivateMmapLRU {
+	if opts.MaxMmappedChunks > 0 {
 		// If reads/writes are expected to be sequential, we should only need a max of 2 chunks mmapped when accessing at chunk boundaries.
 		// Set the limit to 4 chunks to add a bit of buffer.
-		lru, err = NewMmapLRU(opts.ChunkSizeBytes * 4)
+		lru, err = NewMmapLRU(opts.ChunkSizeBytes * opts.MaxMmappedChunks)
 		if err != nil {
 			return nil, err
 		}
@@ -239,10 +243,10 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		mmapLRU:                      lru,
 	}
 
-	// Stores using a limited private mmap LRU are expected to be accessed
-	// sequentially. In that case, if chunks are accessed once in order,
-	// pre-fetching farther ahead could cause unnecessary churn in the LRU.
-	if !opts.UseLimitedPrivateMmapLRU {
+	// Stores that manage their own LRU (opts.MaxMmappedChunks > 0) are expected to be accessed
+	// sequentially. If chunks are accessed once in order,
+	// pre-fetching farther ahead could cause unnecessary churn in the LRU, so we disable eager fetching.
+	if opts.MaxMmappedChunks == 0 {
 		s.eagerFetchEg.Go(func() error {
 			s.eagerFetchChunksInBackground()
 			return nil
@@ -530,7 +534,7 @@ func (s *COWStore) Close() error {
 
 	_ = s.chunkLock.Close()
 
-	if !s.mmapLRU.isShared {
+	if s.mmapLRU != nil && !s.mmapLRU.isShared {
 		s.mmapLRU.Close()
 	}
 
@@ -721,6 +725,9 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 }
 
 func (s *COWStore) eagerFetchNextChunks(offset int64) {
+	if s.eagerFetchStack == nil {
+		return
+	}
 	currentOffset := offset + s.chunkSizeBytes
 	for i := 0; i < numChunksToEagerFetch; i++ {
 		s.eagerFetchStack.Push(currentOffset)

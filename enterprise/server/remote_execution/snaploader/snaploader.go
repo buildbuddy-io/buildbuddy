@@ -966,11 +966,11 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 			c.Close()
 		}
 	}()
+	sharedLRU, err := copy_on_write.GetSharedMmapLRU(dataDir)
+	if err != nil {
+		return nil, status.WrapError(err, "get shared mmap LRU")
+	}
 	for _, chunk := range file.Chunks {
-		sharedLRU, err := copy_on_write.GetSharedMmapLRU(dataDir)
-		if err != nil {
-			return nil, status.WrapError(err, "get shared mmap LRU")
-		}
 		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName, remoteEnabled, sharedLRU)
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
@@ -1063,7 +1063,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if *snaputil.ThrottleSnapshotWrites {
 		eg.SetLimit(chunkedFileWriteConcurrency)
 	} else {
-		writeConcurrency := int(math.Max(8, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+		writeConcurrency := int(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
 		eg.SetLimit(writeConcurrency)
 	}
 
