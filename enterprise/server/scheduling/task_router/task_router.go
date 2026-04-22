@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -46,6 +47,8 @@ const (
 
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
+
+	affinityRouterUseTargetLabelExperiment = "remote_execution.affinity_router_use_target_label"
 )
 
 type taskRouter struct {
@@ -315,10 +318,19 @@ func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *
 
 // Contains the parameters required to make a routing decision.
 type routingParams struct {
-	cmd                *repb.Command
-	platform           *repb.Platform
-	remoteInstanceName string
-	groupID            string
+	cmd                                *repb.Command
+	platform                           *repb.Platform
+	remoteInstanceName                 string
+	groupID                            string
+	targetPackageLabel                 string
+	useTargetPackageForAffinityRouting bool
+}
+
+func getTargetPackageLabel(targetLabel string) string {
+	if packageLabel, _, ok := strings.Cut(targetLabel, ":"); ok {
+		return packageLabel
+	}
+	return targetLabel
 }
 
 func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Action, cmd *repb.Command, remoteInstanceName string) routingParams {
@@ -326,11 +338,19 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
+	useTargetPackageForAffinityRouting := false
+	if fp := env.GetExperimentFlagProvider(); fp != nil {
+		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetLabelExperiment, false)
+	}
+	rmd := bazel_request.GetRequestMetadata(ctx)
 	return routingParams{
-		cmd:                cmd,
-		platform:           platform.GetProto(action, cmd),
-		remoteInstanceName: remoteInstanceName,
-		groupID:            groupID}
+		cmd:                                cmd,
+		platform:                           platform.GetProto(action, cmd),
+		remoteInstanceName:                 remoteInstanceName,
+		groupID:                            groupID,
+		targetPackageLabel:                 getTargetPackageLabel(rmd.GetTargetId()),
+		useTargetPackageForAffinityRouting: useTargetPackageForAffinityRouting,
+	}
 }
 
 // Selects and returns a Router to use, or nil if none applies.
@@ -461,24 +481,32 @@ func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error
 //   - remoteInstanceName
 //   - groupID
 //   - platform properties
-//   - and the name of the first action output
+//   - and an affinity hint derived from either the first action output
+//     (default) or the request metadata target package (for experiment-enabled
+//     orgs)
 //
-// Because only a single action can generate a given output in Bazel, this key
-// uniquely identifies an action and is stable even if the action's inputs
-// change. The intent of using this routing key is to route successive actions
-// whose inputs have changed to nodes which previously executed that action to
-// increase the local-cache hitrate, as it's likely that for large actions most
-// of the input tree is unchanged.
+// The first-output hint is stable even if an action's inputs change, which can
+// route successive executions of the same Bazel action back to a warmer
+// executor. The target-package experiment deliberately broadens that affinity so
+// related actions for the same package can share warmed executors and reduce
+// routing spray.
 type affinityRouter struct {
 	rdb redis.UniversalClient
 }
 
 func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
-	return getFirstOutput(params.cmd) != ""
+	return getAffinityRoutingHint(params) != ""
 }
 
 func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
 	return defaultPreferredNodeLimit
+}
+
+func getAffinityRoutingHint(params routingParams) string {
+	if params.useTargetPackageForAffinityRouting && params.targetPackageLabel != "" {
+		return params.targetPackageLabel
+	}
+	return getFirstOutput(params.cmd)
 }
 
 func (*affinityRouter) routingKey(params routingParams) (string, error) {
@@ -494,15 +522,15 @@ func (*affinityRouter) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// Add the first output as the final part of the routing key. This should
-	// uniquely identify a bazel action and is an attempt to route actions to
-	// executor nodes that are warmed up (with inputs and OCI images) for this
-	// action.
-	firstOutput := getFirstOutput(params.cmd)
-	if firstOutput == "" {
-		return "", status.InternalError("routing key requested for action with no outputs")
+	// Add the selected affinity hint as the final part of the routing key. By
+	// default this is the first declared output, but a per-org experiment can
+	// switch this to the target package to reduce routing spray across related
+	// actions belonging to the same package.
+	hint := getAffinityRoutingHint(params)
+	if hint == "" {
+		return "", status.InternalError("routing key requested for action with no affinity hint")
 	}
-	parts = append(parts, hash.String(firstOutput))
+	parts = append(parts, hash.String(hint))
 
 	return strings.Join(parts, "/"), nil
 }

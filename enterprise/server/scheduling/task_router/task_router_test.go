@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
@@ -21,6 +23,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
@@ -212,6 +215,103 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, secondCmd, instanceName)
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, thirdCmd, instanceName)
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, thirdCmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_AffinityRouting_UsesTargetPackageForSelectedGroups(t *testing.T) {
+	env := newTestEnv(t)
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "remote_execution.affinity_router_use_target_label": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "group_id" }, "GR1"] },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    }
+	  }
+	}`
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+	firstCmd := &repb.Command{
+		Arguments:   []string{"go", "tool", "link"},
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	secondCmd := &repb.Command{
+		Arguments:   []string{"test-setup.sh"},
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/testlogs/foo/foo_test/test.outputs"},
+	}
+
+	selectedOrgCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "GoLink")
+	selectedOrgOtherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_test", "TestRunner")
+	selectedOrgPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar", "TestRunner")
+	selectedOrgOtherPackageCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/baz:foo_test", "TestRunner")
+	router.MarkSucceeded(selectedOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+
+	ranked := router.RankNodes(selectedOrgOtherTargetCtx, nil, secondCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	ranked = router.RankNodes(selectedOrgPackageCtx, nil, secondCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNotAlwaysRanked(0, executorHostID1, t, router, selectedOrgOtherPackageCtx, secondCmd, instanceName)
+
+	controlOrgCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_lib", "GoLink")
+	controlOrgOtherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US2"), "//foo/bar:foo_test", "TestRunner")
+	router.MarkSucceeded(controlOrgCtx, nil, firstCmd, instanceName, executorHostID1)
+
+	requireNotAlwaysRanked(0, executorHostID1, t, router, controlOrgOtherTargetCtx, secondCmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_AffinityRouting_TargetLabelExperimentFallsBackToFirstOutput(t *testing.T) {
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.affinity_router_use_target_label": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+	firstCmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	secondCmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/testlogs/foo/foo_test/test.outputs"},
+	}
+
+	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
+
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, secondCmd, instanceName)
 }
 
 func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {
@@ -640,6 +740,33 @@ func withAuthUser(t *testing.T, ctx context.Context, env environment.Env, userID
 	ctx, err := a.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
 	return ctx
+}
+
+func withRequestMetadata(ctx context.Context, targetLabel, mnemonic string) context.Context {
+	return bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{
+		TargetId:       targetLabel,
+		ActionMnemonic: mnemonic,
+	})
+}
+
+func writeFlagConfig(t testing.TB, data string) string {
+	t.Helper()
+	f, err := os.CreateTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-task-router-*.flagd.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := f.Name()
+	if _, err := f.Write([]byte(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = f.Close()
+		_ = os.RemoveAll(path)
+	})
+	return path
 }
 
 func sequentiallyNumberedNodes(n int) []interfaces.ExecutionNode {
