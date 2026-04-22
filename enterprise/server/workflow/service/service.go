@@ -83,7 +83,6 @@ var (
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
-	// TODO(Maggie): Make this configurable per-workflow.
 	cancelDuplicateWorkflows = flag.Bool("remote_execution.workflows_cancel_duplicates", false, "Whether to cancel duplicate workflows on the same branch.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
@@ -1550,7 +1549,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
-		if *cancelDuplicateWorkflows {
+		if *cancelDuplicateWorkflows && !action.AllowConcurrentRuns {
 			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action.Name, key, wf, wd, invocationID); err != nil {
 				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 			}
