@@ -47,7 +47,8 @@ func TestBazelVersion(t *testing.T) {
 func TestBazelRun(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `sh_binary(name = "fail", srcs = ["fail.sh"])`,
+		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "fail", srcs = ["fail.sh"])`,
 		"fail.sh": `exit 1`,
 	})
 	testfs.MakeExecutable(t, ws, "fail.sh")
@@ -60,7 +61,8 @@ func TestBazelRun(t *testing.T) {
 func TestParseGlobalFlags(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+		"BUILD":         `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": `echo $@`,
 	})
 	testfs.MakeExecutable(t, ws, "print_args.sh")
@@ -183,6 +185,7 @@ func newBazelrcWorkspace(t *testing.T) string {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD": `
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "needs_required_rc", srcs = ["needs_required_rc.sh"])
 `,
 		"needs_required_rc.sh": `#!/usr/bin/env bash
@@ -210,6 +213,7 @@ func TestWorkspaceBazelrcAppliedOnce(t *testing.T) {
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		".bazelrc": `test --test_arg=workspace-rc`,
 		"BUILD": `
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "assert_single_workspace_rc_arg", srcs = ["assert_single_workspace_rc_arg.sh"])
 `,
 		"assert_single_workspace_rc_arg.sh": `#!/usr/bin/env bash
@@ -313,7 +317,8 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"BUILD":   `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": "echo $@",
 	})
 	testfs.MakeExecutable(t, ws, "echo.sh")
@@ -396,7 +401,8 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":  `sh_binary(name = "nop", srcs = ["nop.sh"])`,
+		"BUILD":  `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh": "",
 	})
 	testfs.MakeExecutable(t, ws, "nop.sh")
@@ -468,7 +474,8 @@ func TestTerminalOutput(t *testing.T) {
 				sleep 0.1
 			done
 		`,
-		"BUILD": `sh_test(name = "test", srcs = ["test.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+sh_test(name = "test", srcs = ["test.sh"])`,
 	})
 
 	term := testcli.PTY(t)
@@ -491,6 +498,7 @@ func TestTargetPatternFile(t *testing.T) {
 test:pattern-file --target_pattern_file=targets.txt
 `,
 		"BUILD": `
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
 `,
@@ -516,7 +524,8 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 func TestQueryFile(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":       `sh_test(name = "nop", srcs = ["nop.sh"])`,
+		"BUILD":       `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+sh_test(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh":      "",
 		"targets.txt": "//:nop",
 	})

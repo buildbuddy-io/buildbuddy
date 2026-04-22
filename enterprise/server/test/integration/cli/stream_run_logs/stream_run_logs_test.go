@@ -55,7 +55,8 @@ func (f *fakeWriteEventLogClient) CloseAndRecv() (*elpb.WriteEventLogResponse, e
 func TestWithBuild(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": `#!/bin/bash
 echo "hello world"
 echo "goodbye world"
@@ -101,7 +102,8 @@ echo "goodbye world"
 func TestFailingCommand(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": `#!/bin/bash
 echo "bad script!"
 exit 5
@@ -254,7 +256,8 @@ echo "hello world"
 func TestSignalForwarding(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `sh_binary(name = "sleeper", srcs = ["sleeper.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "sleeper", srcs = ["sleeper.sh"])`,
 		"sleeper.sh": `#!/bin/bash
 echo "script started!"
 sleep 99999
