@@ -2106,15 +2106,12 @@ func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) (int64, error
 	if !c.pulled {
 		return 0, nil
 	}
-	imagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return 0, err
-	}
-	if imagePath == "" {
-		return 0, nil
-	}
+	imagePath := filepath.Join(c.getChroot(), containerFSName)
 	info, err := os.Stat(imagePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
 		return 0, err
 	}
 	return info.Size(), nil
