@@ -25,6 +25,7 @@
     "@types/uuid": "^8.3.4",
     "@types/varint": "^6.0.3",
     "browser-headers": "^0.4.1",
+    "corepack": "^0.34.7",
     "d3-scale": "^4.0.2",
     "d3-time": "^3.1.0",
     "dagre-d3-react": "^0.2.4",
@@ -69,8 +70,5 @@
         }
       }
     }
-  },
-  "dependencies": {
-    "corepack": "^0.34.7"
   }
 }

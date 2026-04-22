@@ -9,10 +9,6 @@ packageExtensionsChecksum: sha256-99RF8UZcm7L65tRpfId34rAHoGe/kH6+/Ef0s8QJpRY=
 importers:
 
   .:
-    dependencies:
-      corepack:
-        specifier: ^0.34.7
-        version: 0.34.7
     devDependencies:
       '@types/d3-scale':
         specifier: ^3.3.5
@@ -68,6 +64,9 @@ importers:
       browser-headers:
         specifier: ^0.4.1
         version: 0.4.1
+      corepack:
+        specifier: ^0.34.7
+        version: 0.34.7
       d3-scale:
         specifier: ^4.0.2
         version: 4.0.2
