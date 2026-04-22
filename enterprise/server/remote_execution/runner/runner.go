@@ -1008,7 +1008,7 @@ func (p *pool) Warmup(ctx context.Context) {
 	defer cancel()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, cfg := range p.warmupConfigs() {
+	for _, cfg := range WarmupConfigs() {
 		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
@@ -1019,7 +1019,8 @@ func (p *pool) Warmup(ctx context.Context) {
 	}
 }
 
-func (p *pool) warmupConfigs() []WarmupConfig {
+// WarmupConfigs returns the images configured for executor startup warmup.
+func WarmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range executorplatform.GetExecutorProperties().SupportedIsolationTypes {
 		// Bare/sandbox isolation types don't support container images.

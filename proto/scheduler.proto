@@ -109,6 +109,16 @@ message CustomResource {
   float value = 2;
 }
 
+// WarmupImage represents a container image configured for executor startup
+// warmup.
+message WarmupImage {
+  // Image to warm up, without the "docker://" prefix.
+  string image = 1;
+
+  // Workload isolation type for this warmup image.
+  string isolation = 2;
+}
+
 message TaskSize {
   // The tasks's estimated memory usage.
   int64 estimated_memory_bytes = 1;
@@ -588,6 +598,16 @@ message ExecutionNode {
   // cancelling queued requests for tasks that have already been completed by
   // another executor.
   bool supports_proactive_cancellation = 18;
+
+  // Configured maximum size of the local filecache. If present and set to 0,
+  // the local filecache is disabled.
+  optional int64 filecache_max_size_bytes = 19;
+
+  // Images configured to warm up during executor startup.
+  repeated WarmupImage warmup_images = 20;
+
+  // Time when this executor process started.
+  google.protobuf.Timestamp start_time = 21;
 }
 
 message GetExecutionNodesRequest {

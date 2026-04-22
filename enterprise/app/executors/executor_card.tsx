@@ -38,6 +38,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.osDisplayName}</div>
               </div>
             )}
+            {this.props.node.startTime && (
+              <div className="executor-section">
+                <div className="executor-section-title">Uptime:</div>
+                <div>{format.durationSince(this.props.node.startTime)}</div>
+              </div>
+            )}
             <div className="executor-section">
               <div className="executor-section-title">Assignable Memory:</div>
               <div>{format.bytes(+this.props.node.assignableMemoryBytes)}</div>
@@ -45,6 +51,14 @@ export default class ExecutorCardComponent extends React.Component<Props> {
             <div className="executor-section">
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
+            </div>
+            <div className="executor-section">
+              <div className="executor-section-title">Filecache Max Size:</div>
+              <div>
+                {this.props.node.filecacheMaxSizeBytes
+                  ? format.bytes(+this.props.node.filecacheMaxSizeBytes)
+                  : "unknown"}
+              </div>
             </div>
             {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
               <div className="executor-section">
@@ -84,6 +98,18 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.supportedIsolationTypes.join(", ")}</div>
               </div>
             )}
+            <div className="executor-section">
+              <div className="executor-section-title">Warmup Images:</div>
+              <div className="executor-warmup-images">
+                {(this.props.node.warmupImages || []).map((image, index) => (
+                  <div className="executor-warmup-image" key={`${image.isolation}-${image.image}-${index}`}>
+                    <span className="executor-warmup-image-isolation">{image.isolation || "default"}:</span>
+                    <span>{image.image}</span>
+                  </div>
+                ))}
+                {(this.props.node.warmupImages || []).length == 0 && "none"}
+              </div>
+            </div>
             <div className="executor-section">
               <div className="executor-section-title">Version:</div>
               <div>{this.props.node.version}</div>
