@@ -2,6 +2,7 @@
 title: "BuildBuddy MCP server"
 date: 2026-04-15T10:00:00
 authors: brandon
+tags: [AI]
 ---
 
 BuildBuddy now exposes an MCP endpoint for coding agents and other
