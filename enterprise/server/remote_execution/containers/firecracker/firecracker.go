@@ -98,7 +98,7 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
-	writeFullSnapshotToCOW = flag.Bool("executor.firecracker_write_full_snapshot_to_cow", false, "Write full Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
+	exportSnapshotToCOW = flag.Bool("executor.firecracker_export_snapshot_to_cow", false, "Export Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -150,6 +150,7 @@ const (
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
+	noSnapshotType   = "None"
 
 	mergeDiffSnapshotConcurrency = 4
 	// Firecracker writes changed blocks in 4Kb blocks.
@@ -1067,7 +1068,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
-	if snapshotDetails.snapshotType == diffSnapshotType {
+	if snapshotDetails.snapshotType == diffSnapshotType && !*exportSnapshotToCOW {
 		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 		mergeStart := time.Now()
 		concurrency := mergeDiffSnapshotConcurrency
@@ -1082,10 +1083,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	// For diff snapshots, we updated the COWStore in mergeDiffSnapshot above.
-	// If writeFullSnapshotToCOW=true, the COWStore should've been populated
+	// If exportSnapshotToCOW=true, the COWStore should've been populated
 	// as firecracker wrote the snapshot.
-	// Otherwise, we need to convert the snapshot file on disk to a COWStore.
+	//
+	// Otherwise, for full snapshots, we need to convert the snapshot file on disk to a COWStore.
+	// For diff snapshots, we updated the COWStore in mergeDiffSnapshot above,
 	if snapshotSharingEnabled && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		concurrency := snaputil.ConvertToCOWConcurrency
@@ -3241,66 +3243,75 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
 
-	if c.recycled {
+	if !saveRemoteSnapshot && !saveLocalSnapshot {
 		return &snapshotDetails{
-			snapshotType:        diffSnapshotType,
-			memSnapshotName:     diffMemSnapshotName,
-			vmStateSnapshotName: vmStateSnapshotName,
-			saveRemoteSnapshot:  saveRemoteSnapshot,
-			saveLocalSnapshot:   saveLocalSnapshot,
+			snapshotType:        noSnapshotType,
+			memSnapshotName:     "",
+			vmStateSnapshotName: "",
+			saveRemoteSnapshot:  false,
+			saveLocalSnapshot:   false,
 		}, nil
 	}
 
+	snapshotType := fullSnapshotType
 	memSnapshotName := fullMemSnapshotName
-	if *writeFullSnapshotToCOW {
-		// If the full snapshot should be exported straight to a COWStore, create it here.
-		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		if err := os.Mkdir(memChunkDir, 0755); err != nil {
-			return nil, status.WrapError(err, "make memory chunk dir")
-		}
-		memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
-		if memorySizeBytes <= 0 {
-			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
-		}
+	if c.recycled {
+		snapshotType = diffSnapshotType
+		memSnapshotName = diffMemSnapshotName
+	}
 
-		snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
-		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
-			ChunkSizeBytes:     cowChunkSizeBytes(),
-			TotalSizeBytes:     memorySizeBytes,
-			DataDir:            memChunkDir,
-			RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
-			RemoteEnabled:      c.supportsRemoteSnapshots,
-			// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
-			// because they won't be accessed again.
-			// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
-			// accessed at a time.
-			MaxMmappedChunks: snapshotWriteConcurrency + 4,
-		})
-		if err != nil {
-			return nil, status.WrapError(err, "create memory COWStore")
+	if *exportSnapshotToCOW {
+		// If the full snapshot should be exported straight to a COWStore, create it here.
+		// For diff snapshots, we'll use the existing memoryStore.
+		if snapshotType == fullSnapshotType {
+			memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
+			if err := os.Mkdir(memChunkDir, 0755); err != nil {
+				return nil, status.WrapError(err, "make memory chunk dir")
+			}
+			memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
+			if memorySizeBytes <= 0 {
+				return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
+			}
+
+			snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
+
+			memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
+				ChunkSizeBytes:     cowChunkSizeBytes(),
+				TotalSizeBytes:     memorySizeBytes,
+				DataDir:            memChunkDir,
+				RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
+				RemoteEnabled:      c.supportsRemoteSnapshots,
+				// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
+				// because they won't be accessed again.
+				// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
+				// accessed at a time.
+				MaxMmappedChunks: snapshotWriteConcurrency + 4,
+			})
+			if err != nil {
+				return nil, status.WrapError(err, "create memory COWStore")
+			}
+			c.memoryStore = memoryStore
 		}
-		c.memoryStore = memoryStore
 
 		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
 		// as it's being exported by firecracker and write them directly to the COWStore.
-		d, err := vbd.New(memoryStore)
+		d, err := vbd.New(c.memoryStore)
 		if err != nil {
 			return nil, status.WrapError(err, "create memory snapshot VBD")
 		}
-		relVBDPath := fullMemSnapshotName + vbdMountDirSuffix
+		relVBDPath := memSnapshotName + vbdMountDirSuffix
 		mountPath := filepath.Join(c.getChroot(), relVBDPath)
 		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return nil, status.WrapError(err, "mount memory snapshot VBD")
 		}
 
 		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
-		c.memoryStore = memoryStore
 		c.memorySnapshotExportVBD = d
 		log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
 	}
 
 	return &snapshotDetails{
-		snapshotType:        fullSnapshotType,
+		snapshotType:        snapshotType,
 		memSnapshotName:     memSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
 		saveRemoteSnapshot:  saveRemoteSnapshot,

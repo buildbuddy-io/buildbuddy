@@ -4019,7 +4019,7 @@ func Benchmark_FullSnapshotPause(b *testing.B) {
 	for _, memorySizeMb := range []int64{1000, 2000, 4000, 8000} {
 		for _, cowExportEnabled := range []bool{true, false} {
 			b.Run(fmt.Sprintf("memory_size_%d_mb_cow_export_%t", memorySizeMb, cowExportEnabled), func(b *testing.B) {
-				flags.Set(b, "executor.firecracker_write_full_snapshot_to_cow", cowExportEnabled)
+				flags.Set(b, "executor.firecracker_export_snapshot_to_cow", cowExportEnabled)
 				ctx := context.Background()
 				env := getTestEnv(ctx, b, envOpts{})
 				rootDir := testfs.MakeTempDir(b)
@@ -4085,6 +4085,103 @@ free -h
 					res := c.Exec(ctx, cmd, nil /*=stdio*/)
 					require.NoError(b, res.Error)
 
+					b.StartTimer()
+					err = c.Pause(ctx)
+					b.StopTimer()
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}
+
+func Benchmark_DiffSnapshotPause(b *testing.B) {
+	// Disable remote snapshot sharing to make caching a bit faster.
+	flags.Set(b, "executor.enable_remote_snapshot_sharing", false)
+
+	for _, memorySizeMb := range []int64{1000, 2000, 4000, 8000} {
+		for _, cowExportEnabled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("memory_size_%d_mb_cow_export_%t", memorySizeMb, cowExportEnabled), func(b *testing.B) {
+				flags.Set(b, "executor.firecracker_export_snapshot_to_cow", cowExportEnabled)
+				ctx := context.Background()
+				env := getTestEnv(ctx, b, envOpts{})
+				cfg := getExecutorConfig(b)
+				rootDir := testfs.MakeTempDir(b)
+				workDir := testfs.MakeDirAll(b, rootDir, "work")
+
+				opts := firecracker.ContainerOpts{
+					ActionWorkingDirectory: workDir,
+					ContainerImage:         ubuntuImage,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:            2,
+						MemSizeMb:          memorySizeMb,
+						NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+						ScratchDiskSizeMb:  500,
+						GuestKernelVersion: cfg.GuestKernelVersion,
+						FirecrackerVersion: cfg.FirecrackerVersion,
+						GuestApiVersion:    cfg.GuestAPIVersion,
+					},
+					ExecutorConfig: cfg,
+				}
+				task := &repb.ExecutionTask{
+					Command: &repb.Command{
+						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+							{Name: "recycle-runner", Value: "true"},
+							{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+							{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+						}},
+						Arguments: []string{"./buildbuddy_ci_runner"},
+					},
+				}
+
+				// Don't try to write the full memory size of the VM, or it will OOM.
+				mbToWrite := int(.8 * float64(memorySizeMb))
+				initialCmd := &repb.Command{
+					// Mount a RAM-based filesystem to /tmp/randomdata. Later we'll write to it to simulate memory usage.
+					Arguments: []string{"sh", "-c", `
+mkdir /tmp/randomdata && mount -t tmpfs -o size=` + strconv.Itoa(mbToWrite) + `M tmpfs /tmp/randomdata
+		`},
+				}
+
+				c, err := firecracker.NewContainer(ctx, env, task, opts)
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher); err != nil {
+					b.Fatalf("unable to pull image: %s", err)
+				}
+
+				if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+					b.Fatalf("unable to Create container: %s", err)
+				}
+				b.Cleanup(func() {
+					if err := c.Remove(ctx); err != nil {
+						b.Fatal(err)
+					}
+				})
+
+				// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
+				res := c.Exec(ctx, initialCmd, nil /*=stdio*/)
+				require.NoError(b, res.Error)
+				err = c.Pause(ctx)
+				require.NoError(b, err)
+
+				cmdOnResumedRunner := &repb.Command{
+					// Write to the RAM-based filesystem to simulate memory usage.
+					Arguments: []string{"sh", "-c", `
+dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=` + strconv.Itoa(mbToWrite) + `
+free -h
+		`},
+				}
+
+				b.ResetTimer()
+				b.StopTimer()
+				for i := 0; i < b.N; i++ {
+					err = c.Unpause(ctx)
+					require.NoError(b, err)
+					res = c.Exec(ctx, cmdOnResumedRunner, nil /*=stdio*/)
+					require.NoError(b, res.Error)
 					b.StartTimer()
 					err = c.Pause(ctx)
 					b.StopTimer()
