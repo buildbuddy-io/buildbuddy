@@ -17,13 +17,15 @@ func copyLocalChunkAt(dst *os.File, dstOff int64, src *os.File, srcOff int64, si
 	soff, doff := srcOff, dstOff
 	for total < size {
 		n, err := unix.CopyFileRange(int(src.Fd()), &soff, int(dst.Fd()), &doff, int(size-total), 0)
+		if n > 0 {
+			total += int64(n)
+		}
 		if err != nil {
 			return total, err
 		}
-		if n == 0 {
+		if n <= 0 {
 			break
 		}
-		total += int64(n)
 	}
 	if total != size {
 		return total, io.ErrShortWrite
