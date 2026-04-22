@@ -23,5 +23,6 @@ go_library(
         "//server/version",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
