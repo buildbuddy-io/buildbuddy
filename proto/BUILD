@@ -144,7 +144,6 @@ proto_library(
     ],
     deps = [
         ":context_proto",
-        ":execution_stats_proto",
         ":remote_execution_proto",
         ":resource_proto",
         "@com_google_protobuf//:duration_proto",
@@ -470,7 +469,6 @@ proto_library(
     ],
     deps = [
         ":context_proto",
-        ":git_proto",
     ],
 )
 
@@ -610,7 +608,6 @@ proto_library(
         "grp.proto",
     ],
     deps = [
-        ":api_key_proto",
         ":capability_proto",
         ":context_proto",
         ":user_id_proto",
@@ -816,7 +813,6 @@ proto_library(
     srcs = ["zip.proto"],
     deps = [
         ":context_proto",
-        ":remote_execution_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
