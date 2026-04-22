@@ -54,7 +54,11 @@ export default class ExecutorCardComponent extends React.Component<Props> {
             </div>
             <div className="executor-section">
               <div className="executor-section-title">Filecache Max Size:</div>
-              <div>{format.bytes(+this.props.node.filecacheMaxSizeBytes)}</div>
+              <div>
+                {this.props.node.filecacheMaxSizeBytes
+                  ? format.bytes(+this.props.node.filecacheMaxSizeBytes)
+                  : "unknown"}
+              </div>
             </div>
             {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
               <div className="executor-section">
