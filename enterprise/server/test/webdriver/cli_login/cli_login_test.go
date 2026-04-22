@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/stretchr/testify/require"
@@ -25,7 +25,6 @@ import (
 )
 
 func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
@@ -43,7 +42,9 @@ func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
 	// We should now be redirected to the app.
 	// Since we're only a member of one org, and personal keys are enabled,
 	// we should immediately be redirected back to the CLI server.
-	text := wt.Find(`[debug-id="cli-login-complete"]`).Text()
+	// Use a longer timeout since this involves multiple redirects + an RPC
+	// to create a personal API key.
+	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 30*time.Second).Text()
 	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.
@@ -56,7 +57,6 @@ func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
 }
 
 func TestCLILoginWebFlow_MultipleOrgs_ChooseOrgWithoutPersonalKeysEnabled(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
@@ -99,7 +99,6 @@ func TestCLILoginWebFlow_MultipleOrgs_ChooseOrgWithoutPersonalKeysEnabled(t *tes
 }
 
 func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
@@ -120,7 +119,7 @@ func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
 
 	// Creating an org with user-owned keys enabled should be enough to complete
 	// the login flow.
-	text := wt.Find(`[debug-id="cli-login-complete"]`).Text()
+	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 30*time.Second).Text()
 	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.

@@ -169,6 +169,33 @@ func (wt *WebTester) Find(cssSelector string) *Element {
 	return &Element{wt.t, el}
 }
 
+// FindWithTimeout is like Find but polls for the element with the given
+// timeout. Use this in cases where the page may still be transitioning and
+// the default --webdriver_implicit_wait_timeout may not be long enough.
+func (wt *WebTester) FindWithTimeout(cssSelector string, timeout time.Duration) *Element {
+	// Disable the implicit wait while polling, since the implicit wait itself
+	// would cause each individual FindElement call to block, making polling
+	// ineffective.
+	wt.driver.SetImplicitWaitTimeout(0)
+	defer wt.driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
+
+	var el selenium.WebElement
+	var err error
+	deadline := time.Now().Add(timeout)
+	for {
+		el, err = wt.driver.FindElement(selenium.ByCSSSelector, cssSelector)
+		if err == nil {
+			return &Element{wt.t, el}
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
 // FindAll returns all elements matching the given CSS selector.
 //
 // FindAll does not wait for elements matching the selector to be created, since
