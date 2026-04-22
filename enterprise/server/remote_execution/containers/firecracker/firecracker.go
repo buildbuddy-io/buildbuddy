@@ -3263,7 +3263,16 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		if memorySizeBytes <= 0 {
 			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 		}
-		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
+			ChunkSizeBytes:     cowChunkSizeBytes(),
+			TotalSizeBytes:     memorySizeBytes,
+			DataDir:            memChunkDir,
+			RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
+			RemoteEnabled:      c.supportsRemoteSnapshots,
+			// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
+			// because they won't be accessed again.
+			UseLimitedPrivateMmapLRU: true,
+		})
 		if err != nil {
 			return nil, status.WrapError(err, "create memory COWStore")
 		}
