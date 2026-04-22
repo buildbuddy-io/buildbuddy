@@ -245,12 +245,6 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
-	start := time.Now()
-	defer func() {
-		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
-	}()
-
 	// Note: creds are included in the singleflight key here, so it looks like
 	// we might be doing unnecessary concurrent pulls for the same image. In
 	// practice however, container.PullImageIfNecessary only allows one
@@ -278,7 +272,11 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKeyParts above (if applicable).
-		return createExt4Image(ctx, resolver, fileCache, cacheRoot, containerImage, creds, useOCIFetcher)
+		out, err := createExt4Image(ctx, resolver, fileCache, cacheRoot, containerImage, creds, useOCIFetcher)
+		if err != nil {
+			return "", status.WrapErrorf(err, "convert %q from OCI to EXT4 format", containerImage)
+		}
+		return out, nil
 	})
 	if err != nil {
 		return err
@@ -332,6 +330,9 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
 func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
+	start := time.Now()
+
 	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
 		return "", err
@@ -364,7 +365,7 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
-	log.CtxDebugf(ctx, "Wrote container %q to image file: %q", containerImage, imageFile)
+	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
 	return imageFile, nil
 }
 
