@@ -198,9 +198,9 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 	statusLabel := metrics.OCIFetcherStatusOK
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
 			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) {
+		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
 			statusLabel = metrics.OCIFetcherStatusCanceled
 		} else {
 			statusLabel = metrics.OCIFetcherStatusError

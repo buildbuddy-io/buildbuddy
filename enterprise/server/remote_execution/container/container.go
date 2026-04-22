@@ -499,9 +499,9 @@ type VM interface {
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
 	statusLabel := metrics.OCIFetcherStatusOK
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
 			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) {
+		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
 			statusLabel = metrics.OCIFetcherStatusCanceled
 		} else {
 			statusLabel = metrics.OCIFetcherStatusError
