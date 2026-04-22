@@ -699,11 +699,11 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
-	scratchStore *copy_on_write.COWStore
-	scratchVBD   *vbd.FS
-	rootStore    *copy_on_write.COWStore
-	rootVBD      *vbd.FS
-	memoryVBD    *vbd.FS
+	scratchStore            *copy_on_write.COWStore
+	scratchVBD              *vbd.FS
+	rootStore               *copy_on_write.COWStore
+	rootVBD                 *vbd.FS
+	memorySnapshotExportVBD *vbd.FS
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
@@ -2874,12 +2874,12 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 		}
 		c.rootVBD = nil
 	}
-	if c.memoryVBD != nil {
-		if err := c.memoryVBD.Unmount(ctx); err != nil {
+	if c.memorySnapshotExportVBD != nil {
+		if err := c.memorySnapshotExportVBD.Unmount(ctx); err != nil {
 			logErr("memory", err)
 			lastErr = err
 		}
-		c.memoryVBD = nil
+		c.memorySnapshotExportVBD = nil
 	}
 	return lastErr
 }
@@ -3245,7 +3245,7 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		}
 		c.memoryStore = memoryStore
 
-		// Create a virtual block device for the memory snapshot so that we can capture writes
+		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
 		// as it's being exported by firecracker and write them directly to the COWStore.
 		d, err := vbd.New(memoryStore)
 		if err != nil {
@@ -3259,7 +3259,7 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 
 		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
 		c.memoryStore = memoryStore
-		c.memoryVBD = d
+		c.memorySnapshotExportVBD = d
 		log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
 	}
 
@@ -3304,7 +3304,7 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 
 	// If exporting the snapshot to a COWstore, the mem snapshot path points to a mounted VBD.
 	// Don't remove that, or the export will fail.
-	if c.memoryVBD == nil {
+	if c.memorySnapshotExportVBD == nil {
 		if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
 			return status.WrapError(err, "failed to remove existing memory snapshot")
 		}

@@ -217,7 +217,6 @@ func (n *Node) Setattr(ctx context.Context, fh fusefs.FileHandle, in *fuse.SetAt
 		return syscall.ENODEV
 	}
 
-	// TODO: Will firecracker ever try to truncate to 0 to clear the file?
 	if requestedSize, ok := in.GetSize(); ok {
 		currentSize, err := n.file.SizeBytes()
 		if err != nil {
