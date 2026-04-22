@@ -98,6 +98,8 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
+	writeFullSnapshotToCOW = flag.Bool("executor.firecracker_write_full_snapshot_to_cow", false, "Write full Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
+
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
@@ -699,10 +701,11 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
-	scratchStore *copy_on_write.COWStore
-	scratchVBD   *vbd.FS
-	rootStore    *copy_on_write.COWStore
-	rootVBD      *vbd.FS
+	scratchStore            *copy_on_write.COWStore
+	scratchVBD              *vbd.FS
+	rootStore               *copy_on_write.COWStore
+	rootVBD                 *vbd.FS
+	memorySnapshotExportVBD *vbd.FS
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
@@ -1079,9 +1082,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	// If we're creating a snapshot for the first time, create a COWStore from
-	// the initial full snapshot. (If we have a diff snapshot, then we already
-	// updated the memoryStore in mergeDiffSnapshot above).
+	// For diff snapshots, we updated the COWStore in mergeDiffSnapshot above.
+	// If writeFullSnapshotToCOW=true, the COWStore should've been populated
+	// as firecracker wrote the snapshot.
+	// Otherwise, we need to convert the snapshot file on disk to a COWStore.
 	if snapshotSharingEnabled && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		concurrency := snaputil.ConvertToCOWConcurrency
@@ -2894,6 +2898,13 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 		}
 		c.rootVBD = nil
 	}
+	if c.memorySnapshotExportVBD != nil {
+		if err := c.memorySnapshotExportVBD.Unmount(ctx); err != nil {
+			logErr("memory", err)
+			lastErr = err
+		}
+		c.memorySnapshotExportVBD = nil
+	}
 	return lastErr
 }
 
@@ -2960,7 +2971,11 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	snapDetails := c.snapshotDetails(ctx)
+	snapDetails, err := c.snapshotDetails(ctx)
+	if err != nil {
+		return status.WrapError(err, "prepare snapshot details")
+	}
+
 	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
@@ -3215,7 +3230,7 @@ type snapshotDetails struct {
 	saveLocalSnapshot   bool
 }
 
-func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
+func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
 	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
 	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
 
@@ -3233,15 +3248,52 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDet
 			vmStateSnapshotName: vmStateSnapshotName,
 			saveRemoteSnapshot:  saveRemoteSnapshot,
 			saveLocalSnapshot:   saveLocalSnapshot,
-		}
+		}, nil
 	}
+
+	memSnapshotName := fullMemSnapshotName
+	if *writeFullSnapshotToCOW {
+		// If the full snapshot should be exported straight to a COWStore, create it here.
+		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
+		if err := os.Mkdir(memChunkDir, 0755); err != nil {
+			return nil, status.WrapError(err, "make memory chunk dir")
+		}
+
+		memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
+		if memorySizeBytes <= 0 {
+			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
+		}
+		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+		if err != nil {
+			return nil, status.WrapError(err, "create memory COWStore")
+		}
+		c.memoryStore = memoryStore
+
+		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
+		// as it's being exported by firecracker and write them directly to the COWStore.
+		d, err := vbd.New(memoryStore)
+		if err != nil {
+			return nil, status.WrapError(err, "create memory snapshot VBD")
+		}
+		relVBDPath := fullMemSnapshotName + vbdMountDirSuffix
+		mountPath := filepath.Join(c.getChroot(), relVBDPath)
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
+			return nil, status.WrapError(err, "mount memory snapshot VBD")
+		}
+
+		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
+		c.memoryStore = memoryStore
+		c.memorySnapshotExportVBD = d
+		log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
+	}
+
 	return &snapshotDetails{
 		snapshotType:        fullSnapshotType,
-		memSnapshotName:     fullMemSnapshotName,
+		memSnapshotName:     memSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
 		saveRemoteSnapshot:  saveRemoteSnapshot,
 		saveLocalSnapshot:   saveLocalSnapshot,
-	}
+	}, nil
 }
 
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
@@ -3274,8 +3326,12 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName)
 
-	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
-		return status.WrapError(err, "failed to remove existing memory snapshot")
+	// If exporting the snapshot to a COWstore, the mem snapshot path points to a mounted VBD.
+	// Don't remove that, or the export will fail.
+	if c.memorySnapshotExportVBD == nil {
+		if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
+			return status.WrapError(err, "failed to remove existing memory snapshot")
+		}
 	}
 	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
 		return status.WrapError(err, "failed to remove existing VM state snapshot")
