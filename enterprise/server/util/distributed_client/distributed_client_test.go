@@ -3,6 +3,7 @@ package distributed_client_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,10 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/docker/go-units"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
@@ -75,8 +78,9 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 
 func waitUntilServerIsAlive(addr string) {
 	for {
-		_, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
 		if err == nil {
+			conn.Close()
 			return
 		}
 	}
@@ -1020,6 +1024,85 @@ func BenchmarkWrite(b *testing.B) {
 			})
 		}
 	}
+}
+
+// hangingWriteServer is a DistributedCache server whose Write RPC hangs
+// forever, used to test that the client's write timeout fires.
+type hangingWriteServer struct {
+	dcpb.UnimplementedDistributedCacheServer
+}
+
+func (s *hangingWriteServer) Write(stream dcpb.DistributedCache_WriteServer) error {
+	// Block until the client gives up.
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func startHangingServer(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	srv := grpc.NewServer()
+	dcpb.RegisterDistributedCacheServer(srv, &hangingWriteServer{})
+	t.Cleanup(srv.Stop)
+	go srv.Serve(lis)
+	return lis.Addr().String()
+}
+
+func TestWriteTimeout(t *testing.T) {
+	flags.Set(t, "cache.distributed_cache.peer_write_timeout", time.Millisecond)
+
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	hangingPeer := startHangingServer(t)
+	waitUntilServerIsAlive(hangingPeer)
+	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), localPeer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(localPeer)
+
+	// Use a size just large enough to flush through the double buffer to
+	// the underlying stream, where writes will block on the hanging server.
+	testSize := int64(3 * readBufSizeBytes)
+	rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+	wc, err := c.RemoteWriter(ctx, hangingPeer, noHandoff, rn)
+	require.NoError(t, err)
+	defer wc.Close()
+
+	_, err = wc.Write(buf)
+	require.Error(t, err)
+	require.True(t, isCanceledOrDeadlineExceeded(err), "expected cancelled or deadline exceeded, got %s", err)
+}
+
+func TestCommitTimeout(t *testing.T) {
+	flags.Set(t, "cache.distributed_cache.peer_write_timeout", time.Millisecond)
+
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	hangingPeer := startHangingServer(t)
+	waitUntilServerIsAlive(hangingPeer)
+	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), localPeer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(localPeer)
+
+	rn, _ := testdigest.RandomCASResourceBuf(t, 4)
+	wc, err := c.RemoteWriter(ctx, hangingPeer, noHandoff, rn)
+	require.NoError(t, err)
+	defer wc.Close()
+
+	err = wc.Commit()
+	require.Error(t, err)
+	require.True(t, isCanceledOrDeadlineExceeded(err), "expected cancelled or deadline exceeded, got %s", err)
+}
+
+func isCanceledOrDeadlineExceeded(err error) bool {
+	return status.IsCanceledError(err) || status.IsDeadlineExceededError(err) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func BenchmarkRead(b *testing.B) {

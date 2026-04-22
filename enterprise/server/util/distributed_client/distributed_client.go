@@ -2,13 +2,13 @@ package distributed_client
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"net"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -17,12 +17,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -47,6 +49,7 @@ const (
 
 var (
 	enableKubeResolver = flag.Bool("cache.distributed_cache.enable_kube_resolver", false, "Enable Kubernetes resolver for resolving peer pod IPs")
+	peerWriteTimeout   = flag.Duration("cache.distributed_cache.peer_write_timeout", time.Minute, "Maximum time to wait for a single distributed cache peer write send or close operation before treating the peer as stalled.")
 )
 
 type Proxy struct {
@@ -625,14 +628,31 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc         context.CancelFunc
-	stream             dcpb.DistributedCache_WriteClient
-	r                  *rspb.ResourceName
-	key                *dcpb.Key
-	isolation          *dcpb.Isolation
-	handoffPeer        string
-	alreadyExists      bool
-	closeAndRecvCalled bool
+	cancelFunc        context.CancelFunc
+	sender            rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	r                 *rspb.ResourceName
+	key               *dcpb.Key
+	isolation         *dcpb.Isolation
+	handoffPeer       string
+	sendTimeoutCause  error
+	closeTimeoutCause error
+	alreadyExists     bool
+}
+
+func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
+	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, wc.sendTimeoutCause)
+	if status.IsDeadlineExceededError(err) {
+		wc.cancelFunc()
+	}
+	return err
+}
+
+func (wc *streamWriteCloser) closeAndRecv() (*dcpb.WriteResponse, error) {
+	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, wc.closeTimeoutCause)
+	if status.IsDeadlineExceededError(err) {
+		wc.cancelFunc()
+	}
+	return rsp, err
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
@@ -648,10 +668,9 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		HandoffPeer:        wc.handoffPeer,
 		Resource:           wc.r,
 	}
-	err := wc.stream.Send(req)
+	err := wc.send(req)
 	if err == io.EOF {
-		_, streamErr := wc.stream.CloseAndRecv()
-		wc.closeAndRecvCalled = true
+		_, streamErr := wc.closeAndRecv()
 		if status.IsAlreadyExistsError(streamErr) {
 			wc.alreadyExists = true
 			err = nil
@@ -677,12 +696,11 @@ func (wc *streamWriteCloser) Commit() error {
 		HandoffPeer:        wc.handoffPeer,
 		Resource:           wc.r,
 	}
-	sendErr := wc.stream.Send(req)
+	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
 		return sendErr
 	}
-	_, err := wc.stream.CloseAndRecv()
-	wc.closeAndRecvCalled = true
+	_, err := wc.closeAndRecv()
 	if status.IsAlreadyExistsError(err) {
 		return nil
 	}
@@ -693,11 +711,13 @@ func (wc *streamWriteCloser) Commit() error {
 }
 
 func (wc *streamWriteCloser) Close() error {
+	// Cancel the stream ctx to unblock any in-flight stream.Send() in the
+	// Sender's background goroutine and let gRPC clean up the stream.
+	// Deliberately do NOT call stream.CloseAndRecv() here: if Commit() was
+	// called successfully it already did, and if the write was abandoned the
+	// stream is already broken, so CloseAndRecv would just race against an
+	// unwinding Send and leak a goroutine stuck in waitOnHeader.
 	wc.cancelFunc()
-	if !wc.closeAndRecvCalled {
-		_, err := wc.stream.CloseAndRecv()
-		return err
-	}
 	return nil
 }
 
@@ -719,13 +739,16 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		return nil, err
 	}
 
+	resourceStr := ResourceIsolationString(r)
 	wc := &streamWriteCloser{
-		cancelFunc:  cancel,
-		isolation:   isolation,
-		handoffPeer: handoffPeer,
-		key:         digestToKey(r.GetDigest()),
-		stream:      stream,
-		r:           r,
+		cancelFunc:        cancel,
+		sender:            rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		isolation:         isolation,
+		handoffPeer:       handoffPeer,
+		key:               digestToKey(r.GetDigest()),
+		r:                 r,
+		sendTimeoutCause:  status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", peer, resourceStr),
+		closeTimeoutCause: status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", peer, resourceStr),
 	}
 	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
 }
