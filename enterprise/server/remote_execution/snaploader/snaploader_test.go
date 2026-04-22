@@ -71,7 +71,9 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		const chunkSize = 512 * 1024
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(workDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 
 		// Overwrite a random range to simulate the disk being written to. This
@@ -187,7 +189,9 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(chunkDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		// Overwrite a random range to simulate the disk being written to. This
 		// should create some dirty chunks.
@@ -253,7 +257,9 @@ func TestNonMasterSnapshotsWithSnapshotID(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(chunkDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		writeRandomRange(t, cowA)
 		cacheSnapshotOptsA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
@@ -313,7 +319,9 @@ func TestSnapshotVersioning(t *testing.T) {
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(chunkDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		writeRandomRange(t, cowA)
 		snapshotA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
@@ -354,7 +362,9 @@ func TestSnapshotVersioning(t *testing.T) {
 		workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
 		originalImagePath = makeRandomFile(t, workDirC, "scratchfs.ext4", fileSize)
 		chunkDirC := testfs.MakeDirAll(t, workDirC, "scratchfs_chunks")
-		cowC, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirC, "", true, snaputil.ConvertToCOWConcurrency)
+		lru, err = copy_on_write.GetSharedMmapLRU(chunkDirC)
+		require.NoError(t, err)
+		cowC, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirC, "", true, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		writeRandomRange(t, cowC)
 		snapshotC := makeFakeSnapshot(t, workDirC, remoteEnabled, map[string]*copy_on_write.COWStore{
@@ -403,7 +413,9 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
+	lru, err := copy_on_write.GetSharedMmapLRU(workDirA)
+	require.NoError(t, err)
+	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency, lru)
 	require.NoError(t, err)
 	writeRandomRange(t, cowA)
 	task := &repb.ExecutionTask{}
@@ -470,7 +482,9 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
+	lru, err := copy_on_write.GetSharedMmapLRU(workDirA)
+	require.NoError(t, err)
+	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency, lru)
 	require.NoError(t, err)
 	writeRandomRange(t, cowA)
 	task := &repb.ExecutionTask{}
@@ -532,7 +546,9 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		const chunkSize = 512 * 1024
 		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "remote-A", enableRemote, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(workDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "remote-A", enableRemote, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		writeRandomRange(t, cowA)
 		optsA := makeFakeSnapshot(t, workDirA, enableRemote, map[string]*copy_on_write.COWStore{
@@ -584,7 +600,9 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		const chunkSize = 1
 		const fileSize = chunkSize * 10
 		originalImagePath := makeRandomFile(t, workDirA, "test-file", fileSize)
-		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, instanceName, true /*remoteEnabled*/, snaputil.ConvertToCOWConcurrency)
+		lru, err := copy_on_write.GetSharedMmapLRU(workDirA)
+		require.NoError(t, err)
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, instanceName, true /*remoteEnabled*/, snaputil.ConvertToCOWConcurrency, lru)
 		require.NoError(t, err)
 		originalWriteBuf := []byte("0123456789")
 		_, err = cowA.WriteAt(originalWriteBuf, 0)

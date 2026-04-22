@@ -1564,8 +1564,12 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
+	lru, err := copy_on_write.GetSharedMmapLRU(chunkDir)
+	if err != nil {
+		return nil, status.WrapError(err, "get shared mmap LRU")
+	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, concurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, concurrency, lru)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -3234,12 +3238,20 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		if err := os.Mkdir(memChunkDir, 0755); err != nil {
 			return nil, status.WrapError(err, "make memory chunk dir")
 		}
-
 		memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
 		if memorySizeBytes <= 0 {
 			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 		}
-		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+
+		// Create a limited LRU so we mmap a max of 4 chunks at a time.
+		// Firecracker exports full snapshots sequentially, so we should only need a max of 2 chunks when writing at chunk boundaries,
+		// but add a bit of buffer..
+		// TODO: Need to figure out how to clean this up
+		lru, err := copy_on_write.NewMmapLRU(cowChunkSizeBytes() * 4)
+		if err != nil {
+			return nil, status.WrapError(err, "create memory snapshot LRU")
+		}
+		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, cowChunkSizeBytes(), memorySizeBytes, memChunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, lru)
 		if err != nil {
 			return nil, status.WrapError(err, "create memory COWStore")
 		}

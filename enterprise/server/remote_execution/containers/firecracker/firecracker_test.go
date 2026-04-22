@@ -3602,7 +3602,9 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 		if cow {
 			env := getTestEnv(ctx, t, envOpts{})
 			dataDir := testfs.MakeDirAll(t, tmp, cowDirName)
-			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/, snaputil.ConvertToCOWConcurrency)
+			lru, err := copy_on_write.GetSharedMmapLRU(dataDir)
+			require.NoError(t, err)
+			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/, snaputil.ConvertToCOWConcurrency, lru)
 			require.NoError(t, err)
 			store = c
 		}

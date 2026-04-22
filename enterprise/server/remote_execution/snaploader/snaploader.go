@@ -960,13 +960,22 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		// TODO: Make a unit test where there is less data in a chunk than the chunk size
 		// But when we fetch from the remote cache, it will need the actual
 		// data size in the digest
-		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName, remoteEnabled)
+		lru, err := copy_on_write.GetSharedMmapLRU(dataDir)
+		if err != nil {
+			return nil, status.WrapError(err, "get shared mmap LRU")
+		}
+		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName, remoteEnabled, lru)
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
+
+	lru, err := copy_on_write.GetSharedMmapLRU(dataDir)
+	if err != nil {
+		return nil, status.WrapError(err, "get shared mmap LRU")
+	}
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled, lru)
 	if err != nil {
 		return nil, err
 	}
@@ -1261,10 +1270,16 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		}
 		return cf, nil
 	}
+
+	lru, err := copy_on_write.GetSharedMmapLRU(outDir)
+	if err != nil {
+		return nil, status.WrapError(err, "get shared mmap LRU")
+	}
+
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled, snaputil.ConvertToCOWConcurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled, snaputil.ConvertToCOWConcurrency, lru)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
