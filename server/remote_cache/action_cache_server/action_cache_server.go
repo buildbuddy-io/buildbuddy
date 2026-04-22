@@ -431,7 +431,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 
 // validateRestrictedAccess checks to see if the instance name has a restricted prefix.
 // If it does, validateRestrictedAccess uses the ClientIdentityService to assert that the
-// request comes from a trusted client: the app or an executor.
+// request comes from a trusted client: the app, an executor, or a cache proxy.
 // If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
 // validateRestrictedAccess returns an UnauthenticatedError.
 func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
@@ -445,7 +445,9 @@ func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instan
 	if err != nil {
 		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
 	}
-	if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor {
+	if identity.Client != interfaces.ClientIdentityApp &&
+		identity.Client != interfaces.ClientIdentityExecutor &&
+		identity.Client != interfaces.ClientIdentityCacheProxy {
 		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 	}
 	return nil
