@@ -49,18 +49,23 @@ const (
 )
 
 type target struct {
-	label          string
-	aspect         string
-	ruleType       string
-	firstStartTime time.Time
-	totalDuration  time.Duration
-	state          targetState
-	id             int64
-	overallStatus  build_event_stream.TestStatus
-	cached         bool
-	targetType     cmpb.TargetType
-	testSize       build_event_stream.TestSize
-	buildSuccess   bool
+	label               string
+	aspect              string
+	ruleType            string
+	firstStartTime      time.Time
+	totalDuration       time.Duration
+	state               targetState
+	id                  int64
+	overallStatus       build_event_stream.TestStatus
+	cached              bool
+	cachedCount         int32
+	cachedLocallyCount  int32
+	cachedRemotelyCount int32
+	totalRunCount       int32
+	observedResultCount int32
+	targetType          cmpb.TargetType
+	testSize            build_event_stream.TestSize
+	buildSuccess        bool
 }
 
 func md5Int64(text string) int64 {
@@ -74,6 +79,23 @@ func newTarget(label string, aspect string) *target {
 		aspect: aspect,
 		state:  targetStateExpanded,
 	}
+}
+
+func (t *target) effectiveCachedCount() int32 {
+	count := t.cachedCount
+	if observed := t.cachedLocallyCount + t.cachedRemotelyCount; observed > count {
+		count = observed
+	}
+	return count
+}
+
+func (t *target) effectiveTotalRunCount(ctx context.Context) int32 {
+	count := t.totalRunCount
+	if t.observedResultCount > count {
+		log.CtxDebugf(ctx, "Using observed TestResult count for target %q because it exceeds TestSummary total_run_count (%d > %d)", t.label, t.observedResultCount, t.totalRunCount)
+		count = t.observedResultCount
+	}
+	return count
 }
 
 func getTestStatus(aborted *build_event_stream.Aborted) build_event_stream.TestStatus {
@@ -99,11 +121,22 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
-		t.cached = p.TestResult.GetCachedLocally() || p.TestResult.GetExecutionInfo().GetCachedRemotely()
+		cachedLocally := p.TestResult.GetCachedLocally()
+		cachedRemotely := p.TestResult.GetExecutionInfo().GetCachedRemotely()
+		t.cached = cachedLocally || cachedRemotely
+		t.observedResultCount++
+		if cachedLocally {
+			t.cachedLocallyCount++
+		}
+		if cachedRemotely {
+			t.cachedRemotelyCount++
+		}
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
 		t.overallStatus = ts.GetOverallStatus()
+		t.cachedCount = ts.GetTotalNumCached()
+		t.totalRunCount = ts.GetTotalRunCount()
 		t.firstStartTime = timeutil.GetTimeWithFallback(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
 		t.totalDuration = timeutil.GetDurationWithFallback(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
 		t.state = targetStateSummary
@@ -356,6 +389,9 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			testStartTimeUsec = target.firstStartTime.UnixMicro()
 		}
 
+		cachedCount := target.effectiveCachedCount()
+		totalRunCount := target.effectiveTotalRunCount(ctx)
+
 		entries = append(entries, &schema.TestTargetStatus{
 			GroupID:                 permissions.GroupID,
 			RepoURL:                 repoURL,
@@ -363,18 +399,22 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			Label:                   target.label,
 			InvocationStartTimeUsec: invocationStartTime.UnixMicro(),
 
-			RuleType:       target.ruleType,
-			UserID:         permissions.UserID,
-			InvocationUUID: invocationUUID,
-			TargetType:     int32(target.targetType),
-			TestSize:       int32(target.testSize),
-			Status:         int32(target.overallStatus),
-			Cached:         target.cached,
-			StartTimeUsec:  testStartTimeUsec,
-			DurationUsec:   target.totalDuration.Microseconds(),
-			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
-			Role:           t.buildEventAccumulator.Invocation().GetRole(),
-			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
+			RuleType:            target.ruleType,
+			UserID:              permissions.UserID,
+			InvocationUUID:      invocationUUID,
+			TargetType:          int32(target.targetType),
+			TestSize:            int32(target.testSize),
+			Status:              int32(target.overallStatus),
+			Cached:              totalRunCount > 0 && cachedCount == totalRunCount,
+			CachedCount:         cachedCount,
+			CachedLocallyCount:  target.cachedLocallyCount,
+			CachedRemotelyCount: target.cachedRemotelyCount,
+			TotalRunCount:       totalRunCount,
+			StartTimeUsec:       testStartTimeUsec,
+			DurationUsec:        target.totalDuration.Microseconds(),
+			BranchName:          t.buildEventAccumulator.Invocation().GetBranchName(),
+			Role:                t.buildEventAccumulator.Invocation().GetRole(),
+			Command:             t.buildEventAccumulator.Invocation().GetCommand(),
 		})
 	}
 	err := t.env.GetOLAPDBHandle().FlushTestTargetStatuses(ctx, entries)
