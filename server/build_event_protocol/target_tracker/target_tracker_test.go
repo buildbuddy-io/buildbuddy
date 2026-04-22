@@ -2,6 +2,7 @@ package target_tracker_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,17 +22,21 @@ import (
 )
 
 type Row struct {
-	GroupID    string
-	CommitSHA  string
-	TestSize   int32
-	Status     int32
-	Cached     bool
-	TargetType int32
-	RuleType   string
-	Label      string
-	RepoURL    string
-	Role       string
-	Command    string
+	GroupID             string
+	CommitSHA           string
+	TestSize            int32
+	Status              int32
+	Cached              bool
+	CachedCount         int32
+	CachedLocallyCount  int32
+	CachedRemotelyCount int32
+	TotalRunCount       int32
+	TargetType          int32
+	RuleType            string
+	Label               string
+	RepoURL             string
+	Role                string
+	Command             string
 }
 
 func targetConfiguredId(label string) *build_event_stream.BuildEventId {
@@ -178,6 +183,7 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 				targetConfiguredId("//server:foo_test"),
 				targetConfiguredId("//server:foo_local_cache_test"),
 				targetConfiguredId("//server:foo_remote_cache_test"),
+				targetConfiguredId("//server:foo_partially_cached_test"),
 				targetConfiguredId("//server:bar_test"),
 			},
 			Payload: &build_event_stream.BuildEvent_Expanded{},
@@ -222,6 +228,18 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			Id: targetConfiguredId("//server:foo_remote_cache_test"),
 			Children: []*build_event_stream.BuildEventId{
 				targetCompletedId("//server:foo_remote_cache_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{
+					TargetKind: "go_test rule",
+					TestSize:   build_event_stream.TestSize_MEDIUM,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: targetConfiguredId("//server:foo_partially_cached_test"),
+			Children: []*build_event_stream.BuildEventId{
+				targetCompletedId("//server:foo_partially_cached_test"),
 			},
 			Payload: &build_event_stream.BuildEvent_Configured{
 				Configured: &build_event_stream.TargetConfigured{
@@ -304,6 +322,18 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			},
 		},
 		&build_event_stream.BuildEvent{
+			Id: targetCompletedId("//server:foo_partially_cached_test"),
+			Children: []*build_event_stream.BuildEventId{
+				testResultId("//server:foo_partially_cached_test"),
+				testSummaryId("//server:foo_partially_cached_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Completed{
+				Completed: &build_event_stream.TargetComplete{
+					Success: true,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
 			Id: targetCompletedId("//server:baz_test"),
 			Children: []*build_event_stream.BuildEventId{
 				testResultId("//server:baz_test"),
@@ -355,6 +385,23 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			},
 		},
 		&build_event_stream.BuildEvent{
+			Id: testResultId("//server:foo_partially_cached_test"),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{
+					Status:        build_event_stream.TestStatus_PASSED,
+					CachedLocally: true,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testResultId("//server:foo_partially_cached_test"),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{
+					Status: build_event_stream.TestStatus_PASSED,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
 			Id: testResultId("//server:baz_test"),
 			Payload: &build_event_stream.BuildEvent_TestResult{
 				TestResult: &build_event_stream.TestResult{
@@ -375,7 +422,9 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			Id: testSummaryId("//server:foo_local_cache_test"),
 			Payload: &build_event_stream.BuildEvent_TestSummary{
 				TestSummary: &build_event_stream.TestSummary{
-					OverallStatus: build_event_stream.TestStatus_PASSED,
+					OverallStatus:  build_event_stream.TestStatus_PASSED,
+					TotalNumCached: 1,
+					TotalRunCount:  1,
 				},
 			},
 		},
@@ -383,7 +432,19 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			Id: testSummaryId("//server:foo_remote_cache_test"),
 			Payload: &build_event_stream.BuildEvent_TestSummary{
 				TestSummary: &build_event_stream.TestSummary{
-					OverallStatus: build_event_stream.TestStatus_PASSED,
+					OverallStatus:  build_event_stream.TestStatus_PASSED,
+					TotalNumCached: 1,
+					TotalRunCount:  1,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testSummaryId("//server:foo_partially_cached_test"),
+			Payload: &build_event_stream.BuildEvent_TestSummary{
+				TestSummary: &build_event_stream.TestSummary{
+					OverallStatus:  build_event_stream.TestStatus_PASSED,
+					TotalNumCached: 1,
+					TotalRunCount:  2,
 				},
 			},
 		},
@@ -407,54 +468,77 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 
 	expected := []Row{
 		{
-			Role:       "CI",
-			GroupID:    "GROUP1",
-			CommitSHA:  "abcdef",
-			Command:    "test",
-			RuleType:   "go_test rule",
-			Label:      "//server:baz_test",
-			RepoURL:    "bb/foo",
-			TestSize:   int32(cmpb.TestSize_SMALL),
-			Status:     int32(build_event_stream.TestStatus_FAILED),
-			TargetType: int32(cmpb.TargetType_TEST),
+			Role:          "CI",
+			GroupID:       "GROUP1",
+			CommitSHA:     "abcdef",
+			Command:       "test",
+			RuleType:      "go_test rule",
+			Label:         "//server:baz_test",
+			RepoURL:       "bb/foo",
+			TestSize:      int32(cmpb.TestSize_SMALL),
+			Status:        int32(build_event_stream.TestStatus_FAILED),
+			TotalRunCount: 1,
+			TargetType:    int32(cmpb.TargetType_TEST),
 		},
 		{
-			Role:       "CI",
-			GroupID:    "GROUP1",
-			CommitSHA:  "abcdef",
-			Command:    "test",
-			RuleType:   "go_test rule",
-			Label:      "//server:foo_test",
-			RepoURL:    "bb/foo",
-			TestSize:   int32(cmpb.TestSize_MEDIUM),
-			Status:     int32(build_event_stream.TestStatus_PASSED),
-			TargetType: int32(cmpb.TargetType_TEST),
+			Role:          "CI",
+			GroupID:       "GROUP1",
+			CommitSHA:     "abcdef",
+			Command:       "test",
+			RuleType:      "go_test rule",
+			Label:         "//server:foo_test",
+			RepoURL:       "bb/foo",
+			TestSize:      int32(cmpb.TestSize_MEDIUM),
+			Status:        int32(build_event_stream.TestStatus_PASSED),
+			TotalRunCount: 1,
+			TargetType:    int32(cmpb.TargetType_TEST),
 		},
 		{
-			Role:       "CI",
-			GroupID:    "GROUP1",
-			CommitSHA:  "abcdef",
-			Command:    "test",
-			RuleType:   "go_test rule",
-			Label:      "//server:foo_local_cache_test",
-			RepoURL:    "bb/foo",
-			TestSize:   int32(cmpb.TestSize_MEDIUM),
-			Status:     int32(build_event_stream.TestStatus_PASSED),
-			Cached:     true,
-			TargetType: int32(cmpb.TargetType_TEST),
+			Role:               "CI",
+			GroupID:            "GROUP1",
+			CommitSHA:          "abcdef",
+			Command:            "test",
+			RuleType:           "go_test rule",
+			Label:              "//server:foo_local_cache_test",
+			RepoURL:            "bb/foo",
+			TestSize:           int32(cmpb.TestSize_MEDIUM),
+			Status:             int32(build_event_stream.TestStatus_PASSED),
+			Cached:             true,
+			CachedCount:        1,
+			CachedLocallyCount: 1,
+			TotalRunCount:      1,
+			TargetType:         int32(cmpb.TargetType_TEST),
 		},
 		{
-			Role:       "CI",
-			GroupID:    "GROUP1",
-			CommitSHA:  "abcdef",
-			Command:    "test",
-			RuleType:   "go_test rule",
-			Label:      "//server:foo_remote_cache_test",
-			RepoURL:    "bb/foo",
-			TestSize:   int32(cmpb.TestSize_MEDIUM),
-			Status:     int32(build_event_stream.TestStatus_PASSED),
-			Cached:     true,
-			TargetType: int32(cmpb.TargetType_TEST),
+			Role:                "CI",
+			GroupID:             "GROUP1",
+			CommitSHA:           "abcdef",
+			Command:             "test",
+			RuleType:            "go_test rule",
+			Label:               "//server:foo_remote_cache_test",
+			RepoURL:             "bb/foo",
+			TestSize:            int32(cmpb.TestSize_MEDIUM),
+			Status:              int32(build_event_stream.TestStatus_PASSED),
+			Cached:              true,
+			CachedCount:         1,
+			CachedRemotelyCount: 1,
+			TotalRunCount:       1,
+			TargetType:          int32(cmpb.TargetType_TEST),
+		},
+		{
+			Role:               "CI",
+			GroupID:            "GROUP1",
+			CommitSHA:          "abcdef",
+			Command:            "test",
+			RuleType:           "go_test rule",
+			Label:              "//server:foo_partially_cached_test",
+			RepoURL:            "bb/foo",
+			TestSize:           int32(cmpb.TestSize_MEDIUM),
+			Status:             int32(build_event_stream.TestStatus_PASSED),
+			CachedCount:        1,
+			CachedLocallyCount: 1,
+			TotalRunCount:      2,
+			TargetType:         int32(cmpb.TargetType_TEST),
 		},
 		{
 			Role:       "CI",
@@ -472,7 +556,16 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 	if tracker.WriteToOLAPDBEnabled() {
 		assertTestTargetStatusesMatchOLAPDB(t, te, expected)
 	} else {
-		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, expected)
+		// The primary DB path only persists the legacy cached bool, not the OLAP-only
+		// per-attempt cache counts.
+		legacyExpected := slices.Clone(expected)
+		for i := range legacyExpected {
+			legacyExpected[i].CachedCount = 0
+			legacyExpected[i].CachedLocallyCount = 0
+			legacyExpected[i].CachedRemotelyCount = 0
+			legacyExpected[i].TotalRunCount = 0
+		}
+		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, legacyExpected)
 	}
 }
 
@@ -775,7 +868,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 
 func assertTestTargetStatusesMatchOLAPDB(t *testing.T, te *testenv.TestEnv, expected []Row) {
 	var got []Row
-	query := `SELECT group_id, commit_sha, rule_type, label, repo_url, branch_name, role, command, test_size, status, cached, target_type FROM "TestTargetStatuses"`
+	query := `SELECT group_id, commit_sha, rule_type, label, repo_url, branch_name, role, command, test_size, status, cached, cached_count, cached_locally_count, cached_remotely_count, total_run_count, target_type FROM "TestTargetStatuses"`
 	err := te.GetOLAPDBHandle().NewQuery(context.Background(), "get_target_status").Raw(query).Take(&got)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)

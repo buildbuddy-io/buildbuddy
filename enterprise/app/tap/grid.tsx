@@ -79,6 +79,15 @@ interface Stat {
   cached: number;
 }
 
+interface CacheInfo {
+  fullyCached: boolean;
+  partiallyCached: boolean;
+  cachedCount: number;
+  cachedLocallyCount: number;
+  cachedRemotelyCount: number;
+  totalRunCount: number;
+}
+
 const Status = api.v1.Status;
 
 const MIN_OPACITY = 0.1;
@@ -174,6 +183,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     for (let targetHistory of histories) {
       let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0, flake: 0, cached: 0 };
       for (let status of targetHistory.targetStatus) {
+        const cacheInfo = getCacheInfo(status);
         stats.count += 1;
         let duration = this.durationToNum(status.timing?.duration || undefined);
         stats.totalDuration += duration;
@@ -183,7 +193,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
         } else if (status.status == Status.FLAKY) {
           stats.flake += 1;
         }
-        if (isCached(status)) {
+        if (cacheInfo.fullyCached) {
           stats.cached += 1;
         }
       }
@@ -525,6 +535,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
                       return (
                         <div className="tap-commit-container">
                           {statuses.map((status) => {
+                            const cacheInfo = getCacheInfo(status);
                             let destinationUrl = `/invocation/${status.invocationId}?${new URLSearchParams({
                               target: targetHistory.target?.label || "",
                               targetStatus: String(status),
@@ -536,9 +547,9 @@ export default class TestGridComponent extends React.Component<Props, State> {
                               title += ` at commit ${commitStatus.commitSha}`;
                             }
 
-                            let cached = isCached(status);
-                            if (cached) {
-                              title += ` (cached)`;
+                            const cacheLabel = describeCacheStatus(cacheInfo);
+                            if (cacheLabel) {
+                              title += ` (${cacheLabel})`;
                             }
 
                             return (
@@ -560,7 +571,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
                                 className={`tap-block ${
                                   this.getColorMode() == "status" ? `status-${status.status}` : "timing"
                                 }
-                                ${cached ? `cached` : ""}
+                                ${cacheInfo.fullyCached ? `cached` : ""}
                                 clickable`}>
                                 {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
                               </a>
@@ -584,7 +595,65 @@ export default class TestGridComponent extends React.Component<Props, State> {
   }
 }
 
-function isCached(status: target.ITargetStatus) {
+function getCacheInfo(status: target.ITargetStatus): CacheInfo {
+  const cachedLocallyCount = Number(status.cachedLocallyCount || 0);
+  const cachedRemotelyCount = Number(status.cachedRemotelyCount || 0);
+  const cachedCount = Math.max(Number(status.cachedCount || 0), cachedLocallyCount + cachedRemotelyCount);
+  const totalRunCount = Math.max(Number(status.totalRunCount || 0), cachedCount);
+
+  if (totalRunCount > 0 || cachedCount > 0 || cachedLocallyCount > 0 || cachedRemotelyCount > 0) {
+    const fullyCached = Boolean(status.cached) || (totalRunCount > 0 && cachedCount === totalRunCount);
+    return {
+      fullyCached,
+      partiallyCached: !fullyCached && cachedCount > 0,
+      cachedCount,
+      cachedLocallyCount,
+      cachedRemotelyCount,
+      totalRunCount,
+    };
+  }
+
+  // Older ClickHouse rows only have the legacy cached bool, so preserve the
+  // historical fallback instead of treating missing counts as uncached.
+  const fullyCached = Boolean(status.cached) || isHeuristicallyCached(status);
+  return {
+    fullyCached,
+    partiallyCached: false,
+    cachedCount: fullyCached ? 1 : 0,
+    cachedLocallyCount: 0,
+    cachedRemotelyCount: 0,
+    totalRunCount: fullyCached ? 1 : 0,
+  };
+}
+
+function describeCacheStatus(cacheInfo: CacheInfo): string {
+  if (!cacheInfo.fullyCached && !cacheInfo.partiallyCached) {
+    return "";
+  }
+
+  const originParts = [];
+  if (cacheInfo.cachedLocallyCount > 0) {
+    originParts.push(`${cacheInfo.cachedLocallyCount} local`);
+  }
+  if (cacheInfo.cachedRemotelyCount > 0) {
+    originParts.push(`${cacheInfo.cachedRemotelyCount} remote`);
+  }
+  const originSuffix = originParts.length ? ` (${originParts.join(", ")})` : "";
+
+  if (cacheInfo.fullyCached) {
+    if (cacheInfo.cachedLocallyCount > 0 && cacheInfo.cachedLocallyCount === cacheInfo.totalRunCount) {
+      return "cached locally";
+    }
+    if (cacheInfo.cachedRemotelyCount > 0 && cacheInfo.cachedRemotelyCount === cacheInfo.totalRunCount) {
+      return "cached remotely";
+    }
+    return `cached${originSuffix}`;
+  }
+
+  return `${cacheInfo.cachedCount}/${cacheInfo.totalRunCount} cached${originSuffix}`;
+}
+
+function isHeuristicallyCached(status: target.ITargetStatus) {
   return (
     +(status.timing?.startTime?.seconds || 0) > 0 &&
     Math.floor(+(status.invocationCreatedAtUsec || 0) / 1000000) > +(status.timing?.startTime?.seconds || 0)
