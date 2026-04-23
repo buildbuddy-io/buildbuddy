@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
-    name = "cache_proxy",
-    srcs = ["cache_proxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/cache_proxy",
+    name = "sidecar_proxy",
+    srcs = ["sidecar_proxy.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:semver_go_proto",
