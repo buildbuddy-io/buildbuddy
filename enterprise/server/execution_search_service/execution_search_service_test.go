@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
@@ -137,6 +138,7 @@ func TestSearchExecutions(t *testing.T) {
 		},
 	}
 	for _, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}
@@ -253,6 +255,7 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 		},
 	}
 	for _, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}
@@ -304,6 +307,7 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 		}
 	}
 	for _, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}
@@ -371,6 +375,7 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 		}
 	}
 	for _, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}

@@ -172,6 +172,7 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			for _, execution := range test.executions {
 				execution.CreatedAtUsec = testTimestampUsec
 				execution.UpdatedAtUsec = testTimestampUsec
+				require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 				err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 				require.NoError(t, err)
 			}
