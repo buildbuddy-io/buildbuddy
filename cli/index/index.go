@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/github/gitclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,16 +37,16 @@ All unindexed changes in the current repo will be submitted to the indexer for a
 `
 )
 
-func makeGitClient() (github.GitClient, error) {
+func makeGitClient() (gitclient.GitClient, error) {
 	repoRoot, err := storage.RepoRootPath()
 	if err != nil {
 		return nil, err
 	}
 
-	return github.NewCommandLineGitClient(repoRoot), nil
+	return gitclient.NewCommandLineGitClient(repoRoot), nil
 }
 
-func getRepoInfo(gc github.GitClient) (*git.RepoURL, string, error) {
+func getRepoInfo(gc gitclient.GitClient) (*git.RepoURL, string, error) {
 	headSHA, err := gc.ExecuteCommand("rev-parse", "HEAD")
 	if err != nil {
 		return nil, "", err
@@ -72,7 +72,7 @@ func getRepoInfo(gc github.GitClient) (*git.RepoURL, string, error) {
 	return parseRepoURL, headSHA, nil
 }
 
-func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastIndexSHA string) (*inpb.IndexRequest, error) {
+func buildIndexRequest(gc gitclient.GitClient, repoURL *git.RepoURL, headSHA, lastIndexSHA string) (*inpb.IndexRequest, error) {
 	req := &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:  repoURL.String(),
@@ -81,7 +81,7 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 	}
 
 	if lastIndexSHA != "" {
-		update, err := github.ComputeIncrementalUpdate(gc, lastIndexSHA, headSHA)
+		update, err := gitclient.ComputeIncrementalUpdate(gc, lastIndexSHA, headSHA)
 		if err != nil {
 			if status.IsFailedPreconditionError(err) {
 				log.Printf("Failed to compute incremental update, falling back to full re-index: %s", err)
@@ -109,7 +109,7 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 	return req, nil
 }
 
-func indexRepo(gc github.GitClient, client bbspb.BuildBuddyServiceClient) error {
+func indexRepo(gc gitclient.GitClient, client bbspb.BuildBuddyServiceClient) error {
 	ctx := context.Background()
 
 	parsedRepoURL, headSHA, err := getRepoInfo(gc)

@@ -1,24 +1,17 @@
 package github
 
 import (
-	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/github/gitclient"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
 	xxhash "github.com/cespare/xxhash/v2"
@@ -26,24 +19,16 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
-const (
-	maxFileLen = 10_000_000
+// GitClient is re-exported from codesearch/github/gitclient so existing
+// call sites (and tests) keep working. New code should depend on the
+// gitclient package directly.
+type GitClient = gitclient.GitClient
 
-	// The maximum amount of bytes from a file to use for language and
-	// mimetype detection.
-	detectionBufferSize = 1000
+// NewCommandLineGitClient is re-exported from codesearch/github/gitclient.
+var NewCommandLineGitClient = gitclient.NewCommandLineGitClient
 
-	// The maximum number of changes to process in a single incremental update.
-	// 1000 was an arbitrary choice, and could be adjusted if needed.
-	maxAllowedChanges = 1000
-)
-
-var (
-	// TODO(tylerw): this should come from a flag?
-	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
-	regexpSha   = regexp.MustCompile("^[0-9a-f]{5,40}$")
-	filepathSha = regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
-)
+// ComputeIncrementalUpdate is re-exported from codesearch/github/gitclient.
+var ComputeIncrementalUpdate = gitclient.ComputeIncrementalUpdate
 
 func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
 	return []byte(fmt.Sprintf("%s/%s/%s", repoURL.Host, repoURL.Owner, repoURL.Repo))
@@ -73,12 +58,12 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 // mimetype, or contains invalid UTF-8 data.
 // This function does not flush the index writer, so the caller is responsible for doing that.
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
-	err := validateFile(fileContent)
+	err := gitclient.ValidateFile(fileContent)
 	if err != nil {
 		return err
 	}
 
-	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
+	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), gitclient.DetectionBuffer(fileContent)))
 	fields := map[string][]byte{
 		schema.IDField:       makeFileId(repoURL, filename),
 		schema.FilenameField: []byte(filename),
@@ -154,166 +139,3 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 	return sha, nil
 }
 
-func detectionBuffer(content []byte) []byte {
-	if len(content) > detectionBufferSize {
-		return content[:detectionBufferSize]
-	}
-	return content
-}
-
-func validateFile(content []byte) error {
-	if len(content) > maxFileLen {
-		return fmt.Errorf("file too long")
-	}
-
-	shortBuf := detectionBuffer(content)
-
-	// Check the mimetype and skip if not valid for indexing.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err != nil {
-		return fmt.Errorf("failed to detect mimetype: %w", err)
-	}
-	if skipMime.MatchString(mtype.String()) {
-		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
-	}
-
-	if !utf8.Valid(content) {
-		return fmt.Errorf("Non-UTF8 content in file")
-	}
-	return nil
-}
-
-type GitClient interface {
-	ExecuteCommand(args ...string) (string, error)
-	LoadFileContents(fileToLoad string) ([]byte, error)
-}
-
-type commandLineGitClient struct {
-	repoDir string
-}
-
-func NewCommandLineGitClient(repoDir string) GitClient {
-	return &commandLineGitClient{repoDir: repoDir}
-}
-
-func (c *commandLineGitClient) ExecuteCommand(args ...string) (string, error) {
-	command := exec.Command("git", args...)
-	command.Dir = c.repoDir
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return "", status.InternalErrorf("failed to run command with args: %v: %v", args, err)
-	}
-	return string(output), nil
-}
-
-func (c *commandLineGitClient) LoadFileContents(filename string) ([]byte, error) {
-	filePath := filepath.Join(c.repoDir, filename)
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, status.InternalErrorf("failed to read file %s: %s", filePath, err)
-	}
-	return content, nil
-}
-
-func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
-	// diff-tree lines are in the format "<src mode> <dst mode> <src sha> <dst sha> <status>\t<src path>\t<dst path(copy/rename only)>""
-	// Documentation: https://git-scm.com/docs/git-diff-tree
-	parts := strings.Split(line, " ")
-	if len(parts) < 5 {
-		return status.InternalErrorf("invalid diff-tree line: %s", line)
-	}
-
-	fileParts := strings.Split(parts[4], "\t")
-	if len(fileParts) < 2 {
-		return status.InternalErrorf("invalid diff-tree line: %s", line)
-	}
-
-	fileStatus := fileParts[0]
-	if fileStatus == "U" {
-		return nil // Unmerged file - ignore
-	}
-
-	srcFile := fileParts[1]
-	if fileStatus == "D" || fileStatus[0] == 'R' {
-		if !slices.Contains(commit.DeleteFilepaths, srcFile) {
-			commit.DeleteFilepaths = append(commit.DeleteFilepaths, srcFile)
-		}
-	}
-
-	if fileStatus == "D" {
-		// Nothing else to do for deletes
-		return nil
-	}
-
-	fileToLoad := srcFile
-	if fileStatus[0] == 'R' || fileStatus[0] == 'C' {
-		// renames and copies have a destination file name in index 6
-		if len(fileParts) < 3 {
-			return status.InternalErrorf("invalid diff-tree line, R/C with no dest file: %s", line)
-		}
-		fileToLoad = fileParts[2]
-	}
-
-	content, err := gc.LoadFileContents(fileToLoad)
-	if err != nil {
-		return status.InternalErrorf("failed to read file %s: %s", fileToLoad, err)
-	}
-
-	if err := validateFile(content); err != nil {
-		log.Infof("File %s can't be indexed, skipping: %v", fileToLoad, err)
-		return nil
-	}
-
-	commit.AddsAndUpdates = append(commit.AddsAndUpdates, &inpb.File{
-		Filepath: fileToLoad,
-		Content:  content,
-	})
-	return nil
-}
-
-// ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
-// If no updates are found, it returns nil with no error.
-//
-// The information is extracted using the git command line client on a local clone of a repo.
-// The payload contains a list of commits, the file contents for each added/modified file, and a list
-// of deleted filenames.
-func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
-	commitRange := fmt.Sprintf("%s..%s", firstSha, lastSha)
-
-	changesStr, err := gc.ExecuteCommand("log", "--raw", "--first-parent", "--format=%H", "--reverse", commitRange)
-	if err != nil {
-		return nil, err
-	}
-	changes := strings.Split(strings.TrimSpace(changesStr), "\n")
-
-	if len(changes) > maxAllowedChanges {
-		return nil, status.FailedPreconditionErrorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
-	}
-	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
-		return nil, nil
-	}
-
-	result := &inpb.IncrementalUpdate{
-		Commits: make([]*inpb.Commit, 0),
-	}
-	var currentCommit *inpb.Commit
-	sha := firstSha
-
-	for _, line := range changes {
-		line := strings.TrimSpace(line)
-
-		if regexpSha.MatchString(line) {
-			// Commit line
-			currentCommit = &inpb.Commit{
-				Sha:       line,
-				ParentSha: sha,
-			}
-			result.Commits = append(result.Commits, currentCommit)
-			sha = line
-		} else if filepathSha.MatchString(line) {
-			// Diff line
-			processDiffTreeLine(gc, line, currentCommit)
-		} // else: ignore other lines
-	}
-	return result, nil
-}

@@ -6,14 +6,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/github",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/github/gitclient",
         "//codesearch/schema",
         "//codesearch/types",
         "//proto:index_go_proto",
         "//server/util/git",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_cespare_xxhash_v2//:xxhash",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_go_enry_go_enry_v2//:go-enry",
     ],
 )
