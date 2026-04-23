@@ -28,7 +28,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
 
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
 	_ "google.golang.org/grpc/xds"
 )
 
