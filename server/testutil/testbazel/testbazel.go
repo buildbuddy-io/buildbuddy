@@ -103,9 +103,20 @@ func BinaryPath(t testing.TB) string {
 		bazelrc := filepath.Join(os.Getenv("TEST_TMPDIR"), "bazel-"+Version+".bazelrc")
 		bazelrcLines := []string{
 			"common --repository_cache=" + repoCachePath(t),
-			// Make sure tests do not try to perform network requests during
-			// dependency resolution.
-			"common --lockfile_mode=error",
+		}
+		// For Bazel < 9, require that the lockfile is complete; tests should not
+		// need network access for dependency resolution.
+		//
+		// For Bazel 9+, the prewarmed lockfile is generated on the platform
+		// where extract_bazel_installation runs (typically linux-x86_64 via
+		// remote execution). When the test runs on a different host platform
+		// (e.g. macOS or linux-arm64), bzlmod needs to resolve a few
+		// platform-specific entries that aren't in the lockfile, so we allow
+		// the lockfile to be updated rather than erroring.
+		if strings.HasPrefix(Version, "9.") {
+			bazelrcLines = append(bazelrcLines, "common --lockfile_mode=update")
+		} else {
+			bazelrcLines = append(bazelrcLines, "common --lockfile_mode=error")
 		}
 		err = os.WriteFile(bazelrc, []byte(strings.Join(bazelrcLines, "\n")), 0644)
 		require.NoError(t, err)
