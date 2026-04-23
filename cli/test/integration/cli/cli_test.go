@@ -537,6 +537,23 @@ func TestFixDiff(t *testing.T) {
 	require.NotEmpty(t, string(stdout))
 }
 
+func TestBBRCFixCommand(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc":        `fix:ci --diff`,
+		"MODULE.bazel": `module(  name = "cli_test"    )`,
+	})
+
+	cmd := testcli.Command(t, ws, "--bb_config=ci", "fix")
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoError(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+	require.NotEmpty(t, string(stdout))
+
+	b, err := os.ReadFile(ws + "/MODULE.bazel")
+	require.NoError(t, err)
+	require.Equal(t, "module(  name = \"cli_test\"    )", string(b))
+}
+
 func TestCLIDoesNotRestartBazelServer(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
