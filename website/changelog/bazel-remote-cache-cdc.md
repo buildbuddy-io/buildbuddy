@@ -16,7 +16,7 @@ common --experimental_remote_cache_chunking
 common --remote_header=x-buildbuddy-cdc-enabled=true
 ```
 
-To see the download-side savings, you should also set `--disk_cache`, since the downloaded chunks need to be stored somewhere in order to be reused locally. We also recommend setting `--experimental_disk_cache_gc_max_age` to a value below your remote cache TTL—for example, `3h`, or `1d` if your remote TTL is longer.
+To see the download-side savings, you should also set `--disk_cache`, since the downloaded chunks need to be stored somewhere in order to be reused locally. We also recommend setting <code className="flag">--experimental_disk_cache_gc_max_age</code> to a value below your remote cache TTL—for example, `3h`, or `1d` if your remote TTL is longer.
 
 Bazel 9.1 is required today, and this support will also be backported to Bazel 8.7.
 
