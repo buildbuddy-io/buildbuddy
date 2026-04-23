@@ -11,6 +11,8 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "@io_opentelemetry_go_contrib_detectors_aws_ec2_v2//:ec2",
+        "@io_opentelemetry_go_contrib_detectors_aws_eks//:eks",
         "@io_opentelemetry_go_contrib_detectors_gcp//:gcp",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
         "@io_opentelemetry_go_otel//:otel",
