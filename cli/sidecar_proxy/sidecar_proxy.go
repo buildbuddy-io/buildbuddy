@@ -1,4 +1,4 @@
-package cache_proxy
+package sidecar_proxy
 
 import (
 	"context"
