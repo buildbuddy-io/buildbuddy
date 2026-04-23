@@ -1013,11 +1013,31 @@ func TestReadChunked(t *testing.T) {
 		metrics.StatusLabel:     "OK",
 		metrics.CompressionType: "IDENTITY",
 	}
+	proxiedReadMissLabels := prometheus.Labels{
+		metrics.StatusLabel:           "OK",
+		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+		metrics.CacheProxyRequestType: metrics.DefaultCacheProxyRequestLabel,
+		metrics.CompressionType:       "IDENTITY",
+		metrics.ChunkedLabel:          "true",
+		metrics.GroupID:               groupIDForMetrics(ctx),
+	}
+	proxiedReadHitLabels := prometheus.Labels{
+		metrics.StatusLabel:           "OK",
+		metrics.CacheHitMissStatus:    metrics.HitStatusLabel,
+		metrics.CacheProxyRequestType: metrics.DefaultCacheProxyRequestLabel,
+		metrics.CompressionType:       "IDENTITY",
+		metrics.ChunkedLabel:          "true",
+		metrics.GroupID:               groupIDForMetrics(ctx),
+	}
 	readRequestsBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
 	readChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
+	readBytesLocalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesLocal.With(readLabels))
+	readBytesRemoteBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesRemote.With(readLabels))
+	proxiedReadMissBytesBefore := testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))
+	proxiedReadHitBytesBefore := testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))
 
 	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
@@ -1040,12 +1060,61 @@ func TestReadChunked(t *testing.T) {
 	readChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
 	readChunksLocalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
 	readChunksRemoteAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
+	readBytesLocalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesLocal.With(readLabels))
+	readBytesRemoteAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesRemote.With(readLabels))
 
 	require.Equal(t, float64(1), readRequestsAfter-readRequestsBefore, "one chunked read request for the blob")
 	require.Equal(t, float64(len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "blob bytes = original uncompressed size")
 	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
 	require.Equal(t, float64(0), readChunksLocalAfter-readChunksLocalBefore, "first read: no chunks in local cache yet")
 	require.Equal(t, float64(len(chunkDigests)), readChunksRemoteAfter-readChunksRemoteBefore, "first read: all chunks fetched from remote")
+	require.Equal(t, float64(0), readBytesLocalAfter-readBytesLocalBefore, "first read: no bytes served from local cache")
+	require.Equal(t, float64(len(originalData)), readBytesRemoteAfter-readBytesRemoteBefore, "first read: all bytes fetched from remote")
+	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))-proxiedReadMissBytesBefore)
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
+
+	readRequestsBefore = readRequestsAfter
+	readBlobBytesBefore = readBlobBytesAfter
+	readChunksTotalBefore = readChunksTotalAfter
+	readChunksLocalBefore = readChunksLocalAfter
+	readChunksRemoteBefore = readChunksRemoteAfter
+	readBytesLocalBefore = readBytesLocalAfter
+	readBytesRemoteBefore = readBytesRemoteAfter
+	proxiedReadMissBytesBefore = testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))
+	proxiedReadHitBytesBefore = testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))
+
+	downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
+	require.NoError(t, err)
+
+	reconstructedData = nil
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		reconstructedData = append(reconstructedData, res.Data...)
+	}
+
+	require.Equal(t, originalData, reconstructedData)
+
+	readRequestsAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
+	readBlobBytesAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadBlobBytes.With(readLabels))
+	readChunksTotalAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
+	readChunksLocalAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksLocal.With(readLabels))
+	readChunksRemoteAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(readLabels))
+	readBytesLocalAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesLocal.With(readLabels))
+	readBytesRemoteAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadBytesRemote.With(readLabels))
+
+	require.Equal(t, float64(1), readRequestsAfter-readRequestsBefore, "second chunked read request for the blob")
+	require.Equal(t, float64(len(originalData)), readBlobBytesAfter-readBlobBytesBefore, "second read blob bytes = original uncompressed size")
+	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "second read total chunks = number of chunks in manifest")
+	require.Equal(t, float64(len(chunkDigests)), readChunksLocalAfter-readChunksLocalBefore, "second read: all chunks served from local cache")
+	require.Equal(t, float64(0), readChunksRemoteAfter-readChunksRemoteBefore, "second read: no chunks fetched from remote")
+	require.Equal(t, float64(len(originalData)), readBytesLocalAfter-readBytesLocalBefore, "second read: all bytes served from local cache")
+	require.Equal(t, float64(0), readBytesRemoteAfter-readBytesRemoteBefore, "second read: no bytes fetched from remote")
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))-proxiedReadMissBytesBefore)
+	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
 }
 
 type faultyCache struct {
@@ -1225,6 +1294,98 @@ func TestReadChunkedWithOffset(t *testing.T) {
 		}
 		require.Equal(t, originalData[offset:], got)
 	})
+}
+
+func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+
+	var splitBlobCalls atomic.Int32
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		if strings.HasSuffix(method, "/SplitBlob") {
+			splitBlobCalls.Add(1)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(remoteConn))
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	require.NoError(t, proxyEnv.GetCache().Set(ctx, blobRN.ToProto(), originalData))
+
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: blobRN.DownloadString()})
+	require.NoError(t, err)
+
+	var got []byte
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		got = append(got, res.Data...)
+	}
+
+	require.Equal(t, originalData, got)
+	require.Equal(t, int32(1), splitBlobCalls.Load(), "chunked-eligible reads should try SplitBlob first")
 }
 
 func TestReadChunkedPartialLocalFailure(t *testing.T) {

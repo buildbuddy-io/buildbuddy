@@ -3835,6 +3835,24 @@ var (
 		StatusLabel,
 		CompressionType,
 	})
+	ByteStreamChunkedReadBytesLocal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_bytes_local",
+		Help:      "Bytes served from local cache to the client during chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
+	ByteStreamChunkedReadBytesRemote = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_bytes_remote",
+		Help:      "Bytes fetched from remote and served to the client during chunked reads.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+	})
 
 	ByteStreamProxyChunkedReadFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
