@@ -44,7 +44,7 @@ func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
 	// we should immediately be redirected back to the CLI server.
 	// Use a longer timeout since this involves multiple redirects + an RPC
 	// to create a personal API key.
-	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 30*time.Second).Text()
+	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 5*time.Second).Text()
 	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.
@@ -119,7 +119,7 @@ func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
 
 	// Creating an org with user-owned keys enabled should be enough to complete
 	// the login flow.
-	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 30*time.Second).Text()
+	text := wt.FindWithTimeout(`[debug-id="cli-login-complete"]`, 5*time.Second).Text()
 	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.
