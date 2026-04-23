@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
@@ -142,6 +143,33 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	return srv, runFunc
 }
 
+func GetDBHandleDefault(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
+	switch *databaseType {
+	case "sqlite":
+		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
+	case "mysql":
+		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
+	case "postgres":
+		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
+	default:
+		t.Fatalf("Unsupported db type: %s", *databaseType)
+	}
+	return db.GetConfiguredDatabase(context.Background(), te)
+}
+
+type GetDBHandleFunc func(testing.TB, environment.Env, string) (interfaces.DBHandle, error)
+
+var getDBHandle GetDBHandleFunc = GetDBHandleDefault
+
+// Replace the function GetTestEnv will use to get the DBHandle for the testenv.
+func ReplaceGetDBHandle(t testing.TB, f GetDBHandleFunc) {
+	previous := getDBHandle
+	getDBHandle = f
+	t.Cleanup(func() {
+		getDBHandle = previous
+	})
+}
+
 func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
@@ -171,17 +199,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	te.SetCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
-	switch *databaseType {
-	case "sqlite":
-		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
-	case "mysql":
-		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
-	case "postgres":
-		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
-	default:
-		t.Fatalf("Unsupported db type: %s", *databaseType)
-	}
-	dbHandle, err := db.GetConfiguredDatabase(context.Background(), te)
+	dbHandle, err := getDBHandle(t, te, testRootDir)
 	if err != nil {
 		t.Fatal(err)
 	}
