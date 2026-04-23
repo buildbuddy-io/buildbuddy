@@ -519,14 +519,8 @@ func (s *Enforcer) Authorize(ctx context.Context) (context.Context, error) {
 
 	if cis := s.env.GetClientIdentityService(); cis != nil {
 		si, err := cis.IdentityFromContext(ctx)
-		// Trusted clients with signed identity.
-		if err == nil && (si.Client == interfaces.ClientIdentityExecutor ||
-			si.Client == interfaces.ClientIdentityApp ||
-			si.Client == interfaces.ClientIdentityWorkflow) {
-			return ctx, nil
-		}
 
-		// Allow trusted client to bypass local IP rule enforcement.
+		// Allow trusted clients to bypass local IP rule enforcement.
 		if err == nil && bypassIPRules(ctx, si) {
 			// Propagate the IP rule bypass to downstream requests, so
 			// proxy-to-proxy isn't subject to IP rules at the destination.
@@ -578,18 +572,32 @@ func (s *Enforcer) InvalidateCache(ctx context.Context, groupID string) {
 }
 
 func bypassIPRules(ctx context.Context, client *interfaces.ClientIdentity) bool {
-	if client == nil || client.Client != interfaces.ClientIdentityCacheProxy {
+	if client == nil {
 		return false
 	}
 
+	// These clients may bypass IP rules unconditionally.
+	if client.Client == interfaces.ClientIdentityExecutor ||
+		client.Client == interfaces.ClientIdentityApp ||
+		client.Client == interfaces.ClientIdentityWorkflow {
+		return true
+	}
+
+	// The cache-proxy may only bypass IP rules if x-buildbuddy-bypass-ip-rules
+	// is set to "true" in the incoming metadata. No other clients may use this
+	// metadata to bypass IP rules.
+	return client.Client == interfaces.ClientIdentityCacheProxy && getBypassIPRules(ctx)
+}
+
+func SetBypassIPRules(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, bypassIPRulesMetadataKey, "true")
+}
+
+func getBypassIPRules(ctx context.Context) bool {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return false
 	}
 	vals := md.Get(bypassIPRulesMetadataKey)
 	return len(vals) > 0 && vals[0] == "true"
-}
-
-func SetBypassIPRules(ctx context.Context) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, bypassIPRulesMetadataKey, "true")
 }

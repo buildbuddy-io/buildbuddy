@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
@@ -22,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -286,21 +289,91 @@ func TestIPRules(t *testing.T) {
 
 	flags.Set(t, "auth.ip_rules.remote.target", backend.GRPCAddress())
 
-	const clientIP = "1.2.3.4"
+	const allowedIP = "1.2.3.4"
+	const blockedIP = "9.9.9.9"
 
 	backendConn, err := grpc_client.DialSimple(backend.GRPCAddress())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backendConn.Close()) })
 
-	enableIPRules(t, bbspb.NewBuildBuddyServiceClient(backendConn), rbe.WithUserID(t.Context(), rbe.UserID1), rbe.GroupID1, clientIP)
-
+	enableIPRules(t, bbspb.NewBuildBuddyServiceClient(backendConn), rbe.WithUserID(t.Context(), rbe.UserID1), rbe.GroupID1, allowedIP)
 	cas := rbe.AddCacheProxy().GetContentAddressableStorageClient()
+
+	// Verify that requests from allowedIP succeed.
 	ctx := metadata.AppendToOutgoingContext(t.Context(),
 		authutil.APIKeyHeader, rbe.APIKey1,
-		"X-Forwarded-For", clientIP,
+		"X-Forwarded-For", allowedIP,
 	)
 	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		BlobDigests: []*repb.Digest{{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
 	})
-	require.NoError(t, err, "FindMissingBlobs via cache proxy should succeed for allowed client IP %q", clientIP)
+	require.NoError(t, err, "Requests from allowedIP should succeed")
+
+	// Verify that requests from blockedIP fail.
+	ctx = metadata.AppendToOutgoingContext(t.Context(),
+		authutil.APIKeyHeader, rbe.APIKey1,
+		"X-Forwarded-For", blockedIP,
+	)
+	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+	})
+	require.Error(t, err, "Requests from blockedIP should fail")
+}
+
+func TestIPRulesRBE(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.enable", true)
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+	flags.Set(t, "app.client_identity.client", "cache-proxy")
+	flags.Set(t, "app.client_identity.key", "key")
+	flags.Set(t, "app.client_identity.override_propagated", false)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	backend := rbe.AddBuildBuddyServer()
+
+	flags.Set(t, "auth.ip_rules.remote.target", backend.GRPCAddress())
+
+	const allowedIP = "1.2.3.4"
+	const blockedIP = "9.9.9.9"
+
+	backendConn, err := grpc_client.DialSimple(backend.GRPCAddress())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backendConn.Close()) })
+	enableIPRules(t, bbspb.NewBuildBuddyServiceClient(backendConn),
+		rbe.WithUserID(t.Context(), rbe.UserID1), rbe.GroupID1, allowedIP)
+	cas := rbe.AddCacheProxy().GetContentAddressableStorageClient()
+	cis, err := clientidentity.New(clockwork.NewRealClock())
+	require.NoError(t, err)
+
+	// RBE Requests from a blockedIP + allowed client identity should succeed.
+	allowedIdentity, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+		Client: interfaces.ClientIdentityExecutor,
+		Origin: "test",
+	}, time.Minute)
+	require.NoError(t, err)
+	ctx := metadata.AppendToOutgoingContext(t.Context(),
+		authutil.APIKeyHeader, rbe.APIKey1,
+		authutil.ClientIdentityHeaderName, allowedIdentity,
+		"X-Forwarded-For", blockedIP,
+	)
+	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+	})
+	require.NoError(t, err, "RBE requests from allowed client should succeed")
+
+	// RBE Requests from a blockedIP + blocked client identity should fail.
+	// Sign some other client-identity using the shared signing key.
+	blockedIdentity, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+		Client: "foo",
+		Origin: "test",
+	}, time.Minute)
+	require.NoError(t, err)
+	ctx = metadata.AppendToOutgoingContext(t.Context(),
+		authutil.APIKeyHeader, rbe.APIKey1,
+		authutil.ClientIdentityHeaderName, blockedIdentity,
+		"X-Forwarded-For", blockedIP,
+	)
+	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+	})
+	require.Error(t, err, "RBE requests from blocked client should fail")
 }
