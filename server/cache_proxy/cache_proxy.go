@@ -286,12 +286,12 @@ func (p *CacheProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteS
 	return p.localBSS.QueryWriteStatus(ctx, req)
 }
 
-func (s *CacheProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+func (p *CacheProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	return p.casClient.SpliceBlob(ctx, req)
 }
 
-func (s *CacheProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
-	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+func (p *CacheProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	return p.casClient.SplitBlob(ctx, req)
 }
 
 func logContextFromMetadata(ctx context.Context, md metadata.MD) context.Context {
