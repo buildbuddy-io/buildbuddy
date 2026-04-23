@@ -750,6 +750,30 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+type WorkflowSchedule struct {
+	Model
+
+	ScheduleID string `gorm:"primaryKey;"`
+	GroupID    string `gorm:"index:workflow_schedule_repo_idx"`
+	RepoURL    string `gorm:"index:workflow_schedule_repo_idx"`
+
+	ActionName string
+	Branch     string
+	CronExpr   string
+
+	NextRunUsec int64 `gorm:"index:workflow_schedule_due_idx"`
+	LastRunUsec int64
+
+	LastInvocationID string
+	LeaseOwner       string
+	LeaseExpiresUsec int64 `gorm:"index:workflow_schedule_lease_idx"`
+	SourceCommitSHA  string
+}
+
+func (ws *WorkflowSchedule) TableName() string {
+	return "WorkflowSchedules"
+}
+
 type UsageCounts struct {
 	Invocations            int64
 	CASCacheHits           int64
@@ -1435,4 +1459,5 @@ func RegisterTables() {
 	registerTable("UU", &UserUserList{})
 	registerTable("UM", &UserListGroup{})
 	registerTable("WF", &Workflow{})
+	registerTable("WS", &WorkflowSchedule{})
 }

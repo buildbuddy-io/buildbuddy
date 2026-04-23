@@ -82,6 +82,41 @@ actions:
 	assert.Error(t, err)
 }
 
+func TestWorkflowConf_Parse_ScheduleTrigger_Valid(t *testing.T) {
+	conf, err := config.NewConfig(strings.NewReader(`
+actions:
+  - name: Nightly
+    triggers:
+      schedule:
+        cron: "0 3 * * *"
+        branch: "main"
+    steps:
+      - run: bazel test //...
+`))
+
+	require.NoError(t, err)
+	require.Len(t, conf.Actions, 1)
+	require.NotNil(t, conf.Actions[0].GetTriggers().Schedule)
+	assert.Equal(t, "0 3 * * *", conf.Actions[0].GetTriggers().Schedule.Cron)
+	assert.Equal(t, "main", conf.Actions[0].GetTriggers().Schedule.Branch)
+}
+
+func TestWorkflowConf_Parse_ScheduleTrigger_InvalidCron(t *testing.T) {
+	conf, err := config.NewConfig(strings.NewReader(`
+actions:
+  - name: Nightly
+    triggers:
+      schedule:
+        cron: "0 3 * * * *"
+    steps:
+      - run: bazel test //...
+`))
+
+	assert.Nil(t, conf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid schedule cron expression")
+}
+
 func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 	for _, testCase := range []struct {
 		pattern, branchName string
@@ -115,7 +150,7 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 		}
 		event := "push"
 
-		match := config.MatchesAnyTrigger(action, event, testCase.branchName, "" /*=tag*/)
+		match := config.MatchesAnyTrigger(action, event, testCase.branchName, "" /*=tag*/, "" /*=targetRepoDefaultBranch*/)
 
 		assert.Equal(t, testCase.shouldMatch, match, "expected match(%q, %q) => %v", testCase.branchName, testCase.pattern, testCase.shouldMatch)
 	}
@@ -156,11 +191,11 @@ func TestMatchesAndTrigger_NegationPatterns(t *testing.T) {
 			}
 			event := "push"
 			for _, branch := range tc.shouldMatch {
-				m := config.MatchesAnyTrigger(action, event, branch, "")
+				m := config.MatchesAnyTrigger(action, event, branch, "", "" /*=targetRepoDefaultBranch*/)
 				assert.True(t, m, "MatchesAnyTrigger(%v, %q) should be true", branch, tc.patterns)
 			}
 			for _, branch := range tc.shouldNotMatch {
-				m := config.MatchesAnyTrigger(action, event, branch, "")
+				m := config.MatchesAnyTrigger(action, event, branch, "", "" /*=targetRepoDefaultBranch*/)
 				assert.False(t, m, "MatchesAnyTrigger(%v, %q) should be false", branch, tc.patterns)
 			}
 		})
@@ -187,7 +222,7 @@ func TestMatchesAnyTrigger_TagPushMatchesTagPattern(t *testing.T) {
 				Push: &config.PushTrigger{Tags: []string{tc.pattern}},
 			},
 		}
-		match := config.MatchesAnyTrigger(action, "push", "", tc.tag)
+		match := config.MatchesAnyTrigger(action, "push", "", tc.tag, "" /*=targetRepoDefaultBranch*/)
 		assert.Equal(t, tc.shouldMatch, match, "expected match(tag=%q, pattern=%q) => %v", tc.tag, tc.pattern, tc.shouldMatch)
 	}
 }
@@ -198,7 +233,7 @@ func TestMatchesAnyTrigger_TagPushDoesNotMatchBranchOnlyTrigger(t *testing.T) {
 			Push: &config.PushTrigger{Branches: []string{"*"}},
 		},
 	}
-	match := config.MatchesAnyTrigger(action, "push", "", "v1.0.0")
+	match := config.MatchesAnyTrigger(action, "push", "", "v1.0.0", "" /*=targetRepoDefaultBranch*/)
 	assert.False(t, match, "tag push should not match branch-only trigger")
 }
 
@@ -208,7 +243,7 @@ func TestMatchesAnyTrigger_BranchPushDoesNotMatchTagOnlyTrigger(t *testing.T) {
 			Push: &config.PushTrigger{Tags: []string{"v*"}},
 		},
 	}
-	match := config.MatchesAnyTrigger(action, "push", "main", "")
+	match := config.MatchesAnyTrigger(action, "push", "main", "", "" /*=targetRepoDefaultBranch*/)
 	assert.False(t, match, "branch push should not match tag-only trigger")
 }
 
@@ -218,8 +253,8 @@ func TestMatchesAnyTrigger_TagNegationPatterns(t *testing.T) {
 			Push: &config.PushTrigger{Tags: []string{"v*", "!v0.9.0"}},
 		},
 	}
-	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0"))
-	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "v0.9.0"))
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0", "" /*=targetRepoDefaultBranch*/))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "v0.9.0", "" /*=targetRepoDefaultBranch*/))
 }
 
 func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
@@ -233,17 +268,37 @@ func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
 	}
 
 	// Tag push matches tag pattern, not branch pattern.
-	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0"))
-	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "nightly-2024"))
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "", "v1.0.0", "" /*=targetRepoDefaultBranch*/))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "nightly-2024", "" /*=targetRepoDefaultBranch*/))
 
 	// Branch push matches branch pattern, not tag pattern.
-	assert.True(t, config.MatchesAnyTrigger(action, "push", "main", ""))
-	assert.True(t, config.MatchesAnyTrigger(action, "push", "release-2024", ""))
-	assert.False(t, config.MatchesAnyTrigger(action, "push", "feature-x", ""))
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "main", "", "" /*=targetRepoDefaultBranch*/))
+	assert.True(t, config.MatchesAnyTrigger(action, "push", "release-2024", "", "" /*=targetRepoDefaultBranch*/))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "feature-x", "", "" /*=targetRepoDefaultBranch*/))
 
 	// Tag named "main" matches tag patterns (not branch patterns),
 	// so it should not match since "main" doesn't match "v*".
-	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "main"))
+	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "main", "" /*=targetRepoDefaultBranch*/))
+}
+
+func TestMatchesAnyTrigger_Schedule(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Schedule: &config.ScheduleTrigger{Cron: "0 3 * * *", Branch: "release"},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(action, "schedule", "release", "", "main"))
+	assert.False(t, config.MatchesAnyTrigger(action, "schedule", "main", "", "main"))
+}
+
+func TestMatchesAnyTrigger_ScheduleDefaultsToTargetRepoDefaultBranch(t *testing.T) {
+	action := &config.Action{
+		Triggers: &config.Triggers{
+			Schedule: &config.ScheduleTrigger{Cron: "0 3 * * *"},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(action, "schedule", "main", "", "main"))
+	assert.False(t, config.MatchesAnyTrigger(action, "schedule", "develop", "", "main"))
 }
 
 func TestGetGitFetchFilters(t *testing.T) {

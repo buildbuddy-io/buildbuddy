@@ -12,6 +12,7 @@ var (
 		Push           string
 		PullRequest    string
 		ManualDispatch string
+		Schedule       string
 	}
 )
 
@@ -19,6 +20,7 @@ func init() {
 	EventName.Push = "push"
 	EventName.PullRequest = "pull_request"
 	EventName.ManualDispatch = "manual_dispatch"
+	EventName.Schedule = "schedule"
 }
 
 func DebugString(wd *interfaces.WebhookData) string {

@@ -923,6 +923,11 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.L
 	} else {
 		log.CtxInfof(ctx, "Deleted legacy workflow for linked repo")
 	}
+	if wfs := a.env.GetWorkflowService(); wfs != nil {
+		if err := wfs.ReconcileRepositorySchedules(ctx, repo.GroupID, repo.RepoURL); err != nil {
+			log.CtxWarningf(ctx, "Failed to reconcile workflow schedules for linked repo %s: %s", repo.RepoURL, err)
+		}
+	}
 
 	return &ghpb.LinkRepoResponse{}, nil
 }
@@ -951,6 +956,11 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 	if result.RowsAffected == 0 {
 		return nil, status.NotFoundError("repo not found")
 	}
+	if wfs := a.env.GetWorkflowService(); wfs != nil {
+		if err := wfs.DeleteRepositorySchedules(ctx, u.GetGroupID(), normalizedURL); err != nil {
+			log.CtxWarningf(ctx, "Failed to delete workflow schedules for unlinked repo %s: %s", normalizedURL, err)
+		}
+	}
 	return &ghpb.UnlinkRepoResponse{}, nil
 }
 
@@ -975,6 +985,11 @@ func (a *GitHubApp) UpdateRepoSettings(ctx context.Context, req *ghpb.UpdateRepo
 	}
 	if result.RowsAffected == 0 {
 		return nil, status.NotFoundError("repo not found")
+	}
+	if wfs := a.env.GetWorkflowService(); wfs != nil {
+		if err := wfs.ReconcileRepositorySchedules(ctx, u.GetGroupID(), normalizedURL); err != nil {
+			log.CtxWarningf(ctx, "Failed to reconcile workflow schedules for updated repo %s: %s", normalizedURL, err)
+		}
 	}
 	return &ghpb.UpdateRepoSettingsResponse{}, nil
 }

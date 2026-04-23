@@ -665,6 +665,22 @@ type WorkflowService interface {
 	// GitRepository by initiating any relevant workflow actions.
 	HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *WebhookData, accessToken string) error
 
+	// ReconcileRepositorySchedules refreshes any persisted scheduled workflow
+	// rows derived from buildbuddy.yaml for the given linked repository.
+	ReconcileRepositorySchedules(ctx context.Context, groupID, repoURL string) error
+
+	// DeleteRepositorySchedules deletes any persisted scheduled workflow rows
+	// for the given linked repository.
+	DeleteRepositorySchedules(ctx context.Context, groupID, repoURL string) error
+
+	// RunDueWorkflowSchedules claims and dispatches any workflow schedule rows
+	// that are currently due.
+	RunDueWorkflowSchedules(ctx context.Context) error
+
+	// RepairWorkflowSchedules repairs persisted workflow schedule rows by
+	// reconciling linked repositories and deleting orphaned rows.
+	RepairWorkflowSchedules(ctx context.Context) error
+
 	// GetLinkedLegacyWorkflows returns any legacy workflows linked with the given repo access
 	// token.
 	GetLinkedLegacyWorkflows(ctx context.Context, accessToken string) ([]string, error)
@@ -827,6 +843,13 @@ type GitProvider interface {
 	// return status.NotFoundError in any other case, particularly if the repo
 	// doesn't exist or is inaccessible.
 	GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error)
+
+	// GetRepoDefaultBranch returns the repository default branch as well as
+	// whether the repo is publicly visible.
+	GetRepoDefaultBranch(ctx context.Context, accessToken, repoURL string) (defaultBranch string, isPublic bool, err error)
+
+	// GetBranchHeadSHA returns the head commit SHA for the given branch.
+	GetBranchHeadSHA(ctx context.Context, accessToken, repoURL, branch string) (string, error)
 
 	// IsTrusted returns whether the given user is a trusted collaborator on the
 	// repository.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	robfigcron "github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -90,6 +91,7 @@ func (a *Action) GetGitFetchFilters() []string {
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+	Schedule    *ScheduleTrigger    `yaml:"schedule"`
 }
 
 func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
@@ -114,6 +116,18 @@ type PullRequestTrigger struct {
 	// performance optimization.
 	// If MergeWithBase is disabled, this does nothing.
 	ForceManualMergeWithBase *bool `yaml:"force_manual_merge_with_base"`
+}
+
+type ScheduleTrigger struct {
+	Cron   string `yaml:"cron"`
+	Branch string `yaml:"branch"`
+}
+
+func (t *ScheduleTrigger) ResolvedBranch(targetRepoDefaultBranch string) string {
+	if t.Branch != "" {
+		return t.Branch
+	}
+	return targetRepoDefaultBranch
 }
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
@@ -180,7 +194,34 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	if err := yaml.Unmarshal(byt, cfg); err != nil {
 		return nil, err
 	}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+var scheduleCronParser = robfigcron.NewParser(
+	robfigcron.Minute | robfigcron.Hour | robfigcron.Dom | robfigcron.Month | robfigcron.Dow,
+)
+
+func ParseScheduleCron(expr string) (robfigcron.Schedule, error) {
+	return scheduleCronParser.Parse(expr)
+}
+
+func validateConfig(cfg *BuildBuddyConfig) error {
+	for _, action := range cfg.Actions {
+		if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
+			continue
+		}
+		schedule := action.Triggers.Schedule
+		if schedule.Cron == "" {
+			return fmt.Errorf("action %q has an empty schedule cron expression", action.Name)
+		}
+		if _, err := ParseScheduleCron(schedule.Cron); err != nil {
+			return fmt.Errorf("action %q has invalid schedule cron expression %q: %w", action.Name, schedule.Cron, err)
+		}
+	}
+	return nil
 }
 
 const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.78-buildbuddy.tar.gz"
@@ -431,7 +472,7 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 
 // MatchesAnyTrigger returns whether the action is triggered by the event
 // published to the given branch or tag.
-func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
+func MatchesAnyTrigger(action *Action, event, branch, tag, targetRepoDefaultBranch string) bool {
 	// If user has manually requested action dispatch, always run it
 	if event == webhook_data.EventName.ManualDispatch {
 		return true
@@ -450,6 +491,9 @@ func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
 		return matchesAnyPattern(prCfg.Branches, branch)
+	}
+	if scheduleCfg := action.Triggers.Schedule; scheduleCfg != nil && event == webhook_data.EventName.Schedule {
+		return scheduleCfg.ResolvedBranch(targetRepoDefaultBranch) == branch
 	}
 	return false
 }

@@ -238,6 +238,35 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 	return []byte(s), nil
 }
 
+func (*githubGitProvider) GetRepoDefaultBranch(ctx context.Context, accessToken, repoURL string) (string, bool, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return "", false, err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	r, _, err := client.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		return "", false, gitHubErrorToStatus(err)
+	}
+	return r.GetDefaultBranch(), !r.GetPrivate(), nil
+}
+
+func (*githubGitProvider) GetBranchHeadSHA(ctx context.Context, accessToken, repoURL, branch string) (string, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return "", err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	b, _, err := client.Repositories.GetBranch(ctx, owner, repo, branch, 0)
+	if err != nil {
+		return "", gitHubErrorToStatus(err)
+	}
+	if sha := b.GetCommit().GetSHA(); sha != "" {
+		return sha, nil
+	}
+	return "", status.NotFoundErrorf("branch %q not found in %s", branch, repoURL)
+}
+
 func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
 	owner, repo, err := parseOwnerRepo(repoURL)
 	if err != nil {

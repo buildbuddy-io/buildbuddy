@@ -127,6 +127,14 @@ func (*bitbucketGitProvider) GetFileContents(ctx context.Context, accessToken, r
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (*bitbucketGitProvider) GetRepoDefaultBranch(ctx context.Context, accessToken, repoURL string) (string, bool, error) {
+	return "", false, status.UnimplementedError("Not implemented")
+}
+
+func (*bitbucketGitProvider) GetBranchHeadSHA(ctx context.Context, accessToken, repoURL, branch string) (string, error) {
+	return "", status.UnimplementedError("Not implemented")
+}
+
 func (*bitbucketGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
 	return false, status.UnimplementedError("Not implemented")
 }

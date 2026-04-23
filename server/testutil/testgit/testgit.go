@@ -42,12 +42,18 @@ type FakeProvider struct {
 	RegisterWebhookError error
 	WebhookData          *interfaces.WebhookData
 	FileContents         map[string]string
+	DefaultBranch        string
+	RepoPublic           bool
+	BranchHeads          map[string]string
 	TrustedUsers         []string
 }
 
 func NewFakeProvider() *FakeProvider {
 	return &FakeProvider{
-		Statuses: make(chan *Status, 1024),
+		Statuses:      make(chan *Status, 1024),
+		RepoPublic:    true,
+		BranchHeads:   make(map[string]string),
+		DefaultBranch: "master",
 	}
 }
 
@@ -80,6 +86,19 @@ func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL
 		return nil, status.NotFoundError("Not found")
 	}
 	return []byte(contents), nil
+}
+func (p *FakeProvider) GetRepoDefaultBranch(ctx context.Context, accessToken, repoURL string) (string, bool, error) {
+	defaultBranch := p.DefaultBranch
+	if defaultBranch == "" {
+		defaultBranch = "master"
+	}
+	return defaultBranch, p.RepoPublic, nil
+}
+func (p *FakeProvider) GetBranchHeadSHA(ctx context.Context, accessToken, repoURL, branch string) (string, error) {
+	if sha, ok := p.BranchHeads[branch]; ok {
+		return sha, nil
+	}
+	return "", status.NotFoundErrorf("branch %q not found", branch)
 }
 func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
 	for _, u := range p.TrustedUsers {
