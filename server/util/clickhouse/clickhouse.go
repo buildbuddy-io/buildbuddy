@@ -330,20 +330,12 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-// ExecutionFromProto converts the proto representation of an OLAP execution to
-// the OLAP table representation.
-// TODO: move to enterprise/server/util/execution, which has similar conversion
-// logic.
 // FillExecutionResourceFields populates the split columns (InstanceName,
 // ExecutionUUID, Compressor, DigestFunction, ActionDigest, ActionDigestSize)
 // on out by parsing out.ExecutionID. When ExecutionID is empty or unparseable,
 // ExecutionUUID is set to the zero UUID so that ClickHouse's UUID column
 // accepts the row.
 func FillExecutionResourceFields(out *schema.Execution) error {
-	return fillExecutionResourceFields(out)
-}
-
-func fillExecutionResourceFields(out *schema.Execution) error {
 	out.ExecutionUUID = zeroUUID
 	if out.ExecutionID == "" {
 		return nil
@@ -373,6 +365,10 @@ func fillExecutionResourceFields(out *schema.Execution) error {
 	return nil
 }
 
+// ExecutionFromProto converts the proto representation of an OLAP execution to
+// the OLAP table representation.
+// TODO: move to enterprise/server/util/execution, which has similar conversion
+// logic.
 func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
 	out := &schema.Execution{
 		GroupID:                            in.GetGroupId(),
@@ -466,7 +462,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		EffectivePool:                      in.GetEffectivePool(),
 	}
 
-	if err := fillExecutionResourceFields(out); err != nil {
+	if err := FillExecutionResourceFields(out); err != nil {
 		return out, err
 	}
 	return out, nil
