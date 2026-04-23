@@ -58,7 +58,8 @@ const (
 	// This is used to prevent writing snapshots too frequently.
 	DefaultSnapshotWriteInterval = 1 * time.Hour
 
-	ConvertToCOWConcurrency = 8
+	ConvertToCOWConcurrency       = 8
+	WriteSnapshotChunkConcurrency = 8
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
