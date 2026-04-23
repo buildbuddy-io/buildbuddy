@@ -61,7 +61,10 @@ func SupportedDigestFunctions() []repb.DigestFunction_Value {
 }
 
 type ResourceName struct {
-	rn *rspb.ResourceName
+	rn                    *rspb.ResourceName
+	uploadID              string
+	digestFunctionSegment string
+	compressorSegment     string
 }
 
 // Prefer either CASResourceNameFromProto or ACResourceNameFromProto.
@@ -72,7 +75,9 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 		rn.DigestFunction = repb.DigestFunction_SHA256
 	}
 	return &ResourceName{
-		rn: rn,
+		rn:                    rn,
+		digestFunctionSegment: digestFunctionSegment(rn.GetDigestFunction()),
+		compressorSegment:     compressorSegment(rn.GetCompressor()),
 	}
 }
 
@@ -133,6 +138,7 @@ func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheTy
 			CacheType:      cacheType,
 			DigestFunction: digestFunction,
 		},
+		digestFunctionSegment: digestFunctionSegment(digestFunction),
 	}
 }
 
@@ -170,6 +176,18 @@ func (r *ResourceName) GetDigestFunction() repb.DigestFunction_Value {
 	return r.rn.GetDigestFunction()
 }
 
+// GetDigestFunctionSegment returns the digest-function piece as it appeared in
+// the parsed URL, or the canonical form for resource names built via
+// NewResourceName. For old-style SHA256 URLs (no explicit segment), this
+// returns "" — the fallback also returns "" because isOldStyleDigestFunction
+// is true for SHA256.
+func (r *ResourceName) GetDigestFunctionSegment() string {
+	if r.digestFunctionSegment != "" {
+		return r.digestFunctionSegment
+	}
+	return digestFunctionSegment(r.GetDigestFunction())
+}
+
 func (r *ResourceName) GetInstanceName() string {
 	return r.rn.GetInstanceName()
 }
@@ -182,8 +200,16 @@ func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.rn.GetCompressor()
 }
 
+func (r *ResourceName) GetCompressorSegment() string {
+	if r.compressorSegment != "" {
+		return r.compressorSegment
+	}
+	return compressorSegment(r.GetCompressor())
+}
+
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
+	r.compressorSegment = compressorSegment(compressor)
 }
 
 func (r *ResourceName) IsEmpty() bool {
@@ -251,6 +277,13 @@ func casDownloadString(r *rspb.ResourceName) string {
 // purposes.
 func (r *CASResourceName) DownloadString() string {
 	return casDownloadString(r.rn)
+}
+
+// GetUploadID returns the upload UUID parsed from an upload-style resource
+// name URL (".../uploads/<uuid>/..."). Returns "" for CAS resource names that
+// did not come from ParseUploadResourceName.
+func (r *CASResourceName) GetUploadID() string {
+	return r.uploadID
 }
 
 // NewUploadString returns a new string representing the resource name for
@@ -515,6 +548,7 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
 	inferredDigestFunction := InferOldStyleDigestFunctionInDesperation(d)
 	digestFunction := inferredDigestFunction
+	digestFunctionSegment := ""
 	if inferredDigestFunction == repb.DigestFunction_UNKNOWN {
 		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
 	}
@@ -528,14 +562,19 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	switch piece {
 	case "blake3":
 		digestFunction = repb.DigestFunction_BLAKE3
+		digestFunctionSegment = piece
 	case "sha1":
 		digestFunction = repb.DigestFunction_SHA1
+		digestFunctionSegment = piece
 	case "sha512":
 		digestFunction = repb.DigestFunction_SHA512
+		digestFunctionSegment = piece
 	case "sha384":
 		digestFunction = repb.DigestFunction_SHA384
+		digestFunctionSegment = piece
 	case "sha256":
 		digestFunction = repb.DigestFunction_SHA256
+		digestFunctionSegment = piece
 	default:
 		pieceIdx++
 	}
@@ -585,10 +624,12 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	}
 
 	// If this is an upload, the next two pieces must be "uploads" and a UUID
+	uploadID := ""
 	if resourceType == uploadResourceName {
 		if guuid.Validate(piece) != nil {
 			return nil, status.InvalidArgumentErrorf("Unparseable upload resource name, invalid UUID: %s", resourceName)
 		}
+		uploadID = piece
 		pieceIdx--
 		if pieceIdx < 0 {
 			return nil, status.InvalidArgumentErrorf("Unparseable upload resource name name, not enough pieces: %s", resourceName)
@@ -608,6 +649,8 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	}
 
 	r := NewResourceName(d, instanceName, cacheType, digestFunction)
+	r.uploadID = uploadID
+	r.digestFunctionSegment = digestFunctionSegment
 	r.SetCompressor(compressor)
 	return r, nil
 }
@@ -849,6 +892,22 @@ func lowerFunctionName(df repb.DigestFunction_Value) string {
 		return "sha512"
 	default:
 		return strings.ToLower(df.String())
+	}
+}
+
+func digestFunctionSegment(df repb.DigestFunction_Value) string {
+	if isOldStyleDigestFunction(df) {
+		return ""
+	}
+	return lowerFunctionName(df)
+}
+
+func compressorSegment(compressor repb.Compressor_Value) string {
+	switch compressor {
+	case repb.Compressor_IDENTITY:
+		return ""
+	default:
+		return strings.ToLower(compressor.String())
 	}
 }
 

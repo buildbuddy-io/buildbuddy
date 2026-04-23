@@ -149,6 +149,14 @@ type Execution struct {
 	InvocationUUID string
 	ExecutionID    string
 
+	// Resource-name components split out of execution_id.
+	InstanceName     string `gorm:"codec:ZSTD(1)"`
+	ExecutionUUID    string `gorm:"type:UUID"`
+	Compressor       string `gorm:"type:LowCardinality(String)"`
+	DigestFunction   string `gorm:"type:LowCardinality(String)"`
+	ActionDigest     string
+	ActionDigestSize uint32 `gorm:"codec:T64,ZSTD(1)"`
+
 	// Type from tables.InvocationExecution
 	InvocationLinkType int8
 	CreatedAtUsec      int64
@@ -284,6 +292,12 @@ func (e *Execution) ExcludedFields() []string {
 func (e *Execution) AdditionalFields() []string {
 	return []string{
 		"InvocationUUID",
+		"InstanceName",
+		"ExecutionUUID",
+		"Compressor",
+		"DigestFunction",
+		"ActionDigest",
+		"ActionDigestSize",
 		"User",
 		"Host",
 		"Pattern",

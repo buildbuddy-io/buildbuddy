@@ -219,6 +219,14 @@ func TestParseUploadResourceName(t *testing.T) {
 			resourceName: "/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantURN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "/blake3/zstd/blake3/zstd/this-is-the-instance-name", repb.DigestFunction_BLAKE3),
 		},
+		{ // Instance name containing uploads segments
+			resourceName: "bad/uploads/instance/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "bad/uploads/instance", repb.DigestFunction_SHA256),
+		},
+		{ // Instance name ending with uploads segment
+			resourceName: "bad/instance/uploads/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "bad/instance/uploads", repb.DigestFunction_SHA256),
+		},
 	}
 	for _, tc := range cases {
 		urn, err := digest.ParseUploadResourceName(tc.resourceName)
@@ -229,6 +237,47 @@ func TestParseUploadResourceName(t *testing.T) {
 			t.Errorf("parseResourceName(%q): got %s; want %s", tc.resourceName, urn.DownloadString(), tc.wantURN.DownloadString())
 		}
 	}
+}
+
+func TestParseUploadResourceNameMetadata(t *testing.T) {
+	const uploadID = "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1"
+
+	t.Run("OldStyleSha256", func(t *testing.T) {
+		rn, err := digest.ParseUploadResourceName(
+			"instance_name/uploads/" + uploadID + "/blobs/" +
+				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		)
+		require.NoError(t, err)
+
+		assert.Equal(t, uploadID, rn.GetUploadID())
+		assert.Equal(t, "", rn.GetCompressorSegment())
+		assert.Equal(t, "", rn.GetDigestFunctionSegment())
+	})
+
+	t.Run("ExplicitDigestFunctionAndCompression", func(t *testing.T) {
+		rn, err := digest.ParseUploadResourceName(
+			"instance_name/uploads/" + uploadID + "/compressed-blobs/zstd/sha256/" +
+				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		)
+		require.NoError(t, err)
+
+		assert.Equal(t, uploadID, rn.GetUploadID())
+		assert.Equal(t, "zstd", rn.GetCompressorSegment())
+		assert.Equal(t, "sha256", rn.GetDigestFunctionSegment())
+	})
+
+	t.Run("InstanceNameContainingUploads", func(t *testing.T) {
+		rn, err := digest.ParseUploadResourceName(
+			"bad/uploads/instance/uploads/" + uploadID + "/blobs/" +
+				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		)
+		require.NoError(t, err)
+
+		assert.Equal(t, "bad/uploads/instance", rn.GetInstanceName())
+		assert.Equal(t, uploadID, rn.GetUploadID())
+		assert.Equal(t, "", rn.GetCompressorSegment())
+		assert.Equal(t, "", rn.GetDigestFunctionSegment())
+	})
 }
 
 func TestActionCacheString(t *testing.T) {

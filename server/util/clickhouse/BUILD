@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "clickhouse",
@@ -12,6 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/clickhouse/schema",
         "//server/util/flag",
@@ -24,5 +25,17 @@ go_library(
         "@io_gorm_driver_clickhouse//:clickhouse",
         "@io_gorm_gorm//:gorm",
         "@io_gorm_gorm//logger",
+    ],
+)
+
+go_test(
+    name = "clickhouse_test",
+    srcs = ["clickhouse_test.go"],
+    deps = [
+        ":clickhouse",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
+        "//server/util/clickhouse/schema",
+        "@com_github_stretchr_testify//require",
     ],
 )
