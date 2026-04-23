@@ -132,6 +132,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		chunksTotal:  readMetrics.chunksTotal,
 		chunksLocal:  readMetrics.chunksLocal,
 		chunksRemote: readMetrics.chunksRemote,
+		bytesLocal:   readMetrics.bytesLocal,
+		bytesRemote:  readMetrics.bytesRemote,
 	}
 	recordReadMetrics(bsm, readMetrics.cacheStatus)
 	return err
@@ -145,6 +147,8 @@ type readMetrics struct {
 	chunksTotal  int
 	chunksLocal  int
 	chunksRemote int
+	bytesLocal   int64
+	bytesRemote  int64
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
@@ -181,47 +185,41 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		}, nil
 	}
 
+	if s.shouldReadChunked(ctx, req, rn) {
+		chunkMetrics, err := s.readChunked(ctx, req, stream, rn)
+		if err == nil {
+			cacheStatus := metrics.MissStatusLabel
+			if chunkMetrics.chunksRemote == 0 {
+				cacheStatus = metrics.HitStatusLabel
+			}
+			return readMetrics{
+				cacheStatus:  cacheStatus,
+				compressor:   rn.GetCompressor().String(),
+				chunked:      true,
+				blobBytes:    rn.GetDigest().GetSizeBytes(),
+				chunksTotal:  chunkMetrics.chunksLocal + chunkMetrics.chunksRemote,
+				chunksLocal:  chunkMetrics.chunksLocal,
+				chunksRemote: chunkMetrics.chunksRemote,
+				bytesLocal:   chunkMetrics.bytesLocal,
+				bytesRemote:  chunkMetrics.bytesRemote,
+			}, nil
+		}
+
+		if stream.frames > 0 {
+			return readMetrics{
+				cacheStatus: metrics.MissStatusLabel,
+				compressor:  rn.GetCompressor().String(),
+			}, err
+		}
+	}
+
 	localErr := s.local.ReadCASResource(ctx, rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 	// If some responses were streamed to the client, just return the
 	// error. Otherwise, fall-back to remote. We might be able to continue
 	// streaming to the client by doing an offset read from the remote
 	// cache, but keep it simple for now.
 	if localErr != nil && stream.frames == 0 {
-		// Recover from local error if no frames have been sent
-
-		// If the blob does not exist locally, it might exist in chunks.
-		// If chunking is enabled and the blob is large enough, try to read the chunks.
-		// TODO(buildbuddy-internal#6426): Once most large blobs are chunked, consider
-		// attempting the chunked read first.
-		var chunkedErr error
-		if s.shouldReadChunked(ctx, req, rn) {
-			chunkMetrics, err := s.readChunked(ctx, req, stream, rn)
-			chunkedErr = err
-			if chunkedErr == nil {
-				return readMetrics{
-					cacheStatus:  metrics.MissStatusLabel,
-					compressor:   rn.GetCompressor().String(),
-					chunked:      true,
-					blobBytes:    rn.GetDigest().GetSizeBytes(),
-					chunksTotal:  chunkMetrics.chunksLocal + chunkMetrics.chunksRemote,
-					chunksLocal:  chunkMetrics.chunksLocal,
-					chunksRemote: chunkMetrics.chunksRemote,
-				}, nil
-			}
-
-			if stream.frames > 0 {
-				return readMetrics{
-					cacheStatus: metrics.MissStatusLabel,
-					compressor:  rn.GetCompressor().String(),
-				}, chunkedErr
-			}
-		}
-
 		remoteErr := s.readRemoteWriteLocal(req, stream)
-		if remoteErr != nil && chunkedErr != nil {
-			// TODO(buildbuddy-internal#6426): Remove once root cause for missing digests is found.
-			log.CtxWarningf(ctx, "Proxy chunked read failed for %s (remote fallback also failed): chunkedErr=%s remoteErr=%s", rn.DownloadString(), chunkedErr, remoteErr)
-		}
 		return readMetrics{
 			cacheStatus: metrics.MissStatusLabel,
 			compressor:  rn.GetCompressor().String(),
@@ -249,6 +247,8 @@ func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb
 type chunkedReadMetrics struct {
 	chunksLocal  int
 	chunksRemote int
+	bytesLocal   int64
+	bytesRemote  int64
 }
 
 func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName) (chunkedReadMetrics, error) {
@@ -300,6 +300,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		// If we're midway through a chunk (non-zero offset),
 		// read remote only, since we can't cache a partial chunk locally.
 		if intraChunkOffset > 0 {
+			bytesBefore := stream.bytes
 			remoteReq := &bspb.ReadRequest{
 				ResourceName: chunkRN.DownloadString(),
 				ReadOffset:   intraChunkOffset,
@@ -312,6 +313,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				return m, err
 			}
 			m.chunksRemote++
+			m.bytesRemote += stream.bytes - bytesBefore
 			continue
 		}
 
@@ -319,6 +321,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream)
 		if localErr == nil {
 			m.chunksLocal++
+			m.bytesLocal += stream.bytes - bytesBefore
 			continue
 		}
 
@@ -346,6 +349,8 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				return m, err
 			}
 			m.chunksRemote++
+			m.bytesLocal += chunkOffset
+			m.bytesRemote += stream.bytes - bytesBefore - chunkOffset
 			continue
 		}
 
@@ -361,6 +366,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			return m, err
 		}
 		m.chunksRemote++
+		m.bytesRemote += stream.bytes - bytesBefore
 	}
 	return m, nil
 }
@@ -507,6 +513,8 @@ type byteStreamMetrics struct {
 	chunksTotal       int
 	chunksLocal       int
 	chunksRemote      int
+	bytesLocal        int64
+	bytesRemote       int64
 	chunksDeduped     int
 	chunkBytesTotal   int64
 	chunkBytesDeduped int64
@@ -550,6 +558,12 @@ func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 		}
 		if bsm.chunksRemote > 0 {
 			metrics.ByteStreamChunkedReadChunksRemote.With(chunkedLabels).Add(float64(bsm.chunksRemote))
+		}
+		if bsm.bytesLocal > 0 {
+			metrics.ByteStreamChunkedReadBytesLocal.With(chunkedLabels).Add(float64(bsm.bytesLocal))
+		}
+		if bsm.bytesRemote > 0 {
+			metrics.ByteStreamChunkedReadBytesRemote.With(chunkedLabels).Add(float64(bsm.bytesRemote))
 		}
 	}
 }
