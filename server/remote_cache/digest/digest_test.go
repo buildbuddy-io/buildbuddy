@@ -249,9 +249,9 @@ func TestParseUploadResourceNameMetadata(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		assert.Equal(t, uploadID, rn.GetUploadID())
-		assert.Equal(t, "", rn.GetCompressorSegment())
-		assert.Equal(t, "", rn.GetDigestFunctionSegment())
+		require.Equal(t, uploadID, rn.GetUploadID())
+		require.Equal(t, "", rn.GetCompressorSegment())
+		require.Equal(t, "", rn.GetDigestFunctionSegment())
 	})
 
 	t.Run("ExplicitDigestFunctionAndCompression", func(t *testing.T) {
@@ -261,9 +261,9 @@ func TestParseUploadResourceNameMetadata(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		assert.Equal(t, uploadID, rn.GetUploadID())
-		assert.Equal(t, "zstd", rn.GetCompressorSegment())
-		assert.Equal(t, "sha256", rn.GetDigestFunctionSegment())
+		require.Equal(t, uploadID, rn.GetUploadID())
+		require.Equal(t, "zstd", rn.GetCompressorSegment())
+		require.Equal(t, "sha256", rn.GetDigestFunctionSegment())
 	})
 
 	t.Run("InstanceNameContainingUploads", func(t *testing.T) {
@@ -273,10 +273,10 @@ func TestParseUploadResourceNameMetadata(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		assert.Equal(t, "bad/uploads/instance", rn.GetInstanceName())
-		assert.Equal(t, uploadID, rn.GetUploadID())
-		assert.Equal(t, "", rn.GetCompressorSegment())
-		assert.Equal(t, "", rn.GetDigestFunctionSegment())
+		require.Equal(t, "bad/uploads/instance", rn.GetInstanceName())
+		require.Equal(t, uploadID, rn.GetUploadID())
+		require.Equal(t, "", rn.GetCompressorSegment())
+		require.Equal(t, "", rn.GetDigestFunctionSegment())
 	})
 }
 
