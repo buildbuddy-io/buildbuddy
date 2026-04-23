@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 21 Apr 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Thu, 23 Apr 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[End-to-end CDC support]]></title>
+            <link>https://www.buildbuddy.io/changelog/bazel-remote-cache-cdc</link>
+            <guid>https://www.buildbuddy.io/changelog/bazel-remote-cache-cdc</guid>
+            <pubDate>Thu, 23 Apr 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[We're excited to announce end-to-end content-defined chunking (CDC) support for Bazel remote caching in BuildBuddy.]]></description>
+            <category>bazel</category>
+            <category>featured</category>
+        </item>
         <item>
             <title><![CDATA[Run log streaming]]></title>
             <link>https://www.buildbuddy.io/changelog/cli-run-log-streaming</link>
