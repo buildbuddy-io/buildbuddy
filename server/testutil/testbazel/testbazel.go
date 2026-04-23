@@ -114,6 +114,12 @@ func BinaryPath(t testing.TB) string {
 		// platform-specific entries that aren't in the lockfile, so we allow
 		// the lockfile to be updated rather than erroring.
 		if strings.HasPrefix(Version, "9.") {
+			// Bazel 9 defaults repo_contents_cache to {repository_cache}/contents.
+			// Tests share a prewarmed repository_cache under the runfiles tree, so
+			// nested Bazel invocations can contend on the contents-cache lock and
+			// hang. Keep using the shared repository cache, but disable the
+			// contents cache for test launchers.
+			bazelrcLines = append(bazelrcLines, "common --repo_contents_cache=")
 			bazelrcLines = append(bazelrcLines, "common --lockfile_mode=update")
 		} else {
 			bazelrcLines = append(bazelrcLines, "common --lockfile_mode=error")
