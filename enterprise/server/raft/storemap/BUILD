@@ -10,7 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/interfaces",
+        "//server/interfaces/gossip",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
@@ -26,7 +26,7 @@ go_test(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/interfaces",
+        "//server/interfaces/gossip",
         "//server/util/log",
         "//server/util/proto",
         "@com_github_hashicorp_serf//serf",

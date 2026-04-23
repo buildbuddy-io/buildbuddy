@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -67,7 +67,7 @@ type StoreDetail struct {
 }
 
 type StoreMap struct {
-	gossipManager interfaces.GossipService
+	gossipManager gossip.Service
 
 	mu *sync.RWMutex
 	// NHID to StoreDetail
@@ -85,7 +85,7 @@ type StoreMap struct {
 	allStoresStableSince time.Time
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger, minReplicasPerRange, minMetaRangeReplicas, missingLeaseCountThreshold int) *StoreMap {
+func New(gossipManager gossip.Service, clock clockwork.Clock, nhLogger log.Logger, minReplicasPerRange, minMetaRangeReplicas, missingLeaseCountThreshold int) *StoreMap {
 	sm := &StoreMap{
 		mu:                         &sync.RWMutex{},
 		startTime:                  time.Now(),

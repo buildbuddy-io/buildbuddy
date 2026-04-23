@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -441,7 +442,7 @@ type Queue struct {
 	efp interfaces.ExperimentFlagProvider
 }
 
-func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
+func NewQueue(store IStore, sender *sender.Sender, gossipManager gossip.Service, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
 	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
 	q := &Queue{
 		storeMap:             storeMap,

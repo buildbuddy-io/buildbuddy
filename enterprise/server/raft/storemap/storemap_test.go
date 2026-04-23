@@ -11,7 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/hashicorp/serf/serf"
@@ -137,7 +137,7 @@ func TestMissingUsageTag(t *testing.T) {
 type mockGossipManager struct {
 	mu       sync.Mutex
 	members  map[string]serf.Member
-	listener interfaces.GossipListener
+	listener gossip.Listener
 
 	t *testing.T
 }
@@ -165,7 +165,7 @@ func (m *mockGossipManager) setMemberTags(nhid string, tags map[string]string) {
 	m.members[nhid] = member
 }
 
-func (m *mockGossipManager) AddListener(l interfaces.GossipListener) {
+func (m *mockGossipManager) AddListener(l gossip.Listener) {
 	m.listener = l
 }
 

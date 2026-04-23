@@ -17,6 +17,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/interfaces",
+        "//server/interfaces/gossip",
         "//server/metrics",
         "//server/util/alert",
         "//server/util/disk",

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	gossipiface "github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
@@ -51,7 +51,7 @@ type GossipManager struct {
 	join       []string
 
 	mu        sync.Mutex
-	listeners []interfaces.GossipListener
+	listeners []gossipiface.Listener
 	tags      map[string]string
 }
 
@@ -78,7 +78,7 @@ func (gm *GossipManager) JoinList() []string {
 	return joinList
 }
 
-func (gm *GossipManager) AddListener(listener interfaces.GossipListener) {
+func (gm *GossipManager) AddListener(listener gossipiface.Listener) {
 	if listener == nil {
 		log.Error("listener cannot be nil")
 		return
@@ -270,7 +270,7 @@ func NewWithArgs(nodeName, listenAddress string, join []string) (*GossipManager,
 		join:          join,
 		serfEventChan: make(chan serf.Event, 16),
 		mu:            sync.Mutex{},
-		listeners:     make([]interfaces.GossipListener, 0),
+		listeners:     make([]gossipiface.Listener, 0),
 		tags:          make(map[string]string, 0),
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan

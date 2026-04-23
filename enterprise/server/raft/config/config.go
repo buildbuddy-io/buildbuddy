@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -91,5 +91,5 @@ type ServerConfig struct {
 	Partitions      []disk.Partition
 	LogDBConfigType LogDBConfigType
 	FileStorer      filestore.Store
-	GossipManager   interfaces.GossipService
+	GossipManager   gossip.Service
 }

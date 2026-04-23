@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -105,7 +106,7 @@ type Store struct {
 	partitionsAllInitialized bool
 
 	nodeHost      *dragonboat.NodeHost
-	gossipManager interfaces.GossipService
+	gossipManager gossip.Service
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
 	grpcServer    *grpc.Server
@@ -173,7 +174,7 @@ type Store struct {
 type registryHolder struct {
 	raftAddr string
 	grpcAddr string
-	g        interfaces.GossipService
+	g        gossip.Service
 	r        registry.NodeRegistry
 }
 

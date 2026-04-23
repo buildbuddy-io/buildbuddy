@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/interfaces",
+        "//server/interfaces/gossip",
         "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/proto",

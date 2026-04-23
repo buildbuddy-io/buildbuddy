@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v59/github"
-	"github.com/hashicorp/serf/serf"
 	"github.com/miekg/dns"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -1730,23 +1729,12 @@ type SCIMService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
 
-type GossipListener interface {
-	OnEvent(eventType serf.EventType, event serf.Event)
-}
-
-type GossipService interface {
-	ListenAddr() string
-	JoinList() []string
-	AddListener(listener GossipListener)
-	LocalMember() serf.Member
-	Members() []serf.Member
-	SetTags(tags map[string]string) error
-	SendUserEvent(name string, payload []byte, coalesce bool) error
-	Query(name string, payload []byte, params *serf.QueryParam) (*serf.QueryResponse, error)
-	Statusz(ctx context.Context) string
-	Leave() error
-	Shutdown() error
-}
+// GossipListener and GossipService used to live here; they moved to
+// //server/interfaces/gossip so that the umbrella interfaces package
+// doesn't drag hashicorp/serf + memberlist + msgpack into every
+// consumer's build closure. Call sites should import
+// //server/interfaces/gossip and reference gossip.Listener /
+// gossip.Service directly.
 
 type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)

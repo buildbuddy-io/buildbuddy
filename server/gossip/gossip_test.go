@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	gossipiface "github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/hashicorp/serf/serf"
@@ -30,7 +30,7 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func newGossipManager(t *testing.T, addr string, seeds []string, broker interfaces.GossipListener) *gossip.GossipManager {
+func newGossipManager(t *testing.T, addr string, seeds []string, broker gossipiface.Listener) *gossip.GossipManager {
 	node, err := gossip.NewWithArgs("name-"+addr, addr, seeds)
 	require.NoError(t, err)
 	require.NotNil(t, node)

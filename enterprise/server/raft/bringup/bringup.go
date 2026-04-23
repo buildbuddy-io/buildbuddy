@@ -19,7 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -51,7 +51,7 @@ type ClusterStarter struct {
 	// the set of hosts passed to the Join arg
 	listenAddr    string
 	join          []string
-	gossipManager interfaces.GossipService
+	gossipManager gossip.Service
 
 	bootstrapped bool
 
@@ -67,7 +67,7 @@ type ClusterStarter struct {
 	rangesToCreate   []*rfpb.RangeDescriptor
 }
 
-func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, partitions []disk.Partition) (*ClusterStarter, error) {
+func New(grpcAddr string, gossipMan gossip.Service, store IStore, partitions []disk.Partition) (*ClusterStarter, error) {
 	joinList := gossipMan.JoinList()
 	var defaultPartition disk.Partition
 	for _, partition := range partitions {

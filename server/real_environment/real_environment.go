@@ -133,7 +133,6 @@ type RealEnv struct {
 	gcpService                           interfaces.GCPService
 	mcpService                           interfaces.MCPService
 	scimService                          interfaces.SCIMService
-	gossipService                        interfaces.GossipService
 	commandRunner                        interfaces.CommandRunner
 	codesearchService                    interfaces.CodesearchService
 	snapshotService                      interfaces.SnapshotService

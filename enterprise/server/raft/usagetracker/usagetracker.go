@@ -18,7 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -79,7 +79,7 @@ const (
 )
 
 type Tracker struct {
-	gossipManager interfaces.GossipService
+	gossipManager gossip.Service
 	node          *rfpb.NodeDescriptor
 	partitions    []disk.Partition
 	sender        *sender.Sender
@@ -550,7 +550,7 @@ func (pu *partitionUsage) updateMetrics() {
 	pu.metrics.evictionGCSChanSize.Set(float64(len(pu.gcsDeletes)))
 }
 
-func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
+func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager gossip.Service, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
 		node:          node,
