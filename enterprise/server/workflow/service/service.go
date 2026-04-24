@@ -54,6 +54,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/robfig/cron/v3"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
@@ -114,6 +115,18 @@ const (
 	// some extra time for the CI runner to finish publishing the "outer"
 	// workflow invocation results after the user-specified timeout is reached.
 	timeoutGracePeriod = 10 * time.Minute
+
+	// Only one server should try to schedule a workflow at a time. It has this much
+	// time to dispatch the workflow before another server can acquire the lease and schedule the run.
+	// Given that dispatching a workflow is expected to be quick, this should be more than enough time,
+	// unless the original server goes down (e.g. if it was restarted in a rollout).
+	scheduledWorkflowLeaseDuration = 5 * time.Minute
+)
+
+var (
+	cronParser = cron.NewParser(
+		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
+	)
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -1729,4 +1742,139 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 	}
 	return platform.WithRemoteHeaderOverride(
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+}
+
+func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
+	if ws.env.GetDBHandle() == nil || ws.env.GetGitHubAppService() == nil {
+		return status.InternalError("database or GitHub app service not available")
+	}
+
+	// TODO(Maggie): Add a max number of retries per task, to avoid hot looping on tasks that can't be scheduled.
+	for {
+		scheduled, err := ws.claimScheduledWorkflow(ctx)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to claim scheduled workflow: %s", err)
+			continue
+		}
+		if scheduled == nil {
+			break
+		}
+		if err := ws.dispatchScheduledWorkflow(ctx, scheduled); err != nil {
+			log.CtxErrorf(ctx, "Failed to dispatch scheduled workflow %s: %s", scheduled.ScheduleID, err)
+			continue
+		}
+	}
+	return nil
+}
+
+func (ws *workflowService) claimScheduledWorkflow(ctx context.Context) (*tables.ScheduledRun, error) {
+	dbh := ws.env.GetDBHandle()
+	scheduled := &tables.ScheduledRun{}
+	err := dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		now := ws.env.GetClock().Now()
+		nowUsec := now.UnixMicro()
+		err := tx.NewQuery(ctx, "workflow_service_lock_scheduled_run").Raw(`
+			SELECT *
+			FROM "ScheduledRuns"
+			WHERE next_run_usec <= ?
+			  AND (lease_expires_usec = 0 OR lease_expires_usec <= ?)
+			ORDER BY next_run_usec ASC
+			LIMIT 1`+dbh.SelectForUpdateModifier(), nowUsec, nowUsec).Take(scheduled)
+		if err != nil {
+			if db.IsRecordNotFound(err) {
+				scheduled = nil
+				return nil
+			}
+			return err
+		}
+		leaseExpiresUsec := now.Add(scheduledWorkflowLeaseDuration).UnixMicro()
+		result := tx.NewQuery(ctx, "workflow_service_claim_schedule_run").Raw(`
+			UPDATE "ScheduledRuns"
+			SET lease_expires_usec = ?
+			WHERE schedule_id = ?
+			  AND next_run_usec <= ?
+			  AND (lease_expires_usec = 0 OR lease_expires_usec <= ?)`,
+			leaseExpiresUsec, scheduled.ScheduleID, nowUsec, nowUsec).Exec()
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return status.InternalErrorf("failed to claim locked scheduled workflow %s", scheduled.ScheduleID)
+		}
+		scheduled.LeaseExpiresUsec = leaseExpiresUsec
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return scheduled, nil
+}
+
+func (ws *workflowService) unclaimScheduledWorkflow(ctx context.Context, scheduleID string) error {
+	now := ws.env.GetClock().Now().UnixMicro()
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_unclaim_schedule_run").Raw(`
+		UPDATE "ScheduledRuns"
+		SET lease_expires_usec = 0
+		WHERE schedule_id = ?
+		AND next_run_usec <= ?
+	`, scheduleID, now).Exec()
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return status.InternalErrorf("failed to unclaim scheduled workflow %s", scheduleID)
+	}
+	return nil
+}
+
+func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
+	wfID := ws.GetLegacyWorkflowIDForGitRepository(scheduled.GroupID, scheduled.RepoURL)
+	rsp, err := ws.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+		WorkflowId:    wfID,
+		PushedRepoUrl: scheduled.RepoURL,
+		PushedBranch:  scheduled.Branch,
+		Async:         true,
+		ActionNames:   []string{scheduled.ActionName},
+	})
+	if err != nil {
+		if err := ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID); err != nil {
+			log.CtxWarningf(ctx, "Failed to unclaim scheduled workflow %s: %s", scheduled.ScheduleID, err)
+		}
+		return err
+	}
+	for _, actionStatus := range rsp.GetActionStatuses() {
+		if actionErr := gstatus.FromProto(actionStatus.GetStatus()).Err(); actionErr != nil {
+			if err := ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID); err != nil {
+				log.CtxWarningf(ctx, "Failed to unclaim scheduled workflow %s: %s", scheduled.ScheduleID, err)
+			}
+			return status.WrapErrorf(actionErr, "failed to start scheduled workflow action %q", scheduled.ActionName)
+		}
+	}
+	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr, scheduled.NextRunUsec)
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
+		return err
+	}
+	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, nextRunUsec); err != nil {
+		alert.CtxUnexpectedEvent(ctx, "Failed to advance scheduled workflow %s to %d: %s", scheduled.ScheduleID, nextRunUsec, err)
+		return err
+	}
+	return nil
+}
+
+func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string, lastRunTimeUsec int64) (int64, error) {
+	sched, err := cronParser.Parse(cronExpr)
+	if err != nil {
+		return 0, err
+	}
+	return sched.Next(time.UnixMicro(lastRunTimeUsec)).UnixMicro(), nil
+}
+
+func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, scheduleID string, nextRunUsec int64) error {
+	return ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_advance_schedule").Raw(`
+		UPDATE "ScheduledRuns"
+		SET next_run_usec = ?,
+		    lease_expires_usec = 0
+		WHERE schedule_id = ?
+	`, nextRunUsec, scheduleID).Exec().Error
 }
