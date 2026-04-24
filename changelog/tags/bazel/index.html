@@ -17,9 +17,9 @@
 <link rel="alternate" type="application/rss+xml" href="/changelog/rss.xml" title="BuildBuddy RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/changelog/atom.xml" title="BuildBuddy Atom Feed">
 
-<script>window.ga=window.ga||function(){(window.ga.q=window.ga.q||[]).push(arguments)},window.ga.l=window.ga.l||+new Date,window.dataLayer=window.dataLayer||[],window.gtag=window.gtag||function(){window.dataLayer.push(arguments)}</script><link rel="stylesheet" href="/assets/css/styles.890c94bb.css">
-<script src="/assets/js/runtime~main.9fbcf25c.js" defer="defer"></script>
-<script src="/assets/js/main.2b8b0c3e.js" defer="defer"></script>
+<script>window.ga=window.ga||function(){(window.ga.q=window.ga.q||[]).push(arguments)},window.ga.l=window.ga.l||+new Date,window.dataLayer=window.dataLayer||[],window.gtag=window.gtag||function(){window.dataLayer.push(arguments)}</script><link rel="stylesheet" href="/assets/css/styles.d9927728.css">
+<script src="/assets/js/runtime~main.cb1782e8.js" defer="defer"></script>
+<script src="/assets/js/main.efca2626.js" defer="defer"></script>
 </head>
 <body data-theme="light">
 <svg style="display: none;"><defs>
@@ -29,7 +29,7 @@
 <p>With Bazel 9.1&#x27;s new <code>--experimental_remote_cache_chunking</code> support, large outputs like linker artifacts can be uploaded and downloaded in content-defined chunks instead of as monolithic blobs. That lets BuildBuddy deduplicate similar artifacts across builds, reducing upload bandwidth and storage usage. In one benchmark on the BuildBuddy repo, this showed roughly 40% less uploaded data and a roughly 40% smaller disk cache. Breaking large blobs into smaller reusable pieces also means fewer long-running RPCs and more granular retries.</p>
 <p>To enable it, add these flags to your <code>.bazelrc</code>:</p>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#fff;--prism-background-color:#212121"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#fff;background-color:#212121"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#fff"><span class="token plain">common --experimental_remote_cache_chunking</span><br></div><div class="token-line" style="color:#fff"><span class="token plain">common --remote_header=x-buildbuddy-cdc-enabled=true</span><br></div></code></pre></div></div>
-<p>To see the download-side savings, you should also set <code>--disk_cache</code>, since the downloaded chunks need to be stored somewhere in order to be reused locally. We also recommend setting <code>--experimental_disk_cache_gc_max_age</code> to a value below your remote cache TTL—for example, <code>3h</code>, or <code>1d</code> if your remote TTL is longer.</p>
+<p>To see the download-side savings, you should also set <code>--disk_cache</code>, since the downloaded chunks need to be stored somewhere in order to be reused locally. We also recommend setting <code class="flag">--experimental_disk_cache_gc_max_age</code> to a value below your remote cache TTL—for example, <code>3h</code>, or <code>1d</code> if your remote TTL is longer.</p>
 <p>Bazel 9.1 is required today, and this support will also be backported to Bazel 8.7.</p>
 <p>For more background, see <a href="https://github.com/bazelbuild/bazel/pull/28437" target="_blank" rel="noopener noreferrer" class="">bazelbuild/bazel#28437</a>.</p>
 <p>We&#x27;ll share a longer blog post soon with more details on the technical journey behind this work.</p></div><div class="footer_tLsI"><div class="tagRow_aKqO"><a class="tag_EYQn" href="/changelog/tags/bazel">bazel</a><a class="tag_EYQn" href="/changelog/tags/featured">featured</a></div></div></article></a><a href="/changelog/cli-run-log-streaming"><article class="item_Xggt"><div class="itemMeta_L_RJ"><time datetime="2026-04-21T10:00:00.000Z">April 21, 2026</time><span class="metaDot_OFJP">·</span><span>Maggie Lou</span></div><h2 class="itemTitle_brgt">Run log streaming</h2><div class="preview_dMmd"><p>In addition to build logs, you can now use the <a href="https://buildbuddy.io/cli" target="_blank" rel="noopener noreferrer" class=""><code>bb</code> CLI</a> to stream <code>bazel run</code> executable output to our servers and view live-updating run logs from the UI.</p>
