@@ -3261,6 +3261,10 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 	}
 
 	if *exportSnapshotToCOW {
+		if !snaputil.IsChunkedSnapshotSharingEnabled() {
+			return nil, status.InvalidArgumentErrorf("exportSnapshotToCOW is only supported when chunked snapshot sharing is enabled")
+		}
+
 		// If the full snapshot should be exported straight to a COWStore, create it here.
 		// For diff snapshots, we'll use the existing memoryStore.
 		if snapshotType == fullSnapshotType {
@@ -3291,6 +3295,10 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 				return nil, status.WrapError(err, "create memory COWStore")
 			}
 			c.memoryStore = memoryStore
+		}
+
+		if c.memoryStore == nil {
+			return nil, status.InternalErrorf("memory store not created when exporting snapshot to COW")
 		}
 
 		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
