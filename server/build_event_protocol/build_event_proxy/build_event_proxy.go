@@ -131,7 +131,12 @@ func (asp *asyncStreamProxy) CloseSend() error {
 	return nil
 }
 
-func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
+
+	if c.synchronous {
+		return c.client.PublishBuildToolEventStream(ctx, opts...)
+	}
+
 	return c.newAsyncStreamProxy(c.rootCtx, opts...)
 }
