@@ -64,7 +64,7 @@ func TestStringSliceFlag(t *testing.T) {
 
 	testSlice := []string{"yes", "si", "hai"}
 	testFlag := NewStringSliceFlag(&testSlice)
-	testFlag.AppendSlice(([]string)(*testFlag))
+	testFlag.Accumulate(([]string)(*testFlag))
 	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai"}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
@@ -113,7 +113,7 @@ func TestStructSliceFlag(t *testing.T) {
 
 	testSlice := []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}}
 	testFlag := NewJSONSliceFlag(&testSlice)
-	testFlag.AppendSlice(testFlag.Slice())
+	testFlag.Accumulate(testFlag.Slice())
 	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
@@ -162,7 +162,7 @@ func TestProtoSliceFlag(t *testing.T) {
 
 	testSlice := []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}}
 	testFlag := NewJSONSliceFlag(&testSlice)
-	testFlag.AppendSlice(testFlag.Slice())
+	testFlag.Accumulate(testFlag.Slice())
 	assert.Equal(t, []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}, {}, {Seconds: 1}, {Nanos: 99}}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
@@ -190,6 +190,46 @@ func TestJSONStructFlag(t *testing.T) {
 
 	// `String` should not panic on zero-constructed flag
 	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*JSONStructFlag[testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+}
+
+func TestJSONMapFlag(t *testing.T) {
+	var err error
+	flags := replaceFlagsForTesting(t)
+	flagName := "foo"
+
+	f := JSONMap(flags, flagName, map[string]string{}, "A flag that should contain a string map")
+	assert.Equal(t, map[string]string{}, *f)
+	assert.Equal(t, map[string]string{}, (flags.Lookup(flagName).Value.(*JSONMapFlag[map[string]string]).Map()))
+
+	err = flags.Set(flagName, `{"a":"1","b":"2"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, *f)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, (flags.Lookup(flagName).Value.(*JSONMapFlag[map[string]string]).Map()))
+
+	// Subsequent Set merges into the existing map (a la JSONSliceFlag).
+	err = flags.Set(flagName, `{"c":"3"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2", "c": "3"}, *f)
+
+	// Conflicting keys: later Set wins.
+	err = flags.Set(flagName, `{"a":"99"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "99", "b": "2", "c": "3"}, *f)
+
+	// Non-empty default value is preserved on registration, and subsequent
+	// Set merges into it.
+	g := JSONMap(flags, "bar", map[string]int{"x": 1, "y": 2}, "A flag with a non-empty default")
+	assert.Equal(t, map[string]int{"x": 1, "y": 2}, *g)
+	err = flags.Set("bar", `{"z":9}`)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]int{"x": 1, "y": 2, "z": 9}, *g)
+
+	// Invalid JSON rejects cleanly.
+	err = flags.Set(flagName, `not json`)
+	assert.Error(t, err)
+
+	// `String` should not panic on zero-constructed flag.
+	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*JSONMapFlag[map[string]string])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestFlagAlias(t *testing.T) {

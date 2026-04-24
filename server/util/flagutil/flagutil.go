@@ -7,17 +7,17 @@ import (
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be
-// set again except to append to them, in the case of slices. To force the
-// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
-// be appended to the current slice value; otherwise, a slice value will replace
-// the current slice value. appendSlice has no effect if the values in question
-// are not slices.
-func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
-	return common.SetValueForFlagName(common.DefaultFlagSet, name, newValue, setFlags, appendSlice)
+// set again except to accumulate into them, in the case of collection flags. To
+// force the setting of a flag, pass a nil map. If accumulate is true, a slice
+// value will be appended to the current slice value and a map value will be
+// merged into the current map value; otherwise, the value will replace the
+// current value. accumulate has no effect if the flag is not Accumulable.
+func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, accumulate bool) error {
+	return common.SetValueForFlagName(common.DefaultFlagSet, name, newValue, setFlags, accumulate)
 }
 
-func SetValueForFlagSet(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
-	return common.SetValueForFlagName(flagset, name, newValue, setFlags, appendSlice)
+func SetValueForFlagSet(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, accumulate bool) error {
+	return common.SetValueForFlagName(flagset, name, newValue, setFlags, accumulate)
 }
 
 // SetWithOverride sets the flag's value by creating a new, empty flag.Value of
