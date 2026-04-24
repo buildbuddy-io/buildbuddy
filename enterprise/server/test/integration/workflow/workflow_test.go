@@ -50,6 +50,7 @@ const (
 func simpleRepo() map[string]string {
 	return map[string]string{
 		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(
     name = "nop",
     srcs = ["nop.sh"],
@@ -78,6 +79,7 @@ func simpleRepoUseCLI(t *testing.T) map[string]string {
 	bazelrcPath := filepath.Join(os.Getenv("TEST_TMPDIR"), fmt.Sprintf("bazel-%s.bazelrc", testbazel.Version))
 	return map[string]string{
 		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(
     name = "nop",
     srcs = ["nop.sh"],
@@ -105,6 +107,7 @@ actions:
 func repoWithSlowScript() map[string]string {
 	return map[string]string{
 		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 sh_binary(
     name = "sleep_forever_test",
     srcs = ["sleep_forever_test.sh"],

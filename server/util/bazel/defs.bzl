@@ -105,8 +105,12 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
         major_version = int(version.split(".")[0])
         warm_repository_cache = major_version >= 8
 
-        # For Bazel 9+, sh_binary and sh_test are no longer native rules.
-        use_rules_shell = major_version >= 9
+        # Always warm @rules_shell. On Bazel 9+ it's strictly required
+        # (sh_binary / sh_test are no longer native). On Bazel 8 it's
+        # optional but cheap, and lets test-written BUILD files use a
+        # single `load("@rules_shell//shell:...")` form that works on
+        # both versions.
+        use_rules_shell = major_version >= 8
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
