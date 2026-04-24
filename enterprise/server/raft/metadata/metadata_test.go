@@ -480,9 +480,13 @@ func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
 
-	digestSize := int64(1000)
+	// Use 10KB digests so the total data is large enough (~130KB for 31
+	// items) that pebble's EstimateDiskUsage is accurate. With 1KB
+	// digests the total was only ~20KB, and EstimateDiskUsage could
+	// underestimate enough to skip eviction entirely.
+	digestSize := int64(10000)
 	numDigests := 25
-	maxSizeBytes := int64(math.Ceil(14022 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+	maxSizeBytes := int64(math.Ceil(105000 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
 
 	configs := getTestConfigs(t, 1)
 
