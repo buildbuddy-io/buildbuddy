@@ -460,7 +460,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
 		ContainerImageRef:                  in.GetContainerImageRef(),
-		ContainerImageSizeBytes:            in.GetContainerImageSizeBytes(),
+		ContainerImageDiskUsageBytes:       in.GetContainerImageDiskUsageBytes(),
 	}
 
 	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
