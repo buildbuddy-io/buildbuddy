@@ -8,22 +8,38 @@ package(default_visibility = [
 
 go_library(
     name = "filecache",
-    srcs = ["filecache.go"],
+    srcs = [
+        "filecache.go",
+        "filecache_darwin.go",
+        "filecache_linux.go",
+        "filecache_other.go",
+        "filecache_windows.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/util/alert",
         "//server/util/claims",
         "//server/util/disk",
         "//server/util/fastcopy",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(

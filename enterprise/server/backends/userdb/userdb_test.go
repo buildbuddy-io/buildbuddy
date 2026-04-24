@@ -1491,6 +1491,30 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	require.Empty(t, keys)
 }
 
+func TestGetUser_OrgAPIKeyReturnsNotFound(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	key := getOrgAPIKey(t, ctx1, env, gr1.GroupID)
+
+	keyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+
+	user, err := udb.GetUser(keyCtx)
+	require.Nil(t, user)
+	require.Truef(
+		t, status.IsNotFoundError(err),
+		"expected NotFound authenticating with an org-level key; got: %v",
+		err,
+	)
+	require.Contains(t, err.Error(), "user not found")
+}
+
 func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
@@ -1846,6 +1870,25 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You've already requested to join this organization.")
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+}
+
+func TestRequestToJoinGroup_Disabled(t *testing.T) {
+	flags.Set(t, "app.group_membership_requests_enabled", false)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	require.False(t, udb.GetGroupMembershipRequestsEnabled())
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Equal(t, "Organization membership requests are disabled.", status.Message(err))
 	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }

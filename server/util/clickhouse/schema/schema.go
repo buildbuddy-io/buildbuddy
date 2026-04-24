@@ -138,7 +138,8 @@ func (i *Invocation) TableName() string {
 func (i *Invocation) TableOptions(clickhouseVersion string) string {
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
 type Execution struct {
@@ -385,7 +386,8 @@ func (t *TestTargetStatus) TableName() string {
 }
 
 func (t *TestTargetStatus) TableOptions(clickhouseVersion string) string {
-	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+	options := fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(invocation_start_time_usec, 1000000), 'UTC'))"
 	if clickhouseVersion > "24.8" {
 		// Clickhouse 24.8 added a table setting, deduplicate_merge_projection_mode,
 		// that is required when adding projections with on tables with merge engines.

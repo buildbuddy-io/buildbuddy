@@ -1,0 +1,22 @@
+.breadcrumbs {
+  /* --color variable controls text and chevron color. */
+  --color: var(--color-text-tertiary);
+
+  color: var(--color);
+
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .breadcrumbs-chevron {
+    /* Breadcrumb width/height responds to font size of the container. */
+    --chevron-size: 0.8em;
+
+    font-size: inherit;
+    width: var(--chevron-size);
+    height: var(--chevron-size);
+    transform: translateY(0.05em); /* optical alignment */
+
+    stroke: var(--color);
+  }
+}

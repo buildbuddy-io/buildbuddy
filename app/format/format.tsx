@@ -358,6 +358,11 @@ export function relativeTimeSeconds(timestamp: { seconds?: number | Long; nanos?
   return `${seconds} second${seconds === 1 ? "" : "s"} ago`;
 }
 
+export function durationSince(timestamp: { seconds?: number | Long; nanos?: number | Long }): string {
+  const timestampMs = +(timestamp.seconds || 0) * 1000 + +(timestamp.nanos || 0) / 1000000;
+  return durationMillis(Math.max(0, Date.now() - timestampMs));
+}
+
 export function formatGitUrl(url: string) {
   return url
     ?.replace("https://", "")
@@ -439,4 +444,5 @@ export default {
   enumLabel,
   formatDateFromUsec,
   relativeTimeSeconds,
+  durationSince,
 };

@@ -12,6 +12,7 @@ import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
+import TimingProfilePageComponent from "../../../app/profile/profile";
 import router, { Path } from "../../../app/router/router";
 import Shortcuts from "../../../app/shortcuts/shortcuts";
 import AuditLogsComponent from "../auditlogs/auditlogs";
@@ -58,6 +59,7 @@ interface State {
 
 capabilities.register("BuildBuddy Enterprise", true, [
   Path.invocationPath,
+  Path.profilePath,
   Path.userHistoryPath,
   Path.hostHistoryPath,
   Path.repoHistoryPath,
@@ -228,7 +230,10 @@ export default class EnterpriseRootComponent extends React.Component {
     let cliLogin = this.state.user && this.state.path.startsWith("/cli-login");
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
-    let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
+    let orgJoinAuthenticated =
+      capabilities.config.groupMembershipRequestsEnabled &&
+      this.state.path.startsWith(Path.joinOrgPath) &&
+      this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let targets = this.state.user && this.state.path.startsWith("/targets");
@@ -241,6 +246,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
     let codesearch = this.state.user && this.state.path.startsWith("/search");
+    let profile = this.state.path.startsWith(Path.profilePath);
     let fallback =
       !code &&
       !cliLogin &&
@@ -265,6 +271,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !auditLogs &&
       !repo &&
       !codesearch &&
+      !profile &&
       !review;
 
     let setup =
@@ -272,7 +279,8 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !repo && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
+    let sidebar =
+      Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin && !profile;
     let menu = !sidebar && !repo && !code && !this.state.loading;
 
     const rootClasses = ["root"];
@@ -320,6 +328,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       />
                     </Suspense>
                   )}
+                  {profile && <TimingProfilePageComponent dark={this.state.preferences.darkModeEnabled} />}
                   {compareInvocationIds && (
                     <Suspense fallback={<div className="loading" />}>
                       <CompareInvocationsComponent

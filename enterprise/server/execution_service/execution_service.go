@@ -1,20 +1,26 @@
 package execution_service
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"io"
+	"path"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
@@ -24,8 +30,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -35,6 +43,11 @@ import (
 var (
 	primaryDBReadsEnabled = flag.Bool("remote_execution.primary_db_reads_enabled", true, "Whether to read executions from the primary database.")
 	olapReadsEnabled      = flag.Bool("remote_execution.olap_reads_enabled", false, "Whether to read executions from the OLAP database (and read in-progress execution info from Redis).")
+)
+
+const (
+	defaultExecutionDownloadsPageSize = 100
+	maxExecutionDownloadsPageSize     = 1000
 )
 
 type ExecutionService struct {
@@ -287,14 +300,57 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	if err := checkPreconditions(req); err != nil {
 		return nil, err
 	}
+	executions, err := es.lookupExecutions(ctx, req.GetExecutionLookup())
+	if err != nil {
+		return nil, err
+	}
 
+	rsp := &espb.GetExecutionResponse{
+		Execution: executions,
+	}
+
+	if req.GetInlineExecuteResponse() {
+		// If inlined responses are requested, fetch them now.
+		var eg errgroup.Group
+		for _, ex := range rsp.Execution {
+			ex := ex
+			// The execute response is only cached once the execution completes.
+			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
+				continue
+			}
+			eg.Go(func() error {
+				// TODO: if the authenticated user has access to the group
+				// that owns the execution, switch to that group's ctx.
+				// Also if the execution was done anonymously, switch to
+				// anonymous ctx.
+				res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), ex.ExecutionId)
+				if err != nil {
+					return err
+				}
+				ex.ExecuteResponse = res
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			log.CtxInfof(ctx, "Failed to fetch inline execution response(s): %s", err)
+		}
+	}
+
+	if len(rsp.Execution) == 0 {
+		log.CtxInfof(ctx, "No executions found for invocation %q", req.GetExecutionLookup().GetInvocationId())
+	}
+
+	return rsp, nil
+}
+
+func (es *ExecutionService) lookupExecutions(ctx context.Context, lookup *espb.ExecutionLookup) ([]*espb.Execution, error) {
 	var primaryDBExecutions []*tables.Execution
 	var olapExecutions []*olaptables.Execution
 
 	var eg errgroup.Group
 	if *primaryDBReadsEnabled {
 		eg.Go(func() error {
-			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, req.GetExecutionLookup())
+			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, lookup)
 			if err != nil {
 				return err
 			}
@@ -304,7 +360,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	}
 	if *olapReadsEnabled {
 		eg.Go(func() error {
-			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, req.GetExecutionLookup())
+			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, lookup)
 			if err != nil {
 				return err
 			}
@@ -345,39 +401,250 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		tj := executions[j].GetExecutedActionMetadata().GetQueuedTimestamp().AsTime()
 		return ti.Before(tj)
 	})
+	return executions, nil
+}
 
-	rsp := &espb.GetExecutionResponse{
-		Execution: executions,
+// GetExecutionDownloads returns paginated input file downloads for an
+// execution, ordered from largest to smallest file size.
+func (es *ExecutionService) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	// Validate request
+	if req.GetInvocationId() == "" {
+		return nil, status.InvalidArgumentError("invocation_id field is required")
+	}
+	if req.GetExecutionId() == "" {
+		return nil, status.InvalidArgumentError("execution_id field is required")
 	}
 
-	if req.GetInlineExecuteResponse() {
-		// If inlined responses are requested, fetch them now.
-		var eg errgroup.Group
-		for _, ex := range rsp.Execution {
-			ex := ex
-			eg.Go(func() error {
-				// TODO: if the authenticated user has access to the group
-				// that owns the execution, switch to that group's ctx.
-				// Also if the execution was done anonymously, switch to
-				// anonymous ctx.
-				res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), ex.ExecutionId)
-				if err != nil {
-					return err
-				}
-				ex.ExecuteResponse = res
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			log.CtxInfof(ctx, "Failed to fetch inline execution response(s): %s", err)
-		}
+	// Authorize request (the user must have read access to the invocation that
+	// the execution belongs to)
+	if _, err := es.env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId()); err != nil {
+		return nil, status.WrapError(err, "lookup invocation")
+	}
+	if err := es.checkExecutionBelongsToInvocation(ctx, req.GetInvocationId(), req.GetExecutionId()); err != nil {
+		return nil, err
 	}
 
-	if len(rsp.Execution) == 0 {
-		log.CtxInfof(ctx, "No executions found for invocation %q", req.GetExecutionLookup().GetInvocationId())
+	// Fetch tree + download metadata and return filtered + paginated results.
+
+	// TODO: Invocation access is authorized above, but the subsequent cache
+	// reads still use the caller's current auth context. Consider switching the
+	// cache auth context to the owner group, if authorized. Note that the
+	// /file/download endpoint has this same problem.
+	downloads, err := es.getExecutionDownloads(ctx, req.GetExecutionId())
+	if err != nil {
+		return nil, status.WrapError(err, "get execution downloads")
+	}
+
+	page, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page.GetOffset() < 0 {
+		return nil, status.InvalidArgumentError("page offset must be non-negative")
+	}
+
+	limit := page.GetLimit()
+	if req.GetPageSize() > 0 {
+		limit = int64(req.GetPageSize())
+	}
+	limit = max(limit, int64(0))
+	if limit == 0 {
+		limit = defaultExecutionDownloadsPageSize
+	}
+	page.Limit = min(limit, maxExecutionDownloadsPageSize)
+
+	start := min(page.GetOffset(), int64(len(downloads)))
+	end := min(start+page.GetLimit(), int64(len(downloads)))
+
+	rsp := &capb.GetExecutionDownloadsResponse{
+		Downloads: downloads[int(start):int(end)],
+	}
+	if end < int64(len(downloads)) {
+		rsp.NextPageToken, err = paging.EncodeOffsetLimit(&pgpb.OffsetLimit{
+			Offset: end,
+			Limit:  page.GetLimit(),
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return rsp, nil
+}
+
+// After authorizing access to the invocation itself, also verify that the
+// requested execution belongs to that invocation before reading its downloads.
+func (es *ExecutionService) checkExecutionBelongsToInvocation(ctx context.Context, invocationID, executionID string) error {
+	executions, err := es.lookupExecutions(ctx, &espb.ExecutionLookup{
+		InvocationId: invocationID,
+		ExecutionId:  executionID,
+	})
+	if err != nil {
+		return status.WrapError(err, "lookup execution")
+	}
+	if len(executions) == 0 {
+		return status.NotFoundError("execution not found")
+	}
+	return nil
+}
+
+// Fetches the downloads bitmap and input root tree, and returns only the leaf
+// nodes from the tree that are present in the bitmap, sorted in decreasing
+// order of file size.
+func (es *ExecutionService) getExecutionDownloads(ctx context.Context, executionID string) ([]*capb.ExecutionDownload, error) {
+	actionResourceName, err := digest.ParseUploadResourceName(executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "parse execution ID")
+	}
+	bitmap, err := es.fetchExecutionDownloadsBitmapFromAC(ctx, executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch downloads bitmap")
+	}
+	if bitmap == nil {
+		return nil, nil
+	}
+	tree, err := es.fetchExecutionInputTreeFromCAS(ctx, actionResourceName)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch input tree")
+	}
+	downloads, err := filterExecutionDownloadsFromTree(tree, bitmap, actionResourceName.GetDigestFunction())
+	if err != nil {
+		return nil, status.WrapError(err, "filter execution downloads")
+	}
+	slices.SortFunc(downloads, func(a *capb.ExecutionDownload, b *capb.ExecutionDownload) int {
+		if c := cmp.Compare(b.GetDigest().GetSizeBytes(), a.GetDigest().GetSizeBytes()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.GetPath(), b.GetPath())
+	})
+	return downloads, nil
+}
+
+// fetchExecutionDownloadsBitmapFromAC fetches the cached ExecuteResponse from
+// AC and returns the downloads bitmap from auxiliary metadata if available.
+// Note that older executors may not have this info available.
+func (es *ExecutionService) fetchExecutionDownloadsBitmapFromAC(ctx context.Context, executionID string) (*roaring.Bitmap, error) {
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "get cached execute response")
+	}
+
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(executeResponse.GetResult().GetExecutionMetadata(), auxMetadata)
+	if err != nil {
+		return nil, status.WrapError(err, "parse execution auxiliary metadata")
+	}
+	if !ok || auxMetadata.GetInputFetchDetailedStats() == nil {
+		return nil, nil
+	}
+
+	bitmapData := auxMetadata.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap()
+	if len(bitmapData) == 0 {
+		return nil, nil
+	}
+
+	bitmap := roaring.New()
+	if err := bitmap.UnmarshalBinary(bitmapData); err != nil {
+		return nil, status.WrapError(err, "unmarshal downloaded file bitmap")
+	}
+	return bitmap, nil
+}
+
+// fetchExecutionInputTreeFromCAS fetches and returns the Action input root tree
+// from CAS for the given parsed Action resource name.
+func (es *ExecutionService) fetchExecutionInputTreeFromCAS(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Tree, error) {
+	actionCASResourceName := digest.NewCASResourceName(
+		actionResourceName.GetDigest(),
+		actionResourceName.GetInstanceName(),
+		actionResourceName.GetDigestFunction(),
+	)
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, es.env.GetByteStreamClient(), actionCASResourceName, action); err != nil {
+		return nil, status.WrapError(err, "read action")
+	}
+	if action.GetInputRootDigest() == nil {
+		return nil, status.FailedPreconditionError("action did not contain an input root digest")
+	}
+	inputRootCASResourceName := digest.NewCASResourceName(
+		action.GetInputRootDigest(),
+		actionResourceName.GetInstanceName(),
+		actionResourceName.GetDigestFunction(),
+	)
+	tree, err := cachetools.GetTreeFromRootDirectoryDigest(
+		ctx,
+		es.env.GetContentAddressableStorageClient(),
+		inputRootCASResourceName,
+	)
+	if err != nil {
+		return nil, status.WrapError(err, "get input tree")
+	}
+	return tree, nil
+}
+
+// filterExecutionDownloadsFromTree maps bitmap leaf indexes back to input file paths
+// within a GetTree response for an Action input root, using the same
+// file-first traversal order used during input fetching.
+func filterExecutionDownloadsFromTree(tree *repb.Tree, bitmap *roaring.Bitmap, digestFunction repb.DigestFunction_Value) ([]*capb.ExecutionDownload, error) {
+	if tree == nil || tree.GetRoot() == nil || bitmap == nil || bitmap.IsEmpty() {
+		return nil, nil
+	}
+
+	// GetTree returns child directories separately, so index them by digest to
+	// follow DirectoryNode references during traversal.
+	directoriesByDigest := make(map[string]*repb.Directory, len(tree.GetChildren()))
+	for _, child := range tree.GetChildren() {
+		d, err := digest.ComputeForMessage(child, digestFunction)
+		if err != nil {
+			return nil, status.WrapError(err, "compute directory digest")
+		}
+		directoriesByDigest[digest.String(d)] = child
+	}
+
+	downloads := make([]*capb.ExecutionDownload, 0, int(bitmap.GetCardinality()))
+	// The bitmap uses the same file visitation order as input fetching, so walk
+	// the tree in that exact order and increment once per file.
+	leafIndex := uint32(0)
+	var visit func(dir *repb.Directory, parentPath string) error
+	visit = func(dir *repb.Directory, parentPath string) error {
+		for _, fileNode := range dir.GetFiles() {
+			// Files consume bitmap indexes. If this file's index is present, record
+			// its full path and metadata.
+			if bitmap.Contains(leafIndex) {
+				filePath := fileNode.GetName()
+				if parentPath != "" {
+					filePath = path.Join(parentPath, filePath)
+				}
+				downloads = append(downloads, &capb.ExecutionDownload{
+					Path:         filePath,
+					Digest:       fileNode.GetDigest(),
+					IsExecutable: fileNode.GetIsExecutable(),
+				})
+			}
+			leafIndex++
+		}
+		// Then recurse into child directories in protobuf order so later file
+		// indexes stay aligned with the bitmap.
+		for _, childNode := range dir.GetDirectories() {
+			childDir, ok := directoriesByDigest[digest.String(childNode.GetDigest())]
+			if !ok {
+				return status.NotFoundErrorf("directory %q missing from GetTree response", childNode.GetName())
+			}
+			childPath := childNode.GetName()
+			if parentPath != "" {
+				childPath = path.Join(parentPath, childPath)
+			}
+			if err := visit(childDir, childPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Start at the input root with no path prefix.
+	if err := visit(tree.GetRoot(), ""); err != nil {
+		return nil, err
+	}
+
+	return downloads, nil
 }
 
 func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error {

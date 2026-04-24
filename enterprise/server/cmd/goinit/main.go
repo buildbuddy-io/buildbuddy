@@ -115,7 +115,9 @@ func reapChildren(ctx context.Context) {
 			// just reap once - reap all zombie processes in a loop until there
 			// is nothing left to reap.
 			for {
-				if _, err := syscall.Wait4(-1, &status, unix.WNOHANG, nil); err != nil {
+				// pid > 0 is the only case where Wait4 successfully reaped a
+				// zombie, so stop reaping on any non-positive pid.
+				if pid, err := syscall.Wait4(-1, &status, unix.WNOHANG, nil); err != nil || pid <= 0 {
 					break
 				}
 			}
@@ -359,10 +361,15 @@ func main() {
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
 
-	nameServers := []string{
-		"nameserver 8.8.8.8",
-		"nameserver 8.8.4.4",
-		"nameserver 1.1.1.1",
+	// Try to use the host's resolv.conf passed via MMDS; fall back to hardcoded
+	// nameservers if it's unavailable (e.g. networking not configured).
+	resolvConf, err := firecrackerutil.FetchMMDSKey("resolv_conf")
+	if err != nil || len(bytes.TrimSpace(resolvConf)) == 0 {
+		resolvConf = []byte(strings.Join([]string{
+			"nameserver 8.8.8.8",
+			"nameserver 8.8.4.4",
+			"nameserver 1.1.1.1",
+		}, "\n"))
 	}
 	if *setDefaultRoute {
 		dnsOverrides, err := vmdns.FetchDNSOverrides()
@@ -371,10 +378,10 @@ func main() {
 		}
 		if len(dnsOverrides) > 0 {
 			// Point to local DNS server to handle any DNS overrides.
-			nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
+			resolvConf = append([]byte("nameserver 127.0.0.1\n"), resolvConf...)
 		}
 	}
-	die(os.WriteFile("/etc/resolv.conf", []byte(strings.Join(nameServers, "\n")), 0755))
+	die(os.WriteFile("/etc/resolv.conf", resolvConf, 0755))
 	if _, err := os.Stat("/etc/mtab"); err != nil {
 		if os.IsNotExist(err) {
 			die(syscall.Symlink("/proc/mounts", "/etc/mtab"))

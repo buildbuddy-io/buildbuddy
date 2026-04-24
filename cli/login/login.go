@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
+	"time"
 
 	_ "embed"
 
@@ -38,6 +38,7 @@ const (
 
 var (
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
+	Flags = flags
 
 	group            = flags.String("org", "", "If set, log in with this org identifier (slug), like 'my-org'")
 	check            = flags.Bool("check", false, "Just check whether logged in. Exits with code 0 if logged in, code 1 if not logged in, or 2 if there is an error.")
@@ -246,8 +247,8 @@ type Result[T any] struct {
 // Login server which redirects to the BB UI and consumes the token when we
 // are redirected back from BuildBuddy.
 type server struct {
-	wg       sync.WaitGroup
 	lis      net.Listener
+	srv      *http.Server
 	repoRoot string
 	loginURL string
 	resultCh chan Result[string]
@@ -268,7 +269,8 @@ func startServer(loginURL, repoRoot string) (*server, error) {
 		resultCh: make(chan Result[string], 1),
 		errCh:    make(chan error, 1),
 	}
-	go http.Serve(lis, s)
+	s.srv = &http.Server{Handler: s}
+	go s.srv.Serve(lis)
 	return s, nil
 }
 
@@ -281,9 +283,6 @@ func (s *server) BuildBuddyAuthURL() string {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	if token := r.URL.Query().Get("token"); token != "" {
 		s.resultCh <- Result[string]{Val: token, Err: nil}
 		// Wait for SetErr() to be called, which indicates whether we handled
@@ -310,8 +309,20 @@ func (s *server) SetErr(err error) {
 }
 
 func (s *server) Close() error {
-	s.wg.Wait()
-	return s.lis.Close()
+	// Gracefully shut down so that any in-flight redirect response has a
+	// chance to be fully written to the underlying TCP connection before
+	// the process exits. Without this, the browser can miss the final
+	// redirect back to the "CLI login complete" page, since the process
+	// would exit immediately after the handler returns but before the
+	// response bytes are flushed.
+	//
+	// Once the handler returns, the connection becomes idle and Shutdown
+	// closes it immediately, so this should complete in milliseconds on
+	// localhost. The timeout is just a safety net so that a stuck client
+	// connection can't hang the CLI on exit.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.srv.Shutdown(ctx)
 }
 
 func openInBrowser(url string) error {

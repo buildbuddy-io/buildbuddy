@@ -118,7 +118,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </label>
           <div className="input-help-text">May contain lowercase letters, numbers, or hyphens (-)</div>
           <div className="url-input-row">
-            {!capabilities.config.subdomainsEnabled && (
+            {capabilities.config.groupMembershipRequestsEnabled && !capabilities.config.subdomainsEnabled && (
               <span>
                 {window.location.hostname}
                 {window.location.port && `:${window.location.port}`}/join/
@@ -135,7 +135,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             {capabilities.config.subdomainsEnabled && (
               <span>
                 .{capabilities.config.domain}
-                {window.location.port && `:${window.location.port}`}/join/
+                {window.location.port && `:${window.location.port}`}
               </span>
             )}
           </div>

@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -828,6 +829,30 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Rewrite container image name via experiment.
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		const containerImageRewriteExperiment = "remote_execution.container_image_rewrite"
+		rewriteConfig, details := fp.ObjectDetails(ctx, containerImageRewriteExperiment, nil)
+		if rewriteConfig != nil {
+			prefix, _ := rewriteConfig["prefix"].(string)
+			replacement, _ := rewriteConfig["replacement"].(string)
+			imageName := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
+			if prefix != "" && replacement != "" {
+				if after, ok := strings.CutPrefix(imageName, prefix); ok {
+					executionTask.PlatformOverrides.Properties = append(
+						executionTask.PlatformOverrides.Properties,
+						&repb.Platform_Property{
+							Name:  "container-image",
+							Value: "docker://" + replacement + after,
+						})
+				}
+			}
+		}
+		if details.Variant() != "" {
+			executionTask.Experiments = append(executionTask.Experiments, containerImageRewriteExperiment+":"+details.Variant())
+		}
+	}
+
 	// Inject use-oci-fetcher platform property via experiment.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
@@ -846,18 +871,21 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false)) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCParams()
+	}
+	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.download_inputs_chunked", false)) {
+		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets {
+	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
 		if secretService == nil {
 			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
-		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID, props.EnvSecrets...)
 		if err != nil {
 			return nil, err
 		}
@@ -1428,6 +1456,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
+
+			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 		}
 		data, err := proto.Marshal(op)
 		if err != nil {
@@ -1468,6 +1498,20 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				}
 			}
 		}
+	}
+}
+
+// records prometheus metrics about the response + metadata sizes.
+func recordResponseMetrics(rsp *repb.ExecuteResponse, auxMD *espb.ExecutionAuxiliaryMetadata, groupID string) {
+	if timeline := rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetTimeline(); timeline != nil {
+		metrics.RemoteExecutionResourceUsageTimelineMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(timeline)))
+	}
+	if inputFetchMetadata := auxMD.GetInputFetchDetailedStats(); inputFetchMetadata != nil {
+		metrics.RemoteExecutionInputDownloadBitmapMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(inputFetchMetadata)))
 	}
 }
 

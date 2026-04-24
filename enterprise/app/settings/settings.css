@@ -365,3 +365,16 @@
   background: var(--color-settings-tab-active-bg);
   color: var(--color-settings-tab-active-text);
 }
+
+.sso-config-form {
+  margin-top: 16px;
+}
+
+.sso-config-form .sso-config-input {
+  width: 100%;
+  max-width: 640px;
+}
+
+.sso-config-form .sso-config-actions {
+  margin-top: 12px;
+}

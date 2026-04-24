@@ -12,11 +12,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -838,6 +841,62 @@ func TestLeaseExpiration(t *testing.T) {
 	// Lease renewal should fail as the stream should be broken.
 	err = lease.Renew()
 	require.ErrorIs(t, io.EOF, err)
+}
+
+func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	gh, err := githubapp.NewAppService(env, nil, nil)
+	require.NoError(t, err)
+	env.SetGitHubAppService(gh)
+
+	// Simulate an auth error for token refresh.
+	env.GetAuthenticator().(*testauth.TestAuthenticator).APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		return nil, status.UnauthenticatedError("invalid API key")
+	}
+
+	overrides := ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=INVALID_API_KEY"
+	task := &repb.ExecutionTask{
+		ExecutionId: "task1",
+		Command: &repb.Command{
+			Arguments: []string{"./" + ci_runner_util.ExecutableName, "--pushed_repo_url=https://github.com/acme-inc/repo"},
+		},
+		PlatformOverrides: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{
+					Name:  platform.EnvOverridesPropertyName,
+					Value: overrides,
+				},
+			},
+		},
+	}
+	taskBytes, err := proto.Marshal(task)
+	require.NoError(t, err)
+
+	req := &scpb.ScheduleTaskRequest{
+		TaskId:         "task1",
+		SerializedTask: taskBytes,
+		Metadata: &scpb.SchedulingMetadata{
+			Os:          defaultOS,
+			Arch:        defaultArch,
+			TaskGroupId: "group1",
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   100,
+				EstimatedMilliCpu:      100,
+				EstimatedFreeDiskBytes: 100,
+			},
+		},
+	}
+
+	_, err = env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	fe.WaitForTask(req.GetTaskId())
+	lease := fe.Claim(req.GetTaskId())
+	defer lease.Finalize()
+
+	require.Equal(t, task, lease.task)
 }
 
 func TestSchedulingDelay_NoDelay(t *testing.T) {

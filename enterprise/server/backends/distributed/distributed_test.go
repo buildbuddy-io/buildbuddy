@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -33,6 +35,12 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 var (
@@ -83,7 +91,9 @@ func startNewDCache(t *testing.T, te environment.Env, config Options, baseCache 
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.StartListening()
+	if err := c.StartListening(); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		waitForShutdown(c)
 	})
@@ -609,7 +619,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	}
 
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 	for _, r := range resourcesWritten {
 		for _, distributedCache := range distributedCaches {
@@ -1109,7 +1119,7 @@ func TestHintedHandoff(t *testing.T) {
 	// Restart the downed node -- as soon as it's back up, it should
 	// receive hinted handoffs from the other peers.
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 
 	// Wait for all peers to finish their backfill requests.
@@ -1340,7 +1350,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
@@ -1349,7 +1359,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
@@ -1358,7 +1368,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -1404,7 +1414,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	config2 = baseConfig
 	config2.ListenAddr = peer2
@@ -1412,7 +1422,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	config3 = baseConfig
 	config3.ListenAddr = peer3
@@ -1420,7 +1430,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	// Now bring up the new nodes
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
@@ -1430,7 +1440,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc4.StartListening()
+	require.NoError(t, dc4.StartListening())
 
 	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
 	config5 := baseConfig
@@ -1439,7 +1449,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc5.StartListening()
+	require.NoError(t, dc5.StartListening())
 
 	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
 	config6 := baseConfig
@@ -1448,7 +1458,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc6.StartListening()
+	require.NoError(t, dc6.StartListening())
 
 	memoryCache7 := newMemoryCache(t, singleCacheSizeBytes)
 	config7 := baseConfig
@@ -1457,7 +1467,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc7.StartListening()
+	require.NoError(t, dc7.StartListening())
 
 	memoryCache8 := newMemoryCache(t, singleCacheSizeBytes)
 	config8 := baseConfig
@@ -1466,7 +1476,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc8.StartListening()
+	require.NoError(t, dc8.StartListening())
 
 	memoryCache9 := newMemoryCache(t, singleCacheSizeBytes)
 	config9 := baseConfig
@@ -1475,7 +1485,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc9.StartListening()
+	require.NoError(t, dc9.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -2700,4 +2710,199 @@ func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperat
 		}
 	}
 	return nil
+}
+
+func fakeKubePod(name, namespace, ip string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "cache"},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "ReplicaSet",
+					Name:       "cache-rs",
+					Controller: func() *bool { b := true; return &b }(),
+				},
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: name,
+		},
+		Status: corev1.PodStatus{
+			PodIP: ip,
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+}
+
+func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
+	return &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cache-rs",
+			Namespace: namespace,
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "cache"},
+			},
+		},
+	}
+}
+
+func newPeerWatcher(t *testing.T, portStr, ns, podName string, client kubernetes.Interface) *kubediscovery.PeerWatcher {
+	pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
+		Port:      portStr,
+		Namespace: ns,
+		PodName:   podName,
+		Client:    client,
+	})
+	require.NoError(t, err)
+	return pw
+}
+
+func TestKubeDiscoveryReadWrite(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// Each node uses a different loopback IP on the same port, matching
+	// how kubediscovery constructs addresses (podIP:port).
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+	peer3 := fmt.Sprintf("127.0.0.3:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		fakeKubePod("cache-2", ns, "127.0.0.3"),
+		fakeKubeReplicaSet(ns),
+	)
+	portStr := fmt.Sprintf("%d", port)
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	config3.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-2", fakeClient)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	// Wait for kubediscovery to populate the hash ring.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 3 &&
+			len(dc2.consistentHash.GetItems()) == 3 &&
+			len(dc3.consistentHash.GetItems()) == 3
+	}, 5*time.Second, 50*time.Millisecond, "timed out waiting for peer discovery")
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
+
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err := distributedCaches[i%3].Set(ctx, rn, buf)
+		require.NoError(t, err)
+
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+		}
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+}
+
+func TestKubeDiscoveryPodJoins(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubeReplicaSet(ns),
+	)
+	portStr := fmt.Sprintf("%d", port)
+	baseConfig := Options{
+		ReplicationFactor:  1,
+		DisableLocalLookup: true,
+	}
+
+	// Start with one node.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	waitForReady(t, peer1)
+
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 1
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// Write some data via dc1.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc1.Set(ctx, rn, buf))
+
+	// Add a second pod to the fake K8s cluster and start a second cache.
+	_, err := fakeClient.CoreV1().Pods(ns).Create(
+		context.Background(),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		metav1.CreateOptions{},
+	)
+	require.NoError(t, err)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	waitForReady(t, peer2)
+
+	// dc1 should discover the new peer.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc1 should discover 2 peers")
+
+	// dc2 should also have both peers.
+	require.Eventually(t, func() bool {
+		return len(dc2.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
 }

@@ -462,7 +462,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -507,7 +507,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -618,7 +618,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -701,7 +701,7 @@ func TestWebhook_RespectsVisibility(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -884,12 +884,54 @@ func TestWebhook_LegacyWorkflow_UseDefaultWorkflowConfig(t *testing.T) {
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 }
 
+func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+
+	// Set up a workflow for one group.
+	_, _, gid1 := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid1, true /*useDefaultWorkflowConfig*/)
+	_ = setupFakeGitProvider(t, te)
+
+	// Authenticate as a user from a different org.
+	ctx2, uid2, gid2 := authenticateAsUser(t, ctx, te, "US2")
+	reqCtx := testauth.RequestContext(uid2, gid2)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	for _, tc := range []struct {
+		name    string
+		repoURL string
+	}{
+		{
+			name:    "existing repo",
+			repoURL: repoURL,
+		},
+		{
+			name:    "nonexistent repo",
+			repoURL: "file:///nonexistent",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid1, tc.repoURL)
+			_, err := bbClient.ExecuteWorkflow(ctx2, &wfpb.ExecuteWorkflowRequest{
+				RequestContext: reqCtx,
+				WorkflowId:     workflowID,
+				PushedRepoUrl:  tc.repoURL,
+				PushedBranch:   "main",
+			})
+			assert.True(t, status.IsPermissionDeniedError(err))
+		})
+	}
+}
+
 func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
-	flags.Set(t, "remote_execution.enable_kythe_indexing", true)
 
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
@@ -904,46 +946,84 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
 
 	testCases := []struct {
-		name            string
-		actionFilter    []string
-		kytheEnabled    bool
-		expectedActions []string
+		name                      string
+		actionFilter              []string
+		codesearchEnabledForGroup bool
+		codesearchFlagEnabled     bool
+		kytheFlagEnabled          bool
+		expectedActions           []string
 	}{
 		{
-			name:            "no action filter, kythe disabled",
-			actionFilter:    nil,
-			kytheEnabled:    false,
-			expectedActions: []string{"Test all targets"},
+			name:                      "no action filter, kythe disabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:            "no action filter, kythe enabled",
-			actionFilter:    nil,
-			kytheEnabled:    true,
-			expectedActions: []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "no action filter, kythe enabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
 		},
 		{
-			name:            "action filter, kythe disabled",
-			actionFilter:    []string{"Test all targets"},
-			kytheEnabled:    false,
-			expectedActions: []string{"Test all targets"},
+			name:                      "action filter, kythe disabled",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:            "action filter, kythe enabled",
-			actionFilter:    []string{"Test all targets"},
-			kytheEnabled:    true,
-			expectedActions: []string{"Test all targets"},
+			name:                      "action filter, kythe enabled",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:            "kythe-only action filter",
-			actionFilter:    []string{config.KytheActionName},
-			kytheEnabled:    true,
-			expectedActions: []string{config.KytheActionName},
+			name:                      "kythe-only action filter",
+			actionFilter:              []string{config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.KytheActionName},
 		},
 		{
-			name:            "all codesearch action filter",
-			actionFilter:    []string{config.CSIncrementalUpdateName, config.KytheActionName},
-			kytheEnabled:    true,
-			expectedActions: []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "all codesearch action filter",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.CSIncrementalUpdateName, config.KytheActionName},
+		},
+		{
+			name:                      "no action filter, cs indexing only enabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          false,
+			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
+		},
+		{
+			name:                      "all codesearch action filter, cs indexing only enabled",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          false,
+			expectedActions:           []string{config.CSIncrementalUpdateName},
+		},
+		{
+			name:                      "all codesearch action filter, kythe indexing only enabled",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     false,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.KytheActionName},
 		},
 	}
 
@@ -951,9 +1031,12 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		g, err := te.GetUserDB().GetGroupByID(ctx, gid)
 		require.NoError(t, err)
 		g.URLIdentifier = "mustbeset"
-		g.CodeSearchEnabled = tc.kytheEnabled
+		g.CodeSearchEnabled = tc.codesearchEnabledForGroup
 		_, err = te.GetUserDB().UpdateGroup(ctx, g)
 		require.NoError(t, err)
+
+		flags.Set(t, "remote_execution.enable_codesearch_indexing", tc.codesearchFlagEnabled)
+		flags.Set(t, "remote_execution.enable_kythe_indexing", tc.kytheFlagEnabled)
 
 		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
 		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{

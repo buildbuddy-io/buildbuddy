@@ -2259,6 +2259,10 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	defer f.Close()
 
 	lines := []string{
+		// ci_runner tasks intentionally preserve Bazel server state across runs.
+		// Disable idle shutdown so a recycled runner doesn't resume a Bazel server
+		// whose idle timer is already expired.
+		"startup --max_idle_secs=0",
 		"common --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		"common --build_metadata=PARENT_RUN_ID=" + runID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
@@ -2587,14 +2591,6 @@ func runBazelWrapper() error {
 		return err
 	}
 
-	// If the wrapper invokes the CLI, don't recursively invoke the CLI if
-	// specified in .bazelversion.
-	if filepath.Base(bazelBin) == bbBinaryName {
-		if err := os.Setenv("BAZELISK_SKIP_WRAPPER", "true"); err != nil {
-			return err
-		}
-	}
-
 	// Get the current bazel workspace path where we expect to find the
 	// workspace rc file.
 	workspacePath, err := currentBazelWorkspaceAbsPath()
@@ -2799,22 +2795,28 @@ func diskUsage() (*diskUsageStats, error) {
 }
 
 func parseSecretRedactionValues(serializedSecretNames string) []string {
-	if serializedSecretNames == "" {
-		return nil
-	}
-	var names []string
-	if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
-		backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
-		return nil
-	}
-	values := make([]string, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
+	explicitNames := make(map[string]struct{})
+	if serializedSecretNames != "" {
+		var names []string
+		if err := json.Unmarshal([]byte(serializedSecretNames), &names); err != nil {
+			backendLog.Warningf("Failed to parse %s env var for secret redaction: %s", ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, err)
+		} else {
+			for _, name := range names {
+				if name != "" {
+					explicitNames[name] = struct{}{}
+				}
+			}
 		}
+	}
+
+	values := make([]string, 0, len(explicitNames))
+	for name := range explicitNames {
 		if val, ok := os.LookupEnv(name); ok && val != "" {
 			values = append(values, val)
 		}
 	}
+
+	values = append(values, redact.CollectSensitiveEnvValues(os.Environ())...)
+
 	return values
 }

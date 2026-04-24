@@ -40,16 +40,18 @@ export default class TapComponent extends React.Component<Props, State> {
   branchInputRef = React.createRef<HTMLInputElement>();
 
   componentWillMount() {
-    document.title = `Tests | BuildBuddy`;
     this.fetchRepos();
   }
 
   componentDidMount() {
+    this.updateDocumentTitle();
     if (this.branchInputRef.current) {
       this.branchInputRef.current.value = this.props.search.get("branch") || "";
     }
   }
-  componentDidUpdate() {
+
+  componentDidUpdate(prevProps: Props) {
+    this.updateDocumentTitle();
     if (this.branchInputRef.current) {
       this.branchInputRef.current.value = this.props.search.get("branch") || "";
     }
@@ -64,6 +66,18 @@ export default class TapComponent extends React.Component<Props, State> {
 
   updateSelectedTab(tab: Tab) {
     router.navigateTo(Path.tapPath + "#" + tab);
+  }
+
+  private getPageTitle() {
+    const target = this.props.search.get("target");
+    if (this.getSelectedTab() === "flakes") {
+      return target ? `Flakes for ${target}` : "Flakes";
+    }
+    return "Tests";
+  }
+
+  private updateDocumentTitle() {
+    document.title = `${this.getPageTitle()} | BuildBuddy`;
   }
 
   fetchRepos(): Promise<void> {
@@ -122,13 +136,11 @@ export default class TapComponent extends React.Component<Props, State> {
   render() {
     const tab = this.getSelectedTab();
     const repo = this.selectedRepo();
-    let title;
+    const title = this.getPageTitle();
     let tabContent;
     if (tab === "flakes") {
-      title = "Flakes";
       tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={this.props.dark}></FlakesComponent>;
     } else {
-      title = "Tests";
       tabContent = (
         <TestGridComponent repo={repo} search={this.props.search} user={this.props.user}></TestGridComponent>
       );

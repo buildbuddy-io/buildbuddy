@@ -50,6 +50,8 @@ var (
 	deleteWaitGroup   = errgroup.Group{}
 	deleteLimitSet    = sync.Once{}
 
+	recordInputFetchMetadata = flag.Bool("executor.record_input_fetch_metadata", true, "If true, and enabled by app experiments, record and report metadata describing which action inputs were fetched from remote CAS.")
+
 	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
 	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
 	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
@@ -322,6 +324,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
 	}
+	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
+	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true

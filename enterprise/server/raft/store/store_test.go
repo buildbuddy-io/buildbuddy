@@ -1491,65 +1491,9 @@ func TestAddRangeBack(t *testing.T) {
 	}
 }
 
-func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, groupID string, sizeBytes int64) *sgpb.FileRecord {
-	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
-	fr := &sgpb.FileRecord{
-		Isolation: &sgpb.Isolation{
-			CacheType:   r.GetCacheType(),
-			PartitionId: groupID,
-		},
-		Digest:         r.GetDigest(),
-		DigestFunction: r.GetDigestFunction(),
-	}
-
-	fs := filestore.New()
-	fileMetadataKey := metadataKey(t, fr)
-
-	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
-	require.NoError(t, err)
-
-	writeCloserMetadata := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-	bytesWritten, err := writeCloserMetadata.Write(buf)
-	require.NoError(t, err)
-
-	now := time.Now()
-	md := &sgpb.FileMetadata{
-		FileRecord:      fr,
-		StorageMetadata: writeCloserMetadata.Metadata(),
-		StoredSizeBytes: int64(bytesWritten),
-		LastModifyUsec:  now.UnixMicro(),
-		LastAccessUsec:  now.UnixMicro(),
-	}
-	protoBytes, err := proto.Marshal(md)
-	require.NoError(t, err)
-
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   fileMetadataKey,
-			Value: protoBytes,
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := ts.Sender().SyncPropose(ctx, fileMetadataKey, writeReq)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	require.NoError(t, err)
-
-	return fr
-}
-
-func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
-	fs := filestore.New()
-	pebbleKey, err := fs.PebbleKey(fr)
-	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
-	require.NoError(t, err)
-	return keyBytes
-}
-
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
-	fk := metadataKey(t, fr)
+	fk := testutil.MetadataKey(t, fr)
 
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
 		Key: fk,
@@ -1578,7 +1522,7 @@ func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingSto
 func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*sgpb.FileRecord {
 	out := make([]*sgpb.FileRecord, 0, n)
 	for i := 0; i < n; i++ {
-		out = append(out, writeRecord(ctx, t, store, "default", 1000))
+		out = append(out, testutil.WriteRecord(ctx, t, store, "default", 1000))
 		if flushFreq != 0 && (i+1)%flushFreq == 0 {
 			store.DB().Flush()
 		}
@@ -1802,7 +1746,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
-		fmk := metadataKey(t, fr)
+		fmk := testutil.MetadataKey(t, fr)
 		if bytes.Compare(fmk, splitResponse.GetLeft().GetEnd()) >= 0 {
 			continue
 		}

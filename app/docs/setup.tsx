@@ -17,7 +17,7 @@ export default class SetupComponent extends React.Component<Props> {
   };
 
   componentWillMount() {
-    document.title = `Setup | BuildBuddy`;
+    document.title = `Quickstart | BuildBuddy`;
   }
 
   render() {

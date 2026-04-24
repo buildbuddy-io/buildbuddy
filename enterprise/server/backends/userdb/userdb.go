@@ -42,9 +42,10 @@ const (
 )
 
 var (
-	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
-	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
-	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	addUserToDomainGroup           = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
+	createGroupPerUser             = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
+	noDefaultUserGroup             = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	groupMembershipRequestsEnabled = flag.Bool("app.group_membership_requests_enabled", true, "If true, users may request membership in organizations via the /join flow.")
 
 	orgName   = flag.String("org.name", "Organization", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
@@ -64,6 +65,8 @@ var (
 	defaultAPIKeyCapabilities = []cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 	}
+
+	errUserNotFound = status.NotFoundError("user not found")
 )
 
 type MemberRole struct {
@@ -109,6 +112,12 @@ func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 		}
 	}
 	return db, nil
+}
+
+// GetGroupMembershipRequestsEnabled returns whether membership requests via
+// the /join flow are enabled.
+func (d *UserDB) GetGroupMembershipRequestsEnabled() bool {
+	return *groupMembershipRequestsEnabled
 }
 
 func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
@@ -428,6 +437,19 @@ func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status g
 	).Exec().Error
 }
 
+func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return err
+	}
+
+	return d.h.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
+		UPDATE "Groups" SET saml_idp_metadata_url = ?
+		WHERE group_id = ?`,
+		url,
+		groupID,
+	).Exec().Error
+}
+
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
 	q, args := query_builder.
 		NewQuery(`UPDATE "Groups" SET github_token = ''`).
@@ -520,6 +542,9 @@ func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userL
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
+	if !d.GetGroupMembershipRequestsEnabled() {
+		return 0, status.PermissionDeniedError("Organization membership requests are disabled.")
+	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return 0, err
@@ -984,7 +1009,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 			return user, nil
 		}
 	}
-	return nil, status.NotFoundError("user not found")
+	return nil, errUserNotFound
 }
 
 func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
@@ -1011,7 +1036,7 @@ func processUserGroupMemberships(rq interfaces.DBRawQuery, groupRoles map[string
 	}
 
 	if len(ugj) == 0 {
-		return nil, status.NotFoundError("user not found")
+		return nil, errUserNotFound
 	}
 
 	user := &ugj[0].User
@@ -1058,6 +1083,9 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	}
 	if u.IsImpersonating() {
 		return d.GetImpersonatedUser(ctx)
+	}
+	if u.GetUserID() == "" {
+		return nil, errUserNotFound
 	}
 	return d.getUserByUserID(ctx, d.h, u.GetUserID())
 }

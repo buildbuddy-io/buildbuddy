@@ -31,6 +31,7 @@ const (
 
 var (
 	flags = flag.NewFlagSet("analyze", flag.ContinueOnError)
+	Flags = flags
 
 	keepGoingFlag = flags.Bool("keep_going", true, "Continue querying the dependency graph even after encountering errors.")
 

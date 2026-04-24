@@ -1948,7 +1948,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForExperiments(ctx, req.GetExecutorHostname(), task.serializedTask)
+			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), task.serializedTask, task.metadata.GetTaskGroupId())
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -2041,16 +2041,40 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	return nil
 }
 
-func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, task []byte) []byte {
-	fp := s.env.GetExperimentFlagProvider()
-	if fp == nil {
-		return task
-	}
-
+// modifyTaskForLease applies lease-time mutations to the serialized task.
+//
+// We do this at lease time so each execution attempt gets the latest values
+// for things like experiments and token refreshes.
+// This is important for tasks that are queued for a long time or are retried
+// after some time, as values computed at initial enqueue can be stale.
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, task []byte, taskGroupID string) []byte {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
+	}
+
+	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, taskProto)
+	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
+		if status.IsNotFoundError(err) {
+			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
+			return task
+		}
+		log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
+	}
+
+	if newTask, err := proto.Marshal(taskProto); err != nil {
+		log.CtxWarningf(ctx, "Failed to marshal updated ExecutionTask: %s", err)
+		return task
+	} else {
+		return newTask
+	}
+}
+
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return taskProto
 	}
 
 	selfHosted := false
@@ -2092,17 +2116,16 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
 
-	if newTask, err := proto.Marshal(taskProto); err != nil {
-		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
-		return task
-	} else {
-		return newTask
+	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
+	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
+		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
 	}
+
+	return taskProto
 }
 
 func getWorkflowName(task *repb.ExecutionTask) string {
-	args := task.GetCommand().GetArguments()
-	if len(args) < 2 || args[0] != "./"+ci_runner_util.ExecutableName {
+	if !(ci_runner_util.IsRemoteRunnerTask(task)) {
 		return ""
 	}
 	for _, arg := range task.GetCommand().GetArguments() {
@@ -2369,6 +2392,9 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
 		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
+	if ci_runner_util.IsRemoteRunnerTask(task) {
+		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
+	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
 		return nil, err
 	}
@@ -2457,6 +2483,11 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		// Proceed despite error - it's fine if it's already unclaimed.
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
+
+	if ci_runner_util.IsRemoteRunnerTask(task) {
+		emitRemoteRunnerMetric(ctx, task, scheduledTask.metadata, "retry")
+	}
+
 	delay := time.Duration(0)
 	if reconnectToken != "" {
 		delay = *leaseReconnectGracePeriod
@@ -2482,6 +2513,56 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	log.CtxDebugf(ctx, "ReEnqueueTask succeeded for task %q", taskID)
 	return nil
+}
+
+func emitRemoteRunnerMetric(ctx context.Context, task *repb.ExecutionTask, md *scpb.SchedulingMetadata, stage string) {
+	opLabel := ""
+	switch task.GetRequestMetadata().GetActionMnemonic() {
+	case "BuildBuddyWorkflowRun":
+		opLabel = metrics.WorkflowLabel
+	case "RemoteBazelRun":
+		opLabel = metrics.RemoteBazelLabel
+	default:
+		log.CtxWarningf(ctx, "Unknown action mnemonic when emitting remote runner metric: %s", task.GetRequestMetadata().GetActionMnemonic())
+		return
+	}
+
+	os := md.GetOs()
+	switch os {
+	case "":
+		os = platform.LinuxOperatingSystemName
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
+	default:
+		os = "unknown"
+	}
+
+	arch := md.GetArch()
+	switch arch {
+	case "":
+		arch = platform.AMD64ArchitectureName
+	case platform.AMD64ArchitectureName, platform.ARM64ArchitectureName:
+	default:
+		arch = "unknown"
+	}
+
+	plat := platform.GetProto(task.GetAction(), task.GetCommand())
+	selfHosted := platform.FindValue(plat, platform.UseSelfHostedExecutorsPropertyName)
+	switch selfHosted {
+	case "":
+		selfHosted = "false"
+	case "true", "false":
+	default:
+		selfHosted = "unknown"
+	}
+
+	metrics.RemoteRunnerRequests.With(prometheus.Labels{
+		metrics.GroupID:    md.GetTaskGroupId(),
+		metrics.OpLabel:    opLabel,
+		metrics.Stage:      stage,
+		metrics.OS:         os,
+		metrics.Arch:       arch,
+		metrics.SelfHosted: selfHosted,
+	}).Inc()
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {

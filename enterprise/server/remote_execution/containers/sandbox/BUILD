@@ -24,9 +24,9 @@ go_library(
 go_test(
     name = "sandbox_test",
     srcs = ["sandbox_test.go"],
-    tags = [
-        "no-sandbox",  # sandbox-exec is not compatible with Bazel's sandbox environment
-    ],
+    exec_properties = {
+        "test.no-sandbox": "",  # sandbox-exec is not compatible with Bazel's sandbox environment
+    },
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             ":sandbox",

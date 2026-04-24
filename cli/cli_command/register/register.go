@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
@@ -20,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -42,37 +45,50 @@ func register() {
 			Name:    "add",
 			Help:    "Adds a dependency to your WORKSPACE file.",
 			Handler: add.HandleAdd,
+			Flags:   add.Flags,
 		},
 		{
 			Name:    "analyze",
 			Help:    "Analyzes the dependency graph.",
 			Handler: analyze.HandleAnalyze,
+			Flags:   analyze.Flags,
 		},
 		{
 			Name:    "ask",
 			Help:    "Asks for suggestions about your last invocation.",
 			Handler: ask.HandleAsk,
 			Aliases: []string{"wtf", "huh"},
+			Flags:   ask.Flags,
+		},
+		{
+			Name:    "box",
+			Help:    "Manages remote Firecracker VM boxes.",
+			Handler: box.HandleBox,
+			Flags:   box.Flags,
 		},
 		{
 			Name:    "download",
 			Help:    "Downloads artifacts from a remote cache.",
 			Handler: download.HandleDownload,
+			Flags:   download.Flags,
 		},
 		{
 			Name:    "execute",
 			Help:    "Executes arbitrary commands using remote execution.",
 			Handler: execute.HandleExecute,
+			Flags:   execute.Flags,
 		},
 		{
 			Name:    "execution",
 			Help:    "Remote execution tools",
 			Handler: execution.HandleExecution,
+			Flags:   execution.Flags,
 		},
 		{
 			Name:    "fix",
 			Help:    "Applies fixes to WORKSPACE and BUILD files.",
 			Handler: fix.HandleFix,
+			Flags:   fix.Flags,
 		},
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
@@ -80,11 +96,13 @@ func register() {
 			Name:    "install",
 			Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
 			Handler: plugin.HandleInstall,
+			Flags:   plugin.Flags,
 		},
 		{
 			Name:    "login",
 			Help:    "Configures bb commands to use your BuildBuddy API key.",
 			Handler: login.HandleLogin,
+			Flags:   login.Flags,
 		},
 		{
 			Name:    "logout",
@@ -95,46 +113,67 @@ func register() {
 			Name:    "print",
 			Help:    "Displays various log file types written by bazel.",
 			Handler: printlog.HandlePrint,
+			Flags:   printlog.Flags,
 		},
 		{
 			Name:    "record",
 			Help:    "Records command output and streams it to BuildBuddy.",
 			Handler: record.HandleRecord,
+			Flags:   record.Flags,
 		},
 		{
 			Name:    "remote",
 			Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
 			Handler: remotebazel.HandleRemoteBazel,
+			Flags:   remotebazel.RemoteFlagset,
 		},
 		{
 			Name:    "remote-download",
 			Help:    "Fetches a remote asset via an intermediate cache.",
 			Handler: remote_download.HandleRemoteDownload,
+			Flags:   remote_download.Flags,
 		},
 		{
 			Name:    "search",
 			Help:    "Searches for code in the remote codesearch index.",
 			Handler: search.HandleSearch,
+			Flags:   search.Flags,
+		},
+		{
+			Name:    "ssh",
+			Help:    "Runs an SSH client on a user-mode wireguard network.",
+			Handler: ssh.HandleSSH,
+			Flags:   ssh.Flags,
+		},
+		{
+			Name:    "ssh-server",
+			Help:    "Runs an SSH server on a user-mode wireguard network.",
+			Handler: ssh_server.HandleSSHServer,
+			Flags:   ssh_server.Flags,
 		},
 		{
 			Name:    "index",
 			Help:    "Sends updates to the remote codesearch index.",
 			Handler: index.HandleIndex,
+			Flags:   index.Flags,
 		},
 		{
 			Name:    "ui",
 			Help:    "Opens an interactive terminal UI for viewing builds.",
 			Handler: ui.HandleUI,
+			Flags:   ui.Flags,
 		},
 		{
 			Name:    "update",
 			Help:    "Updates the bb CLI to the latest version.",
 			Handler: update.HandleUpdate,
+			Flags:   update.Flags,
 		},
 		{
 			Name:    "upload",
 			Help:    "Uploads files to the remote cache.",
 			Handler: upload.HandleUpload,
+			Flags:   upload.Flags,
 		},
 		{
 			Name:    "version",
@@ -145,11 +184,13 @@ func register() {
 			Name:    "view",
 			Help:    "Views build logs from BuildBuddy.",
 			Handler: view.HandleView,
+			Flags:   view.Flags,
 		},
 		{
 			Name:    "explain",
 			Help:    "Explains the difference between two compact execution logs.",
 			Handler: explain.HandleExplain,
+			Flags:   explain.Flags,
 		},
 	}
 	cli_command.CommandsByName = make(

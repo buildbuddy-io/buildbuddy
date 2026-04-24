@@ -61,7 +61,6 @@ func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 		numVnodes:           vnodes,
 		hashKey:             hashFunction,
 		keys:                make([]int, 0),
-		items:               make([]string, 0),
 		keyIndexToItemIndex: make([]uint8, 0),
 	}
 }
@@ -74,17 +73,43 @@ func (c *ConsistentHash) GetItems() []string {
 
 func (c *ConsistentHash) Set(items ...string) error {
 	if len(items) > maxSize {
-		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 256")
+		return status.InvalidArgumentErrorf("Too many items in consistent hash, max allowed: %v", maxSize)
 	}
+	sort.Strings(items)
+	c.set(items, items)
+	return nil
+}
+
+// SetFromMap builds the hash ring using the map keys as ring keys (for
+// hashing / vnode placement) and the map values as the strings returned
+// by Get, GetAllReplicas, and GetItems.
+func (c *ConsistentHash) SetFromMap(m map[string]string) error {
+	if len(m) > maxSize {
+		return status.InvalidArgumentErrorf("Too many items in consistent hash, max allowed: %v", maxSize)
+	}
+	// Sort both keys and values by key
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	values := make([]string, len(keys))
+	for i, k := range keys {
+		values[i] = m[k]
+	}
+	c.set(keys, values)
+	return nil
+}
+
+func (c *ConsistentHash) set(keys, values []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.keys = make([]int, 0, len(items)*c.numVnodes)
-	ring := make(map[int]uint8, len(items)*c.numVnodes)
+	c.keys = make([]int, 0, len(keys)*c.numVnodes)
+	ring := make(map[int]uint8, len(keys)*c.numVnodes)
 
-	c.items = items
-	sort.Strings(c.items)
+	c.items = values
 
-	for itemIndex, key := range items {
+	for itemIndex, key := range keys {
 		for i := 0; i < c.numVnodes; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
@@ -98,7 +123,6 @@ func (c *ConsistentHash) Set(items ...string) error {
 	for i, key := range c.keys {
 		c.keyIndexToItemIndex[i] = ring[key]
 	}
-	return nil
 }
 
 // Get returns the single "item" responsible for the specified key.

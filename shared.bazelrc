@@ -9,7 +9,6 @@ startup --digest_function=BLAKE3
 # in non-hermeticity.
 startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
-
 ################
 # COMMON FLAGS #
 ################
@@ -135,6 +134,12 @@ common --enable_platform_specific_config=true
 common:linux --enable_runfiles
 common:macos --enable_runfiles
 
+# Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
+# Requires a sandboxed execution strategy and is thus not enabled on Windows.
+# https://github.com/bazelbuild/bazel/discussions/22658
+common:linux --experimental_output_paths=strip
+common:macos --experimental_output_paths=strip
+
 # Use C++17 standard for all C++ compilation
 common:linux --host_cxxopt=-std=c++17
 common:linux --cxxopt=-std=c++17
@@ -207,6 +212,7 @@ common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
 common:cache-shared --experimental_remote_cache_compression_threshold=100
+common:cache-shared --experimental_remote_cache_chunking
 common:cache-shared --remote_timeout=10m
 
 common:cache-dev --config=cache-shared
@@ -224,8 +230,12 @@ common:target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_
 common:target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:target-linux-x86-exec-multiarch --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:target-linux-x86-exec-multiarch --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
+# Bazel 7+ no longer implies this under --remote_download_minimal.
+common:download-minimal --nobuild_runfile_links
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared

@@ -57,7 +57,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
   subscription?: Subscription;
 
   componentWillMount() {
-    document.title = `Trends | BuildBuddy`;
     this.fetchStats();
 
     this.subscription = rpcService.events.subscribe({
@@ -65,11 +64,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
     });
   }
 
+  componentDidMount() {
+    this.updateDocumentTitle();
+  }
+
   componentWillUnmount() {
     this.subscription?.unsubscribe();
   }
 
   componentDidUpdate(prevProps: Props) {
+    this.updateDocumentTitle();
     if (
       this.showingDrilldown(this.props.tab) !== this.showingDrilldown(prevProps.tab) ||
       this.props.search.toString() != prevProps.search.toString()
@@ -270,12 +274,21 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
 
+  private getPageTitle() {
+    return this.showingDrilldown(this.props.tab) ? "Drilldown" : "Trends";
+  }
+
+  private updateDocumentTitle() {
+    document.title = `${this.getPageTitle()} | BuildBuddy`;
+  }
+
   render() {
+    const pageTitle = this.getPageTitle();
     return (
       <div className="trends">
         <div className="container">
           <div className="trends-header">
-            <div className="trends-title">Trends</div>
+            <div className="trends-title">{pageTitle}</div>
             <FilterComponent search={this.props.search} />
           </div>
           {this.showingDrilldown(this.props.tab) && (

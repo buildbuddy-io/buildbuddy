@@ -108,6 +108,7 @@ var (
 		"/audit-logs/",
 		"/repo/",
 		"/reviews/",
+		"/profile/",
 	}
 )
 
@@ -476,6 +477,10 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
 		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
+	}
+
+	if mcp := env.GetMCPService(); mcp != nil {
+		mcp.RegisterHandlers(mux)
 	}
 
 	if scim := env.GetSCIMService(); scim != nil {

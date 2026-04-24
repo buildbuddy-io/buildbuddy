@@ -40,6 +40,7 @@ import (
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -53,6 +54,38 @@ const (
 	user2  = "USER2"
 	group2 = "GROUP2"
 )
+
+type fakeCASServer struct {
+	repb.UnimplementedContentAddressableStorageServer
+
+	lastGetTreeRequest *repb.GetTreeRequest
+	getTreeResponses   []*repb.GetTreeResponse
+	getTreeErr         error
+}
+
+func (s *fakeCASServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	s.lastGetTreeRequest = req
+	for _, rsp := range s.getTreeResponses {
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+	return s.getTreeErr
+}
+
+type fakeGetTreeStream struct {
+	bbspb.BuildBuddyService_GetTreeServer
+
+	ctx       context.Context
+	responses []*capb.GetTreeResponse
+}
+
+func (s *fakeGetTreeStream) Context() context.Context { return s.ctx }
+
+func (s *fakeGetTreeStream) Send(rsp *capb.GetTreeResponse) error {
+	s.responses = append(s.responses, proto.Clone(rsp).(*capb.GetTreeResponse))
+	return nil
+}
 
 func createInvocationForTesting(te environment.Env, user string) (string, error) {
 	ctx := context.Background()
@@ -290,6 +323,61 @@ func TestDeleteInvocation(t *testing.T) {
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
 	require.Error(t, err)
+}
+
+func TestGetTree(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	fakeCAS := &fakeCASServer{
+		getTreeResponses: []*repb.GetTreeResponse{
+			{
+				Directories: []*repb.Directory{
+					{
+						Files: []*repb.FileNode{{Name: "first.txt"}},
+					},
+				},
+				NextPageToken: "page-1",
+			},
+			{
+				Directories: []*repb.Directory{
+					{
+						Files: []*repb.FileNode{{Name: "second.txt"}},
+					},
+				},
+			},
+		},
+	}
+	te.SetCASServer(fakeCAS)
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	req := &capb.GetTreeRequest{
+		RootDigest:     &repb.Digest{Hash: "root", SizeBytes: 1},
+		InstanceName:   "remote",
+		PageSize:       123,
+		PageToken:      "resume-here",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	stream := &fakeGetTreeStream{ctx: context.Background()}
+
+	err = server.GetTree(req, stream)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&repb.GetTreeRequest{
+		RootDigest:     req.GetRootDigest(),
+		InstanceName:   req.GetInstanceName(),
+		PageSize:       req.GetPageSize(),
+		PageToken:      req.GetPageToken(),
+		DigestFunction: req.GetDigestFunction(),
+	}, fakeCAS.lastGetTreeRequest))
+	require.Len(t, stream.responses, 2)
+	require.True(t, proto.Equal(&capb.GetTreeResponse{
+		Directories:   fakeCAS.getTreeResponses[0].GetDirectories(),
+		NextPageToken: fakeCAS.getTreeResponses[0].GetNextPageToken(),
+	}, stream.responses[0]))
+	require.True(t, proto.Equal(&capb.GetTreeResponse{
+		Directories:   fakeCAS.getTreeResponses[1].GetDirectories(),
+		NextPageToken: fakeCAS.getTreeResponses[1].GetNextPageToken(),
+	}, stream.responses[1]))
 }
 
 func TestFileDownloadEndpoint(t *testing.T) {

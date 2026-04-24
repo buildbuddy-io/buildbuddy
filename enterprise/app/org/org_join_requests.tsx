@@ -1,6 +1,7 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import { accountName } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
@@ -22,10 +23,16 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
   state: State = { isLoading: true };
 
   componentDidMount() {
+    if (!capabilities.config.groupMembershipRequestsEnabled) {
+      return;
+    }
     this.getJoinOrgRequests();
   }
 
   componentDidUpdate(prevProps: OrgJoinRequestsComponentProps) {
+    if (!capabilities.config.groupMembershipRequestsEnabled) {
+      return;
+    }
     if (prevProps.user.selectedGroup.id !== this.props.user.selectedGroup.id) {
       const _ = this.getJoinOrgRequests();
     }
@@ -70,6 +77,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
   }
 
   render() {
+    if (!capabilities.config.groupMembershipRequestsEnabled) return <></>;
     if (!this.state.users?.length) return <></>;
 
     return (

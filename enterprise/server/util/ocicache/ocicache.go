@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
@@ -33,7 +34,7 @@ var (
 const (
 	blobOutputFilePath          = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
+	blobInstanceName            = interfaces.OCIImageInstanceNamePrefix
 	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 
 	maxManifestSize = 10000000
@@ -167,7 +168,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -194,7 +195,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
@@ -224,7 +225,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -248,7 +249,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, blobInstanceName, cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -286,7 +287,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
@@ -299,7 +300,7 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -321,7 +322,7 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
-		"",
+		blobInstanceName,
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -466,4 +467,36 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)
+}
+
+// BlobFetchKey identifies a unique OCI blob fetch for singleflight
+// deduplication. Two requests that resolve to the same BlobFetchKey
+// are safe to coalesce: one fetches from upstream while the others wait.
+type BlobFetchKey struct {
+	// repo is the string form of the gcrname.Repository
+	// (e.g. "index.docker.io/library/alpine").
+	repo string
+	// digest is the string form of the gcr.Hash
+	// (e.g. "sha256:abc123").
+	digest string
+	// credsHash is a hash of the credentials used to fetch the blob.
+	// Requests with different credentials must not be coalesced to
+	// prevent cross-auth piggybacking.
+	credsHash string
+}
+
+// NewBlobFetchKey creates a BlobFetchKey from strongly-typed
+// go-containerregistry values and optional proto credentials.
+func NewBlobFetchKey(repo gcrname.Repository, digest gcr.Hash, creds *rgpb.Credentials) BlobFetchKey {
+	var credsHash string
+	if creds == nil {
+		credsHash = hash.Strings("", "")
+	} else {
+		credsHash = hash.Strings(creds.GetUsername(), creds.GetPassword())
+	}
+	return BlobFetchKey{
+		repo:      repo.Name(),
+		digest:    digest.String(),
+		credsHash: credsHash,
+	}
 }

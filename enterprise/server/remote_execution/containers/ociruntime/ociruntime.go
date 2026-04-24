@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fsync"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -56,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -81,6 +83,8 @@ var (
 	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	cdiDevices              = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
+	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
 	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
@@ -219,6 +223,10 @@ type provider struct {
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
 	lxcfsMount string
+
+	// CDI registry used for resolving configured CDI devices.
+	// This is initialized once at startup when CDI devices are configured.
+	cdiRegistry *cdi.Cache
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
@@ -351,6 +359,26 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
+	var cdiRegistry *cdi.Cache
+	if len(*cdiDevices) > 0 {
+		registry, err := cdi.NewCache(
+			cdi.WithSpecDirs((*cdiSpecDirs)...),
+			// Disable auto-refresh since we don't have a way to clean up the
+			// goroutines that would be spawned to do the refreshing. For now,
+			// users can just restart the executor to pick up changes to CDI
+			// specs if needed.
+			//
+			// TODO: if we add a provider.Close() lifecycle
+			// method, close the registry when the provider is closed, and
+			// enable auto-refresh.
+			cdi.WithAutoRefresh(false),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create CDI registry: %w", err)
+		}
+		cdiRegistry = registry
+	}
+
 	return &provider{
 		env:            env,
 		runtime:        rt,
@@ -361,6 +389,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 		lxcfsMount:     lxcfsMount,
+		cdiRegistry:    cdiRegistry,
 	}, nil
 }
 
@@ -391,6 +420,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
+		cdiRegistry:    p.cdiRegistry,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,
@@ -452,6 +482,8 @@ type ociContainer struct {
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
 	useOCIFetcher bool
+
+	cdiRegistry *cdi.Cache
 }
 
 // Assert [*ociContainer] implements [container.StatsRecorder].
@@ -1286,8 +1318,27 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
+	if err := injectConfiguredCDIDevices(&spec, c.cdiRegistry); err != nil {
+		return nil, fmt.Errorf("inject configured CDI devices: %w", err)
+	}
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
+}
+
+// injectConfiguredCDIDevices resolves configured CDI devices and applies their
+// container edits to the OCI spec (for example mounts, /dev nodes, env vars,
+// hooks, cgroup device rules).
+func injectConfiguredCDIDevices(spec *specs.Spec, registry *cdi.Cache) error {
+	if len(*cdiDevices) == 0 {
+		return nil
+	}
+	if registry == nil {
+		return fmt.Errorf("CDI registry is not initialized")
+	}
+	if _, err := registry.InjectDevices(spec, (*cdiDevices)...); err != nil {
+		return fmt.Errorf("set up CDI devices: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
@@ -1530,7 +1581,7 @@ type ImageStore struct {
 	resolver       *oci.Resolver
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
-	layerPullGroup singleflight.Group[string, any]
+	layerPullGroup singleflight.Group[string, int64]
 	// fileCache is used for managing layer eviction.
 	fileCache interfaces.FileCache
 
@@ -1567,8 +1618,10 @@ type Image struct {
 type ImageLayer struct {
 	// Path is the path where the layer is stored on disk.
 	Path string
-	// Size is the size of the layer in bytes.
-	Size int64
+	// EstimatedDiskUsageBytes is a best-effort estimate of layer disk usage.
+	// It may come from a disk walk (startup scan / lookup) or by counting the
+	// uncompressed layer tar stream bytes while extracting.
+	EstimatedDiskUsageBytes int64
 	// DiffID is the uncompressed image digest.
 	DiffID ctr.Hash
 }
@@ -1725,7 +1778,7 @@ func (s *ImageStore) lockImage(ctx context.Context, image *Image) (*LockedImage,
 	// Lock all image layers to prevent eviction.
 	var unlockFns []func()
 	for _, layer := range image.Layers {
-		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.Size)
+		unlock, err := s.fileCache.TrackExternalDirectory(ctx, layer.Path, layer.EstimatedDiskUsageBytes)
 		if err != nil {
 			// Unlock any layers that we were able to lock, to ensure we don't
 			// end up with a partially locked image.
@@ -1776,23 +1829,24 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			destDir := layerPath(s.layersDir, d)
 			resolvedLayer.Path = destDir
 
-			size, err := layer.Size()
+			compressedSize, err := layer.Size()
 			if err != nil {
 				return status.UnavailableErrorf("get layer size: %s", err)
 			}
-			resolvedLayer.Size = size
 
 			// Check whether the layer already exists and can be reused.
 			if *enableImageEviction {
 				// Check via the filecache LRU - this also temporarily locks the
 				// layer to prevent eviction during the existence check.
-				unlock, err := s.fileCache.TrackExternalDirectory(ctx, destDir, size)
+				unlock, existingLayerSize, err := s.fileCache.LookupExternalDirectory(ctx, destDir)
 				if err != nil {
 					if !status.IsNotFoundError(err) {
-						return status.UnavailableErrorf("stat layer directory: %s", err)
+						return status.UnavailableErrorf("lookup layer directory in local cache: %s", err)
 					}
 					// Layer not in cache, fall through to download it.
 				} else {
+					resolvedLayer.EstimatedDiskUsageBytes = existingLayerSize
+
 					// Layer exists in cache. Release the lock for now - we will
 					// properly re-lock the layers individually later, once we
 					// are outside of the singleflight group.
@@ -1814,17 +1868,21 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// Layer dir does not exist in cache, so we need to download it.
 
 			start := time.Now()
-			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
+			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB compressed)", d.Hex, float64(compressedSize)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
 			// Images often share layers - dedupe individual layer pulls.
 			// Note that each layer pull is also authorized, so include
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
-			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				return nil, downloadLayer(ctx, layer, destDir)
+			size, _, err := s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
+				return downloadLayer(ctx, layer, destDir)
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			resolvedLayer.EstimatedDiskUsageBytes = size
+			return nil
 		})
 	}
 	// Fetch image config file concurrently with layer downloads.
@@ -1848,16 +1906,16 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // For reference implementations, see:
 //   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
 //   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64, error) {
 	rc, err := layer.Uncompressed()
 	if err != nil {
-		return status.UnavailableErrorf("get layer reader: %s", err)
+		return 0, status.UnavailableErrorf("get layer reader: %s", err)
 	}
 	defer rc.Close()
 
 	tempUnpackDir := destDir + tmpSuffix()
 	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
-		return status.UnavailableErrorf("create layer unpack dir: %s", err)
+		return 0, status.UnavailableErrorf("create layer unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
@@ -1865,18 +1923,19 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	// the layer we can ensure it gets persisted to disk (to avoid corruption).
 	root := fsync.NewRoot(tempUnpackDir, nil)
 
-	tr := tar.NewReader(rc)
+	counter := &ioutil.Counter{}
+	tr := tar.NewReader(io.TeeReader(rc, counter))
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
+			return 0, status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
 		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
-			return status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
+			return 0, status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
 		}
 
 		// filepath.Join applies filepath.Clean to all arguments
@@ -1890,7 +1949,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
 			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
 			log.CtxDebugf(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
@@ -1903,7 +1962,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			// Directory whiteout
 			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
 				if err := root.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
+					return 0, status.UnavailableErrorf("setxattr on deleted dir: %s", err)
 				}
 				continue
 			}
@@ -1912,7 +1971,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
 			if err := root.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
-				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
+				return 0, status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
 			continue
 		}
@@ -1920,33 +1979,33 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(file, os.FileMode(header.Mode), header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create directory: %s", err)
+				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		case tar.TypeReg:
 			if err := root.CreateFile(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create file: %s", err)
+				return 0, status.UnavailableErrorf("create file: %s", err)
 			}
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
 			if err := root.Symlink(header.Linkname, file, header.Uid, header.Gid); err != nil {
-				return status.UnavailableErrorf("create symlink: %s", err)
+				return 0, status.UnavailableErrorf("create symlink: %s", err)
 			}
 		case tar.TypeLink:
 			target := filepath.Join(tempUnpackDir, header.Linkname)
 			if !strings.HasPrefix(target, tempUnpackDir) {
-				return status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
+				return 0, status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
 			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
 			if err := root.Link(target, file); err != nil {
-				return status.UnavailableErrorf("create hard link: %s", err)
+				return 0, status.UnavailableErrorf("create hard link: %s", err)
 			}
 		}
 	}
 
 	if err := root.Sync(); err != nil {
-		return status.UnavailableErrorf("sync layer paths: %s", err)
+		return 0, status.UnavailableErrorf("sync layer paths: %s", err)
 	}
 
 	if err := os.Rename(tempUnpackDir, destDir); err != nil {
@@ -1954,17 +2013,17 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		// pulling the same layer concurrently with different credentials.
 		if os.IsExist(err) {
 			log.CtxDebugf(ctx, "Ignoring temp layer dir rename failure %q (likely due to concurrent layer download)", err)
-			return nil
+			return counter.Count(), nil
 		}
 
-		return status.UnavailableErrorf("rename temp layer dir: %s", err)
+		return 0, status.UnavailableErrorf("rename temp layer dir: %s", err)
 	}
 
 	if err := fsync.SyncPath(filepath.Dir(destDir)); err != nil {
-		return status.UnavailableErrorf("sync layer dir: %s", err)
+		return 0, status.UnavailableErrorf("sync layer dir: %s", err)
 	}
 
-	return nil
+	return counter.Count(), nil
 }
 
 // Statusz returns statusz page contents for the image store.

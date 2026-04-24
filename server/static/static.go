@@ -223,6 +223,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
 		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
+		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,

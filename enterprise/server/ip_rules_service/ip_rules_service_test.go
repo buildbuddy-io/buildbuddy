@@ -39,16 +39,16 @@ type fakeIPRulesEnforcer struct {
 	checkErr error
 }
 
-func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) error {
-	return nil
+func (f *fakeIPRulesEnforcer) Authorize(ctx context.Context) (context.Context, error) {
+	return ctx, nil
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error) {
+	return ctx, nil
 }
 
-func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
-	return nil
+func (f *fakeIPRulesEnforcer) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	return ctx, nil
 }
 
 func (f *fakeIPRulesEnforcer) InvalidateCache(ctx context.Context, groupID string) {
@@ -334,6 +334,7 @@ func TestGetIPRules_TwoClientsPermitted_AllowedAndRejected(t *testing.T) {
 
 	svc, env, authCtx, groupID := setupService(t, nil, nil)
 	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "baz")
+	setGroupEnforcement(t, authCtx, env, groupID, true)
 
 	_, err := svc.AddRule(authCtx, &irpb.AddRuleRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -362,6 +363,29 @@ func TestGetIPRules_TwoClientsPermitted_AllowedAndRejected(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetIPRules_EnforcementDisabled_ReturnsEmpty(t *testing.T) {
+	flags.Set(t, "auth.ip_rules.permitted_clients", []string{"foo"})
+
+	svc, env, authCtx, groupID := setupService(t, nil, nil)
+	enterprise_testenv.AddClientIdentity(t, env.(*testenv.TestEnv), "foo")
+
+	_, err := svc.AddRule(authCtx, &irpb.AddRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Rule: &irpb.IPRule{
+			Cidr:        "1.2.3.4",
+			Description: "allowed rule",
+		},
+	})
+	require.NoError(t, err)
+
+	ctx := contextWithClientIdentity(t, authCtx, env.GetClientIdentityService(), "foo")
+	rsp, err := svc.GetIPRules(ctx, &irpb.GetRulesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.NoError(t, err)
+	require.Empty(t, rsp.GetIpRules())
 }
 
 func TestSetIPRuleConfigRejectsLockout(t *testing.T) {

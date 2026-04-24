@@ -136,6 +136,16 @@ ts_library(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "react_test",
+    srcs = ["react_test.tsx"],
+    deps = [
+        ":react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+    ],
+)
+
 ts_library(
     name = "cache",
     srcs = ["cache.tsx"],
@@ -155,6 +165,32 @@ ts_jasmine_node_test(
     deps = [
         ":cache",
         "//:node_modules/tslib",
+    ],
+)
+
+ts_library(
+    name = "get_tree",
+    srcs = ["get_tree.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/service:rpc_service",
+        "//app/util:async",
+        "//app/util:rpc",
+        "//proto:cache_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "get_tree_test",
+    srcs = ["get_tree_test.ts"],
+    deps = [
+        ":errors",
+        ":get_tree",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
+        "//proto:cache_ts_proto",
+        "//proto:remote_execution_ts_proto",
     ],
 )
 

@@ -934,6 +934,17 @@ func TestRedactTxt(t *testing.T) {
 			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 		},
 		{
+			name: "do not redact diff headers after URL on adjacent line",
+			txt: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+			expected: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+		},
+		{
 			name:     "api key start of line",
 			txt:      "apikeyexactly20chars@mydomain.com",
 			expected: "<REDACTED>@mydomain.com",
@@ -1059,5 +1070,77 @@ func TestRedactAPIKeys(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
+	}
+}
+
+func TestEnvNameLooksSensitive(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		expected bool
+	}{
+		{"MY_SECRET", true},
+		{"SECRET_VALUE", true},
+		{"APP_SECRET_KEY", true},
+		{"API_TOKEN", true},
+		{"GITHUB_TOKEN", true},
+		{"DB_PASSWORD", true},
+		{"AWS_SECRET_ACCESS_KEY", true},
+		{"SSH_KEY", true},
+		{"PRIVATE_KEY", true},
+		{"GCP_CREDENTIALS", true},
+		{"GOOGLE_APPLICATION_CREDENTIALS", true},
+		// Case-insensitive matching
+		{"my_secret", true},
+		{"Api_Token", true},
+		{"db_password", true},
+		// Token-based matching should avoid substring false positives.
+		{"MONKEY", false},
+		{"KEYBOARD_LAYOUT", false},
+		{"SECRETION", false},
+		{"TOKENIZER", false},
+		{"PASSWORDLESS", false},
+		{"CREDENTIALSTORE", false},
+		{"DONKEY_TOKEN", true},
+		// Non-sensitive names
+		{"HOME", false},
+		{"PATH", false},
+		{"USER", false},
+		{"GOPATH", false},
+		{"CI", false},
+		{"GITHUB_REPOSITORY", false},
+		{"REPO_URL", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.EnvNameLooksSensitive(tc.name), "EnvNameLooksSensitive(%q)", tc.name)
+		})
+	}
+}
+
+func TestCollectSensitiveEnvValues(t *testing.T) {
+	environ := []string{
+		"MY_SECRET_TOKEN=super-secret",
+		"DB_PASSWORD=p@ssw0rd",
+		"API_KEY=ak-12345",
+		"GCP_CREDENTIALS={\"type\":\"service_account\"}",
+		"MONKEY=banana",
+		"KEYBOARD_LAYOUT=qwerty",
+		"SECRETION=should-not-redact",
+		"SAFE_VAR=not-a-secret",
+		"EMPTY_SECRET=",
+	}
+
+	values := redact.CollectSensitiveEnvValues(environ)
+
+	assert.Contains(t, values, "super-secret")
+	assert.Contains(t, values, "p@ssw0rd")
+	assert.Contains(t, values, "ak-12345")
+	assert.Contains(t, values, `{"type":"service_account"}`)
+	assert.NotContains(t, values, "banana")
+	assert.NotContains(t, values, "qwerty")
+	assert.NotContains(t, values, "should-not-redact")
+	assert.NotContains(t, values, "not-a-secret")
+	// Empty values should be excluded.
+	for _, v := range values {
+		assert.NotEmpty(t, v)
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -226,40 +227,51 @@ func (c *Claims) IsCustomerSSO() bool {
 }
 
 func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	c, method, err := parseClaimsInternal(ctx, token, keyProvider)
+	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+	return c, err
+}
+
+func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, string, error) {
+	method := "unknown"
 	keys, err := keyProvider(ctx)
 	if err != nil {
-		return nil, err
+		return nil, method, err
 	}
 	if len(keys) == 0 {
 		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
-		return nil, status.InternalError("no keys available for parsing claims")
+		return nil, method, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+			method = token.Method.Alg()
+			if token.Method != key.SigningMethod {
+				return nil, fmt.Errorf("incorrect key signing method: %v", token.Method.Alg())
+			}
 			switch token.Method {
 			case jwt.SigningMethodHS256:
-				return []byte(key), nil
+				return []byte(key.Key), nil
 			case jwt.SigningMethodES256:
-				return jwt.ParseECPublicKeyFromPEM([]byte(key))
+				return jwt.ParseECPublicKeyFromPEM([]byte(key.Key))
 			default:
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Method.Alg())
+				return nil, fmt.Errorf("unsupported signing method: %v", token.Method.Alg())
 			}
 		})
 		if err == nil {
-			return claims, nil
+			return claims, method, nil
 		}
 		lastErr = err
 
 		var validationErr *jwt.ValidationError
-		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+		if errors.As(err, &validationErr) && validationErr.Errors&(jwt.ValidationErrorSignatureInvalid|jwt.ValidationErrorUnverifiable) != 0 {
 			continue
 		}
-		return nil, err
+		return nil, method, err
 	}
-	return nil, lastErr
+	return nil, method, lastErr
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
@@ -309,6 +321,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
+		Impersonating:              akg.IsImpersonating(),
 		GroupStatus:                akg.GetGroupStatus(),
 	}, nil
 }
@@ -482,13 +495,15 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if *reparseJWTs {
+	// Skip re-parsing if an auth error is already set, since that means
+	// authentication was already attempted and failed.
+	if authErr, _ := authutil.AuthErrorFromContext(ctx); authErr == nil && *reparseJWTs {
 		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
 			caller := "unknown"
 			if _, file, line, ok := runtime.Caller(1); ok {
 				caller = fmt.Sprintf("%s:%d", file, line)
 			}
-			reparseLog.Debugf("Reparsing JWT (caller: %s)", caller)
+			reparseLog.CtxDebugf(ctx, "Reparsing JWT (caller: %s)", caller)
 			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
 			if err != nil {
 				return nil, err
@@ -558,16 +573,31 @@ func ServerAdminGroupID() string {
 	return *serverAdminGroupID
 }
 
-// A lazily-evaluated provider of JWT signing keys that may be used to retrieve
-// keys for verifying JWTs.
-type KeyProvider func(ctx context.Context) ([]string, error)
+// VerificationKey pairs a key with its expected signing method.
+type VerificationKey struct {
+	Key           string
+	SigningMethod jwt.SigningMethod
+}
 
-func DefaultKeyProvider(ctx context.Context) ([]string, error) {
+// A lazily-evaluated provider of keys to use for verifying JWT signatures.
+type KeyProvider func(ctx context.Context) ([]VerificationKey, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]VerificationKey, error) {
+	var keys []VerificationKey
 	if *newJwtKey != "" {
-		// Try the new key first.
-		return []string{*newJwtKey, *jwtKey}, nil
+		keys = []VerificationKey{
+			{Key: *newJwtKey, SigningMethod: jwt.SigningMethodHS256},
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
+	} else {
+		keys = []VerificationKey{
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
 	}
-	return []string{*jwtKey}, nil
+	for _, k := range es256PublicKeys {
+		keys = append(keys, VerificationKey{Key: k, SigningMethod: jwt.SigningMethodES256})
+	}
+	return keys, nil
 }
 
 // ClaimsParser parses and verifies encoded JWTs. It also caches the parsed

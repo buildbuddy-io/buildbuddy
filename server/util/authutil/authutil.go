@@ -256,5 +256,11 @@ func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, a
 			}
 		}
 	}
+
+	// Cache the headers so that GetAuthHeaders can retrieve them from this
+	// context. Without this, GetAuthHeaders falls back to reading outgoing
+	// gRPC metadata, which does not contain the JWT (it's stored as a
+	// context value by AuthContextFromTrustedJWT, not as gRPC metadata).
+	ctx = context.WithValue(ctx, authHeadersKey, headers)
 	return ctx
 }

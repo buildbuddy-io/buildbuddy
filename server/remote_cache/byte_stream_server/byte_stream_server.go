@@ -1,10 +1,12 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"hash"
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -29,9 +31,12 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+const defaultChunkedReadMaxInFlight = 32
 
 var compressBufSize = int(4e6) // 4MB
 
@@ -68,7 +73,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize)),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes())))),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
@@ -144,7 +149,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
 		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
-			reader, err = s.attemptReadChunked(ctx, cacheRN)
+			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
 		if err != nil {
 			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
@@ -201,46 +206,222 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName) (io.ReadCloser, error) {
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
 	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
 
-	rns := manifest.ChunkResourceNames()
+	offsetRead := strconv.FormatBool(offset > 0)
+
+	// Skip chunks that fall entirely before the requested offset.
+	chunkDigests := manifest.ChunkDigests
+	remainingOffset := offset
+	for len(chunkDigests) > 0 && remainingOffset >= chunkDigests[0].GetSizeBytes() {
+		remainingOffset -= chunkDigests[0].GetSizeBytes()
+		chunkDigests = chunkDigests[1:]
+	}
+	if len(chunkDigests) == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+	for _, d := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		chunkRN.SetCompressor(rn.GetCompressor())
+		rns = append(rns, chunkRN.ToProto())
+	}
 	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
 		return nil, err
 	} else if len(missing) > 0 {
 		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunks_missing",
 			metrics.StatusHumanReadableLabel:  "NotFound",
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
 		}).Inc()
 		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
 	}
 
-	rcs := make([]io.ReadCloser, 0, len(rns))
-	for _, crn := range rns {
-		chunkRN := digest.NewCASResourceName(crn.GetDigest(), crn.GetInstanceName(), crn.GetDigestFunction())
-		chunkRN.SetCompressor(rn.GetCompressor())
-		rc, err := s.cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
-		if err != nil {
-			metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_read_error",
-				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-			}).Inc()
-			for _, openCloser := range rcs {
-				openCloser.Close()
-			}
-			return nil, err
-		}
-		rcs = append(rcs, rc)
-	}
+	return newChunkedBlobReader(ctx, s.cache, s.bufferPool, rns, remainingOffset, offsetRead), nil
+}
 
-	return ioutil.NewMultiReadCloser(rcs...), nil
+type chunkReadResult struct {
+	data []byte
+	err  error
+}
+
+// chunkedBlobReader reconstructs a chunked blob by reading a bounded window of
+// chunks in parallel while returning bytes to the caller in order. This avoids
+// the per-chunk sequential latency of reading chunk-by-chunk from remote
+// backing storage such as GCS.
+type chunkedBlobReader struct {
+	ctx             context.Context
+	cancel          context.CancelFunc
+	cache           interfaces.Cache
+	bufferPool      *bytebufferpool.VariableSizePool
+	rns             []*rspb.ResourceName
+	firstOffset     int64
+	offsetReadLabel string
+
+	resultChans []chan chunkReadResult
+
+	currentBuf    []byte
+	currentOffset int
+	nextStart     int
+	nextRead      int
+}
+
+func newChunkedBlobReader(ctx context.Context, cache interfaces.Cache, bufferPool *bytebufferpool.VariableSizePool, rns []*rspb.ResourceName, firstOffset int64, offsetReadLabel string) io.ReadCloser {
+	ctx, cancel := context.WithCancel(ctx)
+	r := &chunkedBlobReader{
+		ctx:             ctx,
+		cancel:          cancel,
+		cache:           cache,
+		bufferPool:      bufferPool,
+		rns:             rns,
+		firstOffset:     firstOffset,
+		offsetReadLabel: offsetReadLabel,
+		resultChans:     make([]chan chunkReadResult, len(rns)),
+	}
+	r.fillWindow()
+	return r
+}
+
+func (r *chunkedBlobReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	for {
+		if r.currentBuf == nil {
+			if err := r.advance(); err != nil {
+				return 0, err
+			}
+		}
+		n := copy(p, r.currentBuf[r.currentOffset:])
+		r.currentOffset += n
+		if r.currentOffset == len(r.currentBuf) {
+			r.releaseCurrent()
+		}
+		if n > 0 {
+			return n, nil
+		}
+	}
+}
+
+func (r *chunkedBlobReader) Close() error {
+	r.cancel()
+	r.releaseCurrent()
+	r.drainPendingAsync()
+	return nil
+}
+
+// advance promotes the next chunk in order to the current read buffer and
+// refills the parallel prefetch window.
+func (r *chunkedBlobReader) advance() error {
+	if r.nextRead >= len(r.rns) {
+		return io.EOF
+	}
+	index := r.nextRead
+	resultChan := r.resultChans[index]
+	var result chunkReadResult
+	select {
+	case result = <-resultChan:
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	}
+	r.resultChans[index] = nil
+	r.nextRead++
+	if result.err != nil {
+		r.bufferPool.Put(result.data)
+		r.cancel()
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_read_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(result.err),
+			metrics.ChunkedOffsetReadLabel:    r.offsetReadLabel,
+		}).Inc()
+		return result.err
+	}
+	r.currentBuf = result.data
+	r.fillWindow()
+	return nil
+}
+
+func (r *chunkedBlobReader) fillWindow() {
+	for r.nextStart < len(r.rns) && r.nextStart-r.nextRead < defaultChunkedReadMaxInFlight {
+		r.spawn(r.nextStart)
+		r.nextStart++
+	}
+}
+
+func (r *chunkedBlobReader) spawn(index int) {
+	rn := r.rns[index]
+	offset := int64(0)
+	if index == 0 {
+		offset = r.firstOffset
+	}
+	bufSize := rn.GetDigest().GetSizeBytes() - offset
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		bufSize = compression.ZstdCompressBound(bufSize)
+	}
+	buf := r.bufferPool.Get(bufSize)
+	resultCh := make(chan chunkReadResult, 1)
+	r.resultChans[index] = resultCh
+	go func() {
+		resultCh <- r.readChunk(rn, offset, buf)
+	}()
+}
+
+func (r *chunkedBlobReader) readChunk(rn *rspb.ResourceName, offset int64, buf []byte) chunkReadResult {
+	rc, err := r.cache.Reader(r.ctx, rn, offset, 0)
+	if err != nil {
+		return chunkReadResult{data: buf, err: err}
+	}
+	defer rc.Close()
+
+	n, err := ioutil.ReadTryFillBuffer(rc, buf)
+	if err != nil {
+		return chunkReadResult{data: buf, err: err}
+	}
+	readSize := rn.GetDigest().GetSizeBytes() - offset
+	if rn.GetCompressor() != repb.Compressor_ZSTD && int64(n) != readSize {
+		return chunkReadResult{data: buf, err: io.ErrUnexpectedEOF}
+	}
+	return chunkReadResult{data: buf[:n]}
+}
+
+func (r *chunkedBlobReader) releaseCurrent() {
+	if r.currentBuf != nil {
+		r.bufferPool.Put(r.currentBuf)
+		r.currentBuf = nil
+	}
+	r.currentOffset = 0
+}
+
+func (r *chunkedBlobReader) drainPendingAsync() {
+	var pending []chan chunkReadResult
+	for i, resultChan := range r.resultChans {
+		if resultChan == nil {
+			continue
+		}
+		pending = append(pending, resultChan)
+		r.resultChans[i] = nil
+	}
+	if len(pending) == 0 {
+		return
+	}
+	go drainChunkReadResults(r.bufferPool, pending)
+}
+
+func drainChunkReadResults(bufferPool *bytebufferpool.VariableSizePool, resultChans []chan chunkReadResult) {
+	for _, resultChan := range resultChans {
+		result := <-resultChan
+		bufferPool.Put(result.data)
+	}
 }
 
 // writeHandler enapsulates an on-going ByteStream write to a cache,

@@ -468,6 +468,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if cmdResult.Error != nil {
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
+	auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful

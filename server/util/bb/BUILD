@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load(":platform_transition.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
+load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
 
 # Embeds the bb CLI binary for Linux and mac. On Windows, we create an empty
 # file instead because the CLI depends on tree-sitter which requires CGo, and

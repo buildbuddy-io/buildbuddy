@@ -35,27 +35,30 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: "C:/go-mod-cache"
         run: |
-          bazelisk --output_user_root=C:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
+          $commonArgs = @(
+            "--config=release-windows"
+            "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
+          )
+          $windows386Args = @(
+            "--config=release-windows"
+            "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
+            "--platforms=@io_bazel_rules_go//go/toolchain:windows_386"
+          )
+          $target = "//enterprise/server/cmd/executor:executor"
+
+          bazelisk --output_user_root=C:/0 build @commonArgs $target
           $execution_root = bazelisk --output_user_root=C:/0 info execution_root
-          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
+          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery @commonArgs --output=files $target
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
-          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
 
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
+          bazelisk --output_user_root=C:/0 build @windows386Args $target
+          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery @windows386Args --output=files $target
+          $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
+          Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-386-beta.exe
+
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe executor-enterprise-windows-386-beta.exe --clobber

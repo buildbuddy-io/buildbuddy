@@ -31,6 +31,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("download", flag.ContinueOnError)
+	Flags = flags
 
 	target          = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
 	blobType        = flags.String("type", "", "Type of blob (used to interpret): Action, Command, Directory")

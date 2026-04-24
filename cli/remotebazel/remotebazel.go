@@ -138,6 +138,7 @@ type RunOpts struct {
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
 	ExecArgs          []string
+	WorkingDirectory  string
 	WorkspaceFilePath string
 }
 
@@ -436,9 +437,12 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 	if branch == "" || commit == "" {
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(branch + "@{upstream}")
 		if err != nil {
-			return "", "", fmt.Errorf("get head commit for local branch %q: %w", defaultBranch, err)
+			defaultBranchCommitHash, err = getHeadCommitForLocalBranch(branch)
+			if err != nil {
+				return "", "", fmt.Errorf("get head commit for local branch %q: %w", branch, err)
+			}
 		}
 		commit = defaultBranchCommitHash
 	}
@@ -845,6 +849,38 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	return mainLocalArtifacts, nil
 }
 
+func getWorkingDirectory(workspaceFilePath string) (string, error) {
+	repoRootPath, err := storage.RepoRootPath()
+	if err != nil {
+		return "", status.WrapError(err, "locate git repo root")
+	}
+	return workingDirectory(repoRootPath, workspaceFilePath)
+}
+
+func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
+	repoRootPath, err := filepath.Abs(repoRootPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute repo root absolute path")
+	}
+	workspaceFilePath, err = filepath.Abs(workspaceFilePath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace absolute path")
+	}
+	workspaceDirPath := filepath.Dir(workspaceFilePath)
+	relPath, err := filepath.Rel(repoRootPath, workspaceDirPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace path relative to repo root")
+	}
+	relPath = filepath.Clean(relPath)
+	if relPath == "." {
+		return "", nil
+	}
+	if strings.Contains(relPath, "..") {
+		return "", status.InvalidArgumentErrorf("bazel workspace %q is outside repo root %q", workspaceDirPath, repoRootPath)
+	}
+	return relPath, nil
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
@@ -931,7 +967,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
-		Name: opts.Name,
+		Name:             opts.Name,
+		WorkingDirectory: opts.WorkingDirectory,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1211,6 +1248,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
 	}
+	workingDirectory, err := getWorkingDirectory(wsFilePath)
+	if err != nil {
+		return 1, status.WrapError(err, "determine working directory")
+	}
 
 	runner := *remoteRunner
 	if !strings.HasPrefix(runner, "grpc") {
@@ -1286,6 +1327,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		Command:           cmd,
 		RunOutputLocally:  runOutputLocally,
 		ExecArgs:          localExecArgs,
+		WorkingDirectory:  workingDirectory,
 		FetchOutputs:      fetchOutputs,
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)

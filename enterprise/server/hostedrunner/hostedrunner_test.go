@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -161,5 +162,80 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	// Check that credential-related overrides were not overwritten
 	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
 		require.Contains(t, appliedEnvOverrides, expectedCredential)
+	}
+}
+
+func TestNormalizeWorkingDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		input     string
+		expected  string
+		expectErr bool
+	}{
+		{"empty", "", "", false},
+		{"simple subdir", "subdir", "subdir", false},
+		{"nested", filepath.Join("subdir", "nested"), filepath.Join("subdir", "nested"), false},
+		{"dot cleaned to empty", ".", "", false},
+		{"absolute path rejected", "/tmp/workspace", "", true},
+		{"parent traversal rejected", filepath.Join("..", "subdir"), "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := normalizeWorkingDirectory(tc.input)
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestActionFromRunRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		req                       *rnpb.RunRequest
+		expectedName              string
+		expectedBazelWorkspaceDir string
+		expectErr                 bool
+	}{
+		{
+			name: "all fields set",
+			req: &rnpb.RunRequest{
+				Name:             "Test run",
+				Steps:            []*rnpb.Step{{Run: "bazel build //:target"}},
+				WorkingDirectory: filepath.Join("subdir", "nested"),
+			},
+			expectedName:              "Test run",
+			expectedBazelWorkspaceDir: filepath.Join("subdir", "nested"),
+		},
+		{
+			name: "default name",
+			req: &rnpb.RunRequest{
+				Steps: []*rnpb.Step{{Run: "bazel test //..."}},
+			},
+			expectedName:              "remote run",
+			expectedBazelWorkspaceDir: "",
+		},
+		{
+			name: "invalid working directory",
+			req: &rnpb.RunRequest{
+				Steps:            []*rnpb.Step{{Run: "bazel build //..."}},
+				WorkingDirectory: "/absolute/path",
+			},
+			expectErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action, err := actionFromRunRequest(tc.req)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedName, action.Name)
+			require.Equal(t, tc.req.GetSteps(), action.Steps)
+			require.Equal(t, tc.expectedBazelWorkspaceDir, action.BazelWorkspaceDir)
+		})
 	}
 }

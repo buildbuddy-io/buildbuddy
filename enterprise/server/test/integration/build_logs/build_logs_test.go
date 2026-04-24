@@ -192,21 +192,21 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 
 	expected := &bytes.Buffer{}
 	for p := 0; p < 100; p++ {
-		stderr := ""
-		stdout := ""
+		var stderr strings.Builder
+		var stdout strings.Builder
 		for line := 0; line < 100; line++ {
-			stderr += fmt.Sprintf("stderr event %d, line %d\n", p, line)
-			stdout += fmt.Sprintf("stdout event %d, line %d\n", p, line)
+			stderr.WriteString(fmt.Sprintf("stderr event %d, line %d\n", p, line))
+			stdout.WriteString(fmt.Sprintf("stdout event %d, line %d\n", p, line))
 		}
 		// Note: The server should write the logs as stderr first, followed by
 		// stdout. The build event protocol doesn't have a way of representing the
 		// timing of each byte written to stdout or stderr, so we just make the
 		// arbitrary assumption that all stdout bytes were written after all stderr
 		// bytes.
-		expected.WriteString(stderr)
-		expected.WriteString(stdout)
+		expected.WriteString(stderr.String())
+		expected.WriteString(stdout.String())
 
-		publishProgress(t, bep, stdout, stderr)
+		publishProgress(t, bep, stdout.String(), stderr.String())
 	}
 
 	publishFinished(t, bep)
@@ -241,21 +241,21 @@ func TestBuildLogs_InProgressInvocation(t *testing.T) {
 
 	expected := &bytes.Buffer{}
 	for p := 0; p < 100; p++ {
-		stderr := ""
-		stdout := ""
+		var stderr strings.Builder
+		var stdout strings.Builder
 		for line := 0; line < 100; line++ {
-			stderr += fmt.Sprintf("stderr event %d, line %d\n", p, line)
-			stdout += fmt.Sprintf("stdout event %d, line %d\n", p, line)
+			stderr.WriteString(fmt.Sprintf("stderr event %d, line %d\n", p, line))
+			stdout.WriteString(fmt.Sprintf("stdout event %d, line %d\n", p, line))
 		}
 		// Note: The server should write the logs as stderr first, followed by
 		// stdout. The build event protocol doesn't have a way of representing the
 		// timing of each byte written to stdout or stderr, so we just make the
 		// arbitrary assumption that all stdout bytes were written after all stderr
 		// bytes.
-		expected.WriteString(stderr)
-		expected.WriteString(stdout)
+		expected.WriteString(stderr.String())
+		expected.WriteString(stdout.String())
 
-		publishProgress(t, bep, stdout, stderr)
+		publishProgress(t, bep, stdout.String(), stderr.String())
 	}
 
 	// Since our stream is still open (to test the "in progress" state), there are

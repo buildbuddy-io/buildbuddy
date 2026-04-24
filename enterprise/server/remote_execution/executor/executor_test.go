@@ -25,11 +25,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gstatus "google.golang.org/grpc/status"
@@ -173,6 +176,8 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 		name                string
 		runOverride         rbetest.RunInterceptor
 		expectFinishCleanly bool
+
+		expectInputFetchMetadata *espb.InputFetchMetadata
 	}{
 		{
 			name:                "Success",
@@ -182,6 +187,18 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			name:                "Run failure",
 			runOverride:         rbetest.AlwaysReturn(commandutil.ErrorResult(errors.New("run failed"))),
 			expectFinishCleanly: false,
+		},
+		{
+			name: "Auxiliary metadata",
+			runOverride: rbetest.AlwaysReturn(&interfaces.CommandResult{
+				InputFetchMetadata: &espb.InputFetchMetadata{
+					DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+				},
+			}),
+			expectInputFetchMetadata: &espb.InputFetchMetadata{
+				DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+			},
+			expectFinishCleanly: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -218,6 +235,22 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 
 			completedOp := mockServer.operations[len(mockServer.operations)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+			unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			rsp := unpackedCompletedOp.ExecuteResponse
+
+			if tc.expectInputFetchMetadata != nil {
+				auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+				ok, err := rexec.FindFirstAuxiliaryMetadata(rsp.GetResult().GetExecutionMetadata(), auxMeta)
+				require.True(t, ok)
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(
+					tc.expectInputFetchMetadata,
+					auxMeta.GetInputFetchDetailedStats(),
+					protocmp.Transform(),
+				))
+			}
 		})
 	}
 }

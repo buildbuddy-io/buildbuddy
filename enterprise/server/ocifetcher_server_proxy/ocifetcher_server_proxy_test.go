@@ -3,6 +3,8 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -17,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -25,13 +28,24 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func TestNew_MissingClient(t *testing.T) {
+func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
+	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 	// Don't set OCIFetcherClient
 
 	_, err := New(env)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+}
+
+func TestNew_MissingLocalBSClient(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	// Set a dummy OCIFetcherClient but no LocalByteStreamClient
+	ctx := context.Background()
+	_, bsClient, acClient := setupCacheEnv(t)
+	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
+
+	_, err := New(env)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
@@ -175,6 +189,47 @@ func TestHappyPath(t *testing.T) {
 			require.Equal(t, expectedData, data)
 		})
 	}
+}
+
+// TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
+// the blob is written to the proxy's local BS cache and can be served from
+// there on a subsequent request.
+func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	ref := imageName + "@" + digest.String()
+
+	// First fetch: should go to upstream and write to local cache.
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+
+	// Shut down the test registry so upstream cannot serve blobs.
+	err = reg.Shutdown()
+	require.NoError(t, err)
+
+	// Second fetch: should be served from local BS cache.
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data2 := collectBlobData(t, stream2)
+	require.Equal(t, expectedData, data2)
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -506,6 +561,70 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 	}
 }
 
+// TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
+// the same blob are deduplicated: only one upstream FetchBlob RPC is made and
+// all callers receive the correct data.
+func TestFetchBlob_Singleflight(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	ref := imageName + "@" + digest.String()
+	const numClients = 5
+
+	var wg sync.WaitGroup
+	errs := make([]error, numClients)
+	results := make([][]byte, numClients)
+
+	for i := 0; i < numClients; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			var data []byte
+			for {
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					errs[idx] = err
+					return
+				}
+				data = append(data, resp.GetData()...)
+			}
+			results[idx] = data
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < numClients; i++ {
+		require.NoError(t, errs[i], "client %d got error", i)
+		require.Equal(t, expectedData, results[i], "client %d got wrong data", i)
+	}
+
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+		"expected exactly 1 upstream FetchBlob call due to singleflight deduplication")
+}
+
 // These tests exercise the full chain:
 // Test Client -> Proxy -> OCIFetcher Server -> Test Registry
 // with real cache infrastructure (ByteStream + ActionCache)
@@ -538,6 +657,17 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 	return te, te.GetByteStreamClient(), te.GetActionCacheClient()
 }
 
+// setupLocalBSClient creates a standalone local BS cache env and returns
+// a ByteStream client connected to it.
+func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	return te.GetByteStreamClient()
+}
+
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
@@ -564,6 +694,7 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
+	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
 	proxy, err := New(env)
 	require.NoError(t, err)
@@ -596,6 +727,29 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 	data, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return data
+}
+
+// countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
+type countingOCIFetcherClient struct {
+	inner          ofpb.OCIFetcherClient
+	fetchBlobCount atomic.Int32
+}
+
+func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return c.inner.FetchManifest(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	return c.inner.FetchManifestMetadata(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.fetchBlobCount.Add(1)
+	return c.inner.FetchBlob(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 
 // collectBlobData reads all data from a FetchBlob stream.

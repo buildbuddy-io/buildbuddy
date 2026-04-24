@@ -38,6 +38,14 @@ export enum SuggestionLevel {
   ERROR,
 }
 
+function sortSuggestionsByLevel<T extends { level: SuggestionLevel }>(suggestions: T[]): T[] {
+  return [...suggestions].sort((a, b) => b.level - a.level);
+}
+
+export function hasSuggestionAboveInfo<T extends { level: SuggestionLevel }>(suggestions: T[]): boolean {
+  return suggestions.some((suggestion) => suggestion.level > SuggestionLevel.INFO);
+}
+
 /** Given some data about an invocation, optionally returns a suggestion. */
 type SuggestionMatcher = (params: MatchParams) => Suggestion | null;
 
@@ -665,7 +673,7 @@ export function getSuggestions({
     const suggestion = matcher({ buildLogs, model, runnerExecution });
     if (suggestion) suggestions.push(suggestion);
   }
-  return suggestions;
+  return sortSuggestionsByLevel(suggestions);
 }
 
 export default class SuggestionCardComponent extends React.Component<Props> {

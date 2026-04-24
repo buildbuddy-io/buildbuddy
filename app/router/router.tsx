@@ -85,7 +85,8 @@ class Router {
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
-      !path.startsWith(Path.joinOrgPath) &&
+      !path.startsWith(Path.profilePath) &&
+      !(capabilities.config.groupMembershipRequestsEnabled && path.startsWith(Path.joinOrgPath)) &&
       !path.startsWith(Path.orgAccessDeniedPath)
     ) {
       const params = new URLSearchParams({
@@ -604,6 +605,7 @@ function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?
 
 export class Path {
   static home = "/";
+  static profilePath = "/profile";
   static comparePath = "/compare/";
   static compareActionsPath = "/action/compare/";
   static invocationPath = "/invocation/";

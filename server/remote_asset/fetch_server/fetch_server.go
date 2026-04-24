@@ -238,6 +238,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
+	// Don't send Referer headers on redirects. Go's http.Client adds these
+	// automatically, but some sites (e.g. SourceForge) use the Referer to
+	// detect non-browser clients and serve HTML instead of the file download.
+	// Curl doesn't automatically set this after redirects either.
+	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		req.Header.Del("Referer")
+		return nil
+	}
 	bsClient := getByteStreamClient(p.env)
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))

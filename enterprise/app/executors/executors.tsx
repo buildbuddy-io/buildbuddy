@@ -3,6 +3,7 @@ import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Banner from "../../../app/components/banner/banner";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
 import Link, { TextLink } from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
@@ -465,10 +466,10 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       <div className="executors-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
               <span>Executors</span>
-            </div>
+            </Breadcrumbs>
             <div className="title">Executors</div>
           </div>
         </div>

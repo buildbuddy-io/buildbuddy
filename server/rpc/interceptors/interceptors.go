@@ -31,15 +31,17 @@ import (
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 )
 
 const (
-	buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
-	rpcQuotaPrefix          = "rpc:"
+	rpcQuotaPrefix = "rpc:"
 )
 
 var (
-	headerContextKeys map[string]string
+	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	headerContextKeys       map[string]string
 )
 
 func init() {
@@ -187,9 +189,8 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if after, ok := strings.CutPrefix(info.FullMethod, buildBuddyServicePrefix); ok {
-			methodName := after
-			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, info.FullMethod); err != nil {
 				return err
 			}
 		}
@@ -199,9 +200,8 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if after, ok := strings.CutPrefix(info.FullMethod, buildBuddyServicePrefix); ok {
-			methodName := after
-			if err := capabilities_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+			if err := capabilities_filter.AuthorizeRPC(ctx, env, info.FullMethod); err != nil {
 				return nil, err
 			}
 		}
@@ -212,9 +212,11 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if irs := env.GetIPRulesEnforcer(); irs != nil {
-			if err := irs.Authorize(ctx); err != nil {
+			newCtx, err := irs.Authorize(ctx)
+			if err != nil {
 				return nil, err
 			}
+			ctx = newCtx
 		}
 		return handler(ctx, req)
 	}
@@ -223,9 +225,11 @@ func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercept
 func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if irs := env.GetIPRulesEnforcer(); irs != nil {
-			if err := irs.Authorize(stream.Context()); err != nil {
+			newCtx, err := irs.Authorize(stream.Context())
+			if err != nil {
 				return err
 			}
+			stream = &wrappedServerStreamWithContext{stream, newCtx}
 		}
 		return handler(srv, stream)
 	}

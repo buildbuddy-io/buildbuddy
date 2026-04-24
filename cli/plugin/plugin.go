@@ -70,9 +70,9 @@ Examples:
 )
 
 var (
-	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
-	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
-	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
+	Flags          = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath    = Flags.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installForUser = Flags.Bool("user", false, "Whether to install globally for the user.")
 
 	repoPattern = regexp.MustCompile(`` +
 		`^` + // Start marker
@@ -87,19 +87,19 @@ var (
 // HandleInstall handles the "bb install" subcommand, which allows adding
 // plugins to buildbuddy.yaml.
 func HandleInstall(args []string) (exitCode int, err error) {
-	if err := arg.ParseFlagSet(installCmd, args); err != nil {
+	if err := arg.ParseFlagSet(Flags, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) == 0 && *installPath == "" {
+	if len(Flags.Args()) == 0 && *installPath == "" {
 		log.Print("Error: either a repo or a --path= is expected.")
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) > 1 {
+	if len(Flags.Args()) > 1 {
 		log.Print("Error: unexpected positional arguments")
 		log.Print(installCommandUsage)
 		return 1, nil
@@ -108,8 +108,8 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		Repo: "",
 		Path: *installPath,
 	}
-	if len(installCmd.Args()) == 1 {
-		repo := installCmd.Args()[0]
+	if len(Flags.Args()) == 1 {
+		repo := Flags.Args()[0]
 		cfg, err := parsePluginSpec(repo, *installPath)
 		if err != nil {
 			log.Printf("Failed to parse repo: %s", repo)
@@ -784,30 +784,41 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
 	}
+	doneCopying := make(chan struct{})
 	go func() {
+		defer close(doneCopying)
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
+		// Signal EOF to downstream now that all pty data has been
+		// forwarded. This is the happy-path close; the redundant
+		// pw.Close() in the other goroutine handles the case where
+		// this write is stuck on a dead downstream reader.
+		pw.Close()
 	}()
 	go func() {
-		// TODO: Properly clean up the tty here. We disable the cleanup since it
-		// seems to cause some plugin output to get dropped in rare cases.
-		// See: https://github.com/creack/pty/issues/127
-		//
-		// The cleanup being disabled is not a problem for the CLI because it
-		// should get cleaned up automatically when the CLI process exits, but
-		// if we want to reuse this code for other things then we should
-		// probably fix this so the tty can get cleaned up sooner.
-
-		// defer tty.Close()
-
 		defer ptmx.Close()
-		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Wait(); err != nil {
 			log.Debugf("Command failed: %s", err)
 		} else {
 			log.Debugf("Command %s completed", cmd.Args)
 		}
+		// Close the pty subsidiary to signal no more writes.
+		// After cmd.Wait(), the child process has exited and released
+		// its reference to tty, so this closes the last open handle.
+		// The copy goroutine reading from ptmx will drain any remaining
+		// buffered data and then receive EIO, causing it to exit
+		// cleanly without data loss. This is safe to do after
+		// cmd.Wait() — the creack/pty#127 concern about dropped output
+		// only applies when closing tty while the child is still
+		// writing.
+		tty.Close()
+		// Close pw to unblock the copy goroutine if it's stuck writing
+		// to a downstream reader that exited early. This is safe to
+		// call concurrently with the copy goroutine's pw.Close()
+		// because io.Pipe's Close is concurrency-safe and idempotent.
+		pw.Close()
+		<-doneCopying
 		// Flush any remaining data from the preceding stage, to prevent
 		// the output writer for the preceding stage from getting stuck.
 		io.Copy(io.Discard, r)

@@ -27,8 +27,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -92,6 +95,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -410,6 +414,9 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
 	require.NoError(t, kms.Register(env.TestEnv))
 	require.NoError(t, crypter_service.Register(env.TestEnv))
+	require.NoError(t, clientidentity.Register(env.TestEnv))
+	require.NoError(t, ip_rules_enforcer.Register(env.TestEnv))
+	require.NoError(t, ip_rules_service.Register(env.TestEnv))
 
 	if opts.EnvModifier != nil {
 		opts.EnvModifier(env.TestEnv)
@@ -477,6 +484,9 @@ func (s *BuildBuddyServer) start() {
 	repb.RegisterCapabilitiesServer(grpcServer, s.capabilitiesServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, s.buildBuddyServiceServer)
 	pepb.RegisterPublishBuildEventServer(grpcServer, s.buildEventServer)
+	if iprs := s.env.GetIPRulesService(); iprs != nil {
+		iprpb.RegisterIPRulesServiceServer(grpcServer, iprs)
+	}
 
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(s.env)
 	if err != nil {
@@ -981,6 +991,12 @@ func (r *Env) waitForExecutorRegistration() {
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
 }
 
+type CacheProxyOptions struct {
+	// EnvModifier modifies the proxy environment before registering services.
+	// Use this to replace the default cache (e.g., with a pebble cache).
+	EnvModifier func(env *testenv.TestEnv)
+}
+
 type CacheProxy struct {
 	t    testing.TB
 	env  *testenv.TestEnv
@@ -997,7 +1013,10 @@ func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressab
 }
 
 func (r *Env) AddCacheProxy() *CacheProxy {
-	appConn := r.appProxyConn
+	return r.AddCacheProxyWithOptions(&CacheProxyOptions{})
+}
+
+func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	port := testport.FindFree(r.t)
 	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
@@ -1010,14 +1029,31 @@ func (r *Env) AddCacheProxy() *CacheProxy {
 		},
 	}
 
-	authenticator, err := remoteauth.NewWithTarget(proxyEnv, appConn)
+	require.NoError(r.t, clientidentity.Register(proxyEnv))
+	require.NoError(r.t, ip_rules_enforcer.Register(proxyEnv))
+
+	// Dial a connection to the app that includes client identity interceptors,
+	// similar to what the real cache proxy does with DialInternal, but using
+	// DialInternalWithoutPooling here to avoid connection pooling in tests.
+	internalConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, r.AppProxy.GRPCTarget())
+	require.NoError(r.t, err)
+	r.t.Cleanup(func() {
+		require.NoError(r.t, internalConn.Close())
+	})
+
+	authenticator, err := remoteauth.NewWithTarget(proxyEnv, internalConn)
 	require.NoError(r.t, err)
 	proxyEnv.SetAuthenticator(authenticator)
 
-	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
-	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
-	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
-	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(internalConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(internalConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(internalConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(internalConn))
+
+	if opts.EnvModifier != nil {
+		opts.EnvModifier(proxyEnv)
+	}
+
 	require.NoError(r.t, atime_updater.Register(proxyEnv))
 
 	// Register the internal (BS & CAS) gRPC servers.

@@ -2,7 +2,6 @@ package capabilities_filter_test
 
 import (
 	"context"
-	"path"
 	"reflect"
 	"testing"
 
@@ -19,26 +18,31 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
+var (
+	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+)
+
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
 	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
 	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, buildbuddyServiceType.Method(i).Name)
+		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+buildbuddyServiceType.Method(i).Name)
 	}
 	apiServiceType := reflect.TypeOf((*apipb.ApiServiceServer)(nil)).Elem()
 	for i := 0; i < apiServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, apiServiceType.Method(i).Name)
+		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+apiServiceType.Method(i).Name)
 	}
 
 	allDefinedMethods := capabilities_filter.AllRPCsForTestOnly()
 
 	assert.Subset(
 		t, allDefinedMethods, serviceMethodNames,
-		"All BuildBuddyService RPCs should be added to one of the lists in capabilities_filter.go",
+		"All BuildBuddyService and ApiService RPCs should be added to one of the lists in capabilities_filter.go",
 	)
 	assert.Subset(
 		t, serviceMethodNames, allDefinedMethods,
-		"All BuildBuddyService RPCs listed in capabilities_filter.go should be valid BuildBuddy service RPCs. "+
+		"All RPCs listed in capabilities_filter.go should be valid BuildBuddyService or ApiService RPCs. "+
 			"(check for typos, or if you deleted an RPC, remove it from capabilities_filter.go)",
 	)
 }
@@ -98,59 +102,83 @@ func TestAllowedRPCs(t *testing.T) {
 	}{
 		{
 			Name:      "UnrestrictedRPC_Anonymous_Allowed",
-			RPC:       "/buildbuddy.service.BuildBuddyService/GetInvocation",
+			RPC:       buildBuddyServicePrefix + "GetInvocation",
+			Anonymous: true,
+			Allowed:   true,
+		},
+		{
+			Name:      "UnrestrictedRPC_ExecutionDownloads_Anonymous_Allowed",
+			RPC:       buildBuddyServicePrefix + "GetExecutionDownloads",
 			Anonymous: true,
 			Allowed:   true,
 		},
 		{
 			Name:         "UnrestrictedRPC_NonAdmin_Allowed",
-			RPC:          "/buildbuddy.service.BuildBuddyService/GetInvocation",
+			RPC:          buildBuddyServicePrefix + "GetInvocation",
 			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
 		{
 			Name:         "UnrestrictedRPC_Admin_Allowed",
-			RPC:          "/buildbuddy.service.BuildBuddyService/GetInvocation",
+			RPC:          buildBuddyServicePrefix + "GetInvocation",
 			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      true,
 		},
 		{
 			Name:      "OrgMemberRPC_Anonymous_NotAllowed",
-			RPC:       "/buildbuddy.service.BuildBuddyService/SearchInvocation",
+			RPC:       buildBuddyServicePrefix + "SearchInvocation",
 			Anonymous: true,
 			Allowed:   false,
 		},
 		{
 			Name:         "OrgMemberRPC_OrgMember_Allowed",
-			RPC:          "/buildbuddy.service.BuildBuddyService/SearchInvocation",
+			RPC:          buildBuddyServicePrefix + "SearchInvocation",
 			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
 		{
 			Name:         "AdminOnlyRPC_NonAdmin_NotAllowed",
-			RPC:          "/buildbuddy.service.BuildBuddyService/UpdateGroup",
+			RPC:          buildBuddyServicePrefix + "UpdateGroup",
 			Capabilities: []cappb.Capability{},
 			Allowed:      false,
 		},
 		{
 			Name:         "AdminOnlyRPC_Admin_Allowed",
-			RPC:          "/buildbuddy.service.BuildBuddyService/UpdateGroup",
+			RPC:          buildBuddyServicePrefix + "UpdateGroup",
 			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      true,
 		},
 		{
 			Name: "ServerAdminOnly_NonServerAdmin_NotAllowed",
-			RPC:  "/buildbuddy.service.BuildBuddyService/ApplyBucket",
+			RPC:  buildBuddyServicePrefix + "ApplyBucket",
 			// Note: this user is an org admin but not a server admin.
 			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      false,
 		},
 		{
 			Name:               "ServerAdminOnly_ServerAdmin_Allowed",
-			RPC:                "/buildbuddy.service.BuildBuddyService/ApplyBucket",
+			RPC:                buildBuddyServicePrefix + "ApplyBucket",
 			ServerAdminGroupID: "GR1",
 			Capabilities:       []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:            true,
+		},
+		{
+			Name:      "UnrestrictedRPC_API_Anonymous_Allowed",
+			RPC:       apiServicePrefix + "GetInvocation",
+			Anonymous: true,
+			Allowed:   true,
+		},
+		{
+			Name:         "OrgMemberRPC_API_OrgMember_Allowed",
+			RPC:          apiServicePrefix + "Run",
+			Capabilities: []cappb.Capability{},
+			Allowed:      true,
+		},
+		{
+			Name:      "OrgMemberRPC_API_Anonymous_NotAllowed",
+			RPC:       apiServicePrefix + "Run",
+			Anonymous: true,
+			Allowed:   false,
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
@@ -172,10 +200,10 @@ func TestAllowedRPCs(t *testing.T) {
 
 			if test.Allowed {
 				assert.NoError(t, authErr)
-				assert.Contains(t, allowedRPCs, path.Base(test.RPC))
+				assert.Contains(t, allowedRPCs, test.RPC)
 			} else {
 				assert.Error(t, authErr)
-				assert.NotContains(t, allowedRPCs, path.Base(test.RPC))
+				assert.NotContains(t, allowedRPCs, test.RPC)
 			}
 		})
 	}

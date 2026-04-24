@@ -54,6 +54,7 @@ genrule(
         "//app/terminal:terminal.css",
         "//app/components/banner:banner.css",
         "//app/components/button:button.css",
+        "//app/components/breadcrumbs:breadcrumbs.css",
         "//app/components/dialog:dialog.css",
         "//app/components/digest:digest.css",
         "//app/components/input:input.css",
@@ -67,6 +68,7 @@ genrule(
         "//app/components/radio:radio.css",
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",
+        "//app/profile:profile.css",
     ],
     outs = ["style.css"],
     cmd_bash = """

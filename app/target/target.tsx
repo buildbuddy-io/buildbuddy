@@ -5,10 +5,12 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import Link from "../components/link/link";
 import format from "../format/format";
 import InvocationModel from "../invocation/invocation_model";
-import router from "../router/router";
+import router, { Path } from "../router/router";
 import { copyToClipboard } from "../util/clipboard";
 import { timestampToDateWithFallback } from "../util/proto";
 import ActionCardComponent from "./action_card";
@@ -37,15 +39,7 @@ interface Props {
 
 export default class TargetComponent extends React.Component<Props> {
   componentWillMount() {
-    document.title = `Target ${this.props.invocationId} | BuildBuddy`;
-  }
-
-  handleOrganizationClicked() {
-    router.navigateHome();
-  }
-
-  handleInvocationClicked() {
-    router.navigateToInvocation(this.props.invocationId);
+    document.title = `Target ${this.props.targetLabel} | BuildBuddy`;
   }
 
   renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {
@@ -197,22 +191,22 @@ export default class TargetComponent extends React.Component<Props> {
       <div className="target-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
-                </span>
+                </Link>
               )}
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   Builds
-                </span>
+                </Link>
               )}
-              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">
+              <Link className="clickable" href={router.getInvocationUrl(this.props.invocationId)}>
                 Invocation {this.props.invocationId}
-              </span>
+              </Link>
               <span>Target {this.props.targetLabel}</span>
-            </div>
+            </Breadcrumbs>
             <div className="titles">
               <div className="title">
                 {this.props.targetLabel}{" "}

@@ -747,8 +747,8 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	return flags, err
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
+// ResolveArgs removes all rc-file options from the args, appends startup
+// options to prevent bazel from re-reading the rc files, parses those rc-files
 // into Configs using the default parser, and expands all config options (as
 // well as any `enable_platform_specific_config` option, if one exists) using
 // those configs, and returns the result.
@@ -768,8 +768,8 @@ func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs
 	return p.resolveArgs(parsedArgs, ws)
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
+// ResolveArgs removes all rc-file options from the args, appends startup
+// options to prevent bazel from re-reading the rc files, parses those rc-files
 // into Configs, and expands all config options (as well as any
 // `enable_platform_specific_config` option, if one exists) using
 // those configs, and returns the result.
@@ -868,15 +868,6 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 	return parsedArgs.Args, nil
 }
 
-// Convenience function to use the singleton parser's MakeStartupOption function.
-func MakeStartupOption(optionName string, value *string) (option options.Option, err error) {
-	p, err := GetParser()
-	if err != nil {
-		return nil, err
-	}
-	return p.MakeStartupOption(optionName, value)
-}
-
 // Convenience function to use the singleton parser's MakeCommandOption function.
 func MakeCommandOption(optionName string, value *string) (option options.Option, err error) {
 	p, err := GetParser()
@@ -888,6 +879,19 @@ func MakeCommandOption(optionName string, value *string) (option options.Option,
 
 func (p *Parser) MakeStartupOption(optionName string, value *string) (option options.Option, err error) {
 	return p.StartupOptionParser.MakeOption(optionName, value)
+}
+
+// MakeBazelStartupOption makes a Bazel startup option and validates it.
+func (p *Parser) MakeBazelStartupOption(optionName string, value *string) (option options.Option, err error) {
+	opt, err := p.MakeStartupOption(optionName, value)
+	if err != nil {
+		return nil, err
+	}
+	// "" is the default plugin ID for Bazel startup options.
+	if opt.PluginID() != "" {
+		return nil, fmt.Errorf("'%s' is not a valid Bazel startup option", optionName)
+	}
+	return opt, nil
 }
 
 func (p *Parser) MakeCommandOption(optionName string, value *string) (option options.Option, err error) {
@@ -918,9 +922,9 @@ func (p *Subparser) MakeOption(optionName string, value *string) (option options
 }
 
 // ConsumeAndParseRCFiles removes all rc-file related options from the provided
-// args and appends an `ignore_all_rc_files` option to the startup options.
-// Returns a map of all the named configs in those files and the default
-// (unnamed) config from those files.
+// args and appends startup options to prevent bazel from re-reading the rc
+// files the CLI has already processed. Returns a map of all the named configs
+// in those files and the default (unnamed) config from those files.
 func (p *Parser) ConsumeAndParseRCFiles(args *parsed.OrderedArgs) (map[string]*parsed.Config, *parsed.Config, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -930,11 +934,11 @@ func (p *Parser) ConsumeAndParseRCFiles(args *parsed.OrderedArgs) (map[string]*p
 }
 
 // consumeAndParseRCFiles removes all rc-file related options from the provided
-// args and appends an `ignore_all_rc_files` option to the startup options.
-// Returns a map of all the named configs in those files and the default
-// (unnamed) config from those files.
+// args and appends startup options to prevent bazel from re-reading the rc
+// files the CLI has already processed. Returns a map of all the named configs
+// in those files and the default (unnamed) config from those files.
 func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir string) (map[string]*parsed.Config, *parsed.Config, error) {
-	rcFiles, err := args.ConsumeRCFileOptions(workspaceDir)
+	ignoreAll, rcFiles, err := args.ConsumeRCFileOptions(workspaceDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -943,18 +947,29 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 		return nil, nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
 
-	// Ignore all RC files when actually running bazel, since the CLI has already
-	// accounted for them.
-	ignoreAllRCFilesOptionDefinition, ok := p.StartupOptionParser.ByName["ignore_all_rc_files"]
-	if !ok {
-		return nil, nil, fmt.Errorf("`ignore_all_rc_files` was not present in the option definitions.")
-	}
-	opt, err := MakeStartupOption(ignoreAllRCFilesOptionDefinition.Name(), nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := args.Append(opt); err != nil {
-		return nil, nil, err
+	if ignoreAll {
+		// The user signaled that no rc files should be loaded. Add --ignore_all_rc_files so that
+		// any --bazelrc flags added by plugins or wrappers after parsing are also suppressed.
+		opt, err := p.MakeBazelStartupOption("ignore_all_rc_files", nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create startup option '--ignore_all_rc_files': %s", err)
+		}
+		if err := args.Append(opt); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		// Block the standard rc file locations so bazel doesn't re-read them.
+		// Any --bazelrc flags added by plugins or wrappers that haven't run yet
+		// will still be honored.
+		for _, optName := range []string{"nohome_rc", "noworkspace_rc", "nosystem_rc"} {
+			opt, err := p.MakeBazelStartupOption(optName, nil)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to create startup option '--%s': %s", optName, err)
+			}
+			if err := args.Append(opt); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	return parsedNamedConfigs, defaultConfig, nil
 }

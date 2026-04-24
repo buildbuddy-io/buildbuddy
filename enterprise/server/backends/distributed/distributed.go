@@ -3,8 +3,10 @@ package distributed
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -47,6 +50,7 @@ var (
 	redisTarget                  = flag.String("cache.distributed_cache.redis_target", "", "Redis target for used for discovering distributed cache replicas. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	enableKubernetesDiscovery    = flag.Bool("cache.distributed_cache.kubernetes_discovery", false, "If true, use the Kubernetes API to discover peer cache nodes by finding pods owned by the same controller (Deployment or StatefulSet). The pod must have RBAC permissions to get/list/watch pods and get replicasets/statefulsets.")
 	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
 	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 100, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
@@ -80,6 +84,7 @@ type Options struct {
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
 	ReadThroughLocalCache        bool
+	KubePeerWatcher              *kubediscovery.PeerWatcher
 }
 
 type hintedHandoffOrder struct {
@@ -111,7 +116,6 @@ type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
-	lookasideMu          *sync.Mutex
 	lookaside            lru.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
@@ -120,6 +124,7 @@ type Cache struct {
 	consistentHash       *consistent_hash.ConsistentHash
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
+	kubeDiscoveryChannel *kubediscovery.PeerWatcher
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
@@ -147,12 +152,27 @@ func Register(env *real_environment.RealEnv) error {
 		LookasideCacheSizeBytes:      *lookasideCacheSizeBytes,
 		ReadThroughLocalCache:        *readThroughLocalCache,
 	}
+	if *enableKubernetesDiscovery {
+		_, portStr, err := net.SplitHostPort(options.ListenAddr)
+		if err != nil {
+			return status.InternalErrorf("cannot parse port from listen_addr %q for kubernetes discovery: %w", options.ListenAddr, err)
+		}
+		pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
+			Port: portStr,
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to create kubernetes discovery watcher: %w", err)
+		}
+		options.KubePeerWatcher = pw
+	}
 	log.Infof("Enabling distributed cache with options: %+v", options)
 	dc, err := NewDistributedCache(env, env.GetCache(), options, env.GetHealthChecker())
 	if err != nil {
 		log.Fatalf("Error enabling distributed cache: %s", err.Error())
 	}
-	dc.StartListening()
+	if err := dc.StartListening(); err != nil {
+		return err
+	}
 	env.SetCache(dc)
 	return nil
 }
@@ -165,18 +185,6 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 		return consistent_hash.SHA256, nil
 	default:
 		return nil, status.InvalidArgumentErrorf("Unknown hash function: %s", c)
-	}
-}
-
-// Converts an LRU eviction reason into a metrics.LookasideCacheEvictionReason.
-func convertEvictionReason(r lru.EvictionReason) string {
-	switch r {
-	case lru.SizeEviction:
-		return "size"
-	case lru.ManualEviction:
-		return "age"
-	default:
-		return string(r)
 	}
 }
 
@@ -196,6 +204,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	if len(opts.NewNodes) > 0 && len(opts.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("new nodes may only be specified when all nodes are hardcoded.")
 	}
+	if opts.KubePeerWatcher != nil && len(opts.Nodes) > 0 {
+		return nil, status.InvalidArgumentErrorf("cannot set both Nodes and KubePeerWatcher")
+	}
 	hashFn, err := parseConsistentHash(*consistentHashFunction)
 	if err != nil {
 		return nil, err
@@ -213,7 +224,6 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
 		local:               c,
-		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
 		distributedProxy:    distributed_client.New(env, c, opts.ListenAddr),
@@ -235,14 +245,14 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
-				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(
-					convertEvictionReason(reason),
-				).Observe(float64(age.Milliseconds()))
+				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(string(reason)).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
 				return int64(len(v.data) + 8)
 			},
+			ThreadSafe: true,
+			TTL:        *lookasideCacheTTL,
 		})
 		if err != nil {
 			return nil, err
@@ -253,7 +263,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if *lookasideCacheTTL > 0 {
 			lookasideCacheTTLString = lookasideCacheTTL.String()
 		}
-		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", opts.LookasideCacheSizeBytes, lookasideCacheTTLString)
+		dc.log.Infof("Initialized lookaside cache (Size %d, ttl=%s)", opts.LookasideCacheSizeBytes, lookasideCacheTTLString)
 	}
 
 	if zone := resources.GetZone(); zone != "" {
@@ -268,6 +278,14 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		if len(opts.NewNodes) > 0 {
 			extraCHash.Set(opts.NewNodes...)
 		}
+	} else if opts.KubePeerWatcher != nil {
+		dc.kubeDiscoveryChannel = opts.KubePeerWatcher
+		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers map[string]string) {
+			dc.log.Infof("distributed cache peer set changed to %v", peers)
+			if err := chash.SetFromMap(peers); err != nil {
+				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
+			}
+		})
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{
@@ -275,7 +293,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			GroupName:    opts.GroupName,
 			UpdateFn: func(peers ...string) {
 				if err := chash.Set(peers...); err != nil {
-					log.Errorf("Error setting peers in consistent hash: %s", err)
+					dc.log.Errorf("Error setting peers in consistent hash: %s", err)
 				}
 			},
 			EnablePeerExpiry: false,
@@ -313,6 +331,12 @@ func (c *Cache) Check(ctx context.Context) error {
 		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.opts.ReplicationFactor)
 	}
 
+	if c.kubeDiscoveryChannel != nil {
+		// If we're using kubediscovery, c.consistentHash.GetItems() will only
+		// include pods that are ready, and we already check that there are at
+		// least ClusterSize of these.
+		return nil
+	}
 	// Next check that we're participating in the network:
 	// basically, that enough configured peers have *ever* contacted us.
 	// TODO(tylerw): Should we have some recency threshold here?
@@ -435,11 +459,9 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 		data:            data,
 	}
 
-	c.lookasideMu.Lock()
 	if !c.lookaside.Contains(lookasideKey) {
 		c.lookaside.Add(lookasideKey, entry)
 	}
-	c.lookasideMu.Unlock()
 	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
@@ -473,22 +495,10 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 	}
 	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
-		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
 		return nil, false
 	}
 
-	c.lookasideMu.Lock()
-	found := false
-	entry, ok := c.lookaside.Get(k)
-	if ok {
-		if *lookasideCacheTTL > 0 && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
-			// Remove the item from the LRU if it's expired.
-			c.lookaside.Remove(k)
-		} else {
-			found = true
-		}
-	}
-	c.lookasideMu.Unlock()
+	entry, found := c.lookaside.Get(k)
 
 	lookasideCacheLookupCount[found].Inc()
 	lookasideCacheLookupBytes[found].Add(float64(r.GetDigest().GetSizeBytes()))
@@ -619,23 +629,29 @@ func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 	}
 }
 
-func (c *Cache) StartListening() {
+func (c *Cache) StartListening() error {
 	c.shutdownMu.Lock()
 	defer c.shutdownMu.Unlock()
 
 	if !c.finishedShutdown {
-		return
+		return nil
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
-	log.Infof("Distributed cache listening on %q", c.opts.ListenAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
-	if err := c.distributedProxy.StartListening(); err != nil {
-		log.Warningf("Unable to start cacheproxy: %s", err)
+	if c.kubeDiscoveryChannel != nil {
+		if err := c.kubeDiscoveryChannel.Start(); err != nil {
+			return status.InternalErrorf("start kubediscovery: %w", err)
+		}
 	}
+	if err := c.distributedProxy.StartListening(); err != nil {
+		return status.InternalErrorf("start distributed_client: %w", err)
+	}
+	c.log.Infof("Distributed cache listening on %q", c.opts.ListenAddr)
 	c.finishedShutdown = false
+	return nil
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
@@ -649,6 +665,9 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
+	}
+	if c.kubeDiscoveryChannel != nil {
+		c.kubeDiscoveryChannel.Stop()
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true
@@ -1450,6 +1469,13 @@ func (mc *multiWriteCloser) Commit() error {
 func (mc *multiWriteCloser) Close() error {
 	for peer, wc := range mc.peerClosers {
 		if err := wc.Close(); err != nil {
+			// Cancellation on the close path is benign: it happens when a
+			// writer is Closed without a successful Commit (e.g. the caller
+			// aborted mid-write), which cancels the underlying gRPC stream.
+			if status.IsCanceledError(err) || errors.Is(err, context.Canceled) {
+				mc.log.CtxDebugf(mc.ctx, "Closed peer %q writer with canceled context: %s", peer, err)
+				continue
+			}
 			mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
 		}
 	}
@@ -1550,8 +1576,6 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if c.lookasideCacheEnabled() {
 		key, ok := c.lookasideKey(ctx, r)
 		if ok {
-			c.lookasideMu.Lock()
-			defer c.lookasideMu.Unlock()
 			c.lookaside.Remove(key)
 		}
 	}

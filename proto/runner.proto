@@ -76,6 +76,10 @@ message RunRequest {
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 19;
 
+  // Repo-relative subdirectory where bazel commands should be run from.
+  // Empty means the repo root.
+  string working_directory = 21;
+
   // DEPRECATED: Use wait_mode instead.
   // If true, start the runner but do not wait for the action to be scheduled.
   bool async = 9 [deprecated = true];

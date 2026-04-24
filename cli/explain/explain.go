@@ -75,6 +75,7 @@ func (m MapFlag) Set(s string) error {
 
 var (
 	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
+	Flags      = explainCmd
 	oldLog     = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
 	newLog     = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
 	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")

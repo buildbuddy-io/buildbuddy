@@ -68,6 +68,14 @@ func TestRestrictedPrefixes(t *testing.T) {
 			canRead:       true,
 		},
 		{
+			name:          "id service, CAN write or read restricted instance names from cache-proxy",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      interfaces.ClientIdentityCacheProxy,
+			canWrite:      true,
+			canRead:       true,
+		},
+		{
 			name:          "id service, CANNOT write or read restricted instance names from workflow",
 			initIDService: true,
 			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},

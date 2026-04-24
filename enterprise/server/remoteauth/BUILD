@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/ip_rules_enforcer",
         "//proto:auth_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -20,6 +21,8 @@ go_library(
         "//server/util/lru",
         "//server/util/status",
         "//server/util/subdomain",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],

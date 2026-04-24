@@ -317,6 +317,26 @@ export default class InvocationModel {
     return rawVal !== "0";
   }
 
+  booleanBuildMetadata(name: string): boolean | undefined {
+    const rawVal = this.buildMetadataMap.get(name);
+    if (rawVal === undefined) return undefined;
+
+    switch (rawVal.trim().toLowerCase()) {
+      case "1":
+      case "true":
+      case "yes":
+      case "on":
+        return true;
+      case "0":
+      case "false":
+      case "no":
+      case "off":
+        return false;
+      default:
+        return Boolean(rawVal);
+    }
+  }
+
   stringCommandLineOption(name: string, defaultValue = ""): string {
     const rawVal = this.optionsMap.get(name);
     if (rawVal === undefined) return defaultValue;
@@ -487,6 +507,10 @@ export default class InvocationModel {
   }
 
   getIsRBEEnabled() {
+    const remoteExecutionEnabled = this.booleanBuildMetadata("REMOTE_EXECUTION_ENABLED");
+    if (remoteExecutionEnabled !== undefined) {
+      return remoteExecutionEnabled;
+    }
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }
 

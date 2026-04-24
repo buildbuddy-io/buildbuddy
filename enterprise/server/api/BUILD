@@ -72,6 +72,7 @@ go_test(
         "//proto/api/v1:common_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",

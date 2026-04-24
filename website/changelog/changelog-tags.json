@@ -1,5 +1,6 @@
 [
   { "label": "featured", "url": "/changelog/tags/featured" },
   { "label": "bazel", "url": "/changelog/tags/bazel" },
+  { "label": "AI", "url": "/changelog/tags/ai" },
   { "label": "debugging", "url": "/changelog/tags/debugging" }
 ]

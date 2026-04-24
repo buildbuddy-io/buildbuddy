@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", false, "If true, the proxy will cache ActionCache.GetActionResult responses.")
+	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", true, "If true, the proxy will cache ActionCache.GetActionResult responses.")
 	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170401", "A salt to reset action cache contents when needed.")
 )
 

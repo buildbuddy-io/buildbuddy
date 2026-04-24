@@ -1,7 +1,6 @@
 package clientidentity_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -38,7 +37,7 @@ func TestIdentity(t *testing.T) {
 	}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -63,7 +62,7 @@ func TestDuplicateHeaders(t *testing.T) {
 	headers := metadata.Pairs(
 		authutil.ClientIdentityHeaderName, headerValue,
 		authutil.ClientIdentityHeaderName, headerValue)
-	ctx := metadata.NewIncomingContext(context.Background(), headers)
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -80,7 +79,7 @@ func TestMultipleHeaders(t *testing.T) {
 	headers := metadata.Pairs(
 		authutil.ClientIdentityHeaderName, "value1",
 		authutil.ClientIdentityHeaderName, "value2")
-	ctx := metadata.NewIncomingContext(context.Background(), headers)
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
 	_, err := sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -106,7 +105,7 @@ func TestStaleIdentity(t *testing.T) {
 
 	clock.Advance(clientidentity.DefaultExpiration + time.Second)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 }
@@ -127,11 +126,11 @@ func TestRequired(t *testing.T) {
 
 	headers := metadata.Pairs(
 		authutil.ClientIdentityHeaderName, headerValue)
-	ctx := metadata.NewIncomingContext(context.Background(), headers)
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
-	ctx = metadata.NewIncomingContext(context.Background(), nil)
+	ctx = metadata.NewIncomingContext(t.Context(), nil)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 }
@@ -146,7 +145,7 @@ func TestClearIdentity(t *testing.T) {
 	}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 	_, err = sis.IdentityFromContext(ctx)
@@ -157,10 +156,78 @@ func TestClearIdentity(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestOverridePropagated_DefaultTrue(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	// Start with an existing identity header in the outgoing context.
+	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "upstream-origin",
+		Client: "upstream",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, existingHeader))
+	ctx, err = sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// Default behavior (override_propagated=true): a new header should be appended.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 2, len(vals), "expected both old and new headers")
+}
+
+func TestOverridePropagated_False_PreservesExisting(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.override_propagated", false)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "upstream-origin",
+		Client: "upstream",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, existingHeader))
+	ctx, err = sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// With override_propagated=false, the existing header should be preserved and no new one added.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected only the original header")
+	require.Equal(t, existingHeader, vals[0])
+}
+
+func TestOverridePropagated_False_AddsWhenMissing(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.override_propagated", false)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	// No existing identity header in the outgoing context.
+	ctx := t.Context()
+	ctx, err := sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	// Even with override_propagated=false, a header should be added when none exists.
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected a new header to be added")
+}
+
 func BenchmarkAddIdentityToContext(b *testing.B) {
 	sis := newService(b, clockwork.NewRealClock())
 
-	ctx := context.Background()
+	ctx := b.Context()
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

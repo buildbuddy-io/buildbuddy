@@ -12,10 +12,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
-	"github.com/buildbuddy-io/buildbuddy/server/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
@@ -164,7 +164,7 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	cacheProxy, err := cache_proxy.NewCacheProxy(ctx, env, conn)
+	cacheProxy, err := sidecar_proxy.NewCacheProxy(ctx, env, conn)
 	if err != nil {
 		log.Fatalf("Error initializing cache proxy: %s", err.Error())
 	}

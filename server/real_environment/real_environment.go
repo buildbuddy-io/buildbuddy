@@ -131,6 +131,7 @@ type RealEnv struct {
 	imageCacheAuthenticator              interfaces.ImageCacheAuthenticator
 	serverNotificationService            interfaces.ServerNotificationService
 	gcpService                           interfaces.GCPService
+	mcpService                           interfaces.MCPService
 	scimService                          interfaces.SCIMService
 	gossipService                        interfaces.GossipService
 	commandRunner                        interfaces.CommandRunner
@@ -804,6 +805,14 @@ func (r *RealEnv) GetGCPService() interfaces.GCPService {
 
 func (r *RealEnv) SetGCPService(service interfaces.GCPService) {
 	r.gcpService = service
+}
+
+func (r *RealEnv) GetMCPService() interfaces.MCPService {
+	return r.mcpService
+}
+
+func (r *RealEnv) SetMCPService(val interfaces.MCPService) {
+	r.mcpService = val
 }
 
 func (r *RealEnv) GetSCIMService() interfaces.SCIMService {

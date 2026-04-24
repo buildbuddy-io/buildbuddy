@@ -41,7 +41,7 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   isJoiningOrg() {
-    return window.location.pathname.startsWith("/join/");
+    return capabilities.config.groupMembershipRequestsEnabled && window.location.pathname.startsWith("/join/");
   }
 
   isOrgSpecific() {

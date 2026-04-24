@@ -160,6 +160,7 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 	if resp.GetSshCert() != "" && keyFile != "" {
 		suffix := serverToSuffix(server)
 		certFile := keyFile + suffix + "-cert.pub"
+		certPath := path.Join(homeDir, sshDir, certFile)
 
 		// Create a copy of the private key with the suffixed name. SSH's naming
 		// convention requires the cert file to be named <keyfile>-cert.pub.
@@ -175,7 +176,13 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 			}
 		}
 
-		certPath := path.Join(homeDir, sshDir, certFile)
+		// ssh-agent caches certificates at add-time; renewing the cert on disk does
+		// not update the agent. Remove the previous cert identity (if present)
+		// before overwriting the cert file, so re-adding loads the renewed cert.
+		if _, err := os.Stat(certPath); err == nil {
+			_ = exec.CommandContext(ctx, "ssh-add", "-d", certPath).Run()
+		}
+
 		if err := os.WriteFile(certPath, []byte(resp.GetSshCert()), 0644); err != nil {
 			return fmt.Errorf("could not write certificate to %q: %s", certPath, err)
 		}

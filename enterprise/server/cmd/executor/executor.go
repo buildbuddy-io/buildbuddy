@@ -56,6 +56,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -190,6 +191,26 @@ func getExecutorHostName() string {
 	return name
 }
 
+func filecacheMaxSizeBytesForRegistration() *int64 {
+	size := int64(0)
+	if !*disableLocalCache {
+		size = *localCacheSizeBytes
+	}
+	return &size
+}
+
+func warmupImagesForRegistration() []*scpb.WarmupImage {
+	configs := runner.WarmupConfigs()
+	warmupImages := make([]*scpb.WarmupImage, 0, len(configs))
+	for _, cfg := range configs {
+		warmupImages = append(warmupImages, &scpb.WarmupImage{
+			Image:     cfg.Image,
+			Isolation: cfg.Isolation,
+		})
+	}
+	return warmupImages
+}
+
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
@@ -251,8 +272,17 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
+		fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+		if err != nil {
+			log.Fatalf("Error initializing file cache: %s", err)
+		}
+		realEnv.SetFileCache(fc)
+		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			return fc.Close()
+		})
+
+		if err := migrateExt4ImagesToFileCache(fc, cacheRoot); err != nil {
+			log.Fatalf("Error migrating ext4 images to file cache: %s", err)
 		}
 	}
 
@@ -272,6 +302,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 }
 
 func main() {
+	executorStartTime := time.Now()
 	version.Print("BuildBuddy executor")
 
 	setUmask()
@@ -390,7 +421,11 @@ func main() {
 	http.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
-	schedulerOpts := &scheduler_client.Options{}
+	schedulerOpts := &scheduler_client.Options{
+		FilecacheMaxSizeBytes: filecacheMaxSizeBytesForRegistration(),
+		WarmupImages:          warmupImagesForRegistration(),
+		StartTime:             timestamppb.New(executorStartTime),
+	}
 	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executor.HostID(), schedulerOpts)
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -22,12 +23,12 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
-	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -464,6 +465,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 }
 
@@ -576,8 +578,14 @@ type UserDB interface {
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error
+	// UpdateGroupSamlIdpMetadataUrl updates the group's SAML IdP metadata URL.
+	// An empty URL disables SSO for the group. Restricted to server admins.
+	UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
+	// GetGroupMembershipRequestsEnabled returns whether membership requests via
+	// the /join flow are enabled.
+	GetGroupMembershipRequestsEnabled() bool
 
 	// RequestToJoinGroup performs an attempt for the authenticated user to join
 	// the given group. If the user email matches the group's owned domain, the
@@ -714,9 +722,9 @@ type GitHubApp interface {
 	// so should be used for status reporting only.
 	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
-	// GetRepositoryInstallationToken returns an installation token for the given
-	// GitRepository.
-	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+	// GetRepositoryInstallationToken returns an installation token for the given repo.
+	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
+	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler
@@ -907,6 +915,16 @@ type FileCache interface {
 	DeleteFile(ctx context.Context, f *repb.FileNode) bool
 	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
 	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+
+	// WithSharedDirectory returns a context that stores filecache entries under
+	// a shared executor-local directory instead of the current group or ANON
+	// directory.
+	//
+	// NOTE: Authorization for the objects in these shared directories must be
+	// handled by the caller. The caller must also ensure that the objects in
+	// these shared directories are not modified.
+	WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context
+
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
 	WaitForDirectoryScanToComplete()
@@ -928,6 +946,11 @@ type FileCache interface {
 	//
 	// See filecache.go for more details.
 	TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error)
+
+	// LookupExternalDirectory looks up and locks an already-tracked external
+	// directory without creating a new tracked entry. It returns NotFound if
+	// the dir does not exist or is not currently tracked.
+	LookupExternalDirectory(ctx context.Context, path string) (unlock func(), sizeBytes int64, err error)
 
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
@@ -967,6 +990,7 @@ type PoolInfo struct {
 
 type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
+	GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error)
 	WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error
 	WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error
 }
@@ -1233,6 +1257,10 @@ type CommandResult struct {
 	// VfsStats holds VFS-specific stats if VFS workspaces are enabled.
 	VfsStats *repb.VfsStats
 
+	// InputFetchMetadata describes which action inputs were fetched from
+	// remote CAS while preparing or serving the workspace.
+	InputFetchMetadata *espb.InputFetchMetadata
+
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
 }
@@ -1459,7 +1487,8 @@ type SecretService interface {
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
-	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+	// If secretNames is non-empty, only secrets whose names appear in the list are returned.
+	GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error)
 }
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
@@ -1566,18 +1595,19 @@ type AuditLogger interface {
 
 type IPRulesEnforcer interface {
 	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the group identified in the context.
-	Authorize(ctx context.Context) error
+	// to access the group identified in the context. The returned context
+	// should be used after successful authorization.
+	Authorize(ctx context.Context) (context.Context, error)
 
 	// AuthorizeGroup checks whether the authenticated user in the context is
 	// allowed to access the specified groupId. This function should not be used
 	// in performance sensitive code paths.
-	AuthorizeGroup(ctx context.Context, groupID string) error
+	AuthorizeGroup(ctx context.Context, groupID string) (context.Context, error)
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
 	// allowed based on the authenticated user and group information in the
 	// context.
-	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) (context.Context, error)
 
 	// Invalidates all cached IP rules for the specified group ID.
 	InvalidateCache(ctx context.Context, groupID string)
@@ -1690,6 +1720,10 @@ type ServerNotificationService interface {
 	// e.g. publishing an InvalidateIPRulesCache notification can be done as:
 	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
 	Publish(ctx context.Context, msg proto.Message) error
+}
+
+type MCPService interface {
+	RegisterHandlers(mux HttpServeMux)
 }
 
 type SCIMService interface {

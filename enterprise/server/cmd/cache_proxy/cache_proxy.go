@@ -17,9 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -98,6 +100,9 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
+	if err := clientidentity.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remoteauth.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -107,6 +112,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := experiments.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_enforcer.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -210,7 +218,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapError(err, "failed to create traffic stats handler")
 	}
-	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
+	// Add metadata-propagating interceptors for configured request headers.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
@@ -218,7 +226,9 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateMetadataStreamInterceptor(proxy_util.HeadersToPropagate...),
 		},
-		ExtraStatsHandlers: []stats.Handler{trafficStatsHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficStatsHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficStatsHandler.StreamInterceptor},
+		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)

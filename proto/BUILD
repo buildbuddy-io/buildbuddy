@@ -144,6 +144,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":execution_stats_proto",
         ":remote_execution_proto",
         ":resource_proto",
         "@com_google_protobuf//:duration_proto",
@@ -250,6 +251,31 @@ proto_library(
 proto_library(
     name = "git_proto",
     srcs = ["git.proto"],
+)
+
+proto_library(
+    name = "gateway_proto",
+    srcs = ["gateway.proto"],
+)
+
+go_proto_library(
+    name = "gateway_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway",
+    proto = ":gateway_proto",
+)
+
+proto_library(
+    name = "gateway_service_proto",
+    srcs = ["gateway_service.proto"],
+    deps = [":gateway_proto"],
+)
+
+go_proto_library(
+    name = "gateway_service_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway_service",
+    mode = "services_only",
+    proto = ":gateway_service_proto",
+    deps = [":gateway_go_proto"],
 )
 
 proto_library(
@@ -1543,6 +1569,7 @@ go_proto_library(
     proto = ":cache_proto",
     deps = [
         ":context_go_proto",
+        ":execution_stats_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -2295,6 +2322,7 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":execution_stats_ts_proto",
         ":field_mask_ts_proto",
         ":grpc_status_ts_proto",
         ":remote_execution_ts_proto",

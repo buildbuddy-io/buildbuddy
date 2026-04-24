@@ -3,6 +3,7 @@ package buildbuddy_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,7 +69,8 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -402,7 +404,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		selectedGroupID = g.Group.GroupID
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
 		if irs := s.env.GetIPRulesEnforcer(); irs != nil {
-			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
+			_, err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
 			if status.IsPermissionDeniedError(err) {
 				selectedGroupAccess = uspb.SelectedGroup_DENIED_BY_IP_RULES
 			} else if err != nil {
@@ -442,6 +444,13 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		}
 		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 	}
+	allowedRPCs := capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID)
+	// Keep GetUserResponse.allowed_rpc in its legacy bare-method format so the
+	// existing web auth flow can keep treating these values as BuildBuddyService
+	// method names.
+	for i, rpc := range allowedRPCs {
+		allowedRPCs[i] = path.Base(rpc)
+	}
 
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
@@ -451,7 +460,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			GroupId: selectedGroupID,
 			Access:  selectedGroupAccess,
 		},
-		AllowedRpc:       capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID),
+		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
@@ -690,6 +699,111 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	}
 
 	return &grpb.SetGroupStatusResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return &grpb.GetSSOConfigResponse{
+		Config: &grpb.SSOConfig{
+			SamlIdpMetadataUrl: group.SamlIdpMetadataUrl,
+		},
+	}, nil
+}
+
+func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOConfigRequest) (*grpb.SetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
+	if metadataURL != "" {
+		if err := validateSamlIdpMetadataURL(ctx, metadataURL); err != nil {
+			return nil, err
+		}
+	}
+	if err := userDB.UpdateGroupSamlIdpMetadataUrl(ctx, groupID, metadataURL); err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, groupID, alpb.Action_UPDATE_SSO_CONFIG, req)
+	}
+	return &grpb.SetSSOConfigResponse{}, nil
+}
+
+// validateSamlIdpMetadataURL verifies that the given URL points to a valid
+// SAML 2.0 IdP metadata document. It performs a syntactic check on the URL
+// and then fetches the document and confirms the XML root element is
+// EntityDescriptor or EntitiesDescriptor in the SAML metadata namespace.
+func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return status.InvalidArgumentError("metadata URL must use http or https")
+	}
+	if u.Host == "" {
+		return status.InvalidArgumentError("metadata URL must include a host")
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to fetch metadata URL: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return status.InvalidArgumentErrorf("metadata URL returned HTTP %d", resp.StatusCode)
+	}
+	// Limit how much we read to avoid pulling down an unbounded response.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to read metadata response: %s", err)
+	}
+	const samlMetadataNS = "urn:oasis:names:tc:SAML:2.0:metadata"
+	decoder := xml.NewDecoder(strings.NewReader(string(body)))
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			return status.InvalidArgumentErrorf("response is not valid SAML metadata: %s", err)
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if se.Name.Space != samlMetadataNS {
+			return status.InvalidArgumentErrorf("response root element is not in the SAML metadata namespace (got %q)", se.Name.Space)
+		}
+		if se.Name.Local != "EntityDescriptor" && se.Name.Local != "EntitiesDescriptor" {
+			return status.InvalidArgumentErrorf("response root element must be EntityDescriptor or EntitiesDescriptor (got %q)", se.Name.Local)
+		}
+		return nil
+	}
 }
 
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
@@ -1467,6 +1581,40 @@ func (s *BuildBuddyServer) WaitExecution(req *espb.WaitExecutionRequest, stream 
 		return es.WaitExecution(req, stream)
 	}
 	return status.UnimplementedError("Not implemented")
+}
+
+type getTreeStreamAdapter struct {
+	bbspb.BuildBuddyService_GetTreeServer
+}
+
+func (s *getTreeStreamAdapter) Send(rsp *repb.GetTreeResponse) error {
+	return s.BuildBuddyService_GetTreeServer.Send(&capb.GetTreeResponse{
+		Directories:   rsp.GetDirectories(),
+		NextPageToken: rsp.GetNextPageToken(),
+	})
+}
+
+func (s *BuildBuddyServer) GetTree(req *capb.GetTreeRequest, stream bbspb.BuildBuddyService_GetTreeServer) error {
+	casServer := s.env.GetCASServer()
+	if casServer == nil {
+		return status.UnimplementedError("Not implemented")
+	}
+	return casServer.GetTree(&repb.GetTreeRequest{
+		InstanceName:   req.GetInstanceName(),
+		RootDigest:     req.GetRootDigest(),
+		PageSize:       req.GetPageSize(),
+		PageToken:      req.GetPageToken(),
+		DigestFunction: req.GetDigestFunction(),
+	}, &getTreeStreamAdapter{BuildBuddyService_GetTreeServer: stream})
+}
+
+// GetExecutionDownloads proxies paginated execution-download lookups to the
+// configured execution service.
+func (s *BuildBuddyServer) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecutionDownloads(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
@@ -2476,7 +2624,7 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 	return al.GetLogs(ctx, request)
 }
 
-func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")

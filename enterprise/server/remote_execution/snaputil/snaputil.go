@@ -30,6 +30,8 @@ var (
 	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
 	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
+	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
+	ThrottleSnapshotWrites           = flag.Bool("executor.throttle_snapshot_writes", false, "If true, snapshot writes will be throttled to avoid high IO pressure.")
 )
 
 const (
@@ -39,12 +41,25 @@ const (
 	// snapshot data to that partition.
 	SnapshotPartitionPrefix = "bb-snapshot"
 
+	// Similar to SnapshotPartitionPrefix, when this prefix starts an instance name,
+	// that snapshot data will be stored in a different partition.
+	DevboxPartitionPrefix = "bb-devbox"
+
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
 
+	// DefaultMaxStaleFallbackSnapshotAge is the max age of a valid fallback snapshot.
+	// This is used to prevent using very stale local snapshots that may cause performance degradation.
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
+
+	// DefaultSnapshotWriteInterval is the default interval between snapshot writes.
+	// This is used to prevent writing snapshots too frequently.
+	DefaultSnapshotWriteInterval = 1 * time.Hour
+
+	ConvertToCOWConcurrency       = 8
+	WriteSnapshotChunkConcurrency = 8
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
@@ -181,7 +196,9 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 
 	rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
-	rn.SetCompressor(repb.Compressor_ZSTD)
+	if *enableUploadCompresssion {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, err

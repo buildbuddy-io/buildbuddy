@@ -87,6 +87,8 @@ service BuildBuddyService {
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
   rpc SetGroupStatus(grp.SetGroupStatusRequest)
       returns (grp.SetGroupStatusResponse);
+  rpc GetSSOConfig(grp.GetSSOConfigRequest) returns (grp.GetSSOConfigResponse);
+  rpc SetSSOConfig(grp.SetSSOConfigRequest) returns (grp.SetSSOConfigResponse);
 
   // User Lists API
   rpc GetUserLists(user_list.GetUserListsRequest)
@@ -142,6 +144,9 @@ service BuildBuddyService {
       returns (cache.GetCacheScoreCardResponse);
   rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
       returns (cache.GetCacheMetadataResponse);
+  rpc GetTree(cache.GetTreeRequest) returns (stream cache.GetTreeResponse);
+  rpc GetExecutionDownloads(cache.GetExecutionDownloadsRequest)
+      returns (cache.GetExecutionDownloadsResponse);
   rpc GetTreeDirectorySizes(cache.GetTreeDirectorySizesRequest)
       returns (cache.GetTreeDirectorySizesResponse);
 

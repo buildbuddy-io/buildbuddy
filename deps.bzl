@@ -9,6 +9,9 @@ PODMAN_VERSION = "v5.7.0"
 PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
+# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
+BB_CLI_VERSION = "5.0.333"
+
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
@@ -29,11 +32,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
-        ]).format(release = "v1.13.0-with_clock_reset_patch-20251029-d33011c6788153a8a601e1b7000466c1ff1ecfc7"),
-        sha256 = "d08f5245fcb84c59bdb060385e3058f4667765afbea5c3cbfcb969d570d624bf",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.13.0-with_clock_reset_patch.tgz"],
+            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+        ]).format(release = "v1.15.1-x86_64"),
+        sha256 = "d4a32ab2322d887ca1bc4a4e7afa9cc35393e6362dfc2b3becb389d362e4275a",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.1/firecracker-v1.15.1-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -216,23 +219,22 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "7e972d01a27e7f3c3e01997e2b202a03e9eef279cd183fbdd2638a0901812052",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-7e972d01a27e7f3c3e01997e2b202a03e9eef279cd183fbdd2638a0901812052"],
+        sha256 = "59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "04c7910a6ee6666f4ac713ce2a42ffaa49e7fd2d2d9268a123a38e3e84c5a8bd",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-04c7910a6ee6666f4ac713ce2a42ffaa49e7fd2d2d9268a123a38e3e84c5a8bd"],
+        sha256 = "9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-43dd6dff759ab7b8abfb5a9d34b4ef1ea97de735141436cc77db1a90359991c3"],
+        sha256 = "6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a"],
         executable = True,
     )
-
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
         executable = True,
@@ -245,6 +247,34 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-arm64",
+        executable = True,
+        integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-darwin-x86_64",
+        executable = True,
+        integrity = "sha256-B0rhObAwP/aGdtwnw7iZuCarOTS/jxp2eaUE8M67o5A=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-arm64",
+        executable = True,
+        integrity = "sha256-08m6+utxtg0CrYDgeNz/ZkZprSLeTMkjSKe5BPD9SW8=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
+    )
+
+    http_file(
+        name = "io_buildbuddy_bb_cli-linux-x86_64",
+        executable = True,
+        integrity = "sha256-TaoceuYO8XWwHFvEYAoEyBb2CvQsLnLIzVft9qwr5f0=",
+        urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
