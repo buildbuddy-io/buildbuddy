@@ -11,7 +11,7 @@ var (
 )
 
 func FindFree(t testing.TB) int {
-	return portLeaser.Lease(t)
+	return portLeaser.lease(t)
 }
 
 type freePortLeaser struct {
@@ -32,7 +32,7 @@ func (p *freePortLeaser) findAPort(t testing.TB) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-func (p *freePortLeaser) Lease(t testing.TB) int {
+func (p *freePortLeaser) lease(t testing.TB) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.leasedPorts == nil {
@@ -42,6 +42,9 @@ func (p *freePortLeaser) Lease(t testing.TB) int {
 		port := p.findAPort(t)
 		if _, ok := p.leasedPorts[port]; !ok {
 			p.leasedPorts[port] = struct{}{}
+			if !lockPort(port) {
+				continue
+			}
 			return port
 		}
 	}
