@@ -101,6 +101,9 @@ const (
 	// Default execution root directory path relative to the container rootfs directory.
 	defaultExecrootPath = "/buildbuddy-execroot"
 
+	// Default /dev/shm size in bytes, preserving the historical 64000k.
+	defaultShmSizeBytes = int64(64_000 * 1024)
+
 	// Image cache layout version.
 	//
 	// This should be incremented when making backwards-compatible changes to
@@ -409,6 +412,13 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 	if !filepath.IsAbs(execroot) {
 		return nil, status.InvalidArgumentErrorf("execroot-path platform property must be an absolute path, got %q", execroot)
 	}
+	shmSizeBytes := defaultShmSizeBytes
+	if args.Props.ShmSizeBytes != nil {
+		shmSizeBytes = *args.Props.ShmSizeBytes
+		if shmSizeBytes < 0 {
+			return nil, status.InvalidArgumentErrorf("shm-size platform property must be >= 0, got %d", shmSizeBytes)
+		}
+	}
 
 	container := &ociContainer{
 		env:            p.env,
@@ -432,6 +442,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		user:               args.Props.DockerUser,
 		forceRoot:          args.Props.DockerForceRoot,
 		execrootPath:       execroot,
+		shmSizeBytes:       shmSizeBytes,
 		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
@@ -478,6 +489,7 @@ type ociContainer struct {
 	user           string
 	forceRoot      bool
 	execrootPath   string
+	shmSizeBytes   int64
 
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
@@ -1198,7 +1210,10 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Destination: "/dev/shm",
 				Type:        "tmpfs",
 				Source:      "shm",
-				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k"},
+				Options: []string{
+					"rw", "nosuid", "nodev", "noexec", "relatime",
+					fmt.Sprintf("size=%d", c.shmSizeBytes),
+				},
 			},
 			// TODO: .containerenv
 			// {

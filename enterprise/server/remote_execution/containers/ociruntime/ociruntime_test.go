@@ -2093,6 +2093,45 @@ func TestMounts(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
+func TestShmSize(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Configure a non-default /dev/shm size for this container.
+	const shmSizeBytes = 777 * 4096
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		ShmSizeBytes:   new(int64(shmSizeBytes)),
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run inside the container and check the kernel-reported mount options.
+	cmd := &repb.Command{
+		Arguments: []string{"grep", " /dev/shm ", "/proc/mounts"},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, string(res.Stdout), "size=3108k")
+}
+
 func TestCDIDevicesMountsFromCDISpec(t *testing.T) {
 	setupNetworking(t)
 	image := busyboxImage(t)
