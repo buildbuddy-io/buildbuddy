@@ -194,6 +194,30 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "io_bazel_bazel-9.1.0-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-arm64"],
+        sha256 = "084a1784fa8f0dcae77fb4e88faa15048d8149a36c947ce198508bffb060e1bb",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-x86_64"],
+        sha256 = "666c6c79eda285cada5f5c39c891c6dd7ee0971b20bff365ea87a4b897271433",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-arm64"],
+        sha256 = "ba933bfc943e4c44f0743a5823aa2312a34b39628532add5dd037e08d8ec27a4",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-x86_64"],
+        sha256 = "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f",
+        executable = True,
+    )
+    http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64"],
         sha256 = "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
