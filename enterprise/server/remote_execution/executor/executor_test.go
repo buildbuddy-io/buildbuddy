@@ -604,5 +604,5 @@ func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, expectedImageRef, auxMeta.GetContainerImageRef())
-	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageSizeBytes())
+	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageDiskUsageBytes())
 }

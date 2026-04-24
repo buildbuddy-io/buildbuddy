@@ -251,8 +251,8 @@ type Execution struct {
 	CommandSnippet string
 
 	// Container image
-	ContainerImageRef       string
-	ContainerImageSizeBytes int64
+	ContainerImageRef            string
+	ContainerImageDiskUsageBytes int64
 
 	// Fields from Invocations
 	User             string
@@ -346,7 +346,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Experiments",
 		"ClientIP",
 		"ContainerImageRef",
-		"ContainerImageSizeBytes",
+		"ContainerImageDiskUsageBytes",
 	}
 }
 

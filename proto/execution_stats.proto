@@ -182,7 +182,7 @@ message ExecutionAuxiliaryMetadata {
 
   // The on-disk size of the container image in bytes, after pulling and
   // extracting.
-  int64 container_image_size_bytes = 13;
+  int64 container_image_disk_usage_bytes = 13;
 }
 
 message RunnerMetadata {
