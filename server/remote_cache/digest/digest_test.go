@@ -219,14 +219,6 @@ func TestParseUploadResourceName(t *testing.T) {
 			resourceName: "/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantURN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "/blake3/zstd/blake3/zstd/this-is-the-instance-name", repb.DigestFunction_BLAKE3),
 		},
-		{ // Instance name containing uploads segments
-			resourceName: "bad/uploads/instance/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "bad/uploads/instance", repb.DigestFunction_SHA256),
-		},
-		{ // Instance name ending with uploads segment
-			resourceName: "bad/instance/uploads/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "bad/instance/uploads", repb.DigestFunction_SHA256),
-		},
 	}
 	for _, tc := range cases {
 		urn, err := digest.ParseUploadResourceName(tc.resourceName)
@@ -239,44 +231,87 @@ func TestParseUploadResourceName(t *testing.T) {
 	}
 }
 
-func TestParseUploadResourceNameMetadata(t *testing.T) {
+func TestParseUploadResource(t *testing.T) {
 	const uploadID = "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1"
+	const sha256Hash = "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d"
 
-	t.Run("OldStyleSha256", func(t *testing.T) {
-		rn, err := digest.ParseUploadResourceName(
-			"instance_name/uploads/" + uploadID + "/blobs/" +
-				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-		)
-		require.NoError(t, err)
+	for _, tc := range []struct {
+		name         string
+		resourceName string
+		want         *digest.UploadResource
+	}{
+		{
+			name:         "OldStyleSha256",
+			resourceName: "instance_name/uploads/" + uploadID + "/blobs/" + sha256Hash + "/1234",
+			want: &digest.UploadResource{
+				InstanceName:          "instance_name",
+				UploadID:              uploadID,
+				CompressorSegment:     "",
+				DigestFunctionSegment: "",
+				Compressor:            repb.Compressor_IDENTITY,
+				DigestFunction:        repb.DigestFunction_SHA256,
+				Hash:                  sha256Hash,
+				SizeBytes:             1234,
+			},
+		},
+		{
+			name:         "ExplicitDigestFunctionAndCompression",
+			resourceName: "instance_name/uploads/" + uploadID + "/compressed-blobs/zstd/sha256/" + sha256Hash + "/9876",
+			want: &digest.UploadResource{
+				InstanceName:          "instance_name",
+				UploadID:              uploadID,
+				CompressorSegment:     "zstd",
+				DigestFunctionSegment: "sha256",
+				Compressor:            repb.Compressor_ZSTD,
+				DigestFunction:        repb.DigestFunction_SHA256,
+				Hash:                  sha256Hash,
+				SizeBytes:             9876,
+			},
+		},
+		{
+			name:         "Blake3",
+			resourceName: "instance_name/uploads/" + uploadID + "/blobs/blake3/" + sha256Hash + "/42",
+			want: &digest.UploadResource{
+				InstanceName:          "instance_name",
+				UploadID:              uploadID,
+				CompressorSegment:     "",
+				DigestFunctionSegment: "blake3",
+				Compressor:            repb.Compressor_IDENTITY,
+				DigestFunction:        repb.DigestFunction_BLAKE3,
+				Hash:                  sha256Hash,
+				SizeBytes:             42,
+			},
+		},
+		{
+			name:         "InstanceNameContainingUploads",
+			resourceName: "bad/uploads/instance/uploads/" + uploadID + "/blobs/" + sha256Hash + "/4321",
+			want: &digest.UploadResource{
+				InstanceName:          "bad/uploads/instance",
+				UploadID:              uploadID,
+				CompressorSegment:     "",
+				DigestFunctionSegment: "",
+				Compressor:            repb.Compressor_IDENTITY,
+				DigestFunction:        repb.DigestFunction_SHA256,
+				Hash:                  sha256Hash,
+				SizeBytes:             4321,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := digest.ParseUploadResource(tc.resourceName)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 
-		require.Equal(t, uploadID, rn.GetUploadID())
-		require.Equal(t, "", rn.GetCompressorSegment())
-		require.Equal(t, "", rn.GetDigestFunctionSegment())
+	t.Run("InvalidUUID", func(t *testing.T) {
+		_, err := digest.ParseUploadResource("instance_name/uploads/not-a-uuid/blobs/" + sha256Hash + "/1234")
+		require.Error(t, err)
 	})
 
-	t.Run("ExplicitDigestFunctionAndCompression", func(t *testing.T) {
-		rn, err := digest.ParseUploadResourceName(
-			"instance_name/uploads/" + uploadID + "/compressed-blobs/zstd/sha256/" +
-				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-		)
-		require.NoError(t, err)
-
-		require.Equal(t, uploadID, rn.GetUploadID())
-		require.Equal(t, "zstd", rn.GetCompressorSegment())
-		require.Equal(t, "sha256", rn.GetDigestFunctionSegment())
-	})
-
-	t.Run("InstanceNameContainingUploads", func(t *testing.T) {
-		rn, err := digest.ParseUploadResourceName(
-			"bad/uploads/instance/uploads/" + uploadID + "/blobs/" +
-				"072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-		)
-		require.NoError(t, err)
-
-		require.Equal(t, "bad/uploads/instance", rn.GetInstanceName())
-		require.Equal(t, uploadID, rn.GetUploadID())
-		require.Equal(t, "", rn.GetCompressorSegment())
-		require.Equal(t, "", rn.GetDigestFunctionSegment())
+	t.Run("MissingUploads", func(t *testing.T) {
+		_, err := digest.ParseUploadResource("/blobs/" + sha256Hash + "/1234")
+		require.Error(t, err)
 	})
 }
 

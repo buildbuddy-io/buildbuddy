@@ -40,7 +40,10 @@ const (
 	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
 	gormQueryNameKey                 = "bb_clickhouse:query_name"
-	zeroUUID                         = "00000000-0000-0000-0000-000000000000"
+	// zeroUUID is written to Execution.ExecutionUUID when execution_id is empty
+	// or unparseable, so ClickHouse's UUID column accepts the row. Queries that
+	// rely on ExecutionUUID being meaningful must filter it out.
+	zeroUUID = "00000000-0000-0000-0000-000000000000"
 
 	// How long to wait for a single invocation batch insert to complete
 	// before timing out and logging an error.
@@ -341,27 +344,26 @@ func FillExecutionResourceFields(out *schema.Execution) error {
 		return nil
 	}
 
-	rn, err := digest.ParseUploadResourceName(out.ExecutionID)
+	ur, err := digest.ParseUploadResource(out.ExecutionID)
 	if err != nil {
 		return status.InvalidArgumentErrorf("parse execution ID %q: %s", out.ExecutionID, err)
 	}
-	digestBytes, err := hex.DecodeString(rn.GetDigest().GetHash())
+	digestBytes, err := hex.DecodeString(ur.Hash)
 	if err != nil {
 		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", out.ExecutionID, err)
 	}
-	sizeBytes := rn.GetDigest().GetSizeBytes()
-	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
-		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, sizeBytes)
+	if ur.SizeBytes > math.MaxUint32 {
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, ur.SizeBytes)
 	}
 
-	out.InstanceName = rn.GetInstanceName()
-	if rn.GetUploadID() != "" {
-		out.ExecutionUUID = rn.GetUploadID()
+	out.InstanceName = ur.InstanceName
+	if ur.UploadID != "" {
+		out.ExecutionUUID = ur.UploadID
 	}
-	out.Compressor = rn.GetCompressorSegment()
-	out.DigestFunction = rn.GetDigestFunctionSegment()
+	out.Compressor = ur.CompressorSegment
+	out.DigestFunction = ur.DigestFunctionSegment
 	out.ActionDigest = string(digestBytes)
-	out.ActionDigestSize = uint32(sizeBytes)
+	out.ActionDigestSize = uint32(ur.SizeBytes)
 	return nil
 }
 

@@ -61,10 +61,7 @@ func SupportedDigestFunctions() []repb.DigestFunction_Value {
 }
 
 type ResourceName struct {
-	rn                    *rspb.ResourceName
-	uploadID              string
-	digestFunctionSegment string
-	compressorSegment     string
+	rn *rspb.ResourceName
 }
 
 // Prefer either CASResourceNameFromProto or ACResourceNameFromProto.
@@ -75,9 +72,7 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 		rn.DigestFunction = repb.DigestFunction_SHA256
 	}
 	return &ResourceName{
-		rn:                    rn,
-		digestFunctionSegment: digestFunctionSegment(rn.GetDigestFunction()),
-		compressorSegment:     compressorSegment(rn.GetCompressor()),
+		rn: rn,
 	}
 }
 
@@ -138,7 +133,6 @@ func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheTy
 			CacheType:      cacheType,
 			DigestFunction: digestFunction,
 		},
-		digestFunctionSegment: digestFunctionSegment(digestFunction),
 	}
 }
 
@@ -176,18 +170,6 @@ func (r *ResourceName) GetDigestFunction() repb.DigestFunction_Value {
 	return r.rn.GetDigestFunction()
 }
 
-// GetDigestFunctionSegment returns the digest-function piece as it appeared in
-// the parsed URL, or the canonical form for resource names built via
-// NewResourceName. For old-style SHA256 URLs (no explicit segment), this
-// returns "" — the fallback also returns "" because isOldStyleDigestFunction
-// is true for SHA256.
-func (r *ResourceName) GetDigestFunctionSegment() string {
-	if r.digestFunctionSegment != "" {
-		return r.digestFunctionSegment
-	}
-	return digestFunctionSegment(r.GetDigestFunction())
-}
-
 func (r *ResourceName) GetInstanceName() string {
 	return r.rn.GetInstanceName()
 }
@@ -200,16 +182,8 @@ func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.rn.GetCompressor()
 }
 
-func (r *ResourceName) GetCompressorSegment() string {
-	if r.compressorSegment != "" {
-		return r.compressorSegment
-	}
-	return compressorSegment(r.GetCompressor())
-}
-
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
-	r.compressorSegment = compressorSegment(compressor)
 }
 
 func (r *ResourceName) IsEmpty() bool {
@@ -277,13 +251,6 @@ func casDownloadString(r *rspb.ResourceName) string {
 // purposes.
 func (r *CASResourceName) DownloadString() string {
 	return casDownloadString(r.rn)
-}
-
-// GetUploadID returns the upload UUID parsed from an upload-style resource
-// name URL (".../uploads/<uuid>/..."). Returns "" for CAS resource names that
-// did not come from ParseUploadResourceName.
-func (r *CASResourceName) GetUploadID() string {
-	return r.uploadID
 }
 
 // NewUploadString returns a new string representing the resource name for
@@ -521,75 +488,80 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 	return Compute(f, digestType)
 }
 
-func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceType resourceNameType) (*ResourceName, error) {
+// parseResourceSegments walks a resource-name URL and fills an UploadResource
+// with its raw fields. The returned value can be used directly by
+// ParseUploadResource, or by parseResourceName to build a ResourceName.
+// Returned by value to avoid a heap allocation on the internal (ResourceName)
+// path.
+func parseResourceSegments(resourceName string, cacheType rspb.CacheType, resourceType resourceNameType) (UploadResource, error) {
+	var seg UploadResource
 	pieces := strings.Split(resourceName, "/")
 
 	// Need at least 2 slashes for CAS: blobs/hash/size
 	// 3 for AC: blobs/ac/hash/size
 	// 4 for upload: uploads/uuid/blobs/hash/size
 	if len(pieces) < 3 || (cacheType == rspb.CacheType_AC && len(pieces) < 4) || (resourceType == uploadResourceName && len(pieces) < 5) {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, not enough pieces: %s", resourceName)
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, not enough pieces: %s", resourceName)
 	}
 
-	// Parse back-to-front to avoid having to find the end of the instance name
-	// The last piece must be the size (in bytes)
+	// Parse back-to-front to avoid having to find the end of the instance name.
+	// The last piece must be the size (in bytes).
 	pieceIdx := len(pieces) - 1
 	sizeBytes, err := strconv.ParseInt(pieces[pieceIdx], 10, 64)
 	if err != nil {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid size: %s", resourceName)
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid size: %s", resourceName)
 	}
 	if sizeBytes < 0 {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, negative size: %s", resourceName)
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, negative size: %s", resourceName)
 	}
 
-	// The second-to-last piece is the hash
+	seg.SizeBytes = sizeBytes
+
+	// The second-to-last piece is the hash.
 	pieceIdx--
-	hash := pieces[pieceIdx]
-	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
-	inferredDigestFunction := InferOldStyleDigestFunctionInDesperation(d)
-	digestFunction := inferredDigestFunction
-	digestFunctionSegment := ""
-	if inferredDigestFunction == repb.DigestFunction_UNKNOWN {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
+	seg.Hash = pieces[pieceIdx]
+	seg.DigestFunction = InferOldStyleDigestFunctionInDesperation(&repb.Digest{Hash: seg.Hash, SizeBytes: seg.SizeBytes})
+	if seg.DigestFunction == repb.DigestFunction_UNKNOWN {
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
 	}
-	if !isLowerHex(hash) {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (bad character(s)): %s", resourceName)
+	if !isLowerHex(seg.Hash) {
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (bad character(s)): %s", resourceName)
 	}
 
-	// The next piece may be the digest function
+	// The next piece may be the digest function.
 	pieceIdx--
 	piece := pieces[pieceIdx]
 	switch piece {
 	case "blake3":
-		digestFunction = repb.DigestFunction_BLAKE3
-		digestFunctionSegment = piece
+		seg.DigestFunction = repb.DigestFunction_BLAKE3
+		seg.DigestFunctionSegment = piece
 	case "sha1":
-		digestFunction = repb.DigestFunction_SHA1
-		digestFunctionSegment = piece
+		seg.DigestFunction = repb.DigestFunction_SHA1
+		seg.DigestFunctionSegment = piece
 	case "sha512":
-		digestFunction = repb.DigestFunction_SHA512
-		digestFunctionSegment = piece
+		seg.DigestFunction = repb.DigestFunction_SHA512
+		seg.DigestFunctionSegment = piece
 	case "sha384":
-		digestFunction = repb.DigestFunction_SHA384
-		digestFunctionSegment = piece
+		seg.DigestFunction = repb.DigestFunction_SHA384
+		seg.DigestFunctionSegment = piece
 	case "sha256":
-		digestFunction = repb.DigestFunction_SHA256
-		digestFunctionSegment = piece
+		seg.DigestFunction = repb.DigestFunction_SHA256
+		seg.DigestFunctionSegment = piece
 	default:
 		pieceIdx++
 	}
-	if len(hash) != hashLength(digestFunction) {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
+	if len(seg.Hash) != hashLength(seg.DigestFunction) {
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
 	}
 	pieceIdx--
 	if pieceIdx >= 0 {
 		piece = pieces[pieceIdx]
 	}
 
-	// The next piece must be "ac" for AC entries
+	// The next piece must be "ac" for AC entries.
 	if cacheType == rspb.CacheType_AC {
 		if piece != "ac" {
-			return nil, status.InvalidArgumentErrorf("Unparseable Action Cache resource name, missing 'ac' blob type: %s", resourceName)
+			return seg, status.InvalidArgumentErrorf("Unparseable Action Cache resource name, missing 'ac' blob type: %s", resourceName)
 		}
 		pieceIdx--
 		if pieceIdx >= 0 {
@@ -597,24 +569,24 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 		}
 	}
 
-	// The next piece must be "blobs" or "zstd"
-	compressor := repb.Compressor_IDENTITY
+	// The next piece must be "blobs" or "zstd".
+	seg.Compressor = repb.Compressor_IDENTITY
 	if piece == "zstd" {
-		compressor = repb.Compressor_ZSTD
+		seg.Compressor = repb.Compressor_ZSTD
+		seg.CompressorSegment = "zstd"
 	} else if piece != "blobs" {
-		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
+		return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
 	}
 
-	// If this is a compressed blob, the next piece must be "compressed-blobs"
-	// We have proceeded far enough that we need to check the index now
+	// If this is a compressed blob, the next piece must be "compressed-blobs".
 	pieceIdx--
 	piece = ""
 	if pieceIdx >= 0 {
 		piece = pieces[pieceIdx]
 	}
-	if compressor != repb.Compressor_IDENTITY {
+	if seg.Compressor != repb.Compressor_IDENTITY {
 		if piece != "compressed-blobs" {
-			return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
+			return seg, status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
 		}
 		pieceIdx--
 		piece = ""
@@ -623,35 +595,37 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 		}
 	}
 
-	// If this is an upload, the next two pieces must be "uploads" and a UUID
-	uploadID := ""
+	// If this is an upload, the next two pieces must be "uploads" and a UUID.
 	if resourceType == uploadResourceName {
 		if guuid.Validate(piece) != nil {
-			return nil, status.InvalidArgumentErrorf("Unparseable upload resource name, invalid UUID: %s", resourceName)
+			return seg, status.InvalidArgumentErrorf("Unparseable upload resource name, invalid UUID: %s", resourceName)
 		}
-		uploadID = piece
+		seg.UploadID = piece
 		pieceIdx--
 		if pieceIdx < 0 {
-			return nil, status.InvalidArgumentErrorf("Unparseable upload resource name name, not enough pieces: %s", resourceName)
+			return seg, status.InvalidArgumentErrorf("Unparseable upload resource name name, not enough pieces: %s", resourceName)
 		}
-		piece = pieces[pieceIdx]
-		if piece != "uploads" {
-			return nil, status.InvalidArgumentErrorf("Unparseable upload resource name, missing 'uploads': %s", resourceName)
+		if pieces[pieceIdx] != "uploads" {
+			return seg, status.InvalidArgumentErrorf("Unparseable upload resource name, missing 'uploads': %s", resourceName)
 		}
 		pieceIdx--
-		// No need to advance "piece", remainder is instance name
 	}
 
-	// Everything remaining is the instance name
-	instanceName := ""
+	// Everything remaining is the instance name.
 	if pieceIdx >= 0 {
-		instanceName = strings.Join(pieces[0:pieceIdx+1], "/")
+		seg.InstanceName = strings.Join(pieces[0:pieceIdx+1], "/")
 	}
 
-	r := NewResourceName(d, instanceName, cacheType, digestFunction)
-	r.uploadID = uploadID
-	r.digestFunctionSegment = digestFunctionSegment
-	r.SetCompressor(compressor)
+	return seg, nil
+}
+
+func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceType resourceNameType) (*ResourceName, error) {
+	seg, err := parseResourceSegments(resourceName, cacheType, resourceType)
+	if err != nil {
+		return nil, err
+	}
+	r := NewResourceName(&repb.Digest{Hash: seg.Hash, SizeBytes: seg.SizeBytes}, seg.InstanceName, cacheType, seg.DigestFunction)
+	r.SetCompressor(seg.Compressor)
 	return r, nil
 }
 
@@ -677,6 +651,33 @@ func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) 
 		return nil, err
 	}
 	return rn.CheckAC()
+}
+
+// UploadResource holds the fields parsed from an upload resource-name URL:
+// "<instance>/uploads/<uuid>/(compressed-blobs/<compressor>|blobs)/(<digest-function>/)?<hash>/<size>".
+// CompressorSegment and DigestFunctionSegment hold the segments exactly as
+// they appeared in the URL ("" when absent); Compressor and DigestFunction
+// hold the resolved proto enum values.
+type UploadResource struct {
+	InstanceName          string
+	UploadID              string
+	CompressorSegment     string
+	DigestFunctionSegment string
+	Compressor            repb.Compressor_Value
+	DigestFunction        repb.DigestFunction_Value
+	Hash                  string
+	SizeBytes             int64
+}
+
+// ParseUploadResource parses an upload resource-name URL into its fields
+// without allocating a ResourceName or cloning the underlying proto. Prefer
+// this over ParseUploadResourceName when you don't need a ResourceName.
+func ParseUploadResource(resourceName string) (*UploadResource, error) {
+	seg, err := parseResourceSegments(resourceName, rspb.CacheType_CAS, uploadResourceName)
+	if err != nil {
+		return nil, err
+	}
+	return &seg, nil
 }
 
 func blobTypeSegment(compressor repb.Compressor_Value) string {
@@ -892,22 +893,6 @@ func lowerFunctionName(df repb.DigestFunction_Value) string {
 		return "sha512"
 	default:
 		return strings.ToLower(df.String())
-	}
-}
-
-func digestFunctionSegment(df repb.DigestFunction_Value) string {
-	if isOldStyleDigestFunction(df) {
-		return ""
-	}
-	return lowerFunctionName(df)
-}
-
-func compressorSegment(compressor repb.Compressor_Value) string {
-	switch compressor {
-	case repb.Compressor_IDENTITY:
-		return ""
-	default:
-		return strings.ToLower(compressor.String())
 	}
 }
 
