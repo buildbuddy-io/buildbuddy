@@ -72,6 +72,10 @@ go_binary(
 
 container_image(
     name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
     visibility = ["//visibility:public"],
@@ -83,6 +87,10 @@ container_image(
 # This target can be run locally with enterprise/tools/run_proxy_image.sh
 go_image(
     name = "cache_proxy_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":base_image",
     binary = ":cache_proxy",
     tags = ["manual"],
@@ -90,6 +98,10 @@ go_image(
 
 container_image(
     name = "cache_proxy_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":cache_proxy_go_image",
     entrypoint = [
         "/app/enterprise/server/cmd/cache_proxy/cache_proxy",
