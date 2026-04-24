@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -468,22 +467,25 @@ func TestFindMissingMetadata(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6876
-	quarantine.SkipQuarantinedTest(t)
-
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
 	flags.Set(t, "cache.raft.min_eviction_age", 0)
-	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	// Force the sampler to refresh its pebble iterator on
+	// every read so that samples have up-to-date atimes.
+	flags.Set(t, "cache.raft.samples_per_batch", 0)
 	flags.Set(t, "cache.raft.sample_pool_size", 10)
 	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
 
-	digestSize := int64(1000)
+	// Use 10KB digests so the total data is large enough (~130KB for 31
+	// items) that pebble's EstimateDiskUsage is accurate. With 1KB
+	// digests the total was only ~20KB, and EstimateDiskUsage could
+	// underestimate enough to skip eviction entirely.
+	digestSize := int64(10000)
 	numDigests := 25
-	maxSizeBytes := int64(math.Ceil(14022 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+	maxSizeBytes := int64(math.Ceil(105000 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
 
 	configs := getTestConfigs(t, 1)
 
