@@ -750,6 +750,36 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+// A ScheduledRun represents a Workflow that should be run at a specific time according to a cron expression.
+type ScheduledRun struct {
+	Model
+
+	ScheduleID string `gorm:"primaryKey;"`
+
+	GroupID    string `gorm:"index:scheduled_run_idx"`
+	RepoURL    string `gorm:"index:scheduled_run_idx"`
+	ActionName string `gorm:"index:scheduled_run_idx"`
+
+	Branch   string
+	CronExpr string
+
+	// Based on the cron expression, this is the next time the run should be scheduled.
+	NextRunUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
+
+	// Only one server should try to schedule a run at a time. When it acquires the lease, it should
+	// set this timestamp. If this timestamp is exceeded, the lease is considered expired and
+	// another server can acquire the lease and schedule the run. In this case, it's assumed that the
+	// original lease holder has failed (e.g. if it was restarted in a rollout).
+	//
+	// TODO: This is not guaranteed to be idempotent. If the lease duration is long enough, duplicates are unlikely
+	// to happen because the servers only need to dispatch the execution, which should be quick. But it's not guaranteed.
+	LeaseExpiresUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
+}
+
+func (sr *ScheduledRun) TableName() string {
+	return "ScheduledRuns"
+}
+
 type UsageCounts struct {
 	Invocations            int64
 	CASCacheHits           int64
