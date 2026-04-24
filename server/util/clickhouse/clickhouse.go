@@ -344,26 +344,28 @@ func FillExecutionResourceFields(out *schema.Execution) error {
 		return nil
 	}
 
-	ur, err := digest.ParseUploadResource(out.ExecutionID)
+	rn, uploadID, err := digest.ParseUploadResourceNameWithUUID(out.ExecutionID)
 	if err != nil {
 		return status.InvalidArgumentErrorf("parse execution ID %q: %s", out.ExecutionID, err)
 	}
-	digestBytes, err := hex.DecodeString(ur.Hash)
+	d := rn.GetDigest()
+	digestBytes, err := hex.DecodeString(d.GetHash())
 	if err != nil {
 		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", out.ExecutionID, err)
 	}
-	if ur.SizeBytes > math.MaxUint32 {
-		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, ur.SizeBytes)
+	sizeBytes := d.GetSizeBytes()
+	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, sizeBytes)
 	}
 
-	out.InstanceName = ur.InstanceName
-	if ur.UploadID != "" {
-		out.ExecutionUUID = ur.UploadID
+	out.InstanceName = rn.GetInstanceName()
+	if uploadID != "" {
+		out.ExecutionUUID = uploadID
 	}
-	out.Compressor = ur.CompressorSegment
-	out.DigestFunction = ur.DigestFunctionSegment
+	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
+	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
 	out.ActionDigest = string(digestBytes)
-	out.ActionDigestSize = uint32(ur.SizeBytes)
+	out.ActionDigestSize = uint32(sizeBytes)
 	return nil
 }
 
