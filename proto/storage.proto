@@ -50,10 +50,7 @@ message StorageMetadata {
   }
   InlineMetadata inline_metadata = 3;
 
-  message ChunkedMetadata {
-    repeated resource.ResourceName resource = 1;
-  }
-  ChunkedMetadata chunked_metadata = 4;
+  reserved 4;
 
   message GCSMetadata {
     string blob_name = 1;
@@ -85,15 +82,7 @@ message FileMetadata {
   // Last modify time of the record
   int64 last_modify_usec = 5;
 
-  enum FileType {
-    UNKNOWN_FILE_TYPE = 0;
-    // This is a complete file.
-    COMPLETE_FILE_TYPE = 1;
-    // This is a chunk coming from a larger file.
-    CHUNK_FILE_TYPE = 2;
-  }
-
-  FileType file_type = 7;
+  reserved 7;
 }
 
 message EncryptionMetadata {
