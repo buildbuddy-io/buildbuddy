@@ -49,8 +49,8 @@ var (
 	period4Start = period1Start.Add(3 * periodDuration)
 )
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func setupEnv(t *testing.T, opts ...testenv.TestEnvOption) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, opts...)
 
 	if *clickhouseEnabled {
 		clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
@@ -463,8 +463,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Set up 2 envs, one for each region. DB should be the same for each, but
 	// Redis instances should be different.
 	te1 := setupEnv(t)
-	te2 := setupEnv(t)
-	te2.SetDBHandle(te1.GetDBHandle())
+	te2 := setupEnv(t, testenv.WithDBHandle(te1.GetDBHandle()))
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
 	clock := clockwork.NewFakeClockAt(period1Start)
