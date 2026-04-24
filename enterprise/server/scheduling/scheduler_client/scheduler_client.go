@@ -34,6 +34,7 @@ import (
 
 var (
 	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	labels                       = flag.Map[string, string]("executor.labels", map[string]string{}, "Optional labels identifying this executor, similar to Kubernetes labels (e.g. 'canary=true,experiment-ramfs=control,region=us-east1'). Reported to the scheduler at registration and used for server-side debug routing via the 'debug-executor-labels' platform property.")
 	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", false, "Whether the executor supports proactive task cancellation.", flag.Internal)
 )
 
@@ -86,6 +87,10 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 	if err != nil {
 		return nil, err
 	}
+	trimmedLabels := make(map[string]string, len(*labels))
+	for k, v := range *labels {
+		trimmedLabels[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -109,6 +114,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		WarmupImages:                  options.WarmupImages,
 		FilecacheMaxSizeBytes:         options.FilecacheMaxSizeBytes,
 		StartTime:                     options.StartTime,
+		Labels:                        trimmedLabels,
 	}, nil
 }
 

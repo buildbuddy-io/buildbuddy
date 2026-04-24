@@ -608,6 +608,9 @@ message ExecutionNode {
 
   // Time when this executor process started.
   google.protobuf.Timestamp start_time = 21;
+
+  // Optional set of key-value labels identifying this executor.
+  map<string, string> labels = 22;
 }
 
 message GetExecutionNodesRequest {
