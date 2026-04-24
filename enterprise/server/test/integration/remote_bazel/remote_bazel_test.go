@@ -179,6 +179,18 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	return path, commitSHA
 }
 
+func simpleShellRepoContents(message string) map[string]string {
+	return map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "main",
+    srcs = ["main.sh"],
+)
+`,
+		"main.sh": fmt.Sprintf("#!/usr/bin/env sh\necho %q\n", message),
+	}
+}
+
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
 func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) {
@@ -371,23 +383,7 @@ func TestCancel(t *testing.T) {
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
-	repoDir, _ := makeLocalGitRepo(t, map[string]string{
-		"BUILD": `
-cc_binary(
-    name = "main",
-    srcs = ["main.c"],
-)
-`,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"WORKSPACE": "",
-	})
+	repoDir, _ := makeLocalGitRepo(t, simpleShellRepoContents("Hello from main!"))
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
@@ -402,8 +398,6 @@ int main() {
 		"--digest_function=BLAKE3",
 		"build",
 		":main",
-		"--noenable_bzlmod",
-		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
@@ -441,23 +435,7 @@ int main() {
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
-	repoDir, _ := makeLocalGitRepo(t, map[string]string{
-		"BUILD": `
-cc_binary(
-    name = "main",
-    srcs = ["main.c"],
-)
-`,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"WORKSPACE": "",
-	})
+	repoDir, _ := makeLocalGitRepo(t, simpleShellRepoContents("Hello from main!"))
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
@@ -474,8 +452,6 @@ int main() {
 		"--run_remotely=0",
 		"run",
 		":main",
-		"--noenable_bzlmod",
-		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check that the remote runner didn't run the script
@@ -541,7 +517,7 @@ sh_binary(
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
+		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
