@@ -172,6 +172,7 @@ use_repo(
     "com_github_bazelbuild_bazelisk",
     "com_github_bazelbuild_buildtools",
     "com_github_bduffany_godemon",
+    "com_github_beevik_etree",
     "com_github_bits_and_blooms_bloom_v3",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
