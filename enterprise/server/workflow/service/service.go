@@ -1573,7 +1573,7 @@ func (ws *workflowService) reconcileRepositorySchedules(ctx context.Context, rep
 			trigger := action.Triggers.Schedule
 			scheduleID := workflowScheduleID(repo.GroupID, repo.RepoURL, action.Name)
 			desired[scheduleID] = struct{}{}
-			branch := trigger.ResolvedBranch(defaultBranch)
+			branch := defaultBranch
 			nextRunUsec, err := nextFutureScheduleRunUsec(trigger.Cron, now)
 			if err != nil {
 				return err
@@ -1715,7 +1715,11 @@ func (ws *workflowService) dispatchClaimedWorkflowSchedule(ctx context.Context, 
 		_ = ws.releaseWorkflowScheduleLease(ctx, schedule.ScheduleID)
 		return err
 	}
-	defaultBranch, isPublic, err := provider.GetRepoDefaultBranch(ctx, accessToken, repo.RepoURL)
+	if schedule.Branch == "" {
+		_ = ws.releaseWorkflowScheduleLease(ctx, schedule.ScheduleID)
+		return status.FailedPreconditionErrorf("workflow schedule %s is missing a cached branch", schedule.ScheduleID)
+	}
+	_, isPublic, err := provider.GetRepoDefaultBranch(ctx, accessToken, repo.RepoURL)
 	if err != nil {
 		_ = ws.releaseWorkflowScheduleLease(ctx, schedule.ScheduleID)
 		return err
@@ -1748,7 +1752,7 @@ func (ws *workflowService) dispatchClaimedWorkflowSchedule(ctx context.Context, 
 		PushedBranch:            schedule.Branch,
 		SHA:                     headSHA,
 		TargetRepoURL:           repo.RepoURL,
-		TargetRepoDefaultBranch: defaultBranch,
+		TargetRepoDefaultBranch: schedule.Branch,
 		TargetBranch:            schedule.Branch,
 		IsTargetRepoPublic:      isPublic,
 	}

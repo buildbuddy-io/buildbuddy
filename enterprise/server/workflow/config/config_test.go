@@ -89,7 +89,6 @@ actions:
     triggers:
       schedule:
         cron: "0 3 * * *"
-        branch: "main"
     steps:
       - run: bazel test //...
 `))
@@ -98,7 +97,6 @@ actions:
 	require.Len(t, conf.Actions, 1)
 	require.NotNil(t, conf.Actions[0].GetTriggers().Schedule)
 	assert.Equal(t, "0 3 * * *", conf.Actions[0].GetTriggers().Schedule.Cron)
-	assert.Equal(t, "main", conf.Actions[0].GetTriggers().Schedule.Branch)
 }
 
 func TestWorkflowConf_Parse_ScheduleTrigger_InvalidCron(t *testing.T) {
@@ -284,11 +282,11 @@ func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
 func TestMatchesAnyTrigger_Schedule(t *testing.T) {
 	action := &config.Action{
 		Triggers: &config.Triggers{
-			Schedule: &config.ScheduleTrigger{Cron: "0 3 * * *", Branch: "release"},
+			Schedule: &config.ScheduleTrigger{Cron: "0 3 * * *"},
 		},
 	}
-	assert.True(t, config.MatchesAnyTrigger(action, "schedule", "release", "", "main"))
-	assert.False(t, config.MatchesAnyTrigger(action, "schedule", "main", "", "main"))
+	assert.True(t, config.MatchesAnyTrigger(action, "schedule", "main", "", "main"))
+	assert.False(t, config.MatchesAnyTrigger(action, "schedule", "develop", "", "main"))
 }
 
 func TestMatchesAnyTrigger_ScheduleDefaultsToTargetRepoDefaultBranch(t *testing.T) {

@@ -119,15 +119,7 @@ type PullRequestTrigger struct {
 }
 
 type ScheduleTrigger struct {
-	Cron   string `yaml:"cron"`
-	Branch string `yaml:"branch"`
-}
-
-func (t *ScheduleTrigger) ResolvedBranch(targetRepoDefaultBranch string) string {
-	if t.Branch != "" {
-		return t.Branch
-	}
-	return targetRepoDefaultBranch
+	Cron string `yaml:"cron"`
 }
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
@@ -493,7 +485,7 @@ func MatchesAnyTrigger(action *Action, event, branch, tag, targetRepoDefaultBran
 		return matchesAnyPattern(prCfg.Branches, branch)
 	}
 	if scheduleCfg := action.Triggers.Schedule; scheduleCfg != nil && event == webhook_data.EventName.Schedule {
-		return scheduleCfg.ResolvedBranch(targetRepoDefaultBranch) == branch
+		return targetRepoDefaultBranch != "" && targetRepoDefaultBranch == branch
 	}
 	return false
 }
