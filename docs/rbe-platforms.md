@@ -371,6 +371,15 @@ The following execution properties provide more customization.
     that are spawned by the executor which are also running with `"host"`
     network mode. This setting is not available in BuildBuddy cloud or for
     Firecracker VMs.
+- `shm-size`: for `oci` isolation, sets the size of the `/dev/shm` tmpfs mount,
+  which is typically used for shared memory. Values are byte sizes with optional
+  case-insensitive IEC unit suffixes (powers of 1024 bytes). Examples include:
+  `1b` (1 byte), `1k` (1024 bytes), `1m` (`1024^2` bytes), `1g` (`1024^3`
+  bytes), `1MB` (`1024^2` bytes), `2GB` (`2 * 1024^2` bytes). The default value
+  of this property if it is unspecified or empty is `64000k`. The value `0`
+  removes the limit on `/dev/shm` size. Note that `/dev/shm` memory usage always
+  counts towards process memory and is subject to process memory constraints,
+  regardless of this property's value.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is

@@ -3,6 +3,7 @@ package platform
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -181,6 +182,48 @@ func TestParse_EstimatedMemory(t *testing.T) {
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMemoryBytes)
+	}
+}
+
+func TestParse_ShmSize(t *testing.T) {
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}})
+	require.NoError(t, err)
+	assert.Nil(t, platformProps.ShmSizeBytes)
+
+	// shm-size is parsed using the same IEC byte-size parser as the other
+	// byte-size platform properties.
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue *int64
+		errPredicate  func(err error) bool
+	}{
+		{"", nil, nil},
+		{"0", new(int64(0)), nil},
+		{"1b", new(int64(1)), nil},
+		{"1k", new(int64(1024)), nil},
+		{"1m", new(int64(1024 * 1024)), nil},
+		{"1g", new(int64(1024 * 1024 * 1024)), nil},
+		{"1GB", new(int64(1024 * 1024 * 1024)), nil},
+		{"1.5m", new(int64(3 * 1024 * 1024 / 2)), nil},
+		{"-1", nil, status.IsInvalidArgumentError},
+		{"-0.5", nil, status.IsInvalidArgumentError},
+		// Intentionally disallowing percentages so actions to reduce action
+		// dependencies on the physical host machine shape.
+		{"50%", nil, status.IsInvalidArgumentError},
+	} {
+		t.Run(fmt.Sprintf("value=%q", testCase.rawValue), func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: ShmSizePropertyName, Value: testCase.rawValue},
+			}}
+			platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			if testCase.errPredicate != nil {
+				require.True(t, testCase.errPredicate(err), "expected %v, got %v", testCase.errPredicate, err)
+				require.Nil(t, platformProps)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedValue, platformProps.ShmSizeBytes)
+			}
+		})
 	}
 }
 

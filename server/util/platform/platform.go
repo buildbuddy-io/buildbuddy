@@ -138,6 +138,10 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
 
+	// ShmSizePropertyName specifies the size of the /dev/shm tmpfs mount for OCI
+	// containers. Values are parsed as byte sizes, such as "1GB" or "1MB".
+	ShmSizePropertyName = "shm-size"
+
 	// Whether external network access should be enabled. Valid values are:
 	// - "off": no network access
 	// - "external": network access via a network namespace routed thru the host
@@ -250,8 +254,11 @@ type Properties struct {
 	ExecrootPath              string
 	Network                   string
 	NetworkEnableIPv6         bool
-	RecycleRunner             bool
-	RunnerRecyclingMaxWait    time.Duration
+
+	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
+	ShmSizeBytes           *int64
+	RecycleRunner          bool
+	RunnerRecyclingMaxWait time.Duration
 
 	// Exit codes indicating a runner crashed and should not be recycled since
 	// it may be corrupted in some way.
@@ -519,6 +526,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `snapshot-read-policy` platform property", snapshotReadPolicy)
 	}
 
+	var shmSizeBytes *int64
+	if shmSizeString := stringProp(m, ShmSizePropertyName, ""); shmSizeString != "" {
+		n, err := parseIECBytes(shmSizeString)
+		if err != nil || strings.HasPrefix(shmSizeString, "-") || n < 0 {
+			return nil, status.InvalidArgumentError("shm-size must be either `0` (for no explicit limit) or a size in bytes like `64k`, `100m`, or `1g`")
+		}
+		shmSizeBytes = &n
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -543,6 +559,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
 		Network:                   stringProp(m, networkPropertyName, ""),
 		NetworkEnableIPv6:         boolProp(m, NetworkEnableIPv6PropertyName, false),
+		ShmSizeBytes:              shmSizeBytes,
 		RecycleRunner:             recycleRunner,
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
@@ -655,19 +672,28 @@ func iecBytesProp(props map[string]string, name string, defaultValue int64) int6
 	if val == "" {
 		return defaultValue
 	}
+	n, err := parseIECBytes(val)
+	if err != nil {
+		// TODO: return an error here
+		return defaultValue
+	}
+	return n
+}
+
+func parseIECBytes(val string) (int64, error) {
 	// If it looks like a float (e.g. 1e9), convert to an integer number of
 	// bytes.
 	f, err := strconv.ParseFloat(val, 64)
 	if err == nil {
-		return int64(f)
+		return int64(f), nil
 	}
 	// Otherwise attempt to parse as an IEC number of bytes.
 	// Example: 4GB = 4*(1024^3) bytes
 	n, err := units.RAMInBytes(val)
 	if err != nil {
-		return defaultValue
+		return 0, err
 	}
-	return n
+	return n, nil
 }
 
 func milliCPUProp(props map[string]string, name string, defaultValue int64) int64 {
