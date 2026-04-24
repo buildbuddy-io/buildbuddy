@@ -40,7 +40,6 @@ go_test(
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
-        "//server/environment",
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",

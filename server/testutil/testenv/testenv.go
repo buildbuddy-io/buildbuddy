@@ -143,7 +143,7 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	return srv, runFunc
 }
 
-func GetDBHandleDefault(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
+func setupDBHandle(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
 	switch *databaseType {
 	case "sqlite":
 		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
@@ -157,20 +157,34 @@ func GetDBHandleDefault(t testing.TB, te environment.Env, testRootDir string) (i
 	return db.GetConfiguredDatabase(context.Background(), te)
 }
 
-type GetDBHandleFunc func(testing.TB, environment.Env, string) (interfaces.DBHandle, error)
-
-var getDBHandle GetDBHandleFunc = GetDBHandleDefault
-
-// Replace the function GetTestEnv will use to get the DBHandle for the testenv.
-func ReplaceGetDBHandle(t testing.TB, f GetDBHandleFunc) {
-	previous := getDBHandle
-	getDBHandle = f
-	t.Cleanup(func() {
-		getDBHandle = previous
-	})
+type TestEnvOption interface {
+	accumulate(TestEnvOption)
 }
 
-func GetTestEnv(t testing.TB) *real_environment.RealEnv {
+type dbHandleOption struct {
+	dbh interfaces.DBHandle
+}
+
+func (o *dbHandleOption) accumulate(opt TestEnvOption) {
+	if opt, ok := opt.(*dbHandleOption); ok {
+		o.dbh = opt.dbh
+	}
+}
+
+func WithDBHandle(dbh interfaces.DBHandle) TestEnvOption {
+	return &dbHandleOption{dbh: dbh}
+}
+
+func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
+	dbHandleOpt := &dbHandleOption{}
+	for _, opt := range opts {
+		switch opt := opt.(type) {
+		case *dbHandleOption:
+			dbHandleOpt.accumulate(opt)
+		default:
+			t.Fatalf("Unhandled TestEnvOption type: %T", opt)
+		}
+	}
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
@@ -199,9 +213,13 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	te.SetCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
-	dbHandle, err := getDBHandle(t, te, testRootDir)
-	if err != nil {
-		t.Fatal(err)
+	dbHandle := dbHandleOpt.dbh
+	if dbHandle == nil {
+		var err error
+		dbHandle, err = setupDBHandle(t, te, testRootDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	te.SetDBHandle(dbHandle)
 	t.Cleanup(func() {
