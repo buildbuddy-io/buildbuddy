@@ -47,9 +47,22 @@ var (
 // given workspace dir if they don't already exist. The lockfile that is written
 // is sufficient for bazel to not make any network requests when using built-in
 // rules such as genrule, sh_binary, and sh_test.
+//
+// A bazel_dep on @rules_shell is unconditionally added (if not already
+// present) so that test BUILD files can uniformly load sh_binary / sh_test
+// from @rules_shell. This is required on Bazel 9 (where they're no longer
+// native) and harmless on Bazel 8.
 func InitModule(t testing.TB, workspaceDir string) {
-	if !testfs.Exists(t, workspaceDir, "MODULE.bazel") {
-		testfs.WriteFile(t, workspaceDir, "MODULE.bazel", "")
+	var module string
+	if testfs.Exists(t, workspaceDir, "MODULE.bazel") {
+		module = testfs.ReadFileAsString(t, workspaceDir, "MODULE.bazel")
+	}
+	if !strings.Contains(module, `"rules_shell"`) {
+		if module != "" && !strings.HasSuffix(module, "\n") {
+			module += "\n"
+		}
+		module += `bazel_dep(name = "rules_shell", version = "0.6.1")` + "\n"
+		testfs.WriteFile(t, workspaceDir, "MODULE.bazel", module)
 	}
 	if !testfs.Exists(t, workspaceDir, "MODULE.bazel.lock") {
 		lockfileContents := testfs.ReadFileAsString(t, "", lockfilePath(t))
