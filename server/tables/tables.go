@@ -1469,4 +1469,5 @@ func RegisterTables() {
 	registerTable("UU", &UserUserList{})
 	registerTable("UM", &UserListGroup{})
 	registerTable("WF", &Workflow{})
+	registerTable("SR", &ScheduledRun{})
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v59/github"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -175,6 +178,30 @@ func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string,
 	err = dbh.NewQuery(context.Background(), "create_app_installation_for_test").Create(appInstallation)
 	require.NoError(t, err)
 	return repo
+}
+
+func insertScheduledRun(t *testing.T, te *testenv.TestEnv, sr *tables.ScheduledRun) {
+	err := te.GetDBHandle().NewQuery(context.Background(), "create_scheduled_run_for_test").Create(sr)
+	require.NoError(t, err)
+}
+
+func getScheduledRun(t *testing.T, te *testenv.TestEnv, scheduleID string) *tables.ScheduledRun {
+	sr := &tables.ScheduledRun{}
+	err := te.GetDBHandle().NewQuery(context.Background(), "get_scheduled_run_for_test").Raw(`
+		SELECT * FROM "ScheduledRuns" WHERE schedule_id = ?`, scheduleID).Take(sr)
+	require.NoError(t, err)
+	return sr
+}
+
+func getExecutedActionName(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) string {
+	exec := getExecution(t, ctx, te, executeRequest)
+	for _, arg := range exec.Command.GetArguments() {
+		if actionName, ok := strings.CutPrefix(arg, "--action_name="); ok {
+			return actionName
+		}
+	}
+	t.Fatalf("no action name found in execute request: %+v", executeRequest)
+	return ""
 }
 
 // pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
@@ -1058,4 +1085,211 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 			_ = execClient.NextExecuteRequest()
 		}
 	}
+}
+
+func TestScheduledWorkflow(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Should Run"
+    bazel_commands: [ "test //..." ]
+  - name: "Should Run 2"
+    bazel_commands: [ "test //..." ]
+  - name: "Expired Lease"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC) // 3PM UTC
+	sevenPM := time.Date(2026, 1, 2, 19, 0, 0, 0, time.UTC)
+	fiveMinutesAgo := now.Add(-5 * time.Minute)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "should-run",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Should Run",
+		Branch:     "main",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "should-run-2",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Should Run 2",
+		Branch:     "main",
+		// Run every hour, 5 minutes before the hour.
+		CronExpr:    "55 * * * *",
+		NextRunUsec: fiveMinutesAgo.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "not-time-yet",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Not Time Yet",
+		Branch:     "main",
+		// Run every day at 7PM UTC.
+		CronExpr:    "0 19 * * *",
+		NextRunUsec: sevenPM.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "already-leased",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Already Leased",
+		Branch:     "main",
+		// Run every hour, on the hour.
+		CronExpr:         "0 * * * *",
+		NextRunUsec:      now.UnixMicro(),
+		LeaseExpiresUsec: now.Add(1 * time.Minute).UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "expired-lease",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Expired Lease",
+		Branch:     "main",
+		// Run every hour, on the hour.
+		CronExpr:         "0 * * * *",
+		NextRunUsec:      now.UnixMicro(),
+		LeaseExpiresUsec: now.Add(-1 * time.Minute).UnixMicro(),
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(ctx)
+	require.NoError(t, err)
+
+	expectedActionNames := []string{"Should Run", "Should Run 2", "Expired Lease"}
+	executedActionNames := make([]string, 0, len(expectedActionNames))
+	for range expectedActionNames {
+		select {
+		case execReq := <-execClient.executeRequests:
+			actionName := getExecutedActionName(t, ctx, te, execReq.Payload)
+			executedActionNames = append(executedActionNames, actionName)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for scheduled workflow execution")
+		}
+	}
+	require.ElementsMatch(t, expectedActionNames, executedActionNames)
+	require.Zero(t, len(execClient.executeRequests))
+
+	// Check that next run times are correct
+	shouldRun := getScheduledRun(t, te, "should-run")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), shouldRun.NextRunUsec)
+	require.Equal(t, int64(0), shouldRun.LeaseExpiresUsec)
+
+	shouldRun2 := getScheduledRun(t, te, "should-run-2")
+	require.Equal(t, fiveMinutesAgo.Add(1*time.Hour).UnixMicro(), shouldRun2.NextRunUsec)
+	require.Equal(t, int64(0), shouldRun2.LeaseExpiresUsec)
+
+	expiredLease := getScheduledRun(t, te, "expired-lease")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), expiredLease.NextRunUsec)
+	require.Equal(t, int64(0), expiredLease.LeaseExpiresUsec)
+
+	// Non-leased tasks should not have been touched.
+	alreadyLeased := getScheduledRun(t, te, "already-leased")
+	require.Equal(t, now.UnixMicro(), alreadyLeased.NextRunUsec)
+	require.Equal(t, now.Add(1*time.Minute).UnixMicro(), alreadyLeased.LeaseExpiresUsec)
+
+	notTimeYet := getScheduledRun(t, te, "not-time-yet")
+	require.Equal(t, sevenPM.UnixMicro(), notTimeYet.NextRunUsec)
+	require.Equal(t, int64(0), notTimeYet.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+  - name: "Test 2"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC) // 3PM UTC
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Test",
+		Branch:     "main",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test-2",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Test 2",
+		Branch:     "main",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	// Simulate multiple servers simultaneously trying to schedule workflows.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- te.GetWorkflowService().RunScheduledWorkflows(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	// Check that each task was only scheduled once.
+	executedActionNames := make([]string, 0, 2)
+	for range 2 {
+		select {
+		case execReq := <-execClient.executeRequests:
+			actionName := getExecutedActionName(t, ctx, te, execReq.Payload)
+			executedActionNames = append(executedActionNames, actionName)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for scheduled workflow execution")
+		}
+	}
+	require.ElementsMatch(t, []string{"Test", "Test 2"}, executedActionNames)
+
+	scheduled := getScheduledRun(t, te, "test")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled.NextRunUsec)
+	require.Equal(t, int64(0), scheduled.LeaseExpiresUsec)
+
+	scheduled2 := getScheduledRun(t, te, "test-2")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled2.NextRunUsec)
+	require.Equal(t, int64(0), scheduled2.LeaseExpiresUsec)
 }
