@@ -382,9 +382,7 @@ consume_project_symlink(
 		"--remote_retries=0",
 	)
 
-	require.Error(t, res.Error)
-	assert.Contains(t, res.Stderr, "download inputs: could not start tree fetcher")
-	assert.Contains(t, res.Stderr, "/PROJ: no such file or directory")
+	require.NoError(t, res.Error, "stdout:\n%s\nstderr:\n%s", res.Stdout, res.Stderr)
 }
 
 func TestActionWithContainerImage_InvalidArgument(t *testing.T) {
