@@ -168,9 +168,20 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 
 	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
 
-	// Increment for group 1, then group 2
-	ut.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
-	ut.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 10})
+	// Increment cache usage for group 1, then group 2. Cached action exec
+	// duration is stored in microseconds in the legacy usage shape.
+	ut.Increment(ctx1, labels, &tables.UsageCounts{
+		CASCacheHits:               1,
+		LinuxExecutionDurationUsec: 12,
+		TotalCachedActionExecUsec:  123,
+		MemoryGBUsec:               34,
+	})
+	ut.Increment(ctx2, labels, &tables.UsageCounts{
+		CASCacheHits:               10,
+		LinuxExecutionDurationUsec: 56,
+		TotalCachedActionExecUsec:  456,
+		MemoryGBUsec:               78,
+	})
 
 	encodedCollection1 := "group_id=GR1&origin=internal&client=bazel"
 	encodedCollection2 := "group_id=GR2&origin=internal&client=bazel"
@@ -190,21 +201,39 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 		chCollectionsKey := "usage/v2/collections/" + timeStr(period1Start)
 		chEncodedCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal"
 		chEncodedCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal"
+		chEncodedExecutionCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal&label=os=linux&label=self_hosted=false"
+		chEncodedExecutionCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal&label=os=linux&label=self_hosted=false"
 		chCountsKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection1
 		chCountsKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection2
-		expectedKeys = append(expectedKeys, chCollectionsKey, chCountsKey1, chCountsKey2)
+		chCountsExecutionKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedExecutionCollection1
+		chCountsExecutionKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedExecutionCollection2
+		expectedKeys = append(expectedKeys, chCollectionsKey, chCountsKey1, chCountsKey2, chCountsExecutionKey1, chCountsExecutionKey2)
 
 		chCounts1, err := rdb.HGetAll(ctx, chCountsKey1).Result()
 		require.NoError(t, err)
 		assert.Equal(t, map[string]string{
-			"remote_cache.content_addressable_storage.hits": "1",
+			"remote_cache.content_addressable_storage.hits":             "1",
+			"remote_cache.action_cache.cached_execution_duration_nanos": "123000",
 		}, chCounts1, "counts should match what we observed")
+		chExecCounts1, err := rdb.HGetAll(ctx, chCountsExecutionKey1).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_execution.execute.worker_duration_nanos":  "12000",
+			"remote_execution.execute.worker_memory_gb_nanos": "34000",
+		}, chExecCounts1, "counts should match what we observed")
 
 		chCounts2, err := rdb.HGetAll(ctx, chCountsKey2).Result()
 		require.NoError(t, err)
 		assert.Equal(t, map[string]string{
-			"remote_cache.content_addressable_storage.hits": "10",
+			"remote_cache.content_addressable_storage.hits":             "10",
+			"remote_cache.action_cache.cached_execution_duration_nanos": "456000",
 		}, chCounts2, "counts should match what we observed")
+		chExecCounts2, err := rdb.HGetAll(ctx, chCountsExecutionKey2).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_execution.execute.worker_duration_nanos":  "56000",
+			"remote_execution.execute.worker_memory_gb_nanos": "78000",
+		}, chExecCounts2, "counts should match what we observed")
 	}
 	require.ElementsMatch(
 		t, expectedKeys, keys,
@@ -213,13 +242,19 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"cas_cache_hits": "1",
+		"cas_cache_hits":                "1",
+		"linux_execution_duration_usec": "12",
+		"total_cached_action_exec_usec": "123",
+		"memory_gb_usec":                "34",
 	}, counts1, "counts should match what we observed")
 
 	counts2, err := rdb.HGetAll(ctx, countsKey2).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"cas_cache_hits": "10",
+		"cas_cache_hits":                "10",
+		"linux_execution_duration_usec": "56",
+		"total_cached_action_exec_usec": "456",
+		"memory_gb_usec":                "78",
 	}, counts2, "counts should match what we observed")
 
 	encodedCollections, err := rdb.SMembers(ctx, collectionsKey).Result()
@@ -244,7 +279,10 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			UsageCounts: tables.UsageCounts{
-				CASCacheHits: 1,
+				CASCacheHits:               1,
+				LinuxExecutionDurationUsec: 12,
+				TotalCachedActionExecUsec:  123,
+				MemoryGBUsec:               34,
 			},
 			UsageLabels: *labels,
 		},
@@ -253,7 +291,10 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR2",
 			Region:          "us-west1",
 			UsageCounts: tables.UsageCounts{
-				CASCacheHits: 10,
+				CASCacheHits:               10,
+				LinuxExecutionDurationUsec: 56,
+				TotalCachedActionExecUsec:  456,
+				MemoryGBUsec:               78,
 			},
 			UsageLabels: *labels,
 		},
@@ -265,12 +306,56 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			{
 				GroupID:     "GR1",
 				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheACCachedExecDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 123000,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
 				SKU:         sku.RemoteCacheCASHits,
 				Labels: map[sku.LabelName]sku.LabelValue{
 					sku.Origin: "internal",
 					sku.Client: "bazel",
 				},
 				Count: 1,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 12000,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 34000,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheACCachedExecDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 456000,
 			},
 			{
 				GroupID:     "GR2",
@@ -281,6 +366,30 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 					sku.Client: "bazel",
 				},
 				Count: 10,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 56000,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 78000,
 			},
 		}, olapUsages)
 	}

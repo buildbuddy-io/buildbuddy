@@ -849,28 +849,28 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.LinuxExecutionDurationUsec,
+			Count:  counts.LinuxExecutionDurationUsec * 1000,
 		})
 	}
 	if counts.MacExecutionDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedFalse),
-			Count:  counts.MacExecutionDurationUsec,
+			Count:  counts.MacExecutionDurationUsec * 1000,
 		})
 	}
 	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedLinuxExecutionDurationUsec,
+			Count:  counts.SelfHostedLinuxExecutionDurationUsec * 1000,
 		})
 	}
 	if counts.SelfHostedMacExecutionDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedMacExecutionDurationUsec,
+			Count:  counts.SelfHostedMacExecutionDurationUsec * 1000,
 		})
 	}
 	if counts.TotalDownloadSizeBytes > 0 {
@@ -891,7 +891,7 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteCacheACCachedExecDurationNanos,
 			Labels: baseLabels,
-			Count:  counts.TotalCachedActionExecUsec,
+			Count:  counts.TotalCachedActionExecUsec * 1000,
 		})
 	}
 	if counts.CPUNanos > 0 {
@@ -905,7 +905,7 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
 			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.MemoryGBUsec,
+			Count:  counts.MemoryGBUsec * 1000,
 		})
 	}
 	return items
