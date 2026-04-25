@@ -1312,14 +1312,20 @@ type symlinkRequest struct {
 }
 
 func (slr *symlinkRequest) Do() error {
-	err := os.Symlink(slr.oldname, slr.newname)
+	oldname := slr.oldname
+	if oldname == "" {
+		// Bazel can encode target_path = "." as an empty REAPI SymlinkNode
+		// target. Linux rejects empty symlink targets.
+		oldname = "."
+	}
+	err := os.Symlink(oldname, slr.newname)
 	if err == nil {
 		return nil
 	}
 	if !os.IsExist(err) {
 		return err
 	}
-	if checkSymlink(slr.oldname, slr.newname) {
+	if checkSymlink(oldname, slr.newname) {
 		return nil
 	}
 	// Attempt to blow away the existing
@@ -1329,7 +1335,7 @@ func (slr *symlinkRequest) Do() error {
 	}
 	// Now that the symlink has been removed
 	// try one more time to link it.
-	if err := os.Symlink(slr.oldname, slr.newname); err != nil {
+	if err := os.Symlink(oldname, slr.newname); err != nil {
 		return err
 	}
 	return nil

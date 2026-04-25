@@ -793,6 +793,29 @@ func TestDownloadTree(t *testing.T) {
 	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
 }
 
+func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Symlinks: []*repb.SymlinkNode{
+				// Bazel can encode target_path = "." by omitting the target field.
+				{
+					Name: "PROJ",
+				},
+			},
+		},
+	}
+
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.NoError(t, err)
+
+	target, err := os.Readlink(filepath.Join(tmpDir, "PROJ"))
+	require.NoError(t, err)
+	assert.Equal(t, ".", target)
+}
+
 func TestDownloadTreeDedupeInflight(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
