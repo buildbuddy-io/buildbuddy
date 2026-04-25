@@ -164,6 +164,11 @@
   align-items: center;
 }
 
+/* Make the disabled state more obvious in Firefox by dimming the entire row. */
+.api-keys-form .checkbox-row:has(input:disabled) {
+  opacity: 0.5;
+}
+
 .api-keys-form .field-description {
   color: var(--color-text-emphasis);
 }
