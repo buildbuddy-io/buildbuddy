@@ -1,5 +1,7 @@
 package sku
 
+import "strings"
+
 // SKU is a unique, human-readable identifier tracking a specific usage count.
 // This is stored in the OLAP database as a low-cardinality string.
 // IMPORTANT: Do not cast arbitrary strings to this SKU type - use one of the
@@ -86,3 +88,29 @@ const (
 	SelfHostedFalse  LabelValue = "false"
 	SelfHostedTrue   LabelValue = "true"
 )
+
+func GetOSLabel(os string) LabelValue {
+	switch strings.TrimSpace(strings.ToLower(os)) {
+	case "":
+		// Linux is the default execution platform if unset.
+		return OSLinux
+	case "linux":
+		return OSLinux
+	case "mac":
+		return OSMac
+	case "windows":
+		return OSWindows
+	default:
+		return UnknownLabelValue
+	}
+}
+
+func GetSelfHostedLabel(isSelfHosted bool) LabelValue {
+	if isSelfHosted {
+		return SelfHostedTrue
+	}
+	return SelfHostedFalse
+}
+
+// Labels represents a collection of unique label values.
+type Labels = map[LabelName]LabelValue

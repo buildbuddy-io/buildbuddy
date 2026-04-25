@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -64,6 +65,12 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 			hit_tracker.Register(env)
 			require.NoError(t, hit_tracker_service.Register(env))
 			ctx := context.Background()
+
+			// Need auth, since usage is only tracked for authenticated users.
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, &testauth.TestUser{
+				UserID:  "US1",
+				GroupID: "GR1",
+			})
 
 			iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 
@@ -159,10 +166,11 @@ func TestHitTrackerService_Usage(t *testing.T) {
 	flags.Set(t, "cache.detailed_stats_enabled", true)
 
 	for _, tc := range []struct {
-		name          string
-		cacheType     rspb.CacheType
-		requestType   capb.RequestType
-		expectedUsage []testusage.Total
+		name              string
+		cacheType         rspb.CacheType
+		requestType       capb.RequestType
+		expectedUsage     []testusage.Total
+		expectedOLAPUsage []testusage.OLAPTotal
 	}{
 		{
 			name:        "CAS upload",
@@ -176,6 +184,17 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					},
 					Counts: tables.UsageCounts{
 						TotalUploadSizeBytes: 456,
+					},
+				},
+			},
+			expectedOLAPUsage: []testusage.OLAPTotal{
+				{
+					GroupID: "GR1",
+					Labels: sku.Labels{
+						sku.Server: "servicio",
+					},
+					Counts: map[sku.SKU]int64{
+						sku.RemoteCacheCASUploadedBytes: 456,
 					},
 				},
 			},
@@ -196,6 +215,18 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					},
 				},
 			},
+			expectedOLAPUsage: []testusage.OLAPTotal{
+				{
+					GroupID: "GR1",
+					Labels: sku.Labels{
+						sku.Server: "servicio",
+					},
+					Counts: map[sku.SKU]int64{
+						sku.RemoteCacheCASHits:            2,
+						sku.RemoteCacheCASDownloadedBytes: 456,
+					},
+				},
+			},
 		},
 		{
 			name:        "AC upload",
@@ -209,6 +240,17 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					},
 					Counts: tables.UsageCounts{
 						TotalUploadSizeBytes: 456,
+					},
+				},
+			},
+			expectedOLAPUsage: []testusage.OLAPTotal{
+				{
+					GroupID: "GR1",
+					Labels: sku.Labels{
+						sku.Server: "servicio",
+					},
+					Counts: map[sku.SKU]int64{
+						sku.RemoteCacheCASUploadedBytes: 456,
 					},
 				},
 			},
@@ -226,6 +268,18 @@ func TestHitTrackerService_Usage(t *testing.T) {
 					Counts: tables.UsageCounts{
 						ActionCacheHits:        2,
 						TotalDownloadSizeBytes: 456,
+					},
+				},
+			},
+			expectedOLAPUsage: []testusage.OLAPTotal{
+				{
+					GroupID: "GR1",
+					Labels: sku.Labels{
+						sku.Server: "servicio",
+					},
+					Counts: map[sku.SKU]int64{
+						sku.RemoteCacheACHits:             2,
+						sku.RemoteCacheCASDownloadedBytes: 456,
 					},
 				},
 			},
@@ -287,6 +341,7 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tc.expectedUsage, ut.Totals())
+			require.Equal(t, tc.expectedOLAPUsage, ut.OLAPTotals())
 		})
 	}
 }

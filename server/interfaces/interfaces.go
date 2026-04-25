@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -644,6 +645,11 @@ type UsageTracker interface {
 	// Increment adds the given usage counts to the current collection period
 	// for the authenticated group ID. It is safe for concurrent access.
 	Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error
+
+	// IncrementOLAP uses the new OLAP (ClickHouse) API which supports more
+	// flexible SKUs and labels. For label keys and values, as well as SKU
+	// names, use the fixed set of constants in the [sku] package.
+	IncrementOLAP(ctx context.Context, labels map[sku.LabelName]sku.LabelValue, sku sku.SKU, count int64) error
 }
 
 type ApiService interface {
