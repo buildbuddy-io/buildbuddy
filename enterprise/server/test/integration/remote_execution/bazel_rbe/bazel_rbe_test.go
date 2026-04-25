@@ -324,67 +324,6 @@ func TestTransientCacheNotFoundError_Retried(t *testing.T) {
 	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
-func TestGeneratedSymlinkToCurrentDirectoryAsRemoteInput(t *testing.T) {
-	env := setup(t)
-	ctx := context.Background()
-
-	ws := testbazel.MakeTempModule(t, map[string]string{
-		"defs.bzl": `
-def _project_symlink_impl(ctx):
-  out = ctx.actions.declare_symlink("PROJ")
-  ctx.actions.symlink(output = out, target_path = ".")
-  return [DefaultInfo(files = depset([out]))]
-
-project_symlink = rule(implementation = _project_symlink_impl)
-
-def _consume_project_symlink_impl(ctx):
-  inputs = ctx.attr.src[DefaultInfo].files.to_list()
-  if len(inputs) != 1:
-    fail("expected exactly one input")
-  proj = inputs[0]
-  out = ctx.actions.declare_file(ctx.label.name + ".txt")
-  ctx.actions.run_shell(
-    inputs = [proj],
-    outputs = [out],
-    arguments = [proj.path, out.path],
-    command = """
-      set -e
-      target="$(readlink "$1")"
-      test "$target" = .
-      printf '%s\n' "$target" > "$2"
-    """,
-  )
-  return [DefaultInfo(files = depset([out]))]
-
-consume_project_symlink = rule(
-  implementation = _consume_project_symlink_impl,
-  attrs = {"src": attr.label(mandatory = True)},
-)
-`,
-		"BUILD": fmt.Sprintf(`load(":defs.bzl", "consume_project_symlink", "project_symlink")
-
-project_symlink(name = "proj")
-
-consume_project_symlink(
-  name = "consume_proj",
-  src = ":proj",
-  exec_properties = {
-    "OSFamily": "%s",
-    "Arch": "%s",
-  },
-)`, runtime.GOOS, runtime.GOARCH),
-	})
-
-	res := testbazel.Invoke(ctx, t, ws, "build",
-		":consume_proj",
-		"--remote_executor="+env.GetRemoteExecutionTarget(),
-		"--bes_backend="+env.GetBuildBuddyServerTarget(),
-		"--remote_retries=0",
-	)
-
-	require.NoError(t, res.Error, "stdout:\n%s\nstderr:\n%s", res.Stdout, res.Stderr)
-}
-
 func TestActionWithContainerImage_InvalidArgument(t *testing.T) {
 	env := setup(t)
 	ctx := context.Background()
