@@ -225,7 +225,7 @@ func parseLogTimestamp(line string) (time.Time, bool) {
 	return t, true
 }
 
-func ConfigureSidecar(args []string) ([]string, *Instance) {
+func ConfigureSidecar(args []string, effectiveArgs []string) ([]string, *Instance) {
 	// Allow an escape hatch to disable all sidecar features.
 	if os.Getenv("BB_DISABLE_SIDECAR") == "1" || os.Getenv("BB_DISABLE_SIDECAR") == "true" {
 		return args, nil
@@ -233,9 +233,9 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 
 	originalArgs := args
 
-	if isCI(args) {
+	if isCI(effectiveArgs) {
 		log.Debugf("CI build detected.")
-		syncFlag := arg.Get(args, "sync")
+		syncFlag := arg.Get(effectiveArgs, "sync")
 		if !isFlagTrue(syncFlag) {
 			log.Debugf("CI build detected. add --sync=true")
 			args = arg.Append(args, "--sync=true")
@@ -254,10 +254,11 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 
 	// Re(Start) the sidecar if the flags set don't match.
 	sidecarArgs := []string{}
-	besBackendFlag := arg.Get(args, "bes_backend")
-	remoteCacheFlag := arg.Get(args, "remote_cache")
-	remoteExecFlag := arg.Get(args, "remote_executor")
-	synchronousWriteFlag, args := arg.Pop(args, "sync")
+	besBackendFlag := arg.Get(effectiveArgs, "bes_backend")
+	remoteCacheFlag := arg.Get(effectiveArgs, "remote_cache")
+	remoteExecFlag := arg.Get(effectiveArgs, "remote_executor")
+	synchronousWriteFlag := arg.Get(effectiveArgs, "sync")
+	_, args = arg.Pop(args, "sync")
 
 	// Read config YAML.
 	ws, err := workspace.Path()
@@ -338,7 +339,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 			args = arg.Append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.
-			instanceName := arg.Get(args, "remote_instance_name")
+			instanceName := arg.Get(effectiveArgs, "remote_instance_name")
 			args = arg.Append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
 		}
 		return args, instance

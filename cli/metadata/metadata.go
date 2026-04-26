@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
-func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
+func AppendBuildMetadata(args, effectiveArgs, originalArgs []string) ([]string, error) {
 	originalArgs = append(
 		// os.Args[0] might be something like /usr/local/bin/bb.
 		// filepath.Base gets just the "bb" part.
@@ -37,7 +37,7 @@ func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
 	// script.
 	// TODO: Maybe respect existing env vars as well, since those would also
 	// get overridden by build metadata.
-	if arg.Get(args, "workspace_status_command") == "" {
+	if arg.Get(effectiveArgs, "workspace_status_command") == "" {
 		gitMdFlags, err := gitMetadataFlags()
 		if err != nil {
 			log.Debugf("Failed to compute git metadata flags: %s", err)

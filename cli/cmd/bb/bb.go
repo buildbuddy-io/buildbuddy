@@ -169,15 +169,10 @@ func run() (exitCode int, err error) {
 	}
 	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 	StartupDebug(start)
-	parsedArgs, err = parser.ResolveArgs(parsedArgs)
-	if err != nil {
-		return -1, err
-	}
-	canonicalizedArgs := parsedArgs.Canonicalized()
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return handleBazelCommand(start, canonicalizedArgs.Format(), originalArgs)
+	return handleBazelCommand(start, parsedArgs.Format(), originalArgs)
 }
 
 // interpretAsBBCliCommand strips the bb options from the beginning of a bb
@@ -320,10 +315,15 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		}
 	}()
 
-	plugins, bazelArgs, execArgs, sidecar, besBackend, err := setup.Setup(args, tempDir)
+	setupResult, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, err
 	}
+	plugins := setupResult.Plugins
+	bazelArgs := setupResult.BazelArgs
+	effectiveBazelArgs := setupResult.EffectiveBazelArgs
+	execArgs := setupResult.ExecArgs
+	sidecar := setupResult.Sidecar
 
 	// Show a picker if the target is omitted. Note: we do this after expanding
 	// args, in case a bazelrc specifies the target patterns (e.g. via
@@ -334,24 +334,24 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	// - For "run" commands, if there is no target pattern, then the first arg
 	//   after "--" is treated as the pattern.
 	if len(execArgs) == 0 {
-		bazelArgs = picker.HandlePicker(bazelArgs)
+		bazelArgs = picker.HandlePicker(bazelArgs, effectiveBazelArgs)
 	}
 
-	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, besBackend)
+	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, effectiveBazelArgs, setupResult.OriginalBESBackend)
 	if err != nil {
 		return 1, status.WrapErrorf(err, "error configuring run log streaming")
 	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
-	bazelArgs, scriptPath, err = runscript.Configure(bazelArgs)
+	bazelArgs, scriptPath, err = runscript.Configure(bazelArgs, effectiveBazelArgs)
 	if err != nil {
 		return 1, err
 	}
 
 	// Append metadata just before running bazelisk.
 	// Note, this means plugins cannot modify this metadata.
-	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs, originalArgs)
+	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs, effectiveBazelArgs, originalArgs)
 	if err != nil {
 		return 1, err
 	}

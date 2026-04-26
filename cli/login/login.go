@@ -333,13 +333,13 @@ func openInBrowser(url string) error {
 	return exec.Command(cmd, url).Run()
 }
 
-func ConfigureAPIKey(args []string) ([]string, error) {
+func ConfigureAPIKey(args []string, effectiveArgs []string) ([]string, error) {
 	if cmd, _ := parser.GetBazelCommandAndIndex(args); !isSupportedCommand(cmd) {
 		return args, nil
 	}
 
 	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
-	if arg.Has(args, apiKeyHeader) {
+	if arg.Has(effectiveArgs, apiKeyHeader) {
 		return args, nil
 	}
 
