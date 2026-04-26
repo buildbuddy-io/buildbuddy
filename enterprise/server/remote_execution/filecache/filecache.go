@@ -620,7 +620,7 @@ func (c *fileCache) checkClosed() error {
 		return nil
 	}
 	if c.isClosed.Load() {
-		return status.FailedPreconditionError("filecache is closed")
+		return status.UnavailableError("filecache is closed")
 	}
 	return nil
 }
