@@ -675,6 +675,51 @@ func TestSkipRemote(t *testing.T) {
 	requestCounter.Store(0)
 }
 
+func TestSkipRemoteEncryptedRemoteOnly(t *testing.T) {
+	ctx := testContext()
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"user": userWithEncryption})
+	proxyEnv.SetAuthenticator(ta)
+
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, bs, proxyEnv, t)
+
+	anonCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
+	require.NoError(t, err)
+
+	rn, data := testdigest.NewRandomResourceAndBuf(t, 1234, rspb.CacheType_CAS, "")
+	casRN, err := digest.CASResourceNameFromProto(rn)
+	require.NoError(t, err)
+
+	readStream, err := proxy.Read(encryptedUserCtx, &bspb.ReadRequest{ResourceName: casRN.DownloadString()})
+	if err == nil {
+		_, err = readStream.Recv()
+	}
+	require.True(t, status.IsFailedPreconditionError(err), "err = %v", err)
+	require.Equal(t, int32(0), requestCounter.Load())
+
+	writeStream, err := proxy.Write(encryptedUserCtx)
+	require.NoError(t, err)
+	err = writeStream.Send(&bspb.WriteRequest{
+		ResourceName: casRN.NewUploadString(),
+		Data:         data,
+		FinishWrite:  true,
+	})
+	if err == nil || err == io.EOF {
+		_, err = writeStream.CloseAndRecv()
+	}
+	require.True(t, status.IsFailedPreconditionError(err), "err = %v", err)
+	require.Equal(t, int32(0), requestCounter.Load())
+}
+
 func BenchmarkReadAlwaysPresent(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
@@ -1112,6 +1157,265 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(0), readBytesRemoteAfter-readBytesRemoteBefore, "second read: no bytes fetched from remote")
 	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))-proxiedReadMissBytesBefore)
 	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
+}
+
+func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
+	ta := testauth.NewTestAuthenticator(t, users)
+	proxyEnv.SetAuthenticator(ta)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+
+	var splitBlobCalls atomic.Int32
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		if strings.HasSuffix(method, "/SplitBlob") {
+			splitBlobCalls.Add(1)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	anonCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	writeChunkFn := func(chunkData []byte) error {
+		chunkDataCopy := make([]byte, len(chunkData))
+		copy(chunkDataCopy, chunkData)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		return remoteEnv.GetCache().Set(anonCtx, chunkRN.ToProto(), chunkDataCopy)
+	}
+	cdcChunker, err := chunking.NewChunker(anonCtx, 64*1024, writeChunkFn)
+	require.NoError(t, err)
+	_, err = cdcChunker.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, cdcChunker.Close())
+	require.Greater(t, len(chunkDigests), 1)
+
+	_, err = casClient.SpliceBlob(anonCtx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+	splitBlobCalls.Store(0)
+
+	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	readBlob := func() []byte {
+		downloadStream, err := proxy.Read(encryptedUserCtx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
+		require.NoError(t, err)
+
+		var reconstructedData []byte
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			reconstructedData = append(reconstructedData, res.Data...)
+		}
+		return reconstructedData
+	}
+
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(1), splitBlobCalls.Load())
+	for _, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		found, err := proxyEnv.GetCache().Contains(anonCtx, chunkRN.ToProto())
+		require.NoError(t, err)
+		require.False(t, found)
+	}
+
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(2), splitBlobCalls.Load())
+	for _, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		found, err := proxyEnv.GetCache().Contains(anonCtx, chunkRN.ToProto())
+		require.NoError(t, err)
+		require.False(t, found)
+	}
+}
+
+func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
+	ta := testauth.NewTestAuthenticator(t, users)
+	proxyEnv.SetAuthenticator(ta)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+
+	var splitBlobCalls atomic.Int32
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		if strings.HasSuffix(method, "/SplitBlob") {
+			splitBlobCalls.Add(1)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(remoteConn))
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	anonCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
+	require.NoError(t, err)
+	remoteCtx, err := prefix.AttachUserPrefixToContext(ctx, remoteEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	require.NoError(t, remoteEnv.GetCache().Set(remoteCtx, blobRN.ToProto(), originalData))
+
+	readBlob := func() []byte {
+		downloadStream, err := proxy.Read(encryptedUserCtx, &bspb.ReadRequest{ResourceName: blobRN.DownloadString()})
+		require.NoError(t, err)
+
+		var got []byte
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			got = append(got, res.Data...)
+		}
+		return got
+	}
+
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(1), splitBlobCalls.Load())
+	found, err := proxyEnv.GetCache().Contains(anonCtx, blobRN.ToProto())
+	require.NoError(t, err)
+	require.False(t, found)
+
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(2), splitBlobCalls.Load())
+	found, err = proxyEnv.GetCache().Contains(anonCtx, blobRN.ToProto())
+	require.NoError(t, err)
+	require.False(t, found)
 }
 
 func TestReadChunkedCompressedWarmLocal(t *testing.T) {
@@ -1931,6 +2235,163 @@ func TestWriteChunked(t *testing.T) {
 	}
 
 	require.Equal(t, originalData, reconstructedData)
+}
+
+func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.intercept_and_chunk_large_writes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
+	ta := testauth.NewTestAuthenticator(t, users)
+	proxyEnv.SetAuthenticator(ta)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	proxyPC, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, proxyPC.Start())
+	t.Cleanup(func() { proxyPC.Stop() })
+	proxyEnv.SetCache(proxyPC)
+
+	remotePC, err := pebble_cache.NewPebbleCache(remoteEnv, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, remotePC.Start())
+	t.Cleanup(func() { remotePC.Stop() })
+	remoteEnv.SetCache(remotePC)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	anonCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
+	require.NoError(t, err)
+	remoteCtx, err := prefix.AttachUserPrefixToContext(ctx, remoteEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	compressedData := compression.CompressZstd(nil, originalData)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+
+	uploadStream, err := proxy.Write(encryptedUserCtx)
+	require.NoError(t, err)
+	remaining := compressedData
+	written := int64(0)
+	for len(remaining) > 0 {
+		chunkSize := min(1_000_000, len(remaining))
+		require.NoError(t, uploadStream.Send(&bspb.WriteRequest{
+			ResourceName: blobRN.NewUploadString(),
+			WriteOffset:  written,
+			Data:         remaining[:chunkSize],
+			FinishWrite:  chunkSize == len(remaining),
+		}))
+		written += int64(chunkSize)
+		remaining = remaining[chunkSize:]
+	}
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+
+	splitResp, err := casClient.SplitBlob(remoteCtx, &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+	require.Greater(t, len(splitResp.GetChunkDigests()), 1)
+
+	for _, chunkDigest := range splitResp.GetChunkDigests() {
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		chunkRN.SetCompressor(repb.Compressor_ZSTD)
+
+		foundInProxy, err := proxyEnv.GetCache().Contains(anonCtx, chunkRN.ToProto())
+		require.NoError(t, err)
+		require.False(t, foundInProxy)
+
+		foundInRemote, err := remoteEnv.GetCache().Contains(remoteCtx, chunkRN.ToProto())
+		require.NoError(t, err)
+		require.True(t, foundInRemote)
+	}
+
+	downloadStream, err := proxy.Read(encryptedUserCtx, &bspb.ReadRequest{ResourceName: blobRN.DownloadString()})
+	require.NoError(t, err)
+	var downloadedCompressedData []byte
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadedCompressedData = append(downloadedCompressedData, res.Data...)
+	}
+
+	decompressedData, err := compression.DecompressZstd(nil, downloadedCompressedData)
+	require.NoError(t, err)
+	require.Equal(t, originalData, decompressedData)
 }
 
 func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
