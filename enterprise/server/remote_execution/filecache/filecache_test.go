@@ -1268,13 +1268,44 @@ func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
 	node := &repb.FileNode{Digest: rn.GetDigest()}
 
-	_, err = fc.Write(ctx, node, buf)
+	// Write the bytes through the convenience API and expect it to report the
+	// full accepted byte count.
+	n, err := fc.Write(ctx, node, buf)
 	require.NoError(t, err)
+	require.Equal(t, len(buf), n)
 
+	// The temporary staging file should be removed after the file is added to
+	// the cache.
 	pattern := filepath.Join(fc.TempDir(), rn.GetDigest().GetHash()+".*.tmp")
 	matches, err := filepath.Glob(pattern)
 	require.NoError(t, err)
 	require.Empty(t, matches, "expected temp file(s) to be deleted: %v", matches)
+}
+
+func TestFileCacheWriteAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	outputDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	node := &repb.FileNode{Digest: rn.GetDigest()}
+
+	// Once the cache is closing, Write should silently accept the bytes so
+	// callers do not fail just because cache population is best-effort.
+	require.NoError(t, fc.Close())
+	n, err := fc.Write(ctx, node, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), n)
+
+	// The accepted bytes are intentionally dropped rather than added to the
+	// cache after shutdown starts.
+	linkedPath := filepath.Join(outputDir, "linked-after-close")
+	require.False(t, fc.FastLinkFile(ctx, node, linkedPath))
+	require.NoFileExists(t, linkedPath)
 }
 
 func TestTrackExternalDirectory_Basic(t *testing.T) {
