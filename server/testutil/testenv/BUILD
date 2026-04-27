@@ -12,6 +12,7 @@ go_library(
         "//server/backends/memory_cache",
         "//server/buildbuddy_server",
         "//server/environment",
+        "//server/interfaces",
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_client",

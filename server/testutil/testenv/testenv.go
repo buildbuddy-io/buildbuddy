@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
@@ -142,7 +143,48 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	return srv, runFunc
 }
 
-func GetTestEnv(t testing.TB) *real_environment.RealEnv {
+func setupDBHandle(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
+	switch *databaseType {
+	case "sqlite":
+		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
+	case "mysql":
+		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
+	case "postgres":
+		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
+	default:
+		t.Fatalf("Unsupported db type: %s", *databaseType)
+	}
+	return db.GetConfiguredDatabase(context.Background(), te)
+}
+
+type TestEnvOption interface {
+	accumulate(TestEnvOption)
+}
+
+type dbHandleOption struct {
+	dbh interfaces.DBHandle
+}
+
+func (o *dbHandleOption) accumulate(opt TestEnvOption) {
+	if opt, ok := opt.(*dbHandleOption); ok {
+		o.dbh = opt.dbh
+	}
+}
+
+func WithDBHandle(dbh interfaces.DBHandle) TestEnvOption {
+	return &dbHandleOption{dbh: dbh}
+}
+
+func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
+	dbHandleOpt := &dbHandleOption{}
+	for _, opt := range opts {
+		switch opt := opt.(type) {
+		case *dbHandleOption:
+			dbHandleOpt.accumulate(opt)
+		default:
+			t.Fatalf("Unhandled TestEnvOption type: %T", opt)
+		}
+	}
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
@@ -171,19 +213,13 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	te.SetCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
-	switch *databaseType {
-	case "sqlite":
-		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
-	case "mysql":
-		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
-	case "postgres":
-		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
-	default:
-		t.Fatalf("Unsupported db type: %s", *databaseType)
-	}
-	dbHandle, err := db.GetConfiguredDatabase(context.Background(), te)
-	if err != nil {
-		t.Fatal(err)
+	dbHandle := dbHandleOpt.dbh
+	if dbHandle == nil {
+		var err error
+		dbHandle, err = setupDBHandle(t, te, testRootDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	te.SetDBHandle(dbHandle)
 	t.Cleanup(func() {
