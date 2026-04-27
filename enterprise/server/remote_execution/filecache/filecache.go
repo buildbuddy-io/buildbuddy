@@ -912,7 +912,10 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 // Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
 	if c.checkClosed() {
-		return 0, nil
+		// Like AddFile, treat writes as best-effort during shutdown: report
+		// success to avoid failing callers, even though the data is not persisted
+		// to the cache once the filecache is closed.
+		return len(b), nil
 	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
@@ -932,7 +935,7 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	if err := c.AddFile(ctx, node, tmp); err != nil {
 		return 0, err
 	}
-	return n, nil
+	return len(b), nil
 }
 
 type verifiedWriter struct {
