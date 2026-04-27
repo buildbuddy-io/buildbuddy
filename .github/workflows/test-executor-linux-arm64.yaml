@@ -17,6 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
+
       # podman_test installs its own version of podman under / in order to test
       # the same version that we use in the executor while not having to
       # configure various podman directory paths. For now just uninstall the
@@ -29,7 +32,7 @@ jobs:
 
       - name: Run tests
         run: |
-          echo > user.bazelrc "
+          cat >> user.bazelrc <<'EOF'
           common --config=cache
           common --repository_cache=~/repo-cache
           common --bes_backend=remote.buildbuddy.io
@@ -41,7 +44,7 @@ jobs:
           common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
           common --color=yes
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
-          "
+          EOF
 
           bazel test --test_tag_filters=-performance,-docker \
             -- \

@@ -1,0 +1,46 @@
+name: Setup Bazel Go module cache
+description: Configure Gazelle go_repository to use a persisted host GOMODCACHE.
+inputs:
+  bazelrc:
+    description: Bazel rc file to append the repo_env settings to.
+    default: user.bazelrc
+  gomodcache:
+    description: Go module cache path. Defaults to $HOME/go/pkg/mod.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Configure Bazel Go module cache
+      id: config
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        gomodcache="${{ inputs.gomodcache }}"
+        if [[ -z "$gomodcache" ]]; then
+          gomodcache="$HOME/go/pkg/mod"
+        elif [[ "$gomodcache" == "~/"* ]]; then
+          gomodcache="$HOME/${gomodcache#~/}"
+        fi
+
+        printf -v gomodcache_bazelrc_escaped "%q" "$gomodcache"
+
+        bazelrc="${{ inputs.bazelrc }}"
+        mkdir -p "$gomodcache" "$(dirname "$bazelrc")"
+        {
+          echo "common --repo_env=GO_REPOSITORY_USE_HOST_MODCACHE=1"
+          echo "common --repo_env=GOMODCACHE=$gomodcache_bazelrc_escaped"
+        } >> "$bazelrc"
+
+        echo "gomodcache=$gomodcache" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Go module cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.config.outputs.gomodcache }}
+        # GitHub cache entries are immutable. Hash go.mod and keep separate
+        # caches per OS/arch: dependency changes restore an older cache via
+        # restore-keys, then save a new cache populated with any new modules.
+        key: go-mod-${{ runner.os }}-${{ runner.arch }}-v1-${{ hashFiles('go.mod') }}
+        restore-keys: |
+          go-mod-${{ runner.os }}-${{ runner.arch }}-v1-

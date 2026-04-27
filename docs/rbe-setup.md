@@ -267,9 +267,9 @@ It's commonly used to set environment variables that are used to augment how too
 # This requires you to declare and register a CC toolchain explicitly.
 --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
-# Tell Gazelle's go_repository rule to use the path set in GOMODCACHE (or GOPATH) as a local cache directory.
+# Tell Gazelle's go_repository rule to use the path set in GOMODCACHE as a local cache directory.
 # This can be useful to speed up Go modules downloads.
---repo_env=GO_REPOSITORY_USE_HOST_CACHE=1
+--repo_env=GO_REPOSITORY_USE_HOST_MODCACHE=1
 --repo_env=GOMODCACHE=/some-path/my-go-mod-cache
 ```
 
