@@ -144,12 +144,13 @@ func (i *Invocation) TableOptions(clickhouseVersion string) string {
 
 type Execution struct {
 	// Sort keys
-	GroupID        string
-	UpdatedAtUsec  int64
-	InvocationUUID string
-	ExecutionID    string
+	GroupID        string `gorm:"codec:ZSTD(1)"`
+	UpdatedAtUsec  int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InvocationUUID string `gorm:"codec:ZSTD(1)"`
+	ExecutionID    string `gorm:"codec:ZSTD(1)"`
 
 	// Resource-name components split out of execution_id.
+	// ActionDigest holds raw hash bytes (incompressible) — default codec.
 	InstanceName     string `gorm:"codec:ZSTD(1)"`
 	ExecutionUUID    string `gorm:"type:UUID"`
 	Compressor       string `gorm:"type:LowCardinality(String)"`
@@ -158,118 +159,118 @@ type Execution struct {
 	ActionDigestSize uint32 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Type from tables.InvocationExecution
-	InvocationLinkType int8
-	CreatedAtUsec      int64
-	UserID             string
-	Worker             string
-	ExecutorHostname   string
-	ClientIP           string
+	InvocationLinkType int8   `gorm:"codec:T64,ZSTD(1)"`
+	CreatedAtUsec      int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	UserID             string `gorm:"codec:ZSTD(1)"`
+	Worker             string `gorm:"codec:ZSTD(1)"`
+	ExecutorHostname   string `gorm:"codec:ZSTD(1)"`
+	ClientIP           string `gorm:"codec:ZSTD(1)"`
 
 	// Executor metadata
 	SelfHosted bool
 	Region     string `gorm:"type:LowCardinality(String)"`
 
-	Stage int64
+	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// RequestMetadata
-	TargetLabel    string
-	ActionMnemonic string
+	TargetLabel    string `gorm:"codec:ZSTD(1)"`
+	ActionMnemonic string `gorm:"codec:ZSTD(1)"`
 
 	// IOStats
-	FileDownloadCount        int64
-	FileDownloadSizeBytes    int64
-	FileDownloadDurationUsec int64
-	FileUploadCount          int64
-	FileUploadSizeBytes      int64
-	FileUploadDurationUsec   int64
+	FileDownloadCount        int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileDownloadSizeBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileDownloadDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadCount          int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadSizeBytes      int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadDurationUsec   int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// UsageStats
-	PeakMemoryBytes        int64
-	CPUNanos               int64
-	DiskBytesRead          int64
-	DiskBytesWritten       int64
-	DiskReadOperations     int64
-	DiskWriteOperations    int64
-	NetworkBytesSent       int64
-	NetworkBytesReceived   int64
-	NetworkPacketsSent     int64
-	NetworkPacketsReceived int64
+	PeakMemoryBytes        int64 `gorm:"codec:T64,ZSTD(1)"`
+	CPUNanos               int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskBytesRead          int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskBytesWritten       int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskReadOperations     int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskWriteOperations    int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkBytesSent       int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkBytesReceived   int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkPacketsSent     int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkPacketsReceived int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// UsageStats - Linux PSI stats
-	CPUPressureSomeStallUsec    int64
-	CPUPressureFullStallUsec    int64
-	MemoryPressureSomeStallUsec int64
-	MemoryPressureFullStallUsec int64
-	IOPressureSomeStallUsec     int64
-	IOPressureFullStallUsec     int64
+	CPUPressureSomeStallUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	CPUPressureFullStallUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	MemoryPressureSomeStallUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	MemoryPressureFullStallUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	IOPressureSomeStallUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
+	IOPressureFullStallUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Task sizing
-	EstimatedMemoryBytes          int64
-	EstimatedMilliCPU             int64
-	EstimatedFreeDiskBytes        int64
-	RequestedComputeUnits         float64
-	RequestedMemoryBytes          int64
-	RequestedMilliCPU             int64
-	RequestedFreeDiskBytes        int64
-	PreviousMeasuredMemoryBytes   int64
-	PreviousMeasuredMilliCPU      int64
-	PreviousMeasuredFreeDiskBytes int64
-	PredictedMemoryBytes          int64
-	PredictedMilliCPU             int64
-	PredictedFreeDiskBytes        int64
+	EstimatedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	EstimatedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	EstimatedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedComputeUnits         float64 `gorm:"codec:ZSTD(1)"`
+	RequestedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredMemoryBytes   int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredMilliCPU      int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredFreeDiskBytes int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	QueuedTimestampUsec                int64
-	WorkerStartTimestampUsec           int64
-	WorkerCompletedTimestampUsec       int64
-	InputFetchStartTimestampUsec       int64
-	InputFetchCompletedTimestampUsec   int64
-	ExecutionStartTimestampUsec        int64
-	ExecutionCompletedTimestampUsec    int64
-	OutputUploadStartTimestampUsec     int64
-	OutputUploadCompletedTimestampUsec int64
+	QueuedTimestampUsec                int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	WorkerStartTimestampUsec           int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	WorkerCompletedTimestampUsec       int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InputFetchStartTimestampUsec       int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InputFetchCompletedTimestampUsec   int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	ExecutionStartTimestampUsec        int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	ExecutionCompletedTimestampUsec    int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	OutputUploadStartTimestampUsec     int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	OutputUploadCompletedTimestampUsec int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
 
-	StatusCode int32
-	ExitCode   int32
+	StatusCode int32 `gorm:"codec:T64,ZSTD(1)"`
+	ExitCode   int32 `gorm:"codec:T64,ZSTD(1)"`
 
 	CachedResult    bool
 	DoNotCache      bool
 	SkipCacheLookup bool
 
-	ExecutionPriority      int32
-	RequestedIsolationType string
+	ExecutionPriority      int32  `gorm:"codec:T64,ZSTD(1)"`
+	RequestedIsolationType string `gorm:"type:LowCardinality(String)"`
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
-	RequestedPool          string
-	EffectivePool          string
+	RequestedPool          string `gorm:"codec:ZSTD(1)"`
+	EffectivePool          string `gorm:"codec:ZSTD(1)"`
 
 	// Runner metadata
-	RunnerID            string
-	RunnerTaskNumber    int64
-	PlatformHash        string
-	PersistentWorkerKey string
+	RunnerID            string `gorm:"codec:ZSTD(1)"`
+	RunnerTaskNumber    int64  `gorm:"codec:T64,ZSTD(1)"`
+	PlatformHash        string `gorm:"codec:ZSTD(1)"`
+	PersistentWorkerKey string `gorm:"codec:ZSTD(1)"`
 
-	RequestedTimeoutUsec int64
-	EffectiveTimeoutUsec int64
+	RequestedTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	EffectiveTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
-	OutputPath     string
-	StatusMessage  string
-	CommandSnippet string
+	OutputPath     string `gorm:"codec:ZSTD(1)"`
+	StatusMessage  string `gorm:"codec:ZSTD(1)"`
+	CommandSnippet string `gorm:"codec:ZSTD(1)"`
 
 	// Fields from Invocations
-	User             string
-	Host             string
-	Pattern          string
-	Role             string
-	BranchName       string
-	CommitSHA        string
-	RepoURL          string
-	Command          string
-	InvocationStatus int64
+	User             string `gorm:"codec:ZSTD(1)"`
+	Host             string `gorm:"codec:ZSTD(1)"`
+	Pattern          string `gorm:"codec:ZSTD(1)"`
+	Role             string `gorm:"type:LowCardinality(String)"`
+	BranchName       string `gorm:"codec:ZSTD(1)"`
+	CommitSHA        string `gorm:"codec:ZSTD(1)"`
+	RepoURL          string `gorm:"codec:ZSTD(1)"`
+	Command          string `gorm:"codec:ZSTD(1)"`
+	InvocationStatus int64  `gorm:"codec:T64,ZSTD(1)"`
 	Success          bool
-	Tags             []string `gorm:"type:Array(String);"`
+	Tags             []string `gorm:"type:Array(String);codec:ZSTD(1)"`
 }
 
 func (e *Execution) TableName() string {
@@ -277,7 +278,8 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions(clickhouseVersion string) string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
 func (e *Execution) ExcludedFields() []string {
