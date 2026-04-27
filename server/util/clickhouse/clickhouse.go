@@ -334,10 +334,10 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 }
 
 // FillExecutionResourceFields populates the split columns (InstanceName,
-// ExecutionUUID, Compressor, DigestFunction, ActionDigest, ActionDigestSize)
-// on out by parsing out.ExecutionID. When ExecutionID is empty or unparseable,
-// ExecutionUUID is set to the zero UUID so that ClickHouse's UUID column
-// accepts the row.
+// ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
+// ActionDigestSize) on out by parsing out.ExecutionID. When ExecutionID is
+// empty or unparseable, ExecutionUUID is set to the zero UUID so that
+// ClickHouse's UUID column accepts the row.
 func FillExecutionResourceFields(out *schema.Execution) error {
 	out.ExecutionUUID = zeroUUID
 	if out.ExecutionID == "" {
@@ -364,7 +364,7 @@ func FillExecutionResourceFields(out *schema.Execution) error {
 	}
 	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
 	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
-	out.ActionDigest = string(digestBytes)
+	out.ActionDigestHash = string(digestBytes)
 	out.ActionDigestSize = uint32(sizeBytes)
 	return nil
 }
