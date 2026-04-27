@@ -818,6 +818,113 @@ func TestFileCacheUncleanShutdown(t *testing.T) {
 	assert.False(t, linked, "cache should have been wiped after unclean shutdown")
 }
 
+func TestFileCacheAddFileAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	path := writeFileContent(t, baseDir, "file", "content", false)
+	node := nodeFromString("file", false)
+
+	// Once shutdown starts, cache population should become best-effort instead
+	// of surfacing "filecache is closed" to callers.
+	require.NoError(t, fc.Close())
+	require.NoError(t, fc.AddFile(ctx, node, path))
+}
+
+func TestFileCacheFastLinkFileAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	path := writeFileContent(t, baseDir, "file", "content", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, path))
+
+	// Already-cached files should still be usable after shutdown begins.
+	require.NoError(t, fc.Close())
+
+	linkedPath := filepath.Join(baseDir, "linked-after-close")
+	require.True(t, fc.FastLinkFile(ctx, node, linkedPath))
+	assertFileContents(t, linkedPath, "content")
+}
+
+func TestFileCacheWriterCommitAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	content := "content"
+	fullPath := writeFileContent(t, baseDir, "file", content, false)
+	d, err := digest.ComputeForFile(fullPath, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	node := &repb.FileNode{Digest: d}
+
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+
+	// A writer opened before shutdown should be able to commit without forcing
+	// the caller to retry just because the filecache is closing.
+	require.NoError(t, fc.Close())
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+}
+
+func TestFileCacheTrackExternalDirectoryAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// External dirs should still be accepted and tracked after shutdown begins,
+	// since callers are responsible for validating their contents after an
+	// unclean shutdown.
+	require.NoError(t, fc.Close())
+
+	unlock, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	// Lookup-only should find the entry that was tracked after Close.
+	unlockLookupOnly, sizeBytes, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.NoError(t, err)
+	require.NotNil(t, unlockLookupOnly)
+	require.Equal(t, int64(1000), sizeBytes)
+	unlockLookupOnly()
+	unlock()
+
+	// Missing dirs should still report NotFound; after-close tracking only skips
+	// internal filecache integrity checks.
+	unlock, err = fc.TrackExternalDirectory(ctx, filepath.Join(extDir, "missing"), 1000)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+	require.Nil(t, unlock)
+}
+
 func TestFileCacheWriter(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
