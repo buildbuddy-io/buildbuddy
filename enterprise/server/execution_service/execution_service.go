@@ -162,8 +162,9 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		inProgressExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
 			// Note: invocation metadata is not needed in this case (since this
-			// RPC only returns the execution metadata).
-			inProgressExecutions[i] = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			// RPC only returns the execution metadata). Split-column parse errors
+			// are ignored; this RPC doesn't read those columns.
+			inProgressExecutions[i], _ = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
 		}
 		return nil
 	})
@@ -193,8 +194,9 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		bufferedExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
 			// Note: invocation metadata is not needed in this case (since this
-			// RPC only returns the execution metadata).
-			bufferedExecutions[i] = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			// RPC only returns the execution metadata). Split-column parse errors
+			// are ignored; this RPC doesn't read those columns.
+			bufferedExecutions[i], _ = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
 		}
 		return nil
 	})

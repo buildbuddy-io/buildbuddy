@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"syscall"
@@ -15,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -37,6 +40,10 @@ const (
 	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
 	gormQueryNameKey                 = "bb_clickhouse:query_name"
+	// zeroUUID is written to Execution.ExecutionUUID when execution_id is empty
+	// or unparseable, so ClickHouse's UUID column accepts the row. Queries that
+	// rely on ExecutionUUID being meaningful must filter it out.
+	zeroUUID = "00000000-0000-0000-0000-000000000000"
 
 	// How long to wait for a single invocation batch insert to complete
 	// before timing out and logging an error.
@@ -326,12 +333,48 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
+// FillExecutionResourceFields populates the split columns (InstanceName,
+// ExecutionUUID, Compressor, DigestFunction, ActionDigest, ActionDigestSize)
+// on out by parsing out.ExecutionID. When ExecutionID is empty or unparseable,
+// ExecutionUUID is set to the zero UUID so that ClickHouse's UUID column
+// accepts the row.
+func FillExecutionResourceFields(out *schema.Execution) error {
+	out.ExecutionUUID = zeroUUID
+	if out.ExecutionID == "" {
+		return nil
+	}
+
+	rn, uploadID, err := digest.ParseUploadResourceNameWithUUID(out.ExecutionID)
+	if err != nil {
+		return status.InvalidArgumentErrorf("parse execution ID %q: %s", out.ExecutionID, err)
+	}
+	d := rn.GetDigest()
+	digestBytes, err := hex.DecodeString(d.GetHash())
+	if err != nil {
+		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", out.ExecutionID, err)
+	}
+	sizeBytes := d.GetSizeBytes()
+	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, sizeBytes)
+	}
+
+	out.InstanceName = rn.GetInstanceName()
+	if uploadID != "" {
+		out.ExecutionUUID = uploadID
+	}
+	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
+	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
+	out.ActionDigest = string(digestBytes)
+	out.ActionDigestSize = uint32(sizeBytes)
+	return nil
+}
+
 // ExecutionFromProto converts the proto representation of an OLAP execution to
 // the OLAP table representation.
 // TODO: move to enterprise/server/util/execution, which has similar conversion
 // logic.
-func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
-	return &schema.Execution{
+func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
+	out := &schema.Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
 		ExecutionID:                        in.GetExecutionId(),
@@ -422,12 +465,32 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
 	}
+
+	if err := FillExecutionResourceFields(out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
+	var firstConvertErr error
+	convertErrs := 0
 	for _, e := range executions {
-		entries = append(entries, ExecutionFromProto(e, inv))
+		// Rows with parse failures are still inserted with zero/empty split
+		// columns so we don't drop execution data on malformed IDs; downstream
+		// queries must filter out zero UUIDs if they rely on split columns.
+		entry, err := ExecutionFromProto(e, inv)
+		if err != nil {
+			convertErrs++
+			if firstConvertErr == nil {
+				firstConvertErr = err
+			}
+		}
+		entries = append(entries, entry)
+	}
+	if firstConvertErr != nil {
+		log.Warningf("ClickHouse execution split columns: %d/%d executions had parse errors for invocation %q; first error: %s", convertErrs, len(executions), inv.GetInvocationId(), firstConvertErr)
 	}
 	num := len(entries)
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {

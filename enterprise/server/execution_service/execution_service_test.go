@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -172,6 +173,7 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			for _, execution := range test.executions {
 				execution.CreatedAtUsec = testTimestampUsec
 				execution.UpdatedAtUsec = testTimestampUsec
+				require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
 				err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 				require.NoError(t, err)
 			}

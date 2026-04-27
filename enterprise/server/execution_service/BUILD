@@ -60,6 +60,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
+        "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
         "//server/util/perms",
         "//server/util/proto",

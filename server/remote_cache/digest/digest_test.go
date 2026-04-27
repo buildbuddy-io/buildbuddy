@@ -231,6 +231,98 @@ func TestParseUploadResourceName(t *testing.T) {
 	}
 }
 
+func TestParseUploadResourceNameWithUUID(t *testing.T) {
+	const uploadID = "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1"
+	const sha256Hash = "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d"
+
+	for _, tc := range []struct {
+		name             string
+		resourceName     string
+		wantInstanceName string
+		wantCompressor   repb.Compressor_Value
+		wantDigestFunc   repb.DigestFunction_Value
+		wantSizeBytes    int64
+	}{
+		{
+			name:             "OldStyleSha256",
+			resourceName:     "instance_name/uploads/" + uploadID + "/blobs/" + sha256Hash + "/1234",
+			wantInstanceName: "instance_name",
+			wantCompressor:   repb.Compressor_IDENTITY,
+			wantDigestFunc:   repb.DigestFunction_SHA256,
+			wantSizeBytes:    1234,
+		},
+		{
+			name:             "ExplicitDigestFunctionAndCompression",
+			resourceName:     "instance_name/uploads/" + uploadID + "/compressed-blobs/zstd/sha256/" + sha256Hash + "/9876",
+			wantInstanceName: "instance_name",
+			wantCompressor:   repb.Compressor_ZSTD,
+			wantDigestFunc:   repb.DigestFunction_SHA256,
+			wantSizeBytes:    9876,
+		},
+		{
+			name:             "Blake3",
+			resourceName:     "instance_name/uploads/" + uploadID + "/blobs/blake3/" + sha256Hash + "/42",
+			wantInstanceName: "instance_name",
+			wantCompressor:   repb.Compressor_IDENTITY,
+			wantDigestFunc:   repb.DigestFunction_BLAKE3,
+			wantSizeBytes:    42,
+		},
+		{
+			name:             "InstanceNameContainingUploads",
+			resourceName:     "bad/uploads/instance/uploads/" + uploadID + "/blobs/" + sha256Hash + "/4321",
+			wantInstanceName: "bad/uploads/instance",
+			wantCompressor:   repb.Compressor_IDENTITY,
+			wantDigestFunc:   repb.DigestFunction_SHA256,
+			wantSizeBytes:    4321,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rn, gotUUID, err := digest.ParseUploadResourceNameWithUUID(tc.resourceName)
+			require.NoError(t, err)
+			require.Equal(t, uploadID, gotUUID)
+			require.Equal(t, tc.wantInstanceName, rn.GetInstanceName())
+			require.Equal(t, tc.wantCompressor, rn.GetCompressor())
+			require.Equal(t, tc.wantDigestFunc, rn.GetDigestFunction())
+			require.Equal(t, sha256Hash, rn.GetDigest().GetHash())
+			require.Equal(t, tc.wantSizeBytes, rn.GetDigest().GetSizeBytes())
+		})
+	}
+
+	t.Run("InvalidUUID", func(t *testing.T) {
+		_, _, err := digest.ParseUploadResourceNameWithUUID("instance_name/uploads/not-a-uuid/blobs/" + sha256Hash + "/1234")
+		require.Error(t, err)
+	})
+
+	t.Run("MissingUploads", func(t *testing.T) {
+		_, _, err := digest.ParseUploadResourceNameWithUUID("/blobs/" + sha256Hash + "/1234")
+		require.Error(t, err)
+	})
+}
+
+func TestDigestFunctionSegment(t *testing.T) {
+	for _, tc := range []struct {
+		df   repb.DigestFunction_Value
+		want string
+	}{
+		{repb.DigestFunction_SHA1, ""},
+		{repb.DigestFunction_MD5, ""},
+		{repb.DigestFunction_SHA256, ""},
+		{repb.DigestFunction_SHA384, ""},
+		{repb.DigestFunction_SHA512, ""},
+		{repb.DigestFunction_BLAKE3, "blake3"},
+	} {
+		require.Equal(t, tc.want, digest.DigestFunctionSegment(tc.df), tc.df.String())
+	}
+}
+
+func TestCompressorSegment(t *testing.T) {
+	require.Equal(t, "", digest.CompressorSegment(repb.Compressor_IDENTITY))
+	require.Equal(t, "zstd", digest.CompressorSegment(repb.Compressor_ZSTD))
+	// DEFLATE is defined in the proto but unsupported by URL construction and
+	// parsing, so it falls back to the IDENTITY segment ("").
+	require.Equal(t, "", digest.CompressorSegment(repb.Compressor_DEFLATE))
+}
+
 func TestActionCacheString(t *testing.T) {
 	for _, tc := range []struct {
 		name string

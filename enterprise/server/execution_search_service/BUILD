@@ -42,6 +42,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
         "//server/util/testing/flags",
         "//server/util/uuid",
