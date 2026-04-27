@@ -584,25 +584,24 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 }
 
 // ConsumeRCFileOptions removes all rc-file related options from the provided
-// args. Returns the rc files that should be parsed and whether future rc files
-// should be suppressed (either because the user explicitly set --ignore_all_rc_files
-// or passed --bazelrc=/dev/null).
-func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (ignoreAll bool, rcFiles []string, err error) {
+// args and appends an `ignore_all_rc_files` option to the startup options.
+// Returns a slice of all the rc files that should be parsed.
+func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
 	if ignore, err := options.AccumulateValues[*IndexedOption](false, a.RemoveStartupOptions("ignore_all_rc_files")); err != nil {
-		return false, nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
+		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
 		// Before we do anything, check whether --ignore_all_rc_files is already
 		// set. If so, return an empty list of RC files, since bazel will do the
 		// same.
 		a.RemoveStartupOptions("system_rc", "workspace_rc", "home_rc")
-		return true, nil, nil
+		return nil, nil
 	}
 
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
 	for _, optName := range []string{"system_rc", "workspace_rc", "home_rc"} {
 		if v, err := options.AccumulateValues[*IndexedOption](true, a.RemoveStartupOptions(optName)); err != nil {
-			return false, nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
+			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
 			// When these flags are false, they have no effect on the list of
 			// rcFiles we should parse.
@@ -634,13 +633,14 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (ignoreAll bool,
 	for _, indexedOption := range a.RemoveStartupOptions("bazelrc") {
 		o := indexedOption.Option
 		if o.GetValue() == "/dev/null" {
-			// --bazelrc=/dev/null signals that the user wants all subsequent rc
-			// files ignored. All previous rc files should still be parsed.
-			return true, rcFiles, nil
+			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
+			// subsequent --bazelrc args, so we ignore them as well.
+			break
 		}
 		rcFiles = append(rcFiles, o.GetValue())
+		continue
 	}
-	return false, rcFiles, nil
+	return rcFiles, nil
 }
 
 type Config struct {

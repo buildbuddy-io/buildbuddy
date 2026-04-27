@@ -68,11 +68,6 @@ func Setup(args []string, tempDir string) (_ []*plugin.Plugin, bazelArgs []strin
 			return nil, nil, nil, nil, "", err
 		}
 	}
-	// TODO: if a pre_bazel plugin adds a --bazelrc flag, any flags in that
-	// file will be read by bazel but will not have been processed by CLI
-	// methods that consume flags (e.g. config expansion, BES setup, remote
-	// cache configuration). Consider re-running those methods after plugins
-	// have had a chance to add their flags.
 
 	// Save the original BES backend value before it is rewritten by the sidecar.
 	originalBESBackend, err = parser.GetBazelCommandOptionVal(parsedArgs, "bes_backend")
