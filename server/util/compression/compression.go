@@ -32,7 +32,7 @@ var (
 )
 
 func mustGetZstdEncoder() *zstd.Encoder {
-	enc, err := zstd.NewWriter(nil)
+	enc, err := zstd.NewWriter(nil, zstd.WithZeroFrames(false))
 	if err != nil {
 		panic(err)
 	}
