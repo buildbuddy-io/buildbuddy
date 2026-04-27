@@ -67,7 +67,7 @@ func reconstructExecutionID(e *schema.Execution) string {
 	if e.DigestFunction != "" {
 		id += "/" + e.DigestFunction
 	}
-	id += "/" + hex.EncodeToString([]byte(e.ActionDigest))
+	id += "/" + hex.EncodeToString([]byte(e.ActionDigestHash))
 	id += "/" + strconv.FormatUint(uint64(e.ActionDigestSize), 10)
 	return id
 }

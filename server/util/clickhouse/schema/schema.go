@@ -154,7 +154,7 @@ type Execution struct {
 	ExecutionUUID    string `gorm:"type:UUID"`
 	Compressor       string `gorm:"type:LowCardinality(String)"`
 	DigestFunction   string `gorm:"type:LowCardinality(String)"`
-	ActionDigest     string
+	ActionDigestHash string
 	ActionDigestSize uint32 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Type from tables.InvocationExecution
@@ -296,7 +296,7 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionUUID",
 		"Compressor",
 		"DigestFunction",
-		"ActionDigest",
+		"ActionDigestHash",
 		"ActionDigestSize",
 		"User",
 		"Host",
