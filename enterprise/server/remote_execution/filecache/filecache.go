@@ -613,16 +613,13 @@ func key(ctx context.Context, node *repb.FileNode) string {
 	return namespacedKey(keyPrefixFromContext(ctx), node)
 }
 
-func (c *fileCache) checkClosed() error {
+func (c *fileCache) checkClosed() bool {
 	// Close() functionality was added in unclean shutdown detection CL, so disable
 	// any checking of closed filecache when this feature is disabled.
 	if !*deleteFilecacheOnUncleanShutdown {
-		return nil
+		return false
 	}
-	if c.isClosed.Load() {
-		return status.FailedPreconditionError("filecache is closed")
-	}
-	return nil
+	return c.isClosed.Load()
 }
 
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
@@ -739,8 +736,10 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
-	if err := c.checkClosed(); err != nil {
-		return err
+	if c.checkClosed() {
+		// During shutdown, treat filecache population as best-effort so callers
+		// don't fail just because the local cache is no longer accepting writes.
+		return nil
 	}
 	start := time.Now()
 	keyPrefix := keyPrefixFromContext(ctx)
@@ -791,10 +790,13 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 // MUST be located on the same filesystem as the filecache. This renaming
 // approach ensures that eviction is both fast and atomic (the atomicity
 // property is required to uphold the invariants described above).
+//
+// This function succeeds even if shutdown has already started, since external
+// directories are not subject to the automatic integrity checks and protections
+// used for internal files. Callers of this function are expected to handle
+// integrity checks themselves (i.e. detecting corrupted directory contents
+// after a power loss).
 func (c *fileCache) TrackExternalDirectory(ctx context.Context, path string, size int64) (unlock func(), err error) {
-	if err := c.checkClosed(); err != nil {
-		return nil, err
-	}
 	path = filepath.Clean(path)
 	key := externalDirectoryKey(path)
 
@@ -876,7 +878,7 @@ func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool 
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
-	if err := c.checkClosed(); err != nil {
+	if c.checkClosed() {
 		return false
 	}
 	k := key(ctx, node)
@@ -909,8 +911,8 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 
 // Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
-	if err := c.checkClosed(); err != nil {
-		return 0, err
+	if c.checkClosed() {
+		return 0, nil
 	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
@@ -1019,8 +1021,8 @@ func (v *verifiedWriter) Close() error {
 }
 
 func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
-	if err := c.checkClosed(); err != nil {
-		return nil, err
+	if c.checkClosed() {
+		return nil, status.FailedPreconditionError("filecache is closed")
 	}
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
