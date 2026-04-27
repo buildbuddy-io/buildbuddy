@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -119,6 +120,10 @@ const (
 
 // Register registers the task sizer with the env.
 func Register(env *real_environment.RealEnv) error {
+	if !config.RemoteExecutionEnabled() {
+		// Task sizer is not needed if RBE is disabled.
+		return nil
+	}
 	sizer, err := NewSizer(env)
 	if err != nil {
 		return err
