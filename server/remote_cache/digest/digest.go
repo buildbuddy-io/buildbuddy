@@ -614,11 +614,8 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 }
 
 func ParseUploadResourceName(resourceName string) (*CASResourceName, error) {
-	rn, _, err := parseResourceName(resourceName, rspb.CacheType_CAS, uploadResourceName)
-	if err != nil {
-		return nil, err
-	}
-	return rn.CheckCAS()
+	rn, _, err := ParseUploadResourceNameWithUUID(resourceName)
+	return rn, err
 }
 
 // ParseUploadResourceNameWithUUID parses an upload resource-name URL and
