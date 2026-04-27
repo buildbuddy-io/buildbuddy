@@ -119,6 +119,7 @@ actions:
     bazel_use_cli: false
     triggers: { push: { branches: [ "*" ] } }
     bazel_commands: [ "run //:sleep_forever_test" ]
+    allow_concurrent_runs: false
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
 `,
@@ -140,12 +141,14 @@ actions:
     bazel_use_cli: false
     triggers: { push: { branches: [ "*" ] } }
     bazel_commands: [ "run //:sleep_forever_test" ]
+    allow_concurrent_runs: false
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
   - name: "Action 2"
     bazel_use_cli: false
     triggers: { push: { branches: [ "*" ] } }
     bazel_commands: [ "run //:sleep_forever_test" ]
+    allow_concurrent_runs: false
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
 `,
@@ -588,8 +591,6 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancelOlderRunsOnSameBranch(t *testing.T) {
-	flags.Set(t, "remote_execution.workflows_cancel_duplicates", true)
-
 	for _, branch := range []string{"test-branch", "master"} {
 		for _, newCommit := range []bool{true, false} {
 			fakeGitProvider := testgit.NewFakeProvider()
@@ -656,8 +657,6 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 }
 
 func TestCancelOlderRunsOnSameBranch_MultipleWorkflows(t *testing.T) {
-	flags.Set(t, "remote_execution.workflows_cancel_duplicates", true)
-
 	repoContents := repoWithMultipleSlowActions()
 
 	fakeGitProvider := testgit.NewFakeProvider()

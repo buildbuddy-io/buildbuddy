@@ -83,8 +83,6 @@ var (
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
-	cancelDuplicateWorkflows = flag.Bool("remote_execution.workflows_cancel_duplicates", false, "Whether to cancel duplicate workflows on the same branch.")
-
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
@@ -1549,7 +1547,14 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
-		if *cancelDuplicateWorkflows && !action.AllowConcurrentRuns {
+		cancelDuplicates := false
+		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
+		}
+		if action.AllowConcurrentRuns != nil {
+			cancelDuplicates = !*action.AllowConcurrentRuns
+		}
+		if cancelDuplicates {
 			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action.Name, key, wf, wd, invocationID); err != nil {
 				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 			}

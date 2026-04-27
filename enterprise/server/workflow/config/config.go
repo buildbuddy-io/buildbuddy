@@ -63,7 +63,7 @@ type Action struct {
 	BazelUseCLI *bool `yaml:"bazel_use_cli"`
 	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
 	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
-	AllowConcurrentRuns bool `yaml:"allow_concurrent_runs"`
+	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
