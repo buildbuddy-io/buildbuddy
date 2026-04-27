@@ -278,7 +278,7 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions(clickhouseVersion string) string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine()) +
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid, execution_uuid)", getEngine()) +
 		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
