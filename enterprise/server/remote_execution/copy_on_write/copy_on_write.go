@@ -151,6 +151,7 @@ type COWStore struct {
 	// evicting the least recently added chunk.
 	eagerFetchStack *boundedstack.BoundedStack[int64]
 	eagerFetchEg    *errgroup.Group
+	quitOnce        sync.Once
 	quitChan        chan struct{}
 
 	// usageLock protects chunkOperationToUsageSummary
@@ -521,7 +522,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	close(s.quitChan)
+	s.quitOnce.Do(func() { close(s.quitChan) })
 	s.eagerFetchEg.Wait()
 
 	var lastErr error
@@ -613,16 +614,23 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 		return err
 	}
 
+	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
+	// Note that eager fetching chunks acquires the storeLock, so we must stop this
+	// before acquiring the lock below.
+	s.quitOnce.Do(func() { close(s.quitChan) })
+	s.eagerFetchEg.Wait()
+
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
 
 	for _, chunk := range s.chunks {
-		chunk.lru = lru
 		if err := chunk.Unmap(); err != nil {
 			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
 		}
+		chunk.lru = lru
 	}
 	s.mmapLRU = lru
+	s.eagerFetchStack = nil
 	return nil
 }
 
