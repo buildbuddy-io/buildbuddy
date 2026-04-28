@@ -42,6 +42,8 @@ Once you’ve added these flags, you’ll see a line like `Streaming build resul
   - This flag can reduce uploads by not uploading locally executed action outputs to the remote cache. This will reduce the cache hit rate for future runs, but can be desirable if upload speed is constrained (due to a poor network connection, for example).
 - `--remote_cache_compression`
   - This flag can improve remote cache throughput by compressing cache blobs.
+- <code className="flag">--experimental_remote_cache_chunking</code>
+  - This flag can improve remote cache throughput for large outputs by uploading and downloading them in content-defined chunks, when supported by the remote cache. This is available in Bazel 8.7 and 9.1+.
 - `--digest_function=BLAKE3`
   - This flag can improve the performance of digest calculation of large files by using a faster hashing algorithm. This is available for Bazel 6.4+.
 - `--jobs`
