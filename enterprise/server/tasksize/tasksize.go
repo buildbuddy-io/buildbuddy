@@ -72,7 +72,7 @@ const (
 	// the firecracker runtime. It was computed as the minimum memory needed to
 	// execute a trivial task (i.e. pwd) in Firecracker, multiplied by ~1.5x so
 	// that we have some wiggle room.
-	FirecrackerAdditionalMemEstimateBytes = int64(150 * 1e6) // 150 MB
+	FirecrackerAdditionalMemEstimateBytes = int64(200 * 1e6) // 200 MB
 
 	// DockerInFirecrackerAdditionalMemEstimateBytes is an additional memory
 	// estimate added for docker-in-firecracker actions. It was computed as the
