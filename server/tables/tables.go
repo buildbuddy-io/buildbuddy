@@ -751,6 +751,9 @@ func (wf *Workflow) TableName() string {
 }
 
 // A ScheduledRun represents a Workflow that should be run at a specific time according to a cron expression.
+//
+// These are specified in the Workflow config (buildbuddy.yaml), but are stored in the database so that we don't have
+// to keep fetching that file. The database entries are updated when there is a push to the default branch of the repo.
 type ScheduledRun struct {
 	Model
 
@@ -773,7 +776,7 @@ type ScheduledRun struct {
 	//
 	// TODO: This is not guaranteed to be idempotent. If the lease duration is long enough, duplicates are unlikely
 	// to happen because the servers only need to dispatch the execution, which should be quick. But it's not guaranteed.
-	LeaseExpiresUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
+	LeaseExpiresUsec int64
 }
 
 func (sr *ScheduledRun) TableName() string {
@@ -1454,6 +1457,7 @@ func RegisterTables() {
 	registerTable("RE", &GitRepository{})
 	registerTable("SE", &Session{})
 	registerTable("SK", &Secret{})
+	registerTable("SR", &ScheduledRun{})
 	registerTable("TA", &Target{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("TO", &Token{})
