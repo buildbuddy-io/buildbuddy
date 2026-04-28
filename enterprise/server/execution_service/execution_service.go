@@ -627,6 +627,9 @@ func filterExecutionDownloadsFromTree(tree *repb.Tree, bitmap *roaring.Bitmap, d
 		// Then recurse into child directories in protobuf order so later file
 		// indexes stay aligned with the bitmap.
 		for _, childNode := range dir.GetDirectories() {
+			if digest.IsEmptyHash(childNode.GetDigest(), digestFunction) && childNode.GetDigest().GetSizeBytes() == 0 {
+				continue
+			}
 			childDir, ok := directoriesByDigest[digest.String(childNode.GetDigest())]
 			if !ok {
 				return status.NotFoundErrorf("directory %q missing from GetTree response", childNode.GetName())

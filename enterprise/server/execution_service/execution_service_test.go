@@ -241,6 +241,7 @@ func TestGetExecutionDownloads(t *testing.T) {
 		require.NoError(t, err)
 		tinyDigest, err := digest.Compute(strings.NewReader(name+"-tiny"), digestFunction)
 		require.NoError(t, err)
+		emptyDirDigest := &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
 
 		subdir := &repb.Directory{
 			Files: []*repb.FileNode{
@@ -258,6 +259,7 @@ func TestGetExecutionDownloads(t *testing.T) {
 			},
 			Directories: []*repb.DirectoryNode{
 				{Name: "subdir", Digest: subdirDigest},
+				{Name: "test.outputs", Digest: emptyDirDigest},
 			},
 		}
 		rootDigest, err := cachetools.UploadProto(ownerCtx, app.GetByteStreamClient(), instanceName, digestFunction, rootDir)
