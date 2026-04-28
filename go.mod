@@ -64,6 +64,7 @@ require (
 	github.com/bazelbuild/rules_go v0.60.0
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
+	github.com/beevik/etree v1.6.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bojand/ghz v0.120.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
@@ -249,7 +250,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.19 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df // indirect
-	github.com/beevik/etree v1.6.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
