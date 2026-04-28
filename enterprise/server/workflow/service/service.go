@@ -61,6 +61,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -116,6 +117,9 @@ const (
 	// some extra time for the CI runner to finish publishing the "outer"
 	// workflow invocation results after the user-specified timeout is reached.
 	timeoutGracePeriod = 10 * time.Minute
+
+	duplicateCanceledStage    = "duplicate_canceled"
+	duplicateCancelErrorStage = "duplicate_cancel_error"
 
 	// Only one server should try to schedule a workflow at a time. It has this much
 	// time to dispatch the workflow before another server can acquire the lease and schedule the run.
@@ -1454,8 +1458,9 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		return nil
 	}
 
+	log.CtxInfof(ctx, "Checking if scheduled workflows should be updated: %v", shouldUpdateScheduledWorkflows(wd, wf.GitRepository))
 	if shouldUpdateScheduledWorkflows(wd, wf.GitRepository) {
-		err := ws.updateScheduledWorkflows(ctx, wf.GitRepository, wf.AccessToken, wf.DefaultBranch)
+		err := ws.updateScheduledWorkflows(ctx, wf.GitRepository, cfg, wd.TargetRepoDefaultBranch)
 		if err != nil {
 			return err
 		}
@@ -1492,6 +1497,89 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, action *config.Action, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
+		return nil
+	}
+
+	// Don't cancel workflows on the default branch.
+	if wd.PushedBranch == wd.TargetRepoDefaultBranch || wd.TargetRepoDefaultBranch == "" {
+		return nil
+	}
+
+	authCtx := ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
+	// but for correctness we could use page_token to make sure we don't miss any.
+	// By default, this query returns up to 15 invocations.
+	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(authCtx, &inpb.SearchInvocationRequest{
+		Query: &inpb.InvocationQuery{
+			GroupId:    wf.GroupID,
+			RepoUrl:    wf.RepoURL,
+			BranchName: wd.PushedBranch,
+			Pattern:    action.Name,
+			Role:       []string{"CI_RUNNER"},
+			Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
+		},
+	})
+	if err != nil {
+		return status.WrapError(err, "search in-progress workflows")
+	}
+
+	cancelled := 0
+	for _, inv := range searchResp.GetInvocation() {
+		// Don't cancel the workflow that was just started.
+		if inv.GetInvocationId() == newInvocationID {
+			continue
+		}
+		if err := ws.env.GetRemoteExecutionService().Cancel(authCtx, inv.GetInvocationId()); err != nil {
+			emitDuplicateWorkflowCancellationMetric(wf.GroupID, action, duplicateCancelErrorStage)
+			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow %s on branch %q: %s", inv.GetInvocationId(), wd.PushedBranch, err)
+			continue
+		}
+		emitDuplicateWorkflowCancellationMetric(wf.GroupID, action, duplicateCanceledStage)
+		cancelled++
+	}
+
+	if cancelled > 0 {
+		log.CtxInfof(ctx, "Cancelled %d in-progress workflow invocation(s) for repo %q branch %q", cancelled, wf.RepoURL, wd.PushedBranch)
+	}
+	return nil
+}
+
+func emitDuplicateWorkflowCancellationMetric(groupID string, action *config.Action, stage string) {
+	os := strings.ToLower(action.OS)
+	switch os {
+	case "":
+		os = platform.LinuxOperatingSystemName
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
+	default:
+		os = "unknown"
+	}
+
+	arch := strings.ToLower(action.Arch)
+	switch arch {
+	case "":
+		arch = platform.AMD64ArchitectureName
+	case platform.AMD64ArchitectureName, platform.ARM64ArchitectureName:
+	default:
+		arch = "unknown"
+	}
+
+	selfHosted := "false"
+	if action.SelfHosted {
+		selfHosted = "true"
+	}
+
+	metrics.RemoteRunnerRequests.With(prometheus.Labels{
+		metrics.GroupID:    groupID,
+		metrics.OpLabel:    metrics.WorkflowLabel,
+		metrics.Stage:      stage,
+		metrics.OS:         os,
+		metrics.Arch:       arch,
+		metrics.SelfHosted: selfHosted,
+	}).Inc()
+}
+
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
 	opts := retry.DefaultOptions()
@@ -1518,6 +1606,19 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			}
 
 			continue // retry
+		}
+
+		cancelDuplicates := false
+		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
+		}
+		if action.AllowConcurrentRuns != nil {
+			cancelDuplicates = !*action.AllowConcurrentRuns
+		}
+		if cancelDuplicates {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, key, wf, wd, invocationID); err != nil {
+				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
+			}
 		}
 
 		return executionID, nil
@@ -1890,13 +1991,13 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 
 // updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,
 // and updates the db accordingly.
-func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *tables.GitRepository, cfg *config.BuildBuddyConfig, accessToken, defaultBranch string) error {
-	var existing []*tables.ScheduledRun
-	if err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_repository_schedules").Raw(`
+func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *tables.GitRepository, cfg *config.BuildBuddyConfig, defaultBranch string) error {
+	existing, err := db.ScanAll(ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_repository_schedules").Raw(`
 		SELECT *
 		FROM "ScheduledRuns"
 		WHERE group_id = ? AND repo_url = ?
-	`, repo.GroupID, repo.RepoURL).Find(&existing); err != nil {
+	`, repo.GroupID, repo.RepoURL), &tables.ScheduledRun{})
+	if err != nil {
 		return err
 	}
 	dbSchedules := make(map[string]*tables.ScheduledRun, len(existing))
@@ -1905,7 +2006,7 @@ func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *t
 	}
 
 	now := ws.env.GetClock().Now().UTC()
-	currentSchedules := make(set.Set[string], len(cfg.Actions))
+	currentSchedules := make(set.Set[string])
 	if cfg != nil {
 		for _, action := range cfg.Actions {
 			if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
@@ -1940,14 +2041,18 @@ func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *t
 		}
 	}
 
+	staleScheduleIDs := make([]string, 0, len(dbSchedules))
 	for _, schedule := range dbSchedules {
 		if _, ok := currentSchedules[schedule.ScheduleID]; ok {
 			continue
 		}
+		staleScheduleIDs = append(staleScheduleIDs, schedule.ScheduleID)
+	}
+	if len(staleScheduleIDs) > 0 {
 		if err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_stale_scheduled_runs").Raw(`
 			DELETE FROM "ScheduledRuns"
-			WHERE schedule_id = ?
-		`, schedule.ScheduleID).Exec().Error; err != nil {
+			WHERE schedule_id IN ?
+		`, staleScheduleIDs).Exec().Error; err != nil {
 			return err
 		}
 	}
@@ -1961,6 +2066,8 @@ func workflowScheduleID(groupID, repoURL, actionName, cronExpr string) string {
 // On pushes to the default branch, we should check whether the workflow config for scheduled workflows has changed,
 // so we can update the db accordingly.
 func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.GitRepository) bool {
-	return wd.EventName == webhook_data.EventName.Push &&
+	return repo != nil &&
+		wd.TargetRepoDefaultBranch != "" &&
+		wd.EventName == webhook_data.EventName.Push &&
 		wd.PushedBranch == wd.TargetRepoDefaultBranch
 }
