@@ -147,8 +147,9 @@ func runProbe() error {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
 	}
-	if *tags != "" {
-		args = append(args, "--build_metadata=TAGS="+*tags)
+	trimmedTags := strings.TrimSpace(*tags)
+	if trimmedTags != "" {
+		args = append(args, "--build_metadata=TAGS="+trimmedTags)
 	}
 	cmd := exec.Command(*bazelBinary, args...)
 	cmd.Dir = workspaceDir
