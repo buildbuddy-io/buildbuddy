@@ -59,6 +59,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -81,7 +82,8 @@ var (
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
-	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
+	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
 	// run at a commit because it is untrusted. An approving review at the
@@ -1470,6 +1472,53 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, wfName string, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
+		return nil
+	}
+
+	// Don't cancel workflows on the default branch.
+	if wd.PushedBranch == wd.TargetRepoDefaultBranch || wd.TargetRepoDefaultBranch == "" {
+		return nil
+	}
+
+	authCtx := ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
+	// but for correctness we could use page_token to make sure we don't miss any.
+	// By default, this query returns up to 15 invocations.
+	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(authCtx, &inpb.SearchInvocationRequest{
+		Query: &inpb.InvocationQuery{
+			GroupId:    wf.GroupID,
+			RepoUrl:    wf.RepoURL,
+			BranchName: wd.PushedBranch,
+			Pattern:    wfName,
+			Role:       []string{"CI_RUNNER"},
+			Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
+		},
+	})
+	if err != nil {
+		return status.WrapError(err, "search in-progress workflows")
+	}
+
+	cancelled := 0
+	for _, inv := range searchResp.GetInvocation() {
+		// Don't cancel the workflow that was just started.
+		if inv.GetInvocationId() == newInvocationID {
+			continue
+		}
+		if err := ws.env.GetRemoteExecutionService().Cancel(authCtx, inv.GetInvocationId()); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow %s on branch %q: %s", inv.GetInvocationId(), wd.PushedBranch, err)
+			continue
+		}
+		cancelled++
+	}
+
+	if cancelled > 0 {
+		log.CtxInfof(ctx, "Cancelled %d in-progress workflow invocation(s) for repo %q branch %q", cancelled, wf.RepoURL, wd.PushedBranch)
+	}
+	return nil
+}
+
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
 	opts := retry.DefaultOptions()
@@ -1496,6 +1545,19 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			}
 
 			continue // retry
+		}
+
+		cancelDuplicates := false
+		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
+		}
+		if action.AllowConcurrentRuns != nil {
+			cancelDuplicates = !*action.AllowConcurrentRuns
+		}
+		if cancelDuplicates {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action.Name, key, wf, wd, invocationID); err != nil {
+				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
+			}
 		}
 
 		return executionID, nil
