@@ -1472,7 +1472,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
-func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, wfName string, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, action *config.Action, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
 	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
 		return nil
 	}
@@ -1491,7 +1491,7 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 			GroupId:    wf.GroupID,
 			RepoUrl:    wf.RepoURL,
 			BranchName: wd.PushedBranch,
-			Pattern:    wfName,
+			Pattern:    action.Name,
 			Role:       []string{"CI_RUNNER"},
 			Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
 		},
@@ -1507,9 +1507,11 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 			continue
 		}
 		if err := ws.env.GetRemoteExecutionService().Cancel(authCtx, inv.GetInvocationId()); err != nil {
+			emitCancellationMetric(wf.GroupID, action, "duplicate_cancel_error")
 			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow %s on branch %q: %s", inv.GetInvocationId(), wd.PushedBranch, err)
 			continue
 		}
+		emitCancellationMetric(wf.GroupID, action, "duplicate_cancel")
 		cancelled++
 	}
 
@@ -1517,6 +1519,40 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		log.CtxInfof(ctx, "Cancelled %d in-progress workflow invocation(s) for repo %q branch %q", cancelled, wf.RepoURL, wd.PushedBranch)
 	}
 	return nil
+}
+
+func emitCancellationMetric(groupID string, action *config.Action, stage string) {
+	os := strings.ToLower(action.OS)
+	switch os {
+	case "":
+		os = platform.LinuxOperatingSystemName
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
+	default:
+		os = "unknown"
+	}
+
+	arch := strings.ToLower(action.Arch)
+	switch arch {
+	case "":
+		arch = platform.AMD64ArchitectureName
+	case platform.AMD64ArchitectureName, platform.ARM64ArchitectureName:
+	default:
+		arch = "unknown"
+	}
+
+	selfHosted := "false"
+	if action.SelfHosted {
+		selfHosted = "true"
+	}
+
+	metrics.RemoteRunnerRequests.With(prometheus.Labels{
+		metrics.GroupID:    groupID,
+		metrics.OpLabel:    metrics.WorkflowLabel,
+		metrics.Stage:      stage,
+		metrics.OS:         os,
+		metrics.Arch:       arch,
+		metrics.SelfHosted: selfHosted,
+	}).Inc()
 }
 
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
@@ -1555,7 +1591,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			cancelDuplicates = !*action.AllowConcurrentRuns
 		}
 		if cancelDuplicates {
-			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action.Name, key, wf, wd, invocationID); err != nil {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, key, wf, wd, invocationID); err != nil {
 				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 			}
 		}
