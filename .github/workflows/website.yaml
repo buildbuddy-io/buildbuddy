@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           fetch-depth: 2
 
@@ -31,7 +31,7 @@ jobs:
           touch .nojekyll
 
       - name: Deploy Website 🚀
-        uses: JamesIves/github-pages-deploy-action@4.1.0
+        uses: JamesIves/github-pages-deploy-action@3dbacc7e69578703f91f077118b3475862cb09b8 # 4.1.0
         with:
           branch: gh-pages
           folder: website/build
@@ -67,7 +67,7 @@ jobs:
 
       - name: Post to Slack
         if: steps.changelog-msg.outputs.text != ''
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3
         with:
           status: custom
           custom_payload: |

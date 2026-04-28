@@ -73,7 +73,7 @@ jobs:
           }
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # This step would list out all files under $vs2022Path for debugging purposes.
       # Uncomment if GitHub released a new Windows image and you need to find the new path of cl.exe.
