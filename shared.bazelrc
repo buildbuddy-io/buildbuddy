@@ -353,6 +353,7 @@ common:ci-shared --config=download-minimal
 common:ci-shared --build_metadata=ROLE=CI
 common:ci-shared --flaky_test_attempts=2
 common:ci-shared --repository_cache=~/repo-cache/
+common:ci-shared --announce_rc
 common:ci-shared --color=yes
 
 # Configuration used for untrusted GitHub actions-based CI

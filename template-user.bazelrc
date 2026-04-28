@@ -33,7 +33,8 @@
 #common --experimental_repository_cache_hardlinks
 #
 # Cache your Go module downloads using the host Go module cache
-#common --repo_env=GO_REPOSITORY_USE_HOST_CACHE=1
+#common --repo_env=GO_REPOSITORY_USE_HOST_MODCACHE=1
+#common --repo_env=GOMODCACHE=/ABSOLUTE_PATH_TO_YOUR_GO_MODULE_CACHE
 #
 # Print out test logs if there is any error
 #common --test_output=errors

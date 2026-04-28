@@ -75,6 +75,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
+        with:
+          gomodcache: C:/Users/runneradmin/go/pkg/mod
+
       # This step would list out all files under $vs2022Path for debugging purposes.
       # Uncomment if GitHub released a new Windows image and you need to find the new path of cl.exe.
       # TODO(sluongng): Make buildbuddy-toolchains detect the path automatically.
