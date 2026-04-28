@@ -2,15 +2,15 @@ name: "Release CLI"
 
 on:
   workflow_dispatch:
-  pull_request_target:
-    types:
-      - closed
+  push:
+    branches:
+      - master
     paths:
       - "cli/**"
 
 jobs:
   push-tag:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.body, 'release skip'))
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'release skip')
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
