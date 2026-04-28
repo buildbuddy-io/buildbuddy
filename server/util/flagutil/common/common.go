@@ -80,9 +80,14 @@ type WrappingValue interface {
 	WrappedValue() flag.Value
 }
 
-type Appendable interface {
-	// AppendSlice appends the passed slice to this flag.Value.
-	AppendSlice(any) error
+// Accumulable may be implemented by collection-backed flag types (slices, maps)
+// to indicate that they accumulate entries across repeated set-operations
+// rather than being replaced. When the caller requests append semantics (e.g.
+// append=true on SetValueForFlagName), flags implementing Accumulable have
+// Accumulate called on them with the new value: slice flags append, map flags
+// merge later-wins on key conflicts.
+type Accumulable interface {
+	Accumulate(any) error
 }
 
 // Expandable may be implemented by custom flag types to indicate that they
@@ -159,65 +164,68 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be
-// set again except to append to them, in the case of slices. To force the
-// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
-// be appended to the current slice value; otherwise, a slice value will replace
-// the current slice value. appendSlice has no effect if the values in question
-// are not slices.
-func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
+// set again except to accumulate into them, in the case of collection flags. To
+// force the setting of a flag, pass a nil map. If accumulate is true, a slice
+// value will be appended to the current slice value and a map value will be
+// merged into the current map value; otherwise, the value will replace the
+// current value. accumulate has no effect if the flag is not Accumulable.
+func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, accumulate bool) error {
 	flg := flagset.Lookup(name)
 	if flg == nil {
 		return status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	return setValueFromFlagName(flagset, flg.Value, name, newValue, setFlags, appendSlice)
+	return setValueFromFlagName(flagset, flg.Value, name, newValue, setFlags, accumulate)
 }
 
-func setValueFromFlagName(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+func setValueFromFlagName(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setHooks ...func()) error {
 	if v, ok := flagValue.(SetValueForFlagNameHooked); ok {
 		setHooks = append(setHooks, v.SetValueForFlagNameHook)
 	}
-	return SetValueWithCustomIndirectBehavior(flagset, flagValue, name, newValue, setFlags, appendSlice, setValueFromFlagName, setHooks...)
+	return SetValueWithCustomIndirectBehavior(flagset, flagValue, name, newValue, setFlags, accumulate, setValueFromFlagName, setHooks...)
 }
 
-type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error
+type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setHooks ...func()) error
 
 // SetValueWithCustomIndirectBehavior sets the value for a flag, but if the flag
 // passed is an alias for another flag or wraps another flag.Value, it instead
 // calls setValueForIndirect with the new flag.Value. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be
-// set again except to append to them, in the case of slices. To force the
-// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
-// be appended to the current slice value; otherwise, a slice value will replace
-// the current slice value. appendSlice has no effect if the values in question
-// are not slices. setHooks is a slice of functions to call in order if the
-// flag.Value will be set.
-func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
+// set again except to accumulate into them, in the case of collection flags. To
+// force the setting of a flag, pass a nil map. If accumulate is true, a slice
+// value will be appended to the current slice value and a map value will be
+// merged into the current map value; otherwise, the value will replace the
+// current value. accumulate has no effect if the flag is not Accumulable.
+// setHooks is a slice of functions to call in order if the flag.Value will be
+// set.
+func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
 	if v, ok := flagValue.(NameAliasable); ok && v.IsNameAliasing() {
 		aliasedFlag := flagset.Lookup(v.AliasedName())
 		if aliasedFlag == nil {
 			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
 		}
-		return setValueForIndirect(flagset, aliasedFlag.Value, v.AliasedName(), newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, aliasedFlag.Value, v.AliasedName(), newValue, setFlags, accumulate, setHooks...)
 	}
 	// Unwrap any wrapper values (e.g. DeprecatedFlag)
 	if v, ok := flagValue.(WrappingValue); ok {
-		return setValueForIndirect(flagset, v.WrappedValue(), name, newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, v.WrappedValue(), name, newValue, setFlags, accumulate, setHooks...)
 	}
-	var appendFlag Appendable
-	// For slice flags, append the values to the existing values if appendSlice is true
-	if v, ok := flagValue.(Appendable); ok && appendSlice {
-		appendFlag = v
+	var accumulateFlag Accumulable
+	if accumulate {
+		// For collection flags (slices, maps), accumulate into the existing value.
+		if v, ok := flagValue.(Accumulable); ok {
+			accumulateFlag = v
+		}
 	}
-	// For non-append flags, skip the value if it has already been set
-	if _, ok := setFlags[name]; appendFlag == nil && ok {
+	// For non-accumulable flags, skip the value if it has already been set
+	if _, ok := setFlags[name]; accumulateFlag == nil && ok {
 		return nil
 	}
 	for _, setHook := range setHooks {
 		setHook()
 	}
-	if appendFlag != nil {
-		if err := appendFlag.AppendSlice(newValue); err != nil {
-			return status.InternalErrorf("Error encountered appending to flag %s: %s", name, err)
+	if accumulateFlag != nil {
+		if err := accumulateFlag.Accumulate(newValue); err != nil {
+			return status.InternalErrorf("Error encountered accumulating into flag %s: %s", name, err)
 		}
 		return nil
 	}

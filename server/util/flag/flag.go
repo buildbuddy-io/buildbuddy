@@ -84,6 +84,10 @@ func Slice[T any](name string, value []T, usage string, tags ...flagtags.Taggabl
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
 
+func Map[K comparable, V any](name string, value map[K]V, usage string, tags ...flagtags.Taggable) *map[K]V {
+	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
+}
+
 func Struct[T any](name string, value T, usage string, tags ...flagtags.Taggable) *T {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }

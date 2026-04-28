@@ -73,6 +73,11 @@ func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, us
 			Tag[T, *flagtypes.JSONStructFlag[T]](flagset, name, tags...)
 			break
 		}
+		if reflect.TypeOf(value).Elem().Kind() == reflect.Map {
+			flagtypes.JSONMapVar(flagset, value, name, defaultValue, usage)
+			Tag[T, *flagtypes.JSONMapFlag[T]](flagset, name, tags...)
+			break
+		}
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
 	}
 }
