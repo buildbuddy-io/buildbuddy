@@ -90,6 +90,7 @@ func (a *Action) GetGitFetchFilters() []string {
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+	Schedule    *ScheduleTrigger    `yaml:"schedule"`
 }
 
 func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
@@ -120,9 +121,12 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
-// TODO(Maggie): Default this to false, after testing the merge commit SHA is stable.
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
 	return t.GetMergeWithBase() && (t.ForceManualMergeWithBase == nil || *t.ForceManualMergeWithBase)
+}
+
+type ScheduleTrigger struct {
+	Crons []string `yaml:"crons"`
 }
 
 type ResourceRequests struct {
