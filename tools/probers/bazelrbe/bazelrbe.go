@@ -26,6 +26,7 @@ var (
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
 	inputSizeBytes     = flag.Int("input_size_bytes", 100_000, "Size of each input file")
+	tags               = flag.String("tags", "", "Comma-separated list of tags to pass to Bazel via --build_metadata=TAGS=...")
 )
 
 // createEchoRule creates a target that generates an action that echoes the contents of each input file to a separate
@@ -145,6 +146,9 @@ func runProbe() error {
 	if *bazelArgs != "" {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
+	}
+	if *tags != "" {
+		args = append(args, "--build_metadata=TAGS="+*tags)
 	}
 	cmd := exec.Command(*bazelBinary, args...)
 	cmd.Dir = workspaceDir
