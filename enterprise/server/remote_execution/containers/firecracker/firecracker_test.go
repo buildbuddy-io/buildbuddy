@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
@@ -83,9 +84,9 @@ const (
 	imageWithDockerV28Installed = platform.Ubuntu24_04Image
 	dockerDindImage             = "gcr.io/flame-public/test-docker-dind@sha256:68f6d9ab84623d1116c5432a3b924a07ee09960e6129ca1cb03ef14010588cb4"
 
-	// Minimum memory needed for a firecracker VM. This may need to be increased
-	// if the size of initrd.cpio increases.
-	minMemSizeMB = 200
+	// Minimum memory needed for a firecracker VM.
+	// The tasksize constant may need to be increased if the size of initrd.cpio increases.
+	minMemSizeMB = tasksize.FirecrackerAdditionalMemEstimateBytes / 1e6
 
 	diskCacheSize = 10_000_000_000  // 10GB
 	fileCacheSize = 100_000_000_000 // 100GB
