@@ -9,9 +9,10 @@ import (
 var (
 	// EventName holds canonical webhook event name constants.
 	EventName struct {
-		Push           string
-		PullRequest    string
-		ManualDispatch string
+		Push              string
+		PullRequest       string
+		ManualDispatch    string
+		ScheduledDispatch string
 	}
 )
 
@@ -19,6 +20,7 @@ func init() {
 	EventName.Push = "push"
 	EventName.PullRequest = "pull_request"
 	EventName.ManualDispatch = "manual_dispatch"
+	EventName.ScheduledDispatch = "scheduled"
 }
 
 func DebugString(wd *interfaces.WebhookData) string {

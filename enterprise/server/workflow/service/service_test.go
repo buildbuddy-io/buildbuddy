@@ -1090,12 +1090,12 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 func TestScheduledWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
-	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	_ = runBBServer(ctx, t, te)
+	authCtx, _, gid := authenticate(t, ctx, te)
 	createWorkflow(t, te, repoURL, gid, false)
 	provider.FileContents = map[string]string{
 		config.FilePath: `
@@ -1119,7 +1119,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Should Run",
-		Branch:     "main",
 		// Run every hour, on the hour.
 		CronExpr:    "0 * * * *",
 		NextRunUsec: now.UnixMicro(),
@@ -1130,7 +1129,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Should Run 2",
-		Branch:     "main",
 		// Run every hour, 5 minutes before the hour.
 		CronExpr:    "55 * * * *",
 		NextRunUsec: fiveMinutesAgo.UnixMicro(),
@@ -1141,7 +1139,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Not Time Yet",
-		Branch:     "main",
 		// Run every day at 7PM UTC.
 		CronExpr:    "0 19 * * *",
 		NextRunUsec: sevenPM.UnixMicro(),
@@ -1152,7 +1149,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Already Leased",
-		Branch:     "main",
 		// Run every hour, on the hour.
 		CronExpr:         "0 * * * *",
 		NextRunUsec:      now.UnixMicro(),
@@ -1164,14 +1160,14 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Expired Lease",
-		Branch:     "main",
 		// Run every hour, on the hour.
 		CronExpr:         "0 * * * *",
 		NextRunUsec:      now.UnixMicro(),
 		LeaseExpiresUsec: now.Add(-1 * time.Minute).UnixMicro(),
 	})
 
-	err := te.GetWorkflowService().RunScheduledWorkflows(ctx)
+	// Intentionally use a non-authenticated context, like the cron scheduler would.
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
 	require.NoError(t, err)
 
 	expectedActionNames := []string{"Should Run", "Should Run 2", "Expired Lease"}
@@ -1179,7 +1175,8 @@ actions:
 	for range expectedActionNames {
 		select {
 		case execReq := <-execClient.executeRequests:
-			actionName := getExecutedActionName(t, ctx, te, execReq.Payload)
+			// When fetching the executions, make sure to use the authenticated context.
+			actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
 			executedActionNames = append(executedActionNames, actionName)
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for scheduled workflow execution")
@@ -1211,10 +1208,44 @@ actions:
 	require.Equal(t, int64(0), notTimeYet.LeaseExpiresUsec)
 }
 
+func TestScheduledWorkflow_NoEligibleSchedules(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// All next run times are in the future.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "future-1",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Some Action",
+		CronExpr:    "0 19 * * *",
+		NextRunUsec: now.Add(1 * time.Hour).UnixMicro(),
+	})
+
+	// Intentionally use a non-authenticated context, like the cron scheduler would.
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// No executions should have been started.
+	require.Zero(t, len(te.GetRemoteExecutionClient().(*fakeExecutionClient).executeRequests))
+
+	// Schedule rows should be untouched.
+	future1 := getScheduledRun(t, te, "future-1")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), future1.NextRunUsec)
+	require.Equal(t, int64(0), future1.LeaseExpiresUsec)
+}
+
 func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
-	ctx, _, gid := authenticate(t, ctx, te)
+	authCtx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	provider := setupFakeGitProvider(t, te)
@@ -1239,7 +1270,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Test",
-		Branch:     "main",
 		// Run every hour, on the hour.
 		CronExpr:    "0 * * * *",
 		NextRunUsec: now.UnixMicro(),
@@ -1250,7 +1280,6 @@ actions:
 		GroupID:    gid,
 		RepoURL:    repoURL,
 		ActionName: "Test 2",
-		Branch:     "main",
 		// Run every hour, on the hour.
 		CronExpr:    "0 * * * *",
 		NextRunUsec: now.UnixMicro(),
@@ -1263,7 +1292,8 @@ actions:
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errCh <- te.GetWorkflowService().RunScheduledWorkflows(ctx)
+			// Intentionally use a non-authenticated context, like the cron scheduler would.
+			errCh <- te.GetWorkflowService().RunScheduledWorkflows(t.Context())
 		}()
 	}
 	wg.Wait()
@@ -1277,7 +1307,8 @@ actions:
 	for range 2 {
 		select {
 		case execReq := <-execClient.executeRequests:
-			actionName := getExecutedActionName(t, ctx, te, execReq.Payload)
+			// When fetching the executions, make sure to use the authenticated context.
+			actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
 			executedActionNames = append(executedActionNames, actionName)
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for scheduled workflow execution")

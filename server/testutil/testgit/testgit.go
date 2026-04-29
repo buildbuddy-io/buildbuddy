@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-github/v59/github"
 )
 
 const (
@@ -183,6 +184,14 @@ type FakeGitHubApp struct {
 
 func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
 	return a.Token, nil
+}
+
+func (a *FakeGitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
+	return &github.InstallationToken{Token: &a.Token}, nil
+}
+
+func (a *FakeGitHubApp) GetDefaultBranch(ctx context.Context, repoURL string, token string) (string, error) {
+	return "main", nil
 }
 
 func (a *FakeGitHubApp) AppID() int64 {

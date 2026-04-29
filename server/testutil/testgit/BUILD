@@ -12,5 +12,6 @@ go_library(
         "//server/testutil/testfs",
         "//server/testutil/testshell",
         "//server/util/status",
+        "@com_github_google_go_github_v59//github",
     ],
 )
