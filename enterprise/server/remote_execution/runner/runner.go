@@ -976,6 +976,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	onDisk, _ := c.IsImageCached(ctx)
 	pullStart := time.Now()
 	pullErr := c.PullImage(ctx, creds)
+	pullDuration := time.Since(pullStart)
 	container.RecordImageFetchMetrics(
 		c.IsolationType(),
 		oci.RegistryETLDPlusOne(platProps.ContainerImage),
@@ -984,8 +985,9 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		!creds.IsEmpty(),
 		platProps.UseOCIFetcher,
 		pullErr,
-		time.Since(pullStart),
+		pullDuration,
 	)
+	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
 	if pullErr != nil {
 		return pullErr
 	}

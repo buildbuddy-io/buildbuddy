@@ -519,6 +519,15 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 	metrics.ImageFetchDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
 }
 
+func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
+	if err == nil {
+		return
+	}
+	log.CtxWarningf(ctx,
+		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v duration=%s err=%s",
+		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, duration, err)
+}
+
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string, useOCIFetcher bool) error {
@@ -537,6 +546,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 
 	start := time.Now()
 	cached, err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef)
+	duration := time.Since(start)
 	RecordImageFetchMetrics(
 		ctr.IsolationType(),
 		oci.RegistryETLDPlusOne(imageRef),
@@ -545,8 +555,9 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		!creds.IsEmpty(),
 		useOCIFetcher,
 		err,
-		time.Since(start),
+		duration,
 	)
+	LogImagePullError(ctx, imageRef, ctr.IsolationType(), metrics.ImageFetchTriggerExecution, useOCIFetcher, err, duration)
 	if err != nil {
 		// make sure we always return Unavailable if the context deadline
 		// was exceeded
