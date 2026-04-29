@@ -343,7 +343,9 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		return args, nil
 	}
 
-	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	// TODO: consider always starting an interactive login, or maybe only when
+	// using an org-specific subdomain.
+	apiKey, err := getAPIKey(false /*=interactive*/)
 	if err != nil {
 		// If we're not in a git repo, we'll fail to read the repo-specific
 		// config.
@@ -401,10 +403,14 @@ func isSupportedCommand(command string) bool {
 // GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
-// and we're running in a tty, this will prompt the user to set it.
+// and we're running in a tty, this will start the login flow.
 func GetAPIKey() (string, error) {
+	return getAPIKey(true /*=interactive*/)
+}
+
+func getAPIKey(interactive bool) (string, error) {
 	var err error
-	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
+	apiKey := strings.TrimSpace(os.Getenv("BUILDBUDDY_API_KEY"))
 	if apiKey != "" {
 		return apiKey, nil
 	}
@@ -420,7 +426,7 @@ func GetAPIKey() (string, error) {
 	}
 	// If an API key is not set, and we're running in a terminal, start the
 	// login flow.
-	if terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
 		if _, err = HandleLogin([]string{}); err != nil {
 			return "", status.WrapError(err, "handle login")
 		}

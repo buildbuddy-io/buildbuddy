@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -17,5 +17,17 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "login_test",
+    srcs = ["login_test.go"],
+    embed = [":login"],
+    deps = [
+        "//cli/storage",
+        "//server/testutil/testgit",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
     ],
 )
