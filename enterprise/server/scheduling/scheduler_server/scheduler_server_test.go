@@ -1175,6 +1175,42 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
+func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+
+	// Register two nodes with distinct labels.
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.node.AssignableMilliCpu = 1000
+	executor1.node.Labels = map[string]string{"foo": "1", "bar": "2"}
+	executor1.Register()
+
+	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2.node.AssignableMilliCpu = 1000
+	executor2.node.Labels = map[string]string{"foo": "a", "bar": "2"}
+	executor2.Register()
+
+	var rsp *scpb.RegisterAndStreamWorkResponse
+
+	// Schedule a task that requires labels matching only executor1.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "foo=1,bar=2"})
+	// Ensure the task was enqueued on executor1, but don't have executor1
+	// claim the task, so that it's eligible to be enqueued as part of
+	// AskForMoreWork.
+	rsp = <-executor1.schedulerMessages
+	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+
+	// Have executor2 ask for more work now. The scheduler should not schedule
+	// any work on executor2 because the task's requested labels don't match
+	// executor2's labels. It should only reply with an AskForMoreWorkResponse
+	// to increase the client backoff.
+	executor2.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp = <-executor2.schedulerMessages
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
 func TestGetExecutionNodes(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")

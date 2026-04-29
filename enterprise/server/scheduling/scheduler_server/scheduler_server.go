@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"regexp"
 	"slices"
@@ -705,6 +706,59 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 		}
 	}
 	return id, nil
+}
+
+// Parses the requested executor labels from the "debug-executor-labels"
+// platform property. The value is a comma-separated list of "key=value" pairs;
+// entries without an "=" are treated as a key with an empty value.
+func parseDebugExecutorLabels(task *repb.ExecutionTask) map[string]string {
+	raw := platform.FindEffectiveValue(task, "debug-executor-labels")
+	if raw == "" {
+		return nil
+	}
+	out := make(map[string]string)
+	for entry := range strings.SplitSeq(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(entry, "=")
+		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return out
+}
+
+// executorHasAllLabels reports whether the executor's labels contain every
+// requested key with a matching value.
+func executorHasAllLabels(executorLabels, requested map[string]string) bool {
+	for k, v := range requested {
+		if executorLabels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// If the debug-executor-labels platform property is set, filters the given
+// nodes to those whose labels match every requested key=value pair. If no
+// nodes match, fires an internal alert and returns an unfiltered list so
+// scheduling can proceed, making the debug-executor-labels best effort.
+func filterToDebugExecutorLabels(ctx context.Context, nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+	requested := parseDebugExecutorLabels(task)
+	if len(requested) == 0 {
+		return nodes
+	}
+	var out []*executionNode
+	for _, n := range nodes {
+		if executorHasAllLabels(n.GetLabels(), requested) {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "unrecognized_debug_executor_labels", "no executors found with debug-executor-labels %v; scheduling without filter", slices.Sorted(maps.Keys(requested)))
+		return nodes
+	}
+	return out
 }
 
 func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, pattern string) []*executionNode {
@@ -1745,6 +1799,9 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
 			continue
 		}
+		if requested := parseDebugExecutorLabels(fullTask); len(requested) > 0 && !executorHasAllLabels(node.GetLabels(), requested) {
+			continue
+		}
 
 		tasksThatFit = append(tasksThatFit, task)
 	}
@@ -2246,6 +2303,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				log.CtxWarningf(ctx, "No executors found matching routing config %q in pool %q with os %q with arch %q", routingConfig, pool, os, arch)
 				return status.UnavailableErrorf("no executors found matching routing config")
 			}
+			candidateNodes = filterToDebugExecutorLabels(ctx, candidateNodes, task)
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
 
