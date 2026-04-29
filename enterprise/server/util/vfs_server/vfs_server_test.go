@@ -502,6 +502,110 @@ func TestFileLocking(t *testing.T) {
 	}
 }
 
+func TestRenameDisplacedNodeCanStillBeOpened(t *testing.T) {
+	server, env := newServer(t)
+	ctx := context.Background()
+
+	prepare(t, env, server, &repb.Tree{})
+
+	// Create file "A" and file "B" with different contents.
+	writeToVFS(t, server, "A", "content-A")
+	idB := writeToVFS(t, server, "B", "content-B")
+
+	// Rename A -> B. This displaces B (inode idB).
+	_, err := server.Rename(ctx, &vfspb.RenameRequest{
+		OldParentId: vfscommon.RootInodeId,
+		OldName:     "A",
+		NewParentId: vfscommon.RootInodeId,
+		NewName:     "B",
+	})
+	require.NoError(t, err)
+
+	// The displaced inode should still be openable since the kernel hasn't
+	// forgotten it yet (simulating a concurrent open).
+	openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
+		Id:    idB,
+		Flags: uint32(os.O_RDONLY),
+	})
+	require.NoError(t, err, "should be able to open displaced inode before Forget")
+
+	readRsp, err := server.Read(ctx, &vfspb.ReadRequest{
+		HandleId: openRsp.GetHandleId(),
+		NumBytes: 10_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "content-B", string(readRsp.GetData()), "displaced inode should still have original content")
+
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: openRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	// After Forget, the backing file should be cleaned up and the inode
+	// should no longer be openable.
+	_, err = server.Forget(ctx, &vfspb.ForgetRequest{Id: idB})
+	require.NoError(t, err)
+
+	_, err = server.Open(ctx, &vfspb.OpenRequest{
+		Id:    idB,
+		Flags: uint32(os.O_RDONLY),
+	})
+	require.Error(t, err, "should not be able to open displaced inode after Forget")
+}
+
+func TestUnlinkDeferredCleanup(t *testing.T) {
+	server, env := newServer(t)
+	ctx := context.Background()
+
+	prepare(t, env, server, &repb.Tree{})
+
+	id := writeToVFS(t, server, "file", "hello")
+
+	// Open the file before unlinking.
+	openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
+		Id:    id,
+		Flags: uint32(os.O_RDONLY),
+	})
+	require.NoError(t, err)
+
+	// Unlink the file.
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{
+		ParentId: vfscommon.RootInodeId,
+		Name:     "file",
+	})
+	require.NoError(t, err)
+
+	// The open handle should still be readable.
+	readRsp, err := server.Read(ctx, &vfspb.ReadRequest{
+		HandleId: openRsp.GetHandleId(),
+		NumBytes: 10_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(readRsp.GetData()))
+
+	// Release the handle.
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: openRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	// The inode should still be openable until Forget is called.
+	openRsp2, err := server.Open(ctx, &vfspb.OpenRequest{
+		Id:    id,
+		Flags: uint32(os.O_RDONLY),
+	})
+	require.NoError(t, err, "should be able to open unlinked inode before Forget")
+
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: openRsp2.GetHandleId()})
+	require.NoError(t, err)
+
+	// After Forget, the backing file should be cleaned up.
+	_, err = server.Forget(ctx, &vfspb.ForgetRequest{Id: id})
+	require.NoError(t, err)
+
+	_, err = server.Open(ctx, &vfspb.OpenRequest{
+		Id:    id,
+		Flags: uint32(os.O_RDONLY),
+	})
+	require.Error(t, err, "should not be able to open unlinked inode after Forget")
+}
+
 // flock returns a flock(2) setlk request for the given file handle ID, pid, and
 // lock state (typ), which can be one of the syscall package constants F_WRLCK,
 // F_RDLCK, or F_UNLCK.
