@@ -3,6 +3,8 @@ syntax = "proto3";
 package usage;
 
 import "proto/context.proto";
+import "proto/user_id.proto";
+import "google/protobuf/timestamp.proto";
 
 message GetUsageRequest {
   // Request context.
@@ -95,4 +97,110 @@ message Usage {
   // Total wall time of tasks run on BuildBuddy-owned workflow runners,
   // ignoring cpu utilization.  Idle time is counted.
   int64 cloud_workflow_linux_execution_duration_usec = 19;
+}
+
+// Alerting rule for usage-based alerts.
+message UsageAlertingRule {
+  // Server-controlled metadata about the rule.
+  UsageAlertingRuleMetadata metadata = 1;
+
+  // User-configured alerting rule configuration.
+  UsageAlertingRuleConfiguration configuration = 2;
+
+  // Evaluator-controlled status for this rule.
+  UsageAlertingRuleStatus status = 3;
+}
+
+// Usage alerting rule metadata.
+message UsageAlertingRuleMetadata {
+  // Unique alerting rule ID (matches a DB row).
+  string usage_alerting_rule_id = 1;
+
+  // User that created the alerting rule.
+  user_id.DisplayUser created_by_user = 2;
+
+  // When the alerting rule was created.
+  google.protobuf.Timestamp created_timestamp = 3;
+}
+
+// User-configurable alerting rule fields. Represents a SKU (optionally filtered
+// by labels) as well as a threshold and usage window. If the threshold is
+// exceeded, org admins receive an alert stating that the threshold was
+// exceeded.
+//
+// For SKU and label listing, see server/usage/sku/sku.go
+message UsageAlertingRuleConfiguration {
+  // Usage SKU to alert on.
+  string sku = 1;
+
+  // Usage labels to filter on, e.g. {"origin": "internal"}.
+  map<string, string> labels = 2;
+
+  // Alerts are triggered if the usage exceeds this exact value.
+  int64 absolute_threshold = 3;
+
+  // Usage window over which the alerting threshold applies. This is distinct
+  // from the server-side evaluation cadence, which is intentionally not
+  // specified in these API protos.
+  UsageAlertingWindow window = 4;
+}
+
+// Usage alerting rule status.
+message UsageAlertingRuleStatus {
+  // When the alerting rule was last evaluated.
+  google.protobuf.Timestamp last_evaluation_timestamp = 1;
+
+  // When the alerting rule last fired.
+  google.protobuf.Timestamp last_fired_timestamp = 2;
+}
+
+enum UsageAlertingWindow {
+  USAGE_ALERTING_WINDOW_UNKNOWN = 0;
+
+  // UTC day (00:00:00 up to and excluding 00:00:00 the following day).
+  USAGE_ALERTING_WINDOW_DAY = 1;
+
+  // UTC business week (Monday at 00:00:00 up to and excluding the following
+  // Monday at 00:00:00).
+  USAGE_ALERTING_WINDOW_WEEK = 2;
+
+  // UTC calendar month (the first day of the month at 00:00:00 up to and
+  // excluding the first day of the following month at 00:00:00).
+  USAGE_ALERTING_WINDOW_MONTH = 3;
+}
+
+message GetUsageAlertingRulesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetUsageAlertingRulesResponse {
+  context.ResponseContext response_context = 1;
+
+  // Usage alerting rules owned by the authenticated org.
+  repeated UsageAlertingRule usage_alerting_rule = 2;
+}
+
+message CreateUsageAlertingRuleRequest {
+  context.RequestContext request_context = 1;
+
+  // Alerting rule configuration to create.
+  UsageAlertingRuleConfiguration configuration = 2;
+}
+
+message CreateUsageAlertingRuleResponse {
+  context.ResponseContext response_context = 1;
+
+  // The usage alerting rule that was created.
+  UsageAlertingRule usage_alerting_rule = 2;
+}
+
+message DeleteUsageAlertingRuleRequest {
+  context.RequestContext request_context = 1;
+
+  // Unique alerting rule ID to delete.
+  string usage_alerting_rule_id = 2;
+}
+
+message DeleteUsageAlertingRuleResponse {
+  context.ResponseContext response_context = 1;
 }
