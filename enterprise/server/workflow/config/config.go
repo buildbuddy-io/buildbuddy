@@ -435,8 +435,8 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 // MatchesAnyTrigger returns whether the action is triggered by the event
 // published to the given branch or tag.
 func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
-	// If user has manually requested action dispatch, always run it
-	if event == webhook_data.EventName.ManualDispatch {
+	// If user has manually or scheduled action dispatch, always run it
+	if event == webhook_data.EventName.ManualDispatch || event == webhook_data.EventName.ScheduledDispatch {
 		return true
 	}
 
