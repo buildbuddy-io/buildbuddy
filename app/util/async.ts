@@ -68,3 +68,38 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
     if (this.parent) this.parent.cancel();
   }
 }
+
+/**
+ * timeout returns a cancelable promise that calls the given function after a
+ * given delay.
+ */
+export function timeout<T>(fn: () => T, ms: number = 0): CancelablePromise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let callback: (() => T) | undefined = fn;
+
+  const cleanup = () => {
+    if (timeout !== undefined) clearTimeout(timeout);
+    timeout = undefined;
+    // Drop the callback so values captured by fn can be GC'd.
+    callback = undefined;
+  };
+
+  const promise = new Promise<T>((resolve, reject) => {
+    timeout = setTimeout(() => {
+      // If cancel() runs first, clearTimeout prevents this callback from
+      // running, so the non-null assertion is safe here.
+      const f = callback!;
+      try {
+        resolve(f());
+      } catch (e) {
+        reject(e);
+      } finally {
+        cleanup();
+      }
+    }, ms);
+  });
+
+  return new CancelablePromise(promise, {
+    oncancelled: cleanup,
+  });
+}

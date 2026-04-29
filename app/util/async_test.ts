@@ -1,4 +1,4 @@
-import { CancelablePromise } from "./async";
+import { CancelablePromise, timeout } from "./async";
 
 function delayedResolve<T>(value?: T, delayMs: number = 1): Promise<T | undefined> {
   return new Promise((resolve) => setTimeout(() => resolve(value), delayMs));
@@ -146,5 +146,53 @@ describe("CancelablePromise", () => {
       },
     }).cancel();
     expect(value).toBe(1);
+  });
+});
+
+describe("timeout", () => {
+  it("should call the callback after the delay and resolve with its value", async () => {
+    // Schedule a callback and expect the cancelable promise to resolve with its return value.
+    const value = await timeout(() => 1, 1);
+    expect(value).toBe(1);
+  });
+
+  it("should reject if the callback throws", async () => {
+    const testError = new Error("test-error");
+    let error;
+
+    // Throw from the delayed callback and expect the cancelable promise to reject with that error.
+    try {
+      await timeout(() => {
+        throw testError;
+      }, 1);
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBe(testError);
+  });
+
+  it("should clear the timeout and callback when cancelled", async () => {
+    let called = false;
+    let settled = false;
+
+    // Cancel before the delay elapses and expect the delayed callback not to run.
+    const cancelable = timeout(() => {
+      called = true;
+    }, 10);
+    cancelable.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    cancelable.cancel();
+
+    // Wait past the delay and expect cancellation to leave the promise pending.
+    await delayedResolve(undefined, 20);
+    expect(called).toBe(false);
+    expect(settled).toBe(false);
   });
 });
