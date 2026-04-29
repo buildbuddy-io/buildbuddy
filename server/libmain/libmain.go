@@ -439,7 +439,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
+	protoletHandler, err := protolet.GenerateHTTPHandlers(interceptors.BuildBuddyServicePathPrefix, "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
@@ -452,7 +452,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		mux.Handle(appRoute, interceptors.WrapExternalHandler(env, staticFileServer))
 	}
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
+	mux.Handle(interceptors.BuildBuddyServicePathPrefix, interceptors.WrapAuthenticatedExternalProtoletHandler(env, protoletHandler))
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
@@ -469,14 +469,16 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 
 	// Register API as an HTTP service.
 	if api := env.GetAPIService(); api != nil {
-		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", "api.v1", api, env.GetGRPCServer())
+		apiProtoHandlers, err := protolet.GenerateHTTPHandlers(interceptors.APIServicePathPrefix, "api.v1", api, env.GetGRPCServer())
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}
-		mux.Handle("/api/v1/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
-		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
-		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
-		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
+		mux.Handle(interceptors.APIServicePathPrefix, interceptors.WrapAuthenticatedExternalProtoletHandler(env, apiProtoHandlers))
+		// Although protolet supports server-streaming RPCs, streaming them
+		// directly is awkward for clients, so expose GetFile as a plain HTTP
+		// handler that streams the response bytes instead.
+		mux.Handle(interceptors.APIServicePathPrefix+"GetFile", interceptors.WrapAuthenticatedExternalAPIRPCHandler(env, api.GetFileHandler()))
+		mux.Handle(interceptors.APIServicePathPrefix+"metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
 	if mcp := env.GetMCPService(); mcp != nil {
