@@ -50,6 +50,7 @@ go_test(
         ":executor",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/runner",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:execution_stats_go_proto",

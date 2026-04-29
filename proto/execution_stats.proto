@@ -174,6 +174,15 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+
+  // The container image ref used for execution, for example:
+  // buildbuddy.bbcr.dev/public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622
+  // index.docker.io/v2/alpine:latest
+  string container_image_ref = 12;
+
+  // The on-disk size of the container image in bytes, after pulling and
+  // extracting.
+  int64 container_image_disk_usage_bytes = 13;
 }
 
 message RunnerMetadata {

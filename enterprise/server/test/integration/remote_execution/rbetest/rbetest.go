@@ -1474,10 +1474,15 @@ type testRunnerPool struct {
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
+	PoolOptions        *runner.PoolOptions
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
-	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
+	poolOpts := opts.PoolOptions
+	if poolOpts == nil {
+		poolOpts = &runner.PoolOptions{}
+	}
+	realPool, err := runner.NewPool(env, cacheRoot, poolOpts)
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}
 }

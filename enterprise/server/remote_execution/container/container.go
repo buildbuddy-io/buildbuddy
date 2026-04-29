@@ -466,6 +466,11 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
+
+	// ImageSizeBytes returns the estimated on-disk size of the pulled
+	// container image in bytes. Should be called after PullImage.
+	// Returns 0 if unknown or not applicable.
+	ImageSizeBytes(ctx context.Context) (int64, error)
 }
 
 // StatsRecorder is an optional interface implemented by a [CommandContainer]
@@ -734,6 +739,10 @@ type TracedCommandContainer struct {
 
 func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
+}
+
+func (t *TracedCommandContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
+	return t.Delegate.ImageSizeBytes(ctx)
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {

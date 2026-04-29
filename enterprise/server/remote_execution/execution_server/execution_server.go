@@ -428,6 +428,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
 
+			executionProto.ContainerImageRef = auxMeta.GetContainerImageRef()
+			executionProto.ContainerImageDiskUsageBytes = auxMeta.GetContainerImageDiskUsageBytes()
+
 			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 			executionProto.RunnerId = auxMeta.GetRunnerMetadata().GetRunnerId()
 			executionProto.RunnerTaskNumber = auxMeta.GetRunnerMetadata().GetTaskNumber()

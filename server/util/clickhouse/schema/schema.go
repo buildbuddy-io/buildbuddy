@@ -258,6 +258,10 @@ type Execution struct {
 	StatusMessage  string
 	CommandSnippet string
 
+	// Container image
+	ContainerImageRef            string
+	ContainerImageDiskUsageBytes int64
+
 	// Fields from Invocations
 	User             string
 	Host             string
@@ -355,6 +359,8 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",
+		"ContainerImageRef",
+		"ContainerImageDiskUsageBytes",
 	}
 }
 

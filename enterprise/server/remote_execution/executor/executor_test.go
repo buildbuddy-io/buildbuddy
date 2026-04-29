@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -130,6 +131,52 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 			}
 		},
 	})
+	exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
+	require.NoError(t, err)
+
+	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := repb.NewExecutionClient(conn)
+
+	return exec, env, client, mockServer, c
+}
+
+func getExecutorWithPoolOptions(t *testing.T, runOverride rbetest.RunInterceptor, poolOpts *runner.PoolOptions) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
+	return getExecutorWithRunnerPoolWrapper(t, runOverride, poolOpts, nil)
+}
+
+func getExecutorWithRunnerPoolWrapper(t *testing.T, runOverride rbetest.RunInterceptor, poolOpts *runner.PoolOptions, wrapRunnerPool func(interfaces.RunnerPool) interfaces.RunnerPool) (*executor.Executor, *testenv.TestEnv, repb.ExecutionClient, *mockExecutionServer, *counters) {
+	env := enterprise_testenv.New(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	clock := clockwork.NewFakeClock()
+	env.SetClock(clock)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	mockServer := &mockExecutionServer{finished: make(chan struct{})}
+	repb.RegisterExecutionServer(env.GetGRPCServer(), mockServer)
+	go runServer()
+
+	c := &counters{}
+	cacheRoot := testfs.MakeTempDir(t)
+	runFunc := rbetest.RunNoop()
+	if runOverride != nil {
+		runFunc = runOverride
+	}
+	runnerPool := rbetest.NewTestRunnerPool(t, env, cacheRoot, rbetest.TestRunnerOverrides{
+		RunInterceptor: runFunc,
+		PoolOptions:    poolOpts,
+		RecycleInterceptor: func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original rbetest.TryRecycleFunc) {
+			clock.Advance(1 * time.Minute)
+			c.countRecycled++
+			if finishedCleanly {
+				c.countFinishedCleanly++
+			}
+		},
+	})
+	if wrapRunnerPool != nil {
+		runnerPool = wrapRunnerPool(runnerPool)
+	}
 	exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
 	require.NoError(t, err)
 
@@ -490,4 +537,72 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
 		})
 	}
+}
+
+type containerImageInfoRunner struct {
+	interfaces.Runner
+	imageRef  string
+	imageSize int64
+}
+
+func (r *containerImageInfoRunner) ContainerImageInfo(ctx context.Context) (string, int64, error) {
+	return r.imageRef, r.imageSize, nil
+}
+
+type containerImageInfoRunnerPool struct {
+	interfaces.RunnerPool
+	imageRef  string
+	imageSize int64
+}
+
+func (p *containerImageInfoRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
+	r, err := p.RunnerPool.Get(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return &containerImageInfoRunner{
+		Runner:    r,
+		imageRef:  p.imageRef,
+		imageSize: p.imageSize,
+	}, nil
+}
+
+func (p *containerImageInfoRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	if wrapped, ok := r.(*containerImageInfoRunner); ok {
+		r = wrapped.Runner
+	}
+	p.RunnerPool.TryRecycle(ctx, r, finishedCleanly)
+}
+
+func TestExecuteTaskAndStreamResults_ContainerImageInfo(t *testing.T) {
+	ctx := context.Background()
+	const expectedImageRef = "docker.io/library/busybox:latest"
+	const expectedImageSize int64 = 7_500_000_000
+
+	exec, _, execClient, mockServer, _ := getExecutorWithRunnerPoolWrapper(t, nil, nil, func(runnerPool interfaces.RunnerPool) interfaces.RunnerPool {
+		return &containerImageInfoRunnerPool{
+			RunnerPool: runnerPool,
+			imageRef:   expectedImageRef,
+			imageSize:  expectedImageSize,
+		}
+	})
+	task := getTask()
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	<-mockServer.finished
+
+	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	completedRsp := operation.ExtractExecuteResponse(completedOp)
+	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, expectedImageRef, auxMeta.GetContainerImageRef())
+	require.Equal(t, expectedImageSize, auxMeta.GetContainerImageDiskUsageBytes())
 }

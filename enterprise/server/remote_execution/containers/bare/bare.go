@@ -192,3 +192,5 @@ func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }
+
+func (c *bareCommandContainer) ImageSizeBytes(ctx context.Context) (int64, error) { return 0, nil }

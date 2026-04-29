@@ -3050,4 +3050,11 @@ message StoredExecution {
 
   // The IP address of the client that initiated the execution request.
   string client_ip = 79;
+
+  // The container image ref used for execution.
+  string container_image_ref = 80;
+
+  // The on-disk size of the container image in bytes, after pulling and
+  // extracting.
+  int64 container_image_disk_usage_bytes = 81;
 }

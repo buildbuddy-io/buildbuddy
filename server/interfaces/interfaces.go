@@ -1136,6 +1136,11 @@ type Runner interface {
 	// GetIsolationType returns the runner's effective isolation type as a
 	// string, such as "none" or "podman".
 	GetIsolationType() string
+
+	// ContainerImageInfo returns the container image ref used for the
+	// execution, and its estimated on-disk size in bytes.
+	// Should be called after PrepareForTask.
+	ContainerImageInfo(ctx context.Context) (ref string, sizeBytes int64, err error)
 }
 
 type CacheRoutingService interface {
