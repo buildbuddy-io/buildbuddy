@@ -86,6 +86,27 @@ steps:
   - run: bazel test //...
 ```
 
+## Concurrent Workflow runs
+
+Starting June 1, 2026, BuildBuddy will automatically cancel in-progress
+Workflow runs when a newer run is triggered for the same action on a
+non-default branch. This helps avoid wasting resources on outdated runs
+when, for example, several commits are pushed in quick succession to a
+pull request branch.
+
+This behavior only applies to non-default branches. Runs on your repo's
+default branch are not affected.
+
+If you'd like to disable this behavior and allow concurrent runs for an
+action, set `allow_concurrent_runs: true` in the action's configuration:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    allow_concurrent_runs: true # <-- disables auto-cancellation of concurrent runs
+    ...
+```
+
 ## Bazel configuration
 
 ### Bazel version
@@ -408,6 +429,10 @@ A named group of Bazel commands that run when triggered.
 - **`timeout`** (`duration` string, e.g. '30m', '1h'): If set, workflow actions that have been
   running for longer than this duration will be canceled automatically. This
   only applies to a single invocation, and does not include multiple retry attempts.
+- **`allow_concurrent_runs`** (`boolean`, default: `false`): If set to `true`,
+  multiple runs of the same action on the same branch will be allowed to run concurrently.
+  By default or if set to `false`, concurrent runs will be automatically cancelled.
+  See [Concurrent Workflow runs](#concurrent-workflow-runs).
 
 ### `Triggers`
 
