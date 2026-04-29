@@ -98,7 +98,7 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
-	exportSnapshotToCOW = flag.Bool("executor.firecracker_export_snapshot_to_cow", false, "Export Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
+	exportSnapshotToCOW = flag.Bool("executor.firecracker_export_snapshot_to_cow", true, "Export Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
