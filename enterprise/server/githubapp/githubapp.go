@@ -664,26 +664,6 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID,
 	return tok.GetToken(), nil
 }
 
-// GetRepositoryInstallationToken is a convenience function that wraps the interface method on GitHubApp.
-func GetRepositoryInstallationToken(ctx context.Context, env environment.Env, groupID, repoURL string) (string, error) {
-	gh := env.GetGitHubAppService()
-	if gh == nil {
-		return "", status.UnimplementedError("No GitHub app configured")
-	}
-	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
-	if err != nil {
-		return "", status.InvalidArgumentErrorf("invalid repo URL %q: %s", repoURL, err)
-	}
-	// If the request was authenticated with a group API key, there will
-	// not be a UserID in the authenticated context, so we cannot use
-	// `GetGitHubAppForAuthenticatedUser`.
-	app, err := gh.GetGitHubAppForOwner(ctx, parsedRepoURL.Owner)
-	if err != nil {
-		return "", status.WrapError(err, "get GitHub app for owner")
-	}
-	return app.GetRepositoryInstallationToken(ctx, groupID, parsedRepoURL.String())
-}
-
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.
 //
 // After a user has installed the BuildBuddy Github app from the GitHub side,

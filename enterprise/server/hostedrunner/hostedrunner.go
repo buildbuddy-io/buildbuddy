@@ -11,7 +11,6 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -384,7 +383,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 			return nil, status.WrapError(err, "normalize git repo url")
 		}
 
-		gitToken, err := githubapp.GetRepositoryInstallationToken(ctx, r.env, u.GetGroupID(), repoURL.String())
+		gitToken, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
 		if err != nil {
 			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
 				" (Note: The token is not needed for public repos): %s", repoURL, err)
@@ -400,6 +399,22 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		"REPO_TOKEN=" + accessToken,
 	}
 	return envOverrides, nil
+}
+
+func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := r.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
