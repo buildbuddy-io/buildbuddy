@@ -119,7 +119,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
-  private executionDownloadsAutoloadHandle = 0;
 
   componentDidMount() {
     this.fetchAction();
@@ -131,30 +130,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>): void {
     if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
-      this.resetExecutionDownloads();
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
-      if (this.getExecutionId()) {
-        this.fetchExecutionDownloads("");
-      }
+      this.fetchExecutionDownloads("");
       return;
     }
     if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
-      this.resetExecutionDownloads();
       this.fetchExecuteResponseOrActionResult();
-      if (this.getExecutionId()) {
-        this.fetchExecutionDownloads("");
-      }
+      this.fetchExecutionDownloads("");
       return;
     }
 
     const prevExecutionId = prevProps.search.get("executionId") || prevState.execution?.executionId;
     const executionId = this.getExecutionId();
     if (prevExecutionId !== executionId) {
-      this.resetExecutionDownloads();
-      if (executionId) {
-        this.fetchExecutionDownloads("");
-      }
+      this.fetchExecutionDownloads("");
     }
   }
 
@@ -456,29 +446,26 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private executionDownloadsRPC?: Cancelable;
 
-  private resetExecutionDownloads() {
+  private fetchExecutionDownloads(pageToken = this.state.executionDownloadsNextPageToken) {
     this.executionDownloadsRPC?.cancel();
     this.executionDownloadsRPC = undefined;
-    if (this.executionDownloadsAutoloadHandle) {
-      cancelAnimationFrame(this.executionDownloadsAutoloadHandle);
-      this.executionDownloadsAutoloadHandle = 0;
-    }
-    this.setState({
-      executionDownloads: [],
-      executionDownloadsLoading: false,
-      executionDownloadsNextPageToken: "",
-    });
-  }
-
-  private fetchExecutionDownloads(pageToken = this.state.executionDownloadsNextPageToken) {
-    if (this.executionDownloadsRPC) return;
 
     const executionId = this.getExecutionId();
-    if (!executionId) return;
+    if (!executionId) {
+      this.setState({
+        executionDownloads: [],
+        executionDownloadsLoading: false,
+        executionDownloadsNextPageToken: "",
+      });
+      return;
+    }
 
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     this.setState({ executionDownloadsLoading: true });
-    const rpc = service
+    if (!pageToken) {
+      this.setState({ executionDownloads: [] });
+    }
+    this.executionDownloadsRPC = service
       .getExecutionDownloads({
         invocationId: this.props.model.getInvocationId(),
         executionId,
@@ -486,75 +473,43 @@ export default class InvocationActionCardComponent extends React.Component<Props
         pageToken,
       })
       .then((response) => {
-        if (executionId !== this.getExecutionId()) {
-          return response;
-        }
-        this.setState(
-          (prevState) => ({
-            executionDownloads: [...(pageToken ? prevState.executionDownloads : []), ...(response.downloads ?? [])],
-            executionDownloadsNextPageToken: response.nextPageToken || "",
-          }),
-          () => this.scheduleMaybeFetchMoreExecutionDownloads()
-        );
+        this.setState((prevState) => ({
+          executionDownloads: [...(pageToken ? prevState.executionDownloads : []), ...(response.downloads ?? [])],
+          executionDownloadsNextPageToken: response.nextPageToken || "",
+        }));
         return response;
       })
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
-        if (error.code === "NotFound") {
-          this.setState({
-            executionDownloads: [],
-            executionDownloadsNextPageToken: "",
-          });
-          return;
+        // If we're fetching a subsequent page, surface the error loudly (since
+        // the user is actively trying to fetch); otherwise silently log it.
+        if (pageToken) {
+          errorService.handleError(error);
+        } else {
+          console.error(e);
         }
-        console.error(e);
+        // Clear the page token so we don't keep trying to fetch pages after we
+        // hit an error.
+        this.setState({ executionDownloadsNextPageToken: "" });
       })
       .finally(() => {
-        if (this.executionDownloadsRPC === rpc) {
-          this.executionDownloadsRPC = undefined;
-        }
-        if (executionId === this.getExecutionId()) {
-          this.setState({ executionDownloadsLoading: false });
-        }
+        // Mark the RPC done, and then check whether we need to fetch the next
+        // page (if the user is scrolled to the bottom).
+        this.executionDownloadsRPC = undefined;
+        this.setState({ executionDownloadsLoading: false }, () => this.maybeFetchMoreExecutionDownloads());
       });
-    this.executionDownloadsRPC = rpc;
-  }
-
-  private handleExecutionDownloadsScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    if (this.executionDownloadsRPC || !this.state.executionDownloadsNextPageToken) {
-      return;
-    }
-
-    const target = event.currentTarget;
-    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    if (distanceFromBottom > 1) {
-      return;
-    }
-
-    this.fetchExecutionDownloads();
-  };
-
-  private scheduleMaybeFetchMoreExecutionDownloads() {
-    if (this.executionDownloadsAutoloadHandle) {
-      cancelAnimationFrame(this.executionDownloadsAutoloadHandle);
-    }
-    this.executionDownloadsAutoloadHandle = requestAnimationFrame(() => {
-      this.executionDownloadsAutoloadHandle = 0;
-      this.maybeFetchMoreExecutionDownloads();
-    });
   }
 
   private maybeFetchMoreExecutionDownloads() {
     if (this.executionDownloadsRPC || !this.state.executionDownloadsNextPageToken) {
       return;
     }
-
     const container = this.executionDownloadsContainerRef.current;
     if (!container) {
       return;
     }
-
-    if (container.scrollHeight <= container.clientHeight + 1) {
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (container.scrollHeight <= container.clientHeight + 1 || distanceFromBottom <= 1) {
       this.fetchExecutionDownloads();
     }
   }
@@ -732,7 +687,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private renderExecutionDownloads() {
-    const executionId = this.getExecutionId();
     const ioStats = this.state.actionResult?.executionMetadata?.ioStats;
     const fetchSummary = ioStats && (
       <div className="action-downloads-summary">
@@ -756,7 +710,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
             <>
               <div
                 className="action-downloads-table-container"
-                onScroll={this.handleExecutionDownloadsScroll}
+                onScroll={() => this.maybeFetchMoreExecutionDownloads()}
                 ref={this.executionDownloadsContainerRef}>
                 <table className="action-downloads-table">
                   <thead>
