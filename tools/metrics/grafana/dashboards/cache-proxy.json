@@ -801,7 +801,7 @@
               "expr": "sum(increase(cloudprober_success{region=\"${region}\", probe=~\".*proxy.*\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=\"${region}\", probe=~\".*proxy.*\"}[10m])) by (probe)",
               "hide": false,
               "interval": "",
-              "legendFormat": "Up",
+              "legendFormat": "{{probe}} Up",
               "queryType": "randomWalk",
               "range": true,
               "refId": "A"
