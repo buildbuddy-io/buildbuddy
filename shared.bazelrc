@@ -9,6 +9,10 @@ startup --digest_function=BLAKE3
 # in non-hermeticity.
 startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
+# Use the remote cache to store fetched repo rule results across invocations.
+startup --experimental_remote_repo_contents_cache
+
+
 ################
 # COMMON FLAGS #
 ################
