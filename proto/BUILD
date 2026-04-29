@@ -432,6 +432,8 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":user_id_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -1162,6 +1164,7 @@ go_proto_library(
     proto = ":usage_proto",
     deps = [
         ":context_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -2189,6 +2192,8 @@ ts_proto_library(
     proto = ":usage_proto",
     deps = [
         ":context_ts_proto",
+        ":timestamp_ts_proto",
+        ":user_id_ts_proto",
     ],
 )
 
