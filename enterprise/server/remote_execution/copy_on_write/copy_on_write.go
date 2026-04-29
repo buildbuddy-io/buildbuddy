@@ -151,6 +151,7 @@ type COWStore struct {
 	// evicting the least recently added chunk.
 	eagerFetchStack *boundedstack.BoundedStack[int64]
 	eagerFetchEg    *errgroup.Group
+	quitOnce        sync.Once
 	quitChan        chan struct{}
 
 	// usageLock protects chunkOperationToUsageSummary
@@ -521,7 +522,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	close(s.quitChan)
+	s.quitOnce.Do(func() { close(s.quitChan) })
 	s.eagerFetchEg.Wait()
 
 	var lastErr error
@@ -598,6 +599,39 @@ func (s *COWStore) DataDir() string {
 
 func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
+}
+
+// LimitMmappedChunks limits how many chunks can be mmapped at once.
+// This is useful when exporting a snapshot sequentially, when we don't want
+// recently touched chunks to stay mmapped longer than necessary. Existing
+// chunks are unmapped so future accesses enter the new LRU.
+func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
+	if maxMmappedChunks <= 0 {
+		return status.InvalidArgumentErrorf("max mmapped chunks must be positive")
+	}
+	lru, err := NewMmapLRU(s.chunkSizeBytes * maxMmappedChunks)
+	if err != nil {
+		return err
+	}
+
+	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
+	// Note that eager fetching chunks acquires the storeLock, so we must stop this
+	// before acquiring the lock below.
+	s.quitOnce.Do(func() { close(s.quitChan) })
+	s.eagerFetchEg.Wait()
+
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+
+	for _, chunk := range s.chunks {
+		if err := chunk.Unmap(); err != nil {
+			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
+		}
+		chunk.lru = lru
+	}
+	s.mmapLRU = lru
+	s.eagerFetchStack = nil
+	return nil
 }
 
 // Resize resizes the COWStore to the given size, effectively right-padding the
@@ -703,6 +737,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 
 	s.storeLock.RLock()
 	ogChunk = s.chunks[offset]
+	mmapLRU := s.mmapLRU
 	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
@@ -711,7 +746,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		}
 		chunkSource = ogChunk.source
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled, s.mmapLRU)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled, mmapLRU)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -3232,6 +3232,15 @@ type snapshotDetails struct {
 	saveLocalSnapshot   bool
 }
 
+// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
+// because they won't be accessed again.
+// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
+// accessed at a time.
+func (c *FirecrackerContainer) snapshotWriteMaxMmappedChunks() int64 {
+	snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
+	return snapshotWriteConcurrency + 4
+}
+
 func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
 	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
 	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
@@ -3277,19 +3286,13 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 				return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 			}
 
-			snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
-
 			memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
 				ChunkSizeBytes:     cowChunkSizeBytes(),
 				TotalSizeBytes:     memorySizeBytes,
 				DataDir:            memChunkDir,
 				RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
 				RemoteEnabled:      c.supportsRemoteSnapshots,
-				// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
-				// because they won't be accessed again.
-				// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
-				// accessed at a time.
-				MaxMmappedChunks: snapshotWriteConcurrency + 4,
+				MaxMmappedChunks:   c.snapshotWriteMaxMmappedChunks(),
 			})
 			if err != nil {
 				return nil, status.WrapError(err, "create memory COWStore")
@@ -3337,6 +3340,16 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
 		metrics.Stage: "create_snapshot",
 	}).Dec()
+
+	if *exportSnapshotToCOW && c.memoryStore != nil && snapshotDetails.snapshotType == diffSnapshotType {
+		// By default, mmapped chunks are managed by the executor-wide shared LRU.
+		//
+		// When exporting the diff snapshot, we should limit the number of chunks mmapped at a time.
+		// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
+		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
+			return status.WrapError(err, "set limited LRU for diff snapshot export")
+		}
+	}
 
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
