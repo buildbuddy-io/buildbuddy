@@ -554,8 +554,35 @@ func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservatio
 	}
 
 	// Preserve any parameters which aren't modeled by dynamic task sizing (disk
-	// space requirements and custom resources).
+	// space requirements and custom resources), and preserve explicitly
+	// requested CPU and memory. This allows users to override only one dimension
+	// while still benefiting from dynamic sizing for the other.
 	requestedSize := req.GetSchedulingMetadata().GetRequestedTaskSize()
+	naiveSize := req.GetSchedulingMetadata().GetTaskSize()
+	if requestedSize.GetEstimatedMemoryBytes() > 0 {
+		// If requested memory was raised when the naive task size was initially
+		// computed (for example, due to TEST_SIZE minimums), preserve that floor.
+		minMemoryBytes := tasksize.MinimumMemoryBytes
+		if naiveMemoryBytes := naiveSize.GetEstimatedMemoryBytes(); naiveMemoryBytes > requestedSize.GetEstimatedMemoryBytes() && naiveMemoryBytes > minMemoryBytes {
+			minMemoryBytes = naiveMemoryBytes
+		}
+		size.EstimatedMemoryBytes = requestedSize.GetEstimatedMemoryBytes()
+		if size.EstimatedMemoryBytes < minMemoryBytes {
+			size.EstimatedMemoryBytes = minMemoryBytes
+		}
+	}
+	if requestedSize.GetEstimatedMilliCpu() > 0 {
+		// If requested CPU was raised when the naive task size was initially
+		// computed (for example, due to TEST_SIZE minimums), preserve that floor.
+		minMilliCPU := tasksize.MinimumMilliCPU
+		if naiveMilliCPU := naiveSize.GetEstimatedMilliCpu(); naiveMilliCPU > requestedSize.GetEstimatedMilliCpu() && naiveMilliCPU > minMilliCPU {
+			minMilliCPU = naiveMilliCPU
+		}
+		size.EstimatedMilliCpu = requestedSize.GetEstimatedMilliCpu()
+		if size.EstimatedMilliCpu < minMilliCPU {
+			size.EstimatedMilliCpu = minMilliCPU
+		}
+	}
 	size.CustomResources = requestedSize.GetCustomResources()
 	size.EstimatedFreeDiskBytes = requestedSize.GetEstimatedFreeDiskBytes()
 
