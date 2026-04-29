@@ -762,9 +762,7 @@ type ScheduledRun struct {
 	GroupID    string `gorm:"index:scheduled_run_idx"`
 	RepoURL    string `gorm:"index:scheduled_run_idx"`
 	ActionName string `gorm:"index:scheduled_run_idx"`
-
-	Branch   string
-	CronExpr string
+	CronExpr   string
 
 	// Based on the cron expression, this is the next time the run should be scheduled.
 	NextRunUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
@@ -774,8 +772,10 @@ type ScheduledRun struct {
 	// another server can acquire the lease and schedule the run. In this case, it's assumed that the
 	// original lease holder has failed (e.g. if it was restarted in a rollout).
 	//
-	// TODO: This is not guaranteed to be idempotent. If the lease duration is long enough, duplicates are unlikely
-	// to happen because the servers only need to dispatch the execution, which should be quick. But it's not guaranteed.
+	// TODO: This is not guaranteed to be idempotent. If the first server to acquire the lease is slow to dispatch the execution,
+	// a second server could acquire the lease and dispatch the execution, causing a duplicate.
+	// However if the lease duration is long enough, duplicates are unlikely
+	// to happen because the servers only need to dispatch the execution, which should be quick.
 	LeaseExpiresUsec int64
 }
 
