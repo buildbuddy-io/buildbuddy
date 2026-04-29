@@ -619,6 +619,22 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 	return tok, nil
 }
 
+func (a *GitHubApp) GetDefaultBranch(ctx context.Context, repoURL string, accessToken string) (string, error) {
+	parsedURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %q: %s", repoURL, err)
+	}
+	client, err := a.newAuthenticatedClient(ctx, accessToken)
+	if err != nil {
+		return "", status.WrapError(err, "create GitHub client")
+	}
+	repo, _, err := client.Repositories.Get(ctx, parsedURL.Owner, parsedURL.Repo)
+	if err != nil {
+		return "", err
+	}
+	return repo.GetDefaultBranch(), nil
+}
+
 func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
 	if err := authutil.AuthorizeGroupAccess(ctx, a.env, groupID); err != nil {
 		return "", err

@@ -724,6 +724,9 @@ type GitHubApp interface {
 	// so should be used for status reporting only.
 	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
+	// GetDefaultBranch returns the default branch for the given repo URL.
+	GetDefaultBranch(ctx context.Context, repoURL string, accessToken string) (string, error)
+
 	// GetRepositoryInstallationToken returns an installation token for the given repo.
 	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
 	GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error)
