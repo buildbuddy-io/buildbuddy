@@ -330,6 +330,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := grpc_client.BootstrapXDS(rootContext, nil /*=client*/); err != nil {
+		log.Fatalf("Error bootstrapping xDS config: %s", err)
+	}
+
 	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
 	cleanupFUSEMounts()
 
