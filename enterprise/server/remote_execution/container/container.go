@@ -519,10 +519,6 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 	metrics.ImageFetchDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
 }
 
-// LogImagePullError emits a single grep-friendly WARNING tagged with
-// "image_pull_error" so failed image fetches can be located via one log
-// search. Callers should invoke this at the natural pull boundary
-// (PullImageIfNecessary, warmup, OCIFetcher server) when err != nil.
 func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
 	if err == nil {
 		return
