@@ -10,6 +10,7 @@ go_library(
         "//cli/arg",
         "//cli/config",
         "//cli/log",
+        "//cli/parser",
         "//cli/storage",
         "//cli/version",
         "//cli/workspace",

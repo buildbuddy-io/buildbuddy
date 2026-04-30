@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/parser",
         "//cli/stream_run_logs",
     ],
 )

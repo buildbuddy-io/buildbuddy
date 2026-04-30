@@ -11,10 +11,20 @@ import (
 )
 
 type Result struct {
-	Plugins            []*plugin.Plugin
-	BazelArgs          []string
-	ExecArgs           []string
-	Sidecar            *sidecar.Instance
+	// Plugins are the loaded CLI plugins that should run with this invocation.
+	Plugins []*plugin.Plugin
+
+	// BazelArgs contains the forwarded args passed to Bazelisk and the resolved
+	// args used internally for setup decisions.
+	BazelArgs *parser.BazelArgs
+
+	// ExecArgs are args to pass to the executable produced by `bazel run`.
+	ExecArgs []string
+
+	// Sidecar is the sidecar instance started for this invocation, if any.
+	Sidecar *sidecar.Instance
+
+	// OriginalBESBackend is the resolved BES backend before sidecar rewrites.
 	OriginalBESBackend string
 }
 
@@ -27,33 +37,26 @@ func Setup(args []string, tempDir string) (*Result, error) {
 		return nil, err
 	}
 
-	// Parse args.
-	parsedArgs, err := parser.ParseArgs(args)
+	forwardedBazelArgs, execArgs := arg.SplitExecutableArgs(args)
+	bazelArgs, err := parser.NewBazelArgs(forwardedBazelArgs)
 	if err != nil {
 		return nil, err
 	}
 
-	parsedArgs, err = parser.ResolveArgs(parsedArgs)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: Expanding configs results in a long explicit command line in the BB
-	// UI. Need to find a way to override the explicit command line in the UI so
-	// that it reflects the args passed to the CLI, not the wrapped Bazel
-	// process.
-	args = parsedArgs.Format()
-
-	bazelArgs, execArgs = arg.SplitExecutableArgs(args)
 	// Save some flags from the current invocation for non-Bazel commands such
-	// as `bb ask`.
-	// Args are saved before the sidecar rewrites them as API requests require
-	// the original --bes_backend value.
-	bazelArgs = flaghistory.SaveFlags(bazelArgs)
+	// as `bb ask`. Flags are saved before the sidecar rewrites them, since API
+	// requests require the original resolved values.
+	bazelArgs, err = flaghistory.SaveFlags(bazelArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins
-	bazelArgs = tooltag.ConfigureToolTag(bazelArgs)
+	bazelArgs, err = tooltag.ConfigureToolTag(bazelArgs)
+	if err != nil {
+		return nil, err
+	}
 	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
 	if err != nil {
 		return nil, err
@@ -64,11 +67,7 @@ func Setup(args []string, tempDir string) (*Result, error) {
 		return nil, err
 	}
 
-	// Run plugin pre-bazel hooks
-	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
-	if err != nil {
-		return nil, err
-	}
+	// Run plugin pre-bazel hooks.
 	for _, p := range plugins {
 		bazelArgs, execArgs, err = p.PreBazel(bazelArgs, execArgs)
 		if err != nil {
@@ -77,15 +76,15 @@ func Setup(args []string, tempDir string) (*Result, error) {
 	}
 
 	// Save the original BES backend value before it is rewritten by the sidecar.
-	originalBESBackend, err := parser.GetBazelCommandOptionVal(parsedArgs, "bes_backend")
-	if err != nil {
-		return nil, err
-	}
+	originalBESBackend := arg.Get(bazelArgs.Resolved, "bes_backend")
 
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,
 	// remote_instance_name, etc.
-	bazelArgs, sidecarInstance := sidecar.ConfigureSidecar(bazelArgs)
+	bazelArgs, sidecarInstance, err := sidecar.ConfigureSidecar(bazelArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Result{
 		Plugins:            plugins,

@@ -44,7 +44,8 @@ func runBazelVersion(args []string) (int, error) {
 	}
 
 	outputPath := filepath.Join(tempDir, "bazel.log")
+	// TODO(#7216): Use the forwarded args here.
 	return plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(setupResult.BazelArgs, setupResult.ExecArgs),
+		arg.JoinExecutableArgs(setupResult.BazelArgs.Resolved, setupResult.ExecArgs),
 		outputPath, setupResult.Plugins)
 }

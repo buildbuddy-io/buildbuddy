@@ -1337,17 +1337,25 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	return exitCode, err
 }
 
-func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
-	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+func parseArgs(commandLineArgs []string) ([]string, []string, error) {
+	bazelArgs, execArgs := arg.SplitExecutableArgs(commandLineArgs)
 
-	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("configure api key: %w", err)
-	}
+	var err error
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
+
+	// Use BazelArgs only for ConfigureAPIKey, which needs the resolved view to
+	// check whether an API key is already present.
+	bazelArgsForAuth, err := parser.NewBazelArgs(bazelArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve bazel args: %w", err)
+	}
+	if err := login.ConfigureAPIKey(bazelArgsForAuth); err != nil {
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
+	}
+	bazelArgs = bazelArgsForAuth.Forwarded
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same

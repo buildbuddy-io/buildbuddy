@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -21,14 +22,21 @@ const (
 	besBackendFlagName = "bes_backend"
 )
 
-func SaveFlags(args []string) []string {
-	command := arg.GetCommand(args)
+func SaveFlags(args *parser.BazelArgs) (*parser.BazelArgs, error) {
+	command := arg.GetCommand(args.Forwarded)
 	if command == "build" || command == "test" || command == "run" || command == "query" || command == "cquery" {
-		saveFlag(args, besBackendFlagName, "", 1)
-		saveFlag(args, BesResultsUrlFlagName, "", 1)
-		args = saveFlag(args, InvocationIDFlagName, uuid.New(), 2)
+		saveValue(besBackendFlagName, args.Get(besBackendFlagName), 1)
+		saveValue(BesResultsUrlFlagName, args.Get(BesResultsUrlFlagName), 1)
+		invocationID := args.Get(InvocationIDFlagName)
+		if invocationID == "" {
+			invocationID = uuid.New()
+			if err := args.Append("--" + InvocationIDFlagName + "=" + invocationID); err != nil {
+				return nil, err
+			}
+		}
+		saveValue(InvocationIDFlagName, invocationID, 2)
 	}
-	return args
+	return args, nil
 }
 
 // GetPreviousFlag returns the previous value of a flag, or an empty string if
@@ -64,16 +72,11 @@ func GetLastBackend() (string, error) {
 	return lastBackend, nil
 }
 
-func saveFlag(args []string, flag, backup string, maxValues int) []string {
-	value := arg.Get(args, flag)
-	if value == "" {
-		value = backup
-	}
-	args = arg.Append(args, "--"+flag+"="+value)
+func saveValue(flag, value string, maxValues int) {
 	path := getPreviousFlagPath(flag)
 	if path == "" {
 		log.Debugf("Failed to get path for flag %q", flag)
-		return args
+		return
 	}
 	var newContent string
 	oldContent, err := os.ReadFile(path)
@@ -88,7 +91,6 @@ func saveFlag(args []string, flag, backup string, maxValues int) []string {
 		}
 	}
 	os.WriteFile(path, []byte(newContent), 0777)
-	return args
 }
 
 func getPreviousFlagPath(flagName string) string {

@@ -333,13 +333,13 @@ func openInBrowser(url string) error {
 	return exec.Command(cmd, url).Run()
 }
 
-func ConfigureAPIKey(args []string) ([]string, error) {
-	if cmd, _ := parser.GetBazelCommandAndIndex(args); !isSupportedCommand(cmd) {
+func ConfigureAPIKey(args *parser.BazelArgs) (*parser.BazelArgs, error) {
+	if cmd, _ := parser.GetBazelCommandAndIndex(args.Forwarded); !isSupportedCommand(cmd) {
 		return args, nil
 	}
 
 	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
-	if arg.Has(args, apiKeyHeader) {
+	if args.Get(apiKeyHeader) != "" {
 		return args, nil
 	}
 
@@ -358,7 +358,10 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		return args, nil
 	}
 
-	return arg.Append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
+	if err := args.Append("--" + apiKeyHeader + "=" + strings.TrimSpace(apiKey)); err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 // Commands that support the `--remote_header` bazel flag

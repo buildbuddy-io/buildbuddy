@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "parser",
-    srcs = ["parser.go"],
+    srcs = [
+        "bazelargs.go",
+        "parser.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
     deps = [
         "//cli/bazelisk",

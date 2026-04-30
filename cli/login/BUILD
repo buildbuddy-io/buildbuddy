@@ -25,6 +25,7 @@ go_test(
     srcs = ["login_test.go"],
     embed = [":login"],
     deps = [
+        "//cli/parser",
         "//cli/storage",
         "//server/testutil/testgit",
         "//server/util/status",
