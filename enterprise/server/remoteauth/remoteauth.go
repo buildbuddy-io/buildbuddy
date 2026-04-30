@@ -48,10 +48,11 @@ var (
 	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", false, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
 	keyRefreshInterval       = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
 	getKeysTimeout           = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
+	gRPCClientConnPoolSize   = flag.Int("auth.remote.grpc_connection_pool_size", 10, "The size of the gRPC client connection pool to use for remote authentication RPCs.")
 )
 
 func Register(env *real_environment.RealEnv) error {
-	conn, err := grpc_client.DialInternal(env, *target)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, *target, *gRPCClientConnPoolSize)
 	if err != nil {
 		return err
 	}

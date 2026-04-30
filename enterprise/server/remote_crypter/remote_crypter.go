@@ -26,7 +26,8 @@ const (
 )
 
 var (
-	target = flag.String("crypter.remote_target", "", "The gRPC target of the remote encryption API.")
+	target                 = flag.String("crypter.remote_target", "", "The gRPC target of the remote encryption API.")
+	gRPCClientConnPoolSize = flag.Int("crypter.remote_grpc_connection_pool_size", 10, "The size of the gRPC client connection pool to use for remote encryption RPCs.")
 )
 
 type RemoteCrypter struct {
@@ -62,7 +63,7 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimpleWithPoolSize(*target, *gRPCClientConnPoolSize)
 	if err != nil {
 		return err
 	}
