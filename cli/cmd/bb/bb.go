@@ -320,10 +320,14 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		}
 	}()
 
-	plugins, bazelArgs, execArgs, sidecar, besBackend, err := setup.Setup(args, tempDir)
+	setupResult, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, err
 	}
+	plugins := setupResult.Plugins
+	bazelArgs := setupResult.BazelArgs
+	execArgs := setupResult.ExecArgs
+	sidecar := setupResult.Sidecar
 
 	// Show a picker if the target is omitted. Note: we do this after expanding
 	// args, in case a bazelrc specifies the target patterns (e.g. via
@@ -337,7 +341,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		bazelArgs = picker.HandlePicker(bazelArgs)
 	}
 
-	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, besBackend)
+	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, setupResult.OriginalBESBackend)
 	if err != nil {
 		return 1, status.WrapErrorf(err, "error configuring run log streaming")
 	}
