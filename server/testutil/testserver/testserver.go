@@ -41,10 +41,16 @@ func runfile(t *testing.T, path string) string {
 }
 
 type Opts struct {
+	// DebugName is an optional server name to include in output produced by this server.
+	DebugName             string
 	BinaryRunfilePath     string
 	Args                  []string
 	HTTPPort              int
 	HealthCheckServerType string
+	// SkipWaitForReady can be set when starting multiple servers in parallel
+	// to avoid waiting on servers serially.
+	// The caller is responsible for calling WaitForReady when this is set.
+	SkipWaitForReady bool
 }
 
 func Run(t *testing.T, opts *Opts) *Server {
@@ -53,9 +59,14 @@ func Run(t *testing.T, opts *Opts) *Server {
 		healthCheckServerType: opts.HealthCheckServerType,
 	}
 
+	debugName := "testserver"
+	if opts.DebugName != "" {
+		debugName = opts.DebugName
+	}
+
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
-	cmd.Stdout = log.Writer("[testserver] ")
-	cmd.Stderr = log.Writer("[testserver] ")
+	cmd.Stdout = log.Writer(fmt.Sprintf("[%s] ", debugName))
+	cmd.Stderr = log.Writer(fmt.Sprintf("[%s] ", debugName))
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +80,10 @@ func Run(t *testing.T, opts *Opts) *Server {
 		server.exited = true
 		server.err = err
 	}()
-	if err := server.waitForReady(); err != nil {
-		t.Fatal(err)
+	if !opts.SkipWaitForReady {
+		if err := server.WaitForReady(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return server
 }
@@ -84,7 +97,7 @@ func isOK(resp *http.Response) (bool, error) {
 	return string(body) == "OK", nil
 }
 
-func (s *Server) waitForReady() error {
+func (s *Server) WaitForReady() error {
 	start := time.Now()
 	log.Debug("testserver waitForReady start")
 	for i := 0; ; i++ {

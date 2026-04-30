@@ -284,7 +284,7 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 	})
 	t.Cleanup(bbServer.Shutdown)
 
-	executors := env.AddExecutors(t, 1)
+	executors := env.AddInProcessExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
 
 	// Create a workflow for the repo - will be used to fetch the git token
