@@ -4,12 +4,14 @@ import (
 	_ "embed"
 )
 
-// The bb cli "version" var is generated in this package according to the
-// Bazel flag value --//cli/version:cli_version
+// This is populated by the populate_version genrule.
 //
-//go:embed version_flag.txt
-var cliVersionFlag string
+//go:embed version.txt
+var versionTag string
 
 func String() string {
-	return cliVersionFlag
+	if versionTag == "" {
+		return "unknown"
+	}
+	return versionTag
 }
