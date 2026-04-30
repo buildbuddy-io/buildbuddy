@@ -10,24 +10,23 @@ import (
 
 // Configure adds `--script_path` to a bazel run command so that we can
 // invoke the build and the run separately.
-func Configure(args []string) (newArgs []string, scriptPath string, err error) {
-	if arg.GetCommand(args) != "run" {
-		return args, "", nil
+func Configure(pair *arg.ArgPair) (scriptPath string, err error) {
+	if arg.GetCommand(pair.Effective) != "run" {
+		return "", nil
 	}
 	// If --script_path is already set, don't create a run script ourselves,
 	// since the caller probably has the intention to invoke it on their own.
-	existingScript := arg.Get(args, "script_path")
-	if existingScript != "" {
-		return args, "", nil
+	if arg.Get(pair.Effective, "script_path") != "" {
+		return "", nil
 	}
 	script, err := os.CreateTemp("", "bb-run-*")
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 	defer script.Close()
 	scriptPath = script.Name()
-	args = arg.Append(args, "--script_path="+scriptPath)
-	return args, scriptPath, nil
+	pair.Append("--script_path=" + scriptPath)
+	return scriptPath, nil
 }
 
 // Invoke executes the run script, replacing the current process.

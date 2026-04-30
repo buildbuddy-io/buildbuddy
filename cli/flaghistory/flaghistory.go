@@ -21,14 +21,18 @@ const (
 	besBackendFlagName = "bes_backend"
 )
 
-func SaveFlags(args []string) []string {
-	command := arg.GetCommand(args)
+func SaveFlags(pair *arg.ArgPair) {
+	command := arg.GetCommand(pair.Raw)
 	if command == "build" || command == "test" || command == "run" || command == "query" || command == "cquery" {
-		saveFlag(args, besBackendFlagName, "", 1)
-		saveFlag(args, BesResultsUrlFlagName, "", 1)
-		args = saveFlag(args, InvocationIDFlagName, uuid.New(), 2)
+		saveValue(besBackendFlagName, arg.Get(pair.Effective, besBackendFlagName), 1)
+		saveValue(BesResultsUrlFlagName, arg.Get(pair.Effective, BesResultsUrlFlagName), 1)
+		invocationID := arg.Get(pair.Effective, InvocationIDFlagName)
+		if invocationID == "" {
+			invocationID = uuid.New()
+			pair.Append("--" + InvocationIDFlagName + "=" + invocationID)
+		}
+		saveValue(InvocationIDFlagName, invocationID, 2)
 	}
-	return args
 }
 
 // GetPreviousFlag returns the previous value of a flag, or an empty string if
@@ -64,16 +68,11 @@ func GetLastBackend() (string, error) {
 	return lastBackend, nil
 }
 
-func saveFlag(args []string, flag, backup string, maxValues int) []string {
-	value := arg.Get(args, flag)
-	if value == "" {
-		value = backup
-	}
-	args = arg.Append(args, "--"+flag+"="+value)
+func saveValue(flag, value string, maxValues int) {
 	path := getPreviousFlagPath(flag)
 	if path == "" {
 		log.Debugf("Failed to get path for flag %q", flag)
-		return args
+		return
 	}
 	var newContent string
 	oldContent, err := os.ReadFile(path)
@@ -88,7 +87,6 @@ func saveFlag(args []string, flag, backup string, maxValues int) []string {
 		}
 	}
 	os.WriteFile(path, []byte(newContent), 0777)
-	return args
 }
 
 func getPreviousFlagPath(flagName string) string {

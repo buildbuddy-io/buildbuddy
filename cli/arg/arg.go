@@ -242,3 +242,27 @@ func Append(args []string, arg ...string) []string {
 	}
 	return JoinExecutableArgs(bazelArgs, execArgs)
 }
+
+// ArgPair holds the raw args sent to Bazelisk alongside a fully-resolved
+// effective view used internally for reading flags. The two slices diverge
+// only by rc-file expansion: Raw is what Bazelisk executes, Effective is
+// Raw with all bazelrc/config entries expanded.
+//
+// Use Append to add an explicit flag — both slices are updated atomically
+// without re-reading bazelrc files. When a plugin may have added a --bazelrc
+// flag to Raw, the caller must refresh Effective by calling
+// parser.ResolveAndCanonicalizeArgs(pair.Raw).
+type ArgPair struct {
+	Raw       []string
+	Effective []string
+}
+
+// Append adds an explicit flag to both Raw and Effective without re-resolving
+// bazelrc files. Use this whenever the added flag value is known at call time
+// and does not itself reference a new rc file.
+func (p *ArgPair) Append(flags ...string) {
+	for _, f := range flags {
+		p.Raw = Append(p.Raw, f)
+		p.Effective = Append(p.Effective, f)
+	}
+}

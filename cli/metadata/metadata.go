@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
-func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
+func AppendBuildMetadata(pair *arg.ArgPair, originalArgs []string) error {
 	originalArgs = append(
 		// os.Args[0] might be something like /usr/local/bin/bb.
 		// filepath.Base gets just the "bb" part.
@@ -25,7 +25,7 @@ func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
 
 	originalArgsJSON, err := json.Marshal(originalArgs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal original command arguments: %s", err)
+		return fmt.Errorf("failed to marshal original command arguments: %s", err)
 	}
 
 	metadataFlags := []string{
@@ -37,7 +37,7 @@ func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
 	// script.
 	// TODO: Maybe respect existing env vars as well, since those would also
 	// get overridden by build metadata.
-	if arg.Get(args, "workspace_status_command") == "" {
+	if arg.Get(pair.Effective, "workspace_status_command") == "" {
 		gitMdFlags, err := gitMetadataFlags()
 		if err != nil {
 			log.Debugf("Failed to compute git metadata flags: %s", err)
@@ -45,13 +45,15 @@ func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
 			metadataFlags = append(metadataFlags, gitMdFlags...)
 		}
 	}
-	// Append default metadata just after the bazel command and before other
+	// Insert default metadata just after the bazel command and before other
 	// flags, so that it can be overridden by user metadata flags if needed.
-	args = appendBazelCommandArgs(args, metadataFlags)
+	// Both slices are updated so the pair stays in sync.
+	pair.Raw = appendBazelCommandArgs(pair.Raw, metadataFlags)
+	pair.Effective = appendBazelCommandArgs(pair.Effective, metadataFlags)
 	// TODO: Add metadata to help understand how config files were expanded,
 	// and how plugins modified args (maybe not as build_metadata, but
 	// rather as some sort of artifact we attach to the invocation ID).
-	return args, nil
+	return nil
 }
 
 func gitMetadataFlags() ([]string, error) {

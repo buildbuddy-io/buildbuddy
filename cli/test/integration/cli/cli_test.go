@@ -103,6 +103,12 @@ func TestInvokeViaBazelisk(t *testing.T) {
 	}
 }
 
+// TestLateBazelrcAddedByPreBazelPlugin verifies that a --bazelrc flag prepended
+// by a pre_bazel plugin is respected by Bazelisk, because bb passes raw
+// (unexpanded) startup args to Bazelisk. A known behavioral consequence: when a
+// plugin prepends --bazelrc=X ahead of --bazelrc=/dev/null, X takes effect
+// because Bazelisk applies rc files left-to-right. Users who want /dev/null to
+// suppress everything must not allow plugins to prepend rc files ahead of it.
 func TestLateBazelrcAddedByPreBazelPlugin(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -111,9 +117,12 @@ func TestLateBazelrcAddedByPreBazelPlugin(t *testing.T) {
 	}{
 		{name: "bazelrc added in a pre_bazel plugin is respected", wantSuccess: true},
 
-		// In the following cases, the --bazelrc added by the pre_bazel plugin should be ignored.
+		// --ignore_all_rc_files still suppresses rc files added later in the pipeline.
 		{name: "--ignore_all_rc_files is respected", startupArgs: []string{"--ignore_all_rc_files"}, wantSuccess: false},
-		{name: "--bazelrc=/dev/null is respected", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: false},
+		// When bb preserves the raw startup args for Bazelisk, a pre-bazel hook
+		// that prepends its own --bazelrc can still apply it ahead of
+		// --bazelrc=/dev/null.
+		{name: "--bazelrc=/dev/null does not suppress prepended bazelrc", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ws := newBazelrcWorkspace(t)
@@ -143,6 +152,8 @@ mv "$tmp" "$1"
 	}
 }
 
+// TestLateBazelrcAddedByBazeliskWrapper verifies the same raw-args behavior as
+// TestLateBazelrcAddedByPreBazelPlugin but for Bazelisk wrappers (tools/bazel).
 func TestLateBazelrcAddedByBazeliskWrapper(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -151,7 +162,10 @@ func TestLateBazelrcAddedByBazeliskWrapper(t *testing.T) {
 	}{
 		{name: "bazelrc added by bazelisk wrapper is respected", wantSuccess: true},
 		{name: "--ignore_all_rc_files is respected", startupArgs: []string{"--ignore_all_rc_files"}, wantSuccess: false},
-		{name: "--bazelrc=/dev/null is respected", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: false},
+		// When bb preserves the raw startup args for Bazelisk, a wrapper that
+		// prepends its own --bazelrc can still apply it ahead of
+		// --bazelrc=/dev/null.
+		{name: "--bazelrc=/dev/null does not suppress prepended bazelrc", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ws := newBazelrcWorkspace(t)
@@ -229,6 +243,55 @@ fi
 	testfs.MakeExecutable(t, ws, "assert_single_workspace_rc_arg.sh")
 
 	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--test_output=errors", ":assert_single_workspace_rc_arg"))
+	require.NoErrorf(t, err, "output: %s", string(b))
+}
+
+func TestConfigsArePassedUnexpandedToBazeliskWrapper(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `test:foo --test_arg=from-config`,
+		"BUILD": `
+sh_test(name = "assert_config_arg", srcs = ["assert_config_arg.sh"])
+`,
+		"assert_config_arg.sh": `#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "from-config" ]]; then
+    exit 0
+  fi
+done
+echo "config was not applied by bazel" >&2
+exit 1
+`,
+		// If tools/bazel is present in the workspace root, Bazelisk will run it
+		// instead of the regular bazel binary. Assert that bb preserves
+		// --config=foo for Bazelisk instead of expanding it ahead of time.
+		"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+saw_config=0
+checking_invocation=0
+for arg in "$@"; do
+  if [[ "$arg" == ":assert_config_arg" ]]; then
+    checking_invocation=1
+  fi
+  if [[ "$arg" == "--config=foo" ]]; then
+    saw_config=1
+  fi
+  if [[ "$arg" == "--test_arg=from-config" ]]; then
+    echo "cli expanded --config=foo before invoking bazelisk wrapper" >&2
+    exit 1
+  fi
+done
+if [[ "$checking_invocation" -eq 1 && "$saw_config" -ne 1 ]]; then
+  echo "bazelisk wrapper did not receive --config=foo" >&2
+  exit 1
+fi
+exec "$BAZEL_REAL" "$@"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "assert_config_arg.sh")
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--test_output=errors", "--config=foo", ":assert_config_arg"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+
 func TestMain(m *testing.M) {
 	// Change to a directory that looks like a Bazel workspace so that
 	// workspace.Path() can find it.
@@ -62,19 +63,8 @@ func TestPreviousFlagStorage(t *testing.T) {
 				require.Equalf(t, expectedValues, actualValues, "numStores=%d", numStores)
 
 				value := fmt.Sprintf("value_%d", numStores+1)
-				flagAndValue := fmt.Sprintf("--%s=%s", flag, value)
-				var argsIn []string
-				var backup string
-				// Deterministically vary whether the flag is specified explicitly.
-				if rng.Int()%2 == 0 {
-					argsIn = []string{flagAndValue}
-					backup = ""
-				} else {
-					argsIn = []string{}
-					backup = value
-				}
-				argsOut := saveFlag(argsIn, flag, backup, maxValues)
-				require.Equal(t, flagAndValue, argsOut[len(argsOut)-1])
+				_ = rng.Int() // keep the RNG in the same state as before
+				saveValue(flag, value, maxValues)
 			}
 		})
 	}

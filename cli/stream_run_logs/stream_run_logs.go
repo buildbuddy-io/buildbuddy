@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
@@ -55,55 +56,51 @@ type Opts struct {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string, besBackend string) ([]string, *Opts, error) {
-	parsedArgs, err := parser.ParseArgs(args)
+// If opts are returned, the invocation ID is guaranteed to be set in both opts
+// and pair (appended to pair.Raw if it was not already present).
+func Configure(pair *arg.ArgPair, besBackend string) (*Opts, error) {
+	effectiveParsedArgs, err := parser.ParseArgs(pair.Effective)
 	if err != nil {
-		return args, nil, status.WrapErrorf(err, "failed to parse args")
+		return nil, status.WrapErrorf(err, "failed to parse effective args")
 	}
 
-	enabled, onFailure, err := parseFlags(parsedArgs)
+	enabled, onFailure, err := parseFlags(effectiveParsedArgs)
 	if err != nil {
-		return parsedArgs.Format(), nil, err
+		return nil, err
 	} else if !enabled {
-		return parsedArgs.Format(), nil, nil
+		return nil, nil
 	}
 
 	// If output is being written to a pipe or file, it likely doesn't need to be streamed to the server and displayed in the UI.
 	// TODO: Handle the case where one of either stderr or stdout is connected to a terminal and the other is not.
 	if !terminal.IsTTY(os.Stdout) || !terminal.IsTTY(os.Stderr) {
-		return parsedArgs.Format(), nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
+		return nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
 	}
 
-	apiKey := parser.GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")
+	apiKey := parser.GetRemoteHeaderVal(effectiveParsedArgs, "x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
-		return parsedArgs.Format(), nil, handleErr("unauthenticated request", onFailure)
+		return nil, handleErr("unauthenticated request", onFailure)
 	}
 
 	if besBackend == "" {
-		return args, nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
+		return nil, status.FailedPreconditionError("bes_backend is required for streaming run logs")
 	}
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid, _ := parser.GetBazelCommandOptionVal(parsedArgs, "invocation_id")
+	iid := arg.Get(pair.Effective, "invocation_id")
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
+			return nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
 		}
 		iid = invocationUUID.String()
-		opt, err := parser.MakeCommandOption("invocation_id", &iid)
-		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to make invocation ID option: %s", err), onFailure)
-		}
-		parsedArgs.Append(opt)
+		pair.Append("--invocation_id=" + iid)
 	}
 
-	updatedArgs := parsedArgs.Format()
-
-	return updatedArgs, &Opts{
+	return &Opts{
 		BesBackend:   besBackend,
 		InvocationID: iid,
 		ApiKey:       apiKey,

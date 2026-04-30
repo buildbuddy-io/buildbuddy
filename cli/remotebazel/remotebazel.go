@@ -1298,14 +1298,20 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
 	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
 
-	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("configure api key: %w", err)
-	}
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
+	effectiveBazelArgs, err := parser.ResolveAndCanonicalizeArgs(bazelArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve bazel args: %w", err)
+	}
+
+	pair := &arg.ArgPair{Raw: bazelArgs, Effective: effectiveBazelArgs}
+	if err := login.ConfigureAPIKey(pair); err != nil {
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
+	}
+	bazelArgs = pair.Raw
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same

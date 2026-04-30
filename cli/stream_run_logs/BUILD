@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 # gazelle:default_visibility //cli:__subpackages__,//enterprise:__subpackages__
 package(default_visibility = [
@@ -11,6 +11,7 @@ go_library(
     srcs = ["stream_run_logs.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs",
     deps = [
+        "//cli/arg",
         "//cli/log",
         "//cli/parser",
         "//cli/parser/parsed",
@@ -24,5 +25,19 @@ go_library(
         "@com_github_creack_pty//:pty",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "stream_run_logs_test",
+    srcs = ["stream_run_logs_test.go"],
+    embed = [":stream_run_logs"],
+    deps = [
+        "//cli/arg",
+        "//cli/log",
+        "//cli/parser",
+        "//cli/parser/test_data",
+        "@com_github_creack_pty//:pty",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -322,14 +322,14 @@ func openInBrowser(url string) error {
 	return exec.Command(cmd, url).Run()
 }
 
-func ConfigureAPIKey(args []string) ([]string, error) {
-	if cmd, _ := parser.GetBazelCommandAndIndex(args); !isSupportedCommand(cmd) {
-		return args, nil
+func ConfigureAPIKey(pair *arg.ArgPair) error {
+	if cmd, _ := parser.GetBazelCommandAndIndex(pair.Raw); !isSupportedCommand(cmd) {
+		return nil
 	}
 
 	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
-	if arg.Has(args, apiKeyHeader) {
-		return args, nil
+	if arg.Has(pair.Effective, apiKeyHeader) {
+		return nil
 	}
 
 	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
@@ -339,13 +339,14 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		// Making this fatal would be inconvenient for new workspaces,
 		// so just log a debug message and move on.
 		log.Debugf("Failed to read API key from .git/config: %s", err)
-		return args, nil
+		return nil
 	}
 	if apiKey == "" {
-		return args, nil
+		return nil
 	}
 
-	return arg.Append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
+	pair.Append("--" + apiKeyHeader + "=" + strings.TrimSpace(apiKey))
+	return nil
 }
 
 // Commands that support the `--remote_header` bazel flag
