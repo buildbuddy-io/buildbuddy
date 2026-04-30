@@ -323,6 +323,11 @@ const (
 	// Name of a custom resource configured on an executor.
 	CustomResourceNameLabel = "resource_name"
 
+	// Status of a proactive task cancellation request received by an executor:
+	// `removed_from_queue` if the local task reservation was removed, or
+	// `task_not_found` if no queued reservation matched the task ID.
+	ProactiveTaskCancellationStatus = "status"
+
 	// Name of a file.
 	FileName = "file_name"
 
@@ -1300,6 +1305,15 @@ var (
 		Help:      "Number of executor registrations on the scheduler.",
 	}, []string{
 		VersionLabel,
+	})
+
+	RemoteExecutionProactiveTaskCancellationRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "proactive_task_cancellation_requests",
+		Help:      "Number of proactive task cancellation requests received by executors, labeled by status.",
+	}, []string{
+		ProactiveTaskCancellationStatus,
 	})
 
 	// #### Examples
