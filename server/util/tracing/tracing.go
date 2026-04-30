@@ -8,8 +8,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,13 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"go.opentelemetry.io/contrib/detectors/aws/ec2/v2"
 	"go.opentelemetry.io/contrib/detectors/aws/eks"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -34,10 +32,30 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
-	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
+
+// Re-exported aliases of the lightweight //server/util/tracing/span API.
+//
+// New code should import //server/util/tracing/span directly when only these
+// helpers are needed: that package has a tiny dependency footprint, while
+// importing //server/util/tracing pulls in the OTel SDK, OTLP/jaeger exporters,
+// and the AWS/GCP/EKS resource detectors (which transitively drag in
+// k8s.io/client-go, gnostic-models, etc.). These aliases exist purely so that
+// the existing ~50 callers of //server/util/tracing don't need to be touched.
+var (
+	StartSpan                       = span.StartSpan
+	StartNamedSpan                  = span.StartNamedSpan
+	AddStringAttributeToCurrentSpan = span.AddStringAttributeToCurrentSpan
+	RecordErrorToSpan               = span.RecordErrorToSpan
+	InjectProtoTraceMetadata        = span.InjectProtoTraceMetadata
+	ExtractProtoTraceMetadata       = span.ExtractProtoTraceMetadata
+)
+
+// SetMetadata is re-exported from //server/util/tracing/span. See that
+// package for documentation.
+type SetMetadata = span.SetMetadata
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
@@ -52,13 +70,13 @@ var (
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
 )
 
-// Re-initialized in Configure. Set here so tests that don't call Configure
-// still work.
-var tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
-
 const (
-	resourceDetectionTimeout      = 5 * time.Second
-	buildBuddyInstrumentationName = "buildbuddy.io"
+	resourceDetectionTimeout = 5 * time.Second
+	// buildBuddyInstrumentationName is the OpenTelemetry instrumentation name
+	// used by spans started via this package and via
+	// //server/util/tracing/span. It is re-exported as span.InstrumentationName
+	// to avoid drift between the two packages.
+	buildBuddyInstrumentationName = span.InstrumentationName
 	traceHeader                   = "x-buildbuddy-trace"
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
@@ -300,7 +318,9 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s, resource detectors: %s", sampler.Description(), strings.Join(*traceResourceDetectors, ", "))
-	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
+	// Spans started via //server/util/tracing/span look up the tracer from the
+	// global TracerProvider on each call, so they automatically pick up the
+	// SDK provider we just installed.
 	return nil
 }
 
@@ -320,55 +340,6 @@ func parseHTTPOptions(s string) ([]otlptracehttp.Option, error) {
 		}))
 	}
 	return opts, nil
-}
-
-type SetMetadata func(m *tpb.Metadata)
-
-type traceMetadataProtoCarrier struct {
-	metadata    map[string]string
-	setMetadata SetMetadata
-}
-
-func newTraceMetadataProtoCarrier(metadata *tpb.Metadata, setMetadata SetMetadata) *traceMetadataProtoCarrier {
-	return &traceMetadataProtoCarrier{
-		metadata:    metadata.GetEntries(),
-		setMetadata: setMetadata,
-	}
-}
-
-func (c *traceMetadataProtoCarrier) Get(key string) string {
-	return c.metadata[key]
-}
-
-func (c *traceMetadataProtoCarrier) Set(key string, value string) {
-	if c.metadata == nil {
-		c.metadata = make(map[string]string)
-		if c.setMetadata == nil {
-			// Should never happen since this is only called via Inject which always sets setMetadata function.
-			log.Errorf("Can't set metadata w/o setMetadata function")
-			return
-		}
-		c.setMetadata(&tpb.Metadata{Entries: c.metadata})
-	}
-	c.metadata[key] = value
-}
-
-func (c *traceMetadataProtoCarrier) Keys() []string {
-	var keys []string
-	for k := range c.metadata {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func InjectProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata, setMetadata SetMetadata) {
-	p := otel.GetTextMapPropagator()
-	p.Inject(ctx, newTraceMetadataProtoCarrier(metadata, setMetadata))
-}
-
-func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) context.Context {
-	p := otel.GetTextMapPropagator()
-	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }
 
 type HttpServeMux struct {
@@ -420,52 +391,10 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.tracingHandler.ServeHTTP(w, r)
 }
 
-// StartSpan starts a new span named after the calling function.
-// Note:
-// (1) StartSpan doesn't support --app.trace_fraction_overrides, if you would
-// like to override the trace fraction with a specified function, please use
-// StartNamedSpan instead.
-// (2) If you want to record a trace inside a loop, or in a performance-critical
-// path, please use StartNamedSpan instead.
-func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "unknown_go_function", opts...)
-	if !span.IsRecording() {
-		return ctx, span
-	}
-
-	rpc := make([]uintptr, 1)
-	n := runtime.Callers(2, rpc[:])
-	if n > 0 {
-		frame, _ := runtime.CallersFrames(rpc).Next()
-		span.SetName(filepath.Base(frame.Function))
-	}
-	return ctx, span
-}
-
-// StartNamedSpan is like StartSpan, expect the caller specifies the name
-// instead of using the call stack.
-func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return tracer.Start(ctx, name, opts...)
-}
-
-func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
-	span := trace.SpanFromContext(ctx)
-	if !span.IsRecording() {
-		return
-	}
-	span.SetAttributes(attribute.String(key, value))
-}
-
-// RecordErrorToSpan records a non-nil error to the span; and does nothing if
-// span is not recording or err is nil.
-func RecordErrorToSpan(span trace.Span, err error) {
-	if err == nil {
-		return
-	}
-	if !span.IsRecording() {
-		return
-	}
-
-	span.RecordError(err)
-	span.SetStatus(codes.Error, err.Error())
-}
+// StartSpan, StartNamedSpan, AddStringAttributeToCurrentSpan,
+// RecordErrorToSpan, InjectProtoTraceMetadata, ExtractProtoTraceMetadata,
+// and the SetMetadata type are re-exported from
+// //server/util/tracing/span. See the var/type aliases at the top of this
+// file. The implementations live in that package so binaries that only need
+// the span helpers (e.g. goinit) can depend on it without dragging in the
+// OTel SDK, exporters, and resource detectors.

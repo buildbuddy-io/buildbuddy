@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/status",
-        "//server/util/tracing",
+        "//server/util/tracing/span",
         "@com_github_mdlayher_vsock//:vsock",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@io_opentelemetry_go_otel_metric//noop",
