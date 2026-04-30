@@ -223,12 +223,14 @@ func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocati
 	return in.GroupID, nil
 }
 
-func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
+func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit, offset int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
 	rq := d.h.NewQuery(ctx, "invocationdb_get_expired_invocations").Raw(
-		`SELECT * FROM "Invocations" as i
-             WHERE i.created_at_usec < ?
-             LIMIT ?`, cutoffUsec, limit)
+		`SELECT *
+		FROM "Invocations" as i
+		WHERE i.created_at_usec < ?
+		ORDER BY i.created_at_usec
+		LIMIT ? OFFSET ?`, cutoffUsec, limit, offset)
 	return db.ScanAll(rq, &tables.Invocation{})
 }
 
