@@ -257,6 +257,7 @@ use_repo(
     "com_github_rantav_go_grpc_channelz",
     "com_github_roaringbitmap_roaring",
     "com_github_rs_zerolog",
+    "com_github_sendgrid_sendgrid_go",
     "com_github_shirou_gopsutil_v3",
     "com_github_shurcool_githubv4",
     "com_github_sirupsen_logrus",
