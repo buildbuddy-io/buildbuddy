@@ -3,6 +3,7 @@ syntax = "proto3";
 package api.v1;
 
 import "proto/auditlog.proto";
+import "proto/context.proto";
 import "google/protobuf/timestamp.proto";
 
 // The selector used to specify which audit logs to return.
@@ -28,6 +29,11 @@ message GetAuditLogRequest {
   // If unset or less than 1, a server default is used.
   // Values greater than 1000 are capped at 1000.
   int32 page_size = 3;
+
+  // Optional request context.
+  // Set group_id to query a different organization when the caller is
+  // authorized to access it.
+  context.RequestContext request_context = 4;
 }
 
 // Response from calling GetAuditLog.
