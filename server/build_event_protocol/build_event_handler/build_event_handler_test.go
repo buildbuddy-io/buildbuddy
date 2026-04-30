@@ -349,6 +349,105 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	assertAPIKeyRedacted(t, invocation, "APIKEY1")
 }
 
+func TestFinalizeInvocationPreservesPublicShare(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testUsers := testauth.TestUsers("USER1", "GROUP1")
+	testUsers["APIKEY1"] = testUsers["USER1"]
+	auth := testauth.NewTestAuthenticator(t, testUsers)
+	te.SetAuthenticator(auth)
+	te.GetDBHandle().NewQuery(context.Background(), "create_group").Create(&tables.Group{
+		GroupID:        "GROUP1",
+		SharingEnabled: true,
+	})
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=APIKEY1'"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	authCtx := auth.AuthContextFromAPIKey(ctx, "APIKEY1")
+	invocation, err := build_event_handler.LookupInvocation(te, authCtx, testInvocationID)
+	require.NoError(t, err)
+
+	invocation.Acl.OthersPermissions.Read = true
+	user, err := auth.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	err = te.GetInvocationDB().UpdateInvocationACL(authCtx, &user, testInvocationID, invocation.Acl)
+	require.NoError(t, err)
+
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	invocation, err = build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
+}
+
+func TestWriteBuildMetadataPreservesPublicShare(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testUsers := testauth.TestUsers("USER1", "GROUP1")
+	testUsers["APIKEY1"] = testUsers["USER1"]
+	auth := testauth.NewTestAuthenticator(t, testUsers)
+	te.SetAuthenticator(auth)
+	te.GetDBHandle().NewQuery(context.Background(), "create_group").Create(&tables.Group{
+		GroupID:        "GROUP1",
+		SharingEnabled: true,
+	})
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(
+		startedEvent(
+			"--remote_header='"+authutil.APIKeyHeader+"=APIKEY1'",
+			&bspb.BuildEventId_BuildMetadata{},
+			&bspb.BuildEventId_WorkspaceStatus{},
+		),
+		testInvocationID,
+		1,
+	)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	authCtx := auth.AuthContextFromAPIKey(ctx, "APIKEY1")
+	invocation, err := build_event_handler.LookupInvocation(te, authCtx, testInvocationID)
+	require.NoError(t, err)
+	invocation.Acl.OthersPermissions.Read = true
+	user, err := auth.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	err = te.GetInvocationDB().UpdateInvocationACL(authCtx, &user, testInvocationID, invocation.Acl)
+	require.NoError(t, err)
+
+	request = streamRequest(buildMetadataEvent(map[string]string{"ROLE": "CI"}), testInvocationID, 2)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 3)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	invocation, err = build_event_handler.LookupInvocation(te, authCtx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, "abc123", invocation.CommitSha)
+
+	invocation, err = build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
+}
+
 func TestAuthenticatedHandleEventWithOptionlessStartedEvent(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("USER1", "GROUP1")
