@@ -79,6 +79,221 @@
   padding-top: 1px;
 }
 
+.target-edges-card .content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.target-edges-header {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.target-edges-subtitle {
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.target-edges-empty-state {
+  color: var(--color-text-secondary);
+}
+
+.target-edges-accordion {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.target-edges-accordion-item {
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.target-edges-accordion-item:last-child {
+  border-bottom: 0;
+}
+
+.target-edges-accordion-header {
+  align-items: flex-start;
+  background: var(--color-bg-card);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  outline: none;
+  padding: 14px 16px;
+}
+
+.target-edges-accordion-header.success {
+  box-shadow: inset 3px 0 0 var(--color-status-success);
+}
+
+.target-edges-accordion-header.cached {
+  box-shadow: inset 3px 0 0 var(--color-text-tertiary);
+}
+
+.target-edges-accordion-header.failure {
+  box-shadow: inset 3px 0 0 var(--color-status-error);
+}
+
+.target-edges-accordion-header:hover {
+  background: var(--color-bg-hover);
+}
+
+.target-edges-accordion-item.expanded .target-edges-accordion-header {
+  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
+}
+
+.target-edges-accordion-header:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.target-edges-accordion-chevron {
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.target-edges-accordion-chevron .icon {
+  height: 18px;
+  width: 18px;
+}
+
+.target-edges-accordion-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.target-edges-accordion-body {
+  background: var(--color-bg-secondary);
+  padding: 14px 16px 16px 42px;
+}
+
+.target-edges-accordion-sections {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.target-edges-accordion-section {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.target-edges-accordion-section-title {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.target-edges-related-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.target-edges-related-action {
+  color: var(--color-text-primary);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.target-edge-action-summary {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.target-edge-result-indicator {
+  border-radius: 999px;
+  flex-shrink: 0;
+  height: 8px;
+  margin-top: 6px;
+  width: 8px;
+}
+
+.target-edge-result-indicator.success {
+  background: var(--color-status-success);
+}
+
+.target-edge-result-indicator.cached {
+  background: var(--color-text-tertiary);
+}
+
+.target-edge-result-indicator.failure {
+  background: var(--color-status-error);
+}
+
+.target-edge-combined-label {
+  align-items: baseline;
+  display: flex;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.target-edge-arrow {
+  flex-shrink: 0;
+}
+
+.target-edge-inline-link {
+  font-weight: 500;
+  max-width: 100%;
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
+}
+
+.target-edge-target-label {
+  display: inline-block;
+  flex: 0 1 auto;
+  max-width: min(48ch, 60%);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.target-edge-action-link {
+  display: inline-block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-edge-inline-link-disabled {
+  color: var(--color-link);
+  cursor: default;
+  text-decoration: underline;
+}
+
+.target-edge-current-target {
+  color: var(--color-text-secondary);
+}
+
+.target-edge-arrow {
+  color: var(--color-text-secondary);
+  padding: 0 4px;
+}
+
+@media (max-width: 720px) {
+  .target-edges-header {
+    flex-direction: column;
+  }
+}
+
 .invocation-action-card .text-link {
   font-weight: 600;
   text-decoration: underline;

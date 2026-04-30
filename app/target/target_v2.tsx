@@ -38,13 +38,23 @@ import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } fro
 import ActionCardComponent from "./action_card";
 import FlakyTargetChipComponent from "./flaky_target_chip";
 import TargetArtifactsCardComponent from "./target_artifacts_card";
+import TargetEdgesCardComponent from "./target_edges_card";
 import TargetTestCoverageCardComponent from "./target_test_coverage_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
 import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
 
-type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache" | "executions";
+type SectionFilter =
+  | "all"
+  | "documents"
+  | "logs"
+  | "coverage"
+  | "actions"
+  | "artifacts"
+  | "cache"
+  | "executions"
+  | "edges";
 
 interface SectionTab {
   id: SectionFilter;
@@ -272,8 +282,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
   // Parses hash like "#coverage-2", "#coverage", "#2", or "#".
   private parseHash(): { section: SectionFilter; run?: number } {
     const parts = (this.props.tab?.replace("#", "") || "").split("-");
-    const sections: string[] = ["documents", "logs", "coverage", "actions", "artifacts", "cache", "executions"];
-    const section = sections.includes(parts[0]) ? (parts[0] as SectionFilter) : "all";
+    const sections: string[] = [
+      "documents",
+      "logs",
+      "coverage",
+      "actions",
+      "artifacts",
+      "cache",
+      "executions",
+      "edges",
+    ];
+    const normalizedSection = parts[0] === "links" ? "edges" : parts[0];
+    const section = sections.includes(normalizedSection) ? (normalizedSection as SectionFilter) : "all";
     const runStr = section !== "all" ? parts[1] : parts[0];
     const run = runStr && /^\d+$/.test(runStr) ? Number(runStr) : undefined;
     return { section, run };
@@ -343,6 +363,9 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     }
     if (this.props.model.getIsRBEEnabled()) {
       sectionTabs.push({ id: "executions", label: "Executions" });
+    }
+    if (this.props.model.hasExecutionLog()) {
+      sectionTabs.push({ id: "edges", label: "Edges" });
     }
     const sectionFromHash = this.getSectionFromHash();
     const activeSection = sectionTabs.some((tab) => tab.id === sectionFromHash) ? sectionFromHash : "all";
@@ -553,6 +576,15 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               search={this.props.search}
               filter=""
               targetLabel={this.props.label}
+            />
+          )}
+          {activeSection === "edges" && this.props.model.hasExecutionLog() && (
+            <TargetEdgesCardComponent
+              invocationId={this.props.invocationId}
+              model={this.props.model}
+              search={this.props.search}
+              targetLabel={this.props.label}
+              targetFiles={target.files as build_event_stream.File[]}
             />
           )}
         </div>
