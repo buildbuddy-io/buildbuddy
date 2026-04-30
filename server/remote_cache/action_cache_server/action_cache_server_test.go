@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -460,6 +462,235 @@ func TestHitTracking(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestLayeredActionCacheRead(t *testing.T) {
+	flags.Set(t, "cache.layered_read_max_depth", int64(5))
+
+	for _, tc := range []struct {
+		name              string
+		writeInstanceName string
+		readInstanceName  string
+		cacheFound        bool
+	}{
+		{
+			name:              "EmptyInstanceName",
+			writeInstanceName: "",
+			readInstanceName:  "",
+			cacheFound:        true,
+		},
+		{
+			name:              "SameInstanceName",
+			writeInstanceName: "foo",
+			readInstanceName:  "foo",
+			cacheFound:        true,
+		},
+		{
+			name:              "NeverUseEmptyAsBaseLayer",
+			writeInstanceName: "",
+			readInstanceName:  "foo",
+			cacheFound:        false,
+		},
+		{
+			name:              "layeredRead",
+			writeInstanceName: "foo",
+			readInstanceName:  "foo/bar",
+			cacheFound:        true,
+		},
+		{
+			name:              "reversedLayeredReadFail",
+			writeInstanceName: "foo/bar",
+			readInstanceName:  "foo",
+			cacheFound:        false,
+		},
+		{
+			name:              "layeredReadMoreThan2Layers",
+			writeInstanceName: "foo/bar",
+			readInstanceName:  "foo/bar/baz",
+			cacheFound:        true,
+		},
+		{
+			name:              "recursiveLayeredRead",
+			writeInstanceName: "foo",
+			readInstanceName:  "foo/bar/baz",
+			cacheFound:        true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+
+			ctx := t.Context()
+			clientConn := runACServer(ctx, t, te)
+			acClient := repb.NewActionCacheClient(clientConn)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+
+			digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, tc.writeInstanceName, repb.DigestFunction_SHA256, []byte("hello world"))
+			require.NoError(t, err)
+			actionDigest := &repb.Digest{
+				Hash:      strings.Repeat("a", 64),
+				SizeBytes: 1024,
+			}
+
+			req := repb.UpdateActionResultRequest{
+				InstanceName:   tc.writeInstanceName,
+				ActionDigest:   actionDigest,
+				DigestFunction: repb.DigestFunction_SHA256,
+				ActionResult: &repb.ActionResult{
+					OutputFiles: []*repb.OutputFile{
+						{
+							Path:   "my/pkg/file",
+							Digest: digestA,
+						},
+					},
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						Worker: "c089b1ff-48c4-4464-b956-ad40a3d9c217",
+					},
+				},
+			}
+			_, err = acClient.UpdateActionResult(ctx, &req)
+			require.NoError(t, err)
+
+			res, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+				InstanceName:   tc.readInstanceName,
+				DigestFunction: repb.DigestFunction_SHA256,
+				ActionDigest:   actionDigest,
+			})
+			if tc.cacheFound {
+				require.NoError(t, err)
+				require.Len(t, res.GetOutputFiles(), 1)
+				assert.Equal(t, "my/pkg/file", res.GetOutputFiles()[0].GetPath())
+				assert.Equal(t, digestA, res.GetOutputFiles()[0].GetDigest())
+			} else {
+				require.Error(t, err)
+				require.True(t, status.IsNotFoundError(err))
+			}
+		})
+	}
+}
+
+func TestLayeredActionCacheReadDisabledByDefault(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := t.Context()
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, "foo", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+	actionDigest := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	_, err = acClient.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		InstanceName:   "foo",
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult: &repb.ActionResult{
+			OutputFiles: []*repb.OutputFile{
+				{
+					Path:   "my/pkg/file",
+					Digest: digestA,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+		InstanceName:   "foo/bar",
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionDigest:   actionDigest,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestLayeredActionCacheReadRespectsMaxDepth(t *testing.T) {
+	flags.Set(t, "cache.layered_read_max_depth", int64(1))
+
+	te := testenv.GetTestEnv(t)
+	ctx := t.Context()
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, "foo", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+	actionDigest := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	_, err = acClient.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		InstanceName:   "foo",
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult: &repb.ActionResult{
+			OutputFiles: []*repb.OutputFile{
+				{
+					Path:   "my/pkg/file",
+					Digest: digestA,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+		InstanceName:   "foo/bar/baz",
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionDigest:   actionDigest,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestLayeredActionCacheReadUsesParentInstanceForValidation(t *testing.T) {
+	flags.Set(t, "cache.layered_read_max_depth", int64(5))
+
+	te := testenv.GetTestEnv(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: cacheRoot}, 100*1024*1024)
+	require.NoError(t, err)
+	te.SetCache(dc)
+
+	ctx := t.Context()
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, "foo", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+	actionDigest := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	_, err = acClient.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		InstanceName:   "foo",
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult: &repb.ActionResult{
+			OutputFiles: []*repb.OutputFile{
+				{
+					Path:   "my/pkg/file",
+					Digest: digestA,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	res, err := acClient.GetActionResult(ctx, &repb.GetActionResultRequest{
+		InstanceName:      "foo/bar",
+		DigestFunction:    repb.DigestFunction_SHA256,
+		ActionDigest:      actionDigest,
+		InlineOutputFiles: []string{"my/pkg/file"},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.GetOutputFiles(), 1)
+	require.Equal(t, []byte("hello world"), res.GetOutputFiles()[0].GetContents())
 }
 
 func update(t *testing.T, ctx context.Context, client repb.ActionCacheClient, outputFiles []*repb.OutputFile) {
