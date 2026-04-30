@@ -1729,12 +1729,16 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
 		} else if props.OS == platform.DarwinOperatingSystemName {
 			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.WindowsOperatingSystemName {
+			counts.SelfHostedWindowsExecutionDurationUsec += duration.Microseconds()
 		}
 	} else {
 		if props.OS == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
 		} else if props.OS == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.WindowsOperatingSystemName {
+			counts.WindowsExecutionDurationUsec += duration.Microseconds()
 		}
 	}
 }
