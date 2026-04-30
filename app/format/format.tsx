@@ -229,11 +229,56 @@ export function sentenceCase(string: string) {
   return string[0].toUpperCase() + string.slice(1);
 }
 
+const ELLIPSIS = "...";
+const MIN_TARGET_PATH_SEGMENTS_TO_COMPACT = 3;
+const DEFAULT_TARGET_PATTERN_PREVIEW_MAX_ITEMS = 3;
+const DEFAULT_TARGET_PATTERN_PREVIEW_MAX_LENGTH = 40;
+
 export function truncateList(list: string[]) {
   if (list.length > 3) {
     return `${list.slice(0, 3).join(", ")} and ${list.length - 3} more`;
   }
   return list.join(", ");
+}
+
+function truncateTargetPatternList(
+  list: string[],
+  {
+    maxItems = DEFAULT_TARGET_PATTERN_PREVIEW_MAX_ITEMS,
+    maxItemLength = DEFAULT_TARGET_PATTERN_PREVIEW_MAX_LENGTH,
+  }: { maxItems?: number; maxItemLength?: number } = {}
+) {
+  const preview = list.slice(0, maxItems).map((pattern) => {
+    let display = pattern;
+
+    // Keep Bazel labels readable by preserving the repo prefix, first package
+    // segment, last package segment, and target name before falling back to a
+    // plain text truncation if the result is still too long.
+    const match = pattern.match(/^([+-]?)(@@?[^/]+)?\/\/([^:]*)(?::(.+))?$/);
+    if (match) {
+      const [, prefix = "", repo = "", packagePath = "", targetName] = match;
+      if (packagePath && !packagePath.includes("...")) {
+        const segments = packagePath.split("/").filter(Boolean);
+        if (segments.length >= MIN_TARGET_PATH_SEGMENTS_TO_COMPACT) {
+          display = `${prefix}${repo}//${segments[0]}/${ELLIPSIS}/${segments[segments.length - 1]}${
+            targetName ? `:${targetName}` : ""
+          }`;
+        }
+      }
+    }
+
+    if (display.length <= maxItemLength) {
+      return display;
+    }
+    if (maxItemLength <= ELLIPSIS.length) {
+      return display.slice(0, maxItemLength);
+    }
+    return `${display.slice(0, maxItemLength - ELLIPSIS.length)}${ELLIPSIS}`;
+  });
+  if (list.length > maxItems) {
+    return `${preview.join(", ")} and ${list.length - maxItems} more`;
+  }
+  return preview.join(", ");
 }
 
 /** Unix epoch expressed in local time. */
@@ -431,6 +476,7 @@ export default {
   bitsPerSecond,
   count,
   truncateList,
+  truncateTargetPatternList,
   formatDate,
   formatTimestampUsec,
   formatTimestampMillis,

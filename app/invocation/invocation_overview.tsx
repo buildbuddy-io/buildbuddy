@@ -81,7 +81,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {(this.props.model.isBazelInvocation() || this.props.model.isHostedBazelInvocation()) && (
             <div className="title" title={this.props.model.getAllPatterns()}>
               {this.props.model.getUserPossessivePrefix()}
-              {this.props.model.getCommand()} {this.props.model.getPattern()}
+              {this.props.model.getCommand()} {this.props.model.getTruncatedPatterns()}
             </div>
           )}
           {this.props.model.workflowConfigured && (
@@ -126,7 +126,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <div className="detail" title={this.props.model.getAllPatterns()}>
               <LayoutGrid className="icon" />
-              {this.props.model.getPattern()}
+              {this.props.model.getTruncatedPatterns()}
             </div>
           )}
           {isBazelInvocation && (

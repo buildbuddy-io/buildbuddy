@@ -28,6 +28,7 @@ import { quote } from "../util/shlex";
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 export const NINJA_ROLE = "NINJA";
+const DEFAULT_PATTERN_PREVIEW_LIMIT = 3;
 
 export const InvocationStatus = invocation_status.InvocationStatus;
 
@@ -660,8 +661,13 @@ export default class InvocationModel {
     return this.optionsParsed?.toolTag;
   }
 
-  getPattern() {
-    return this.getAllPatterns(3);
+  getTruncatedPatterns() {
+    const patterns =
+      this.invocation.pattern ||
+      this.expanded?.id?.pattern?.pattern ||
+      this.aborted?.[this.aborted.length - 1]?.id?.pattern?.pattern ||
+      [];
+    return format.truncateTargetPatternList(patterns, { maxItems: DEFAULT_PATTERN_PREVIEW_LIMIT });
   }
 
   getAllPatterns(patternLimit?: number) {
