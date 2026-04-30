@@ -2,4 +2,8 @@ package fastcopy
 
 import "flag"
 
-var enableFastcopyReflinking = flag.Bool("executor.enable_fastcopy_reflinking", false, "If true, attempt to use `cp --reflink=auto` to link files")
+var (
+	enableFastcopyReflinking = flag.Bool("executor.enable_fastcopy_reflinking", false, "If true, attempt to use `cp --reflink=auto` to link files")
+	logReflinks = flag.Bool("log_reflinks", false, "If true, log reflinks")
+
+)
