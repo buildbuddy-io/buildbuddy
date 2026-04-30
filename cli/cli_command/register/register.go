@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/execution"
+	"github.com/buildbuddy-io/buildbuddy/cli/expand_bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
@@ -191,6 +192,11 @@ func register() {
 			Help:    "Explains the difference between two compact execution logs.",
 			Handler: explain.HandleExplain,
 			Flags:   explain.Flags,
+		},
+		{
+			Name:    "expand-bazelrc",
+			Help:    "Expands bazelrc/config args to a list of Bazel flags.",
+			Handler: expand_bazelrc.HandleExpandBazelrc,
 		},
 	}
 	cli_command.CommandsByName = make(

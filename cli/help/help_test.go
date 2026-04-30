@@ -121,6 +121,7 @@ func TestHelpForBBCommands(t *testing.T) {
 		"ask",
 		"download",
 		"execute",
+		"expand-bazelrc",
 		"explain",
 		"fix",
 		"index",
