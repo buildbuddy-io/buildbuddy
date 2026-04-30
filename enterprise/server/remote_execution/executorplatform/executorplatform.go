@@ -39,7 +39,15 @@ var (
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
 	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
 
-	imageRewriteRules = flag.Slice("executor.container_image_name_rewrites", []ImageRewrite{}, "Configures rules to rewrite matching container image names.")
+	defaultImageRewriteRules = []ImageRewrite{
+		{
+			Prefix:      "gcr.io/flame-public/",
+			Replacement: "buildbuddy.bbcr.io/public/",
+		},
+	}
+
+	imageRewriteRules              = flag.Slice("executor.container_image_name_rewrites", []ImageRewrite{}, "Configures rules to rewrite matching container image names.")
+	enableDefaultImageRewriteRules = flag.Bool("executor.enable_default_image_rewrites", true, "If set, the default image rewrite rule for flame-public to bbcr is enabled.", flag.Internal)
 )
 
 const (
@@ -144,7 +152,11 @@ func GetExecutorProperties() *ExecutorProperties {
 func containerImageName(input string) string {
 	withoutDockerPrefix := strings.TrimPrefix(input, platform.DockerPrefix)
 
-	for _, rr := range *imageRewriteRules {
+	rules := *imageRewriteRules
+	if *enableDefaultImageRewriteRules {
+		rules = append(rules, defaultImageRewriteRules...)
+	}
+	for _, rr := range rules {
 		if after, ok := strings.CutPrefix(withoutDockerPrefix, rr.Prefix); ok {
 			withoutDockerPrefix = rr.Replacement + after
 			break
