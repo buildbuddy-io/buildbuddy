@@ -1643,9 +1643,20 @@
           "legendFormat": "local hit ratio",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(buildbuddy_proxy_byte_stream_chunked_read_fast_path_attempts{region=~\"${proxy_region}\", job=\"cache-proxy\", outcome=\"hit\"}[${window}])) / sum(rate(buildbuddy_proxy_byte_stream_chunked_read_fast_path_attempts{region=~\"${proxy_region}\", job=\"cache-proxy\"}[${window}]))",
+          "legendFormat": "fast path hit ratio",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "Chunk Read Local Cache Hit Ratio [proxy]",
+      "title": "Chunk Read Local Cache / Fast Path Hit Ratio [proxy]",
       "type": "timeseries"
     },
     {

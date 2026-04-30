@@ -293,20 +293,12 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		return m, err
 	}
 
-	splitResp, err := s.remoteCAS.SplitBlob(ctx, &repb.SplitBlobRequest{
-		BlobDigest:     rn.GetDigest(),
-		InstanceName:   rn.GetInstanceName(),
-		DigestFunction: rn.GetDigestFunction(),
-	})
+	chunkDigests, err := s.chunkDigests(ctx, rn, remoteOnly)
 	if err != nil {
-		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-			metrics.ChunkedFailureReasonLabel: "split_blob_error",
-			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-		}).Inc()
 		return m, err
 	}
 
-	chunkRequests := makeChunkReadRequests(rn, splitResp.GetChunkDigests(), req.GetReadOffset())
+	chunkRequests := makeChunkReadRequests(rn, chunkDigests, req.GetReadOffset())
 	if len(chunkRequests) == 0 {
 		return m, nil
 	}
@@ -383,6 +375,78 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	}
 	_ = localWriteGroup.Wait()
 	return m, nil
+}
+
+func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {
+	fastPathEnabled := s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.cdc_read_fast_path", false)
+	if fastPathEnabled && !remoteOnly {
+		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
+			return chunkDigests, nil
+		}
+	}
+	splitResp, err := s.remoteCAS.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     rn.GetDigest(),
+		InstanceName:   rn.GetInstanceName(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
+	if err != nil {
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "split_blob_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+		}).Inc()
+		return nil, err
+	}
+	chunkDigests := splitResp.GetChunkDigests()
+	if !remoteOnly {
+		s.storeLocalChunkedManifest(ctx, rn, chunkDigests)
+	}
+	return chunkDigests, nil
+}
+
+func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName) ([]*repb.Digest, bool) {
+	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	if err != nil {
+		outcome := "manifest_error"
+		if status.IsNotFoundError(err) {
+			outcome = "manifest_miss"
+		}
+		recordChunkedReadFastPathAttempt(outcome)
+		return nil, false
+	}
+	chunkResourceNames := manifest.ChunkResourceNames()
+	for _, chunkRN := range chunkResourceNames {
+		chunkRN.Compressor = rn.GetCompressor()
+	}
+	missing, err := s.localCache.FindMissing(ctx, chunkResourceNames)
+	if err != nil {
+		recordChunkedReadFastPathAttempt("find_missing_error")
+		return nil, false
+	}
+	if len(missing) > 0 {
+		recordChunkedReadFastPathAttempt("chunks_missing")
+		return nil, false
+	}
+	recordChunkedReadFastPathAttempt("hit")
+	return manifest.ChunkDigests, true
+}
+
+func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkDigests []*repb.Digest) {
+	manifest := &chunking.Manifest{
+		BlobDigest:     rn.GetDigest(),
+		ChunkDigests:   chunkDigests,
+		InstanceName:   rn.GetInstanceName(),
+		DigestFunction: rn.GetDigestFunction(),
+	}
+	err := manifest.StoreWithoutVerification(ctx, s.localCache)
+	metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
+func recordChunkedReadFastPathAttempt(outcome string) {
+	metrics.ByteStreamChunkedReadFastPathAttempts.With(prometheus.Labels{
+		metrics.FastPathOutcomeLabel: outcome,
+	}).Inc()
 }
 
 func makeChunkReadRequests(rn *digest.CASResourceName, chunkDigests []*repb.Digest, readOffset int64) []chunkReadRequest {

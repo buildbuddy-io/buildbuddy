@@ -276,6 +276,20 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return err
 	}
 
+	return cm.store(ctx, cache)
+}
+
+// StoreWithoutVerification saves the chunked manifest to the cache without
+// checking that all chunks exist or that their combined hash matches the blob
+// digest.
+func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfaces.Cache) error {
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	return cm.store(ctx, cache)
+}
+
+func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}

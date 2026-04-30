@@ -188,6 +188,9 @@ const (
 	// resuming a partial read).
 	ChunkedOffsetReadLabel = "offset_read"
 
+	// Outcome of a cache proxy fast path attempt.
+	FastPathOutcomeLabel = "outcome"
+
 	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -3842,6 +3845,22 @@ var (
 	}, []string{
 		StatusLabel,
 		CompressionType,
+	})
+	ByteStreamChunkedReadFastPathAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_fast_path_attempts",
+		Help:      "Number of chunked reads where the CDC read fast path was attempted, by outcome.",
+	}, []string{
+		FastPathOutcomeLabel,
+	})
+	ByteStreamChunkedReadLocalManifestStoreAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_read_local_manifest_store_attempts",
+		Help:      "Number of attempts to store a CDC manifest in the proxy local cache after a successful remote SplitBlob.",
+	}, []string{
+		StatusHumanReadableLabel,
 	})
 	ByteStreamProxyChunkedReadLocalWriteBackFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,

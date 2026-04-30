@@ -1159,6 +1159,163 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
 }
 
+func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
+	// Setup environment.
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.cdc_read_fast_path": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+
+	var splitBlobCalls atomic.Int32
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		if strings.HasSuffix(method, "/SplitBlob") {
+			splitBlobCalls.Add(1)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	bsClient := bspb.NewByteStreamClient(remoteConn)
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+
+	proxyEnv.SetByteStreamClient(bsClient)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	proxyEnv.SetLocalByteStreamServer(proxyBSS)
+	proxyServer, err := New(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+	go proxyRun()
+	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { proxyConn.Close() })
+	proxy := bspb.NewByteStreamClient(proxyConn)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Write test data directly to the remote cache.
+	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	writeChunkFn := func(chunkData []byte) error {
+		chunkDataCopy := make([]byte, len(chunkData))
+		copy(chunkDataCopy, chunkData)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
+	}
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	require.NoError(t, err)
+	_, err = cdcChunker.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, cdcChunker.Close())
+	require.Greater(t, len(chunkDigests), 1)
+
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+
+	fastPathManifestMissLabels := prometheus.Labels{
+		metrics.FastPathOutcomeLabel: "manifest_miss",
+	}
+	fastPathHitLabels := prometheus.Labels{
+		metrics.FastPathOutcomeLabel: "hit",
+	}
+	storeOKLabels := prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "OK",
+	}
+	fastPathManifestMissBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))
+	fastPathHitBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))
+	storeOKBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))
+
+	downloadCASRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	readBlob := func() []byte {
+		downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadCASRN.DownloadString()})
+		require.NoError(t, err)
+
+		var reconstructedData []byte
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			reconstructedData = append(reconstructedData, res.Data...)
+		}
+		return reconstructedData
+	}
+
+	// Do a single read that will miss the local cache, but should populate it.
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(1), splitBlobCalls.Load())
+	for _, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		require.NoError(t, waitContains(ctx, proxyEnv, chunkRN.ToProto()))
+	}
+
+	// Do a second read and check that it was served through the fast path.
+	require.Equal(t, originalData, readBlob())
+	require.Equal(t, int32(1), splitBlobCalls.Load(), "second read should use the proxy-local manifest and chunks")
+	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
+	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))-fastPathHitBefore)
+	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
+}
+
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
@@ -1170,6 +1327,14 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 			},
 		},
 		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"cache_proxy.cdc_read_fast_path": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1268,6 +1433,15 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	require.NoError(t, err)
 	splitBlobCalls.Store(0)
 
+	fastPathManifestMissLabels := prometheus.Labels{
+		metrics.FastPathOutcomeLabel: "manifest_miss",
+	}
+	storeOKLabels := prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "OK",
+	}
+	fastPathManifestMissBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))
+	storeOKBefore := testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))
+
 	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	readBlob := func() []byte {
 		downloadStream, err := proxy.Read(encryptedUserCtx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
@@ -1302,6 +1476,8 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, found)
 	}
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
 }
 
 func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
@@ -1436,6 +1612,14 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 				"false": false,
 			},
 		},
+		"cache_proxy.cdc_read_fast_path": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1466,7 +1650,15 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	var splitBlobCalls atomic.Int32
+	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		if strings.HasSuffix(method, "/SplitBlob") {
+			splitBlobCalls.Add(1)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}))
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -1518,6 +1710,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	require.NoError(t, err)
 	chunkDigests := splitResp.GetChunkDigests()
 	require.Greater(t, len(chunkDigests), 1)
+	splitBlobCalls.Store(0)
 
 	readLabels := prometheus.Labels{
 		metrics.StatusLabel:     "OK",
@@ -1550,6 +1743,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	got, err := compression.DecompressZstd(nil, gotCompressed)
 	require.NoError(t, err)
 	require.Equal(t, originalData, got)
+	require.Equal(t, int32(1), splitBlobCalls.Load())
 
 	readRequestsAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
@@ -1576,6 +1770,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	got, err = compression.DecompressZstd(nil, gotCompressed)
 	require.NoError(t, err)
 	require.Equal(t, originalData, got)
+	require.Equal(t, int32(1), splitBlobCalls.Load(), "second compressed read should use the proxy-local manifest and chunks")
 
 	readRequestsAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadRequests.With(readLabels))
 	readChunksTotalAfter = testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksTotal.With(readLabels))
