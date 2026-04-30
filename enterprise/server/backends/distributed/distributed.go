@@ -125,6 +125,7 @@ type Cache struct {
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
 	kubeDiscoveryChannel *kubediscovery.PeerWatcher
+	kubeDiscoveryReady   chan struct{}
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
@@ -280,11 +281,14 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		}
 	} else if opts.KubePeerWatcher != nil {
 		dc.kubeDiscoveryChannel = opts.KubePeerWatcher
+		dc.kubeDiscoveryReady = make(chan struct{})
+		var firstUpdate sync.Once
 		dc.kubeDiscoveryChannel.SetUpdateFn(func(peers map[string]string) {
 			dc.log.Infof("distributed cache peer set changed to %v", peers)
 			if err := chash.SetFromMap(peers); err != nil {
 				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
 			}
+			firstUpdate.Do(func() { close(dc.kubeDiscoveryReady) })
 		})
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
@@ -304,7 +308,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return dc.Shutdown(ctx)
 	})
-	if dc.opts.ClusterSize > 0 {
+	if dc.opts.ClusterSize > 0 || dc.kubeDiscoveryChannel != nil {
 		hc.AddHealthCheck("distributed_cache", dc)
 	}
 	return dc, nil
@@ -319,6 +323,14 @@ func (c *Cache) Check(ctx context.Context) error {
 			return status.UnavailableErrorf("Not enough nodes configured %d to meet replication factor %d.", len(c.opts.Nodes), c.opts.ReplicationFactor)
 		}
 		return nil
+	}
+
+	if c.kubeDiscoveryChannel != nil {
+		select {
+		case <-c.kubeDiscoveryReady:
+		default:
+			return status.UnavailableError("waiting for initial kubernetes peer discovery response")
+		}
 	}
 
 	// First check that the number of nodes in our chash
