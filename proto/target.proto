@@ -31,6 +31,9 @@ message TargetMetadata {
   api.v1.TestSize test_size = 5;
 }
 
+// Status for a target within target history. Today GetTargetHistory only
+// stores test targets, so the cache fields below describe test attempts rather
+// than generic build actions.
 message TargetStatus {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -51,6 +54,25 @@ message TargetStatus {
 
   // When the invocation was created.
   int64 invocation_created_at_usec = 5;
+
+  // Whether all recorded test attempts for this target invocation were served
+  // from cache. Older ClickHouse rows may only populate this legacy field
+  // without the explicit cache counts below.
+  bool cached = 6;
+
+  // The number of cached test attempts recorded for this target invocation,
+  // including both local and remote cache hits. A non-zero cached_count does
+  // not imply that all attempts were cached; compare against total_run_count.
+  int32 cached_count = 7;
+
+  // The number of cached test attempts served from the local cache.
+  int32 cached_locally_count = 8;
+
+  // The number of cached test attempts served from the remote cache.
+  int32 cached_remotely_count = 9;
+
+  // The total number of recorded test attempts for this target invocation.
+  int32 total_run_count = 10;
 }
 
 message TargetHistory {

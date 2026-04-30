@@ -435,6 +435,11 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 		TargetType              int32
 		TestSize                int32
 		Status                  int32
+		Cached                  bool
+		CachedCount             int32
+		CachedLocallyCount      int32
+		CachedRemotelyCount     int32
+		TotalRunCount           int32
 		StartTimeUsec           int64
 		DurationUsec            int64
 		InvocationUUID          string
@@ -462,9 +467,14 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 		}
 
 		statuses[row.Label] = append(statuses[row.Label], &trpb.TargetStatus{
-			InvocationId: invocationID,
-			CommitSha:    row.CommitSHA,
-			Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+			InvocationId:        invocationID,
+			CommitSha:           row.CommitSHA,
+			Status:              convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+			Cached:              row.Cached,
+			CachedCount:         row.CachedCount,
+			CachedLocallyCount:  row.CachedLocallyCount,
+			CachedRemotelyCount: row.CachedRemotelyCount,
+			TotalRunCount:       row.TotalRunCount,
 			Timing: &cmpb.Timing{
 				StartTime: timestamppb.New(time.UnixMicro(row.StartTimeUsec)),
 				Duration:  durationpb.New(time.Microsecond * time.Duration(row.DurationUsec)),
@@ -674,7 +684,8 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	outerCommitQuery.SetLimit(targetHistoryPageSize)
 
 	q := query_builder.NewQuery(`
-		SELECT label, rule_type, target_type, test_size, status,
+		SELECT label, rule_type, target_type, test_size, status, cached,
+		cached_count, cached_locally_count, cached_remotely_count, total_run_count,
 		start_time_usec, duration_usec, invocation_uuid, commit_sha, branch_name,
 		repo_url, invocation_start_time_usec
 		FROM "TestTargetStatuses"`)
