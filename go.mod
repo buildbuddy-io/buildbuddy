@@ -156,7 +156,6 @@ require (
 	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1
 	github.com/zeebo/blake3 v0.2.3
 	go.opentelemetry.io/contrib/detectors/aws/ec2/v2 v2.5.0
-	go.opentelemetry.io/contrib/detectors/aws/eks v1.43.0
 	go.opentelemetry.io/contrib/detectors/gcp v1.39.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.64.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0

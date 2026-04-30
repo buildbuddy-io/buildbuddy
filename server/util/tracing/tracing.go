@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/aws/ec2/v2"
-	"go.opentelemetry.io/contrib/detectors/aws/eks"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -168,8 +167,6 @@ func configuredTraceResourceDetectors(names []string) ([]resource.Detector, erro
 			detectors = append(detectors, &gcp.GKE{})
 		case "ec2":
 			detectors = append(detectors, ec2.NewResourceDetector())
-		case "eks":
-			detectors = append(detectors, eks.NewResourceDetector())
 		default:
 			return nil, status.InvalidArgumentErrorf("unknown trace resource detector %q (supported values: gcp, gke, ec2, eks)", name)
 		}
