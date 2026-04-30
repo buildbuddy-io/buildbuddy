@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
@@ -139,8 +140,16 @@ func run() (exitCode int, err error) {
 		// CLI command.
 		Configure(opts)
 		StartupDebug(start)
-		// If the first argument is a cli command, trim it from `args`
-		args = args[1:]
+		var startupConfigs []string
+		for _, opt := range opts {
+			if opt.Name() == bbrc.ConfigFlag {
+				startupConfigs = append(startupConfigs, opt.GetValue())
+			}
+		}
+		args, err = bbrc.ResolveArgs(command, args[1:], startupConfigs)
+		if err != nil {
+			return -1, err
+		}
 		return command.Handler(args)
 	}
 
