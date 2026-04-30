@@ -168,7 +168,7 @@ func configuredTraceResourceDetectors(names []string) ([]resource.Detector, erro
 		case "ec2":
 			detectors = append(detectors, ec2.NewResourceDetector())
 		default:
-			return nil, status.InvalidArgumentErrorf("unknown trace resource detector %q (supported values: gcp, gke, ec2, eks)", name)
+			return nil, status.InvalidArgumentErrorf("unknown trace resource detector %q (supported values: gcp, gke, ec2)", name)
 		}
 	}
 	return detectors, nil
