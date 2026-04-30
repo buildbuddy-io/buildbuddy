@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -47,20 +48,33 @@ var (
 )
 
 func LimitStdOutErrWriter(w io.Writer) io.Writer {
+	return LimitStdOutErrWriterWithCallback(w, nil)
+}
+
+func LimitStdOutErrWriterWithCallback(w io.Writer, onLimitExceeded func(error)) io.Writer {
 	if *StdOutErrMaxSize == 0 {
 		return w
 	}
-	return &limitWriter{w: w, limit: *StdOutErrMaxSize}
+	return &limitWriter{w: w, limit: *StdOutErrMaxSize, onLimitExceeded: onLimitExceeded}
 }
 
 // limitWriter limits the number of bytes written to it.
 // It returns a ResourceExhausted error if a write occurs that would exceed the limit.
 // Before returning a ResourceExhausted error, it writes as many bytes as possible before the limit would be reached.
 type limitWriter struct {
-	w     io.Writer
-	limit uint64
+	w               io.Writer
+	limit           uint64
+	onLimitExceeded func(error)
 
 	n uint64
+}
+
+func (lw *limitWriter) resourceExhaustedError(totalRequested uint64) error {
+	err := status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	if lw.onLimitExceeded != nil {
+		lw.onLimitExceeded(err)
+	}
+	return err
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
@@ -71,19 +85,19 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	totalRequested := lw.n + pSize
 	if lw.n >= lw.limit {
 		// n could have been increased from a previous write and reached limit
-		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+		return 0, lw.resourceExhaustedError(totalRequested)
 	}
 
 	writeSize := min(pSize, lw.limit-lw.n)
 	n, err := lw.w.Write(p[:writeSize])
 	lw.n += uint64(n)
 	if err == nil && writeSize < pSize {
-		return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+		return n, lw.resourceExhaustedError(totalRequested)
 	}
 	return n, err
 }
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio, onOutputLimitExceeded func(error)) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
@@ -96,15 +110,31 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stdoutBuf, stderrBuf *bytes.Buffer
+	var stdout, stderr io.Writer
 	if stdio.Stdout != nil {
-		cmd.Stdout = stdio.Stdout
+		stdout = stdio.Stdout
+	} else {
+		stdoutBuf = &bytes.Buffer{}
+		stdout = stdoutBuf
 	}
-	cmd.Stderr = &stderr
 	if stdio.Stderr != nil {
-		cmd.Stderr = stdio.Stderr
+		stderr = stdio.Stderr
+	} else {
+		stderrBuf = &bytes.Buffer{}
+		stderr = stderrBuf
 	}
+	if *DebugStreamCommandOutputs {
+		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
+		stdout = io.MultiWriter(stdout, logWriter)
+		stderr = io.MultiWriter(stderr, logWriter)
+	}
+	if !stdio.DisableOutputLimits {
+		stdout = LimitStdOutErrWriterWithCallback(stdout, onOutputLimitExceeded)
+		stderr = LimitStdOutErrWriterWithCallback(stderr, onOutputLimitExceeded)
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	// Note: We are using StdinPipe() instead of cmd.Stdin here, because the
 	// latter approach results in a bug where cmd.Wait() can hang indefinitely if
 	// the process doesn't consume its stdin. See
@@ -119,16 +149,11 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 			io.Copy(inp, stdio.Stdin)
 		}()
 	}
-	if *DebugStreamCommandOutputs {
-		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
-		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
-		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
-	}
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	return cmd, &stdout, &stderr, nil
+	return cmd, stdoutBuf, stderrBuf, nil
 }
 
 // RetryIfTextFileBusy runs a function, retrying "text file busy" errors up to
@@ -196,6 +221,19 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	if opts == nil {
 		opts = &RunOpts{}
 	}
+	onOutputLimitExceeded := func(error) {}
+	if *StdOutErrMaxSize > 0 && (opts.Stdio == nil || !opts.Stdio.DisableOutputLimits) {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		var once sync.Once
+		defer cancel(nil)
+		onOutputLimitExceeded = func(err error) {
+			once.Do(func() {
+				cancel(err)
+			})
+		}
+	}
+
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats
@@ -203,7 +241,7 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, opts.Dir, opts.Stdio)
+		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, opts.Dir, opts.Stdio, onOutputLimitExceeded)
 		if err != nil {
 			return err
 		}
@@ -212,11 +250,18 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
+	var stdoutBytes, stderrBytes []byte
+	if stdoutBuf != nil {
+		stdoutBytes = stdoutBuf.Bytes()
+	}
+	if stderrBuf != nil {
+		stderrBytes = stderrBuf.Bytes()
+	}
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
 		Error:              err,
-		Stdout:             stdoutBuf.Bytes(),
-		Stderr:             stderrBuf.Bytes(),
+		Stdout:             stdoutBytes,
+		Stderr:             stderrBytes,
 		CommandDebugString: cmd.String(),
 		UsageStats:         stats,
 	}
@@ -313,6 +358,9 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 			stats.CpuNanos = max(stats.CpuNanos, rusageCPUNanos(rusage))
 		}
 	}
+	if cause := context.Cause(ctx); status.IsResourceExhaustedError(cause) {
+		err = cause
+	}
 	return stats, err
 }
 
@@ -382,6 +430,9 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// - https://github.com/golang/go/blob/fcb9d6b5d0ba6f5606c2b5dfc09f75e2dc5fc1e5/src/os/exec/lp_unix.go#L35
 	if notFoundErr, ok := err.(*exec.Error); ok {
 		return NoExitCode, status.NotFoundError(notFoundErr.Error())
+	}
+	if status.IsResourceExhaustedError(err) {
+		return NoExitCode, err
 	}
 
 	// If we fail to get the exit code of the process for any other reason, it might

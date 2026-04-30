@@ -40,23 +40,49 @@ var (
 func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	ctx, cancelExec := context.WithCancelCause(ctx)
+	defer cancelExec(nil)
 
-	var stderr, stdout bytes.Buffer
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
-	stdoutw := io.Writer(&stdout)
-	if stdio.Stdout != nil {
-		stdoutw = stdio.Stdout
+	var stdoutBuf, stderrBuf bytes.Buffer
+	makeWriter := func(primary io.Writer, buf *bytes.Buffer, collect bool, extras ...io.Writer) io.Writer {
+		writers := make([]io.Writer, 0, 2+len(extras))
+		if collect {
+			writers = append(writers, buf)
+		}
+		if primary != nil {
+			writers = append(writers, primary)
+		}
+		writers = append(writers, extras...)
+		switch len(writers) {
+		case 0:
+			if stdio.DisableOutputLimits {
+				return io.Discard
+			}
+			return commandutil.LimitStdOutErrWriter(io.Discard)
+		case 1:
+			if stdio.DisableOutputLimits {
+				return writers[0]
+			}
+			return commandutil.LimitStdOutErrWriter(writers[0])
+		default:
+			sink := io.MultiWriter(writers...)
+			if stdio.DisableOutputLimits {
+				return sink
+			}
+			return commandutil.LimitStdOutErrWriter(sink)
+		}
 	}
-	stderrw := io.Writer(&stderr)
-	if stdio.Stderr != nil {
-		stderrw = stdio.Stderr
-	}
+	extraStdout := []io.Writer{}
+	extraStderr := []io.Writer{}
 	if *commandutil.DebugStreamCommandOutputs {
-		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
-		stderrw = io.MultiWriter(os.Stderr, stderrw)
+		extraStdout = append(extraStdout, os.Stdout)
+		extraStderr = append(extraStderr, os.Stderr)
 	}
+	stdoutw := makeWriter(stdio.Stdout, &stdoutBuf, stdio.Stdout == nil, extraStdout...)
+	stderrw := makeWriter(stdio.Stderr, &stderrBuf, stdio.Stderr == nil, extraStderr...)
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
 		User:             user,
@@ -79,7 +105,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 	var res *vmxpb.ExecResponse
 	var stats *repb.UsageStats
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	if stdio.Stdin != nil {
 		eg.Go(func() error {
 			if _, err := io.Copy(&stdinWriter{stream}, stdio.Stdin); err != nil {
@@ -97,7 +123,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 
 	eg.Go(func() error {
-		receiver := rpcutil.NewReceiver[*vmxpb.ExecStreamedResponse](ctx, stream)
+		receiver := rpcutil.NewReceiver[*vmxpb.ExecStreamedResponse](egCtx, stream)
 		for {
 			msg, err := receiver.RecvWithTimeoutCause(streamRecvTimeout, errRecvTimeout)
 			if err == io.EOF {
@@ -113,18 +139,28 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				return err
 			}
 			if err != nil {
-				if ctx.Err() == context.DeadlineExceeded {
+				if egCtx.Err() == context.DeadlineExceeded {
 					return status.DeadlineExceededError("context deadline exceeded")
 				}
-				if ctx.Err() == context.Canceled {
+				if egCtx.Err() == context.Canceled {
 					return status.CanceledError("context canceled")
 				}
 				return status.UnavailableErrorf("failed to receive from stream: %s", status.Message(err))
 			}
 			if _, err := stdoutw.Write(msg.Stdout); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					err = status.WrapError(err, "failed to write stdout")
+					cancelExec(err)
+					return err
+				}
 				return status.UnavailableErrorf("failed to write stdout: %s", status.Message(err))
 			}
 			if _, err := stderrw.Write(msg.Stderr); err != nil {
+				if status.IsResourceExhaustedError(err) {
+					err = status.WrapError(err, "failed to write stderr")
+					cancelExec(err)
+					return err
+				}
 				return status.UnavailableErrorf("failed to write stderr: %s", status.Message(err))
 			}
 			if msg.Response != nil {
@@ -140,14 +176,25 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	})
 
 	err = eg.Wait()
+	if cause := context.Cause(ctx); status.IsResourceExhaustedError(cause) {
+		err = cause
+	}
 	exitCode := commandutil.NoExitCode
 	if res != nil {
 		exitCode = int(res.GetExitCode())
 	}
+	stdoutBytes := stdoutBuf.Bytes()
+	stderrBytes := stderrBuf.Bytes()
+	if stdio.Stdout != nil {
+		stdoutBytes = nil
+	}
+	if stdio.Stderr != nil {
+		stderrBytes = nil
+	}
 	result := &interfaces.CommandResult{
 		ExitCode:   exitCode,
-		Stderr:     stderr.Bytes(),
-		Stdout:     stdout.Bytes(),
+		Stderr:     stderrBytes,
+		Stdout:     stdoutBytes,
 		Error:      err,
 		UsageStats: stats,
 	}
@@ -155,9 +202,12 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	// terminated, but if the context was cancelled then the Sync() call may not
 	// have completed yet. Explicitly sync here so that we have a better chance
 	// of collecting output files in this case.
-	if err := ctx.Err(); err != nil {
-		ctxErr := status.FromContextError(ctx)
-		ctx, cancel := background.ExtendContextForFinalization(ctx, syncTimeout)
+	if err := egCtx.Err(); err != nil {
+		ctxErr := status.FromContextError(egCtx)
+		if cause := context.Cause(ctx); status.IsResourceExhaustedError(cause) {
+			ctxErr = cause
+		}
+		ctx, cancel := background.ExtendContextForFinalization(egCtx, syncTimeout)
 		defer cancel()
 		_, err := client.Sync(ctx, &vmxpb.SyncRequest{})
 		if err != nil {

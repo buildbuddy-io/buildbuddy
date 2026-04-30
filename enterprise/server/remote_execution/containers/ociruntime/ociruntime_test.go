@@ -174,6 +174,211 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
+func TestLimitedStd(t *testing.T) {
+	// OCI Setup
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `echo 'hello world'`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
+	assert.Contains(t, res.Error.Error(), "12 bytes requested")
+	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
+}
+
+func TestLimitedStd_LongRunningCommand_Run(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Trip the output limit first, then keep the container alive so the test
+	// verifies the runtime tears it down instead of waiting for normal exit.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			printf buildbuddy
+			sh -c "sleep 1; echo still-running > output.txt" &
+			sleep 600
+		`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Nil(t, ctx.Err(), "expected run to fail before the context deadline, got: %v", ctx.Err())
+
+	// Give the background child enough time to run if cleanup failed.
+	time.Sleep(1500 * time.Millisecond)
+	_, err = os.Stat(filepath.Join(wd, "output.txt"))
+	assert.True(t, os.IsNotExist(err), "expected OCI run command to be terminated after hitting output limit, got err=%v", err)
+}
+
+func TestLimitedStd_LongRunningCommand_Exec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 1)
+
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	// The background child leaves a marker file behind if the exec path only
+	// cancels output collection and does not actually kill the container work.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			printf buildbuddy
+			sh -c "sleep 1; echo still-running > output.txt" &
+			sleep 600
+		`},
+	}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Nil(t, ctx.Err(), "expected exec to fail before the context deadline, got: %v", ctx.Err())
+
+	// Give the background child enough time to run if cleanup failed.
+	time.Sleep(1500 * time.Millisecond)
+	_, err = os.Stat(filepath.Join(wd, "output.txt"))
+	assert.True(t, os.IsNotExist(err), "expected OCI exec command to be terminated after hitting output limit, got err=%v", err)
+}
+
+// TestDisableOutputLimits_Exec verifies that when DisableOutputLimits is set
+// on stdio, large outputs do not trigger a ResourceExhausted error for OCI exec.
+func TestDisableOutputLimits_Exec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = c.Remove(ctx)
+	})
+
+	// Small limit globally, but disabled at stdio level
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Pull and create before exec
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Produce >10B of stdout
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `echo 'hello world'`}}
+	stdio := &interfaces.Stdio{DisableOutputLimits: true}
+	res := c.Exec(ctx, cmd, stdio)
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello world\n", string(res.Stdout))
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
@@ -1826,7 +2031,10 @@ func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	defer worker.Stop()
+	t.Cleanup(func() {
+		err := worker.Stop()
+		require.NoError(t, err)
+	})
 
 	// Send work request.
 	// The command doesn't matter - the test worker always just returns a fixed

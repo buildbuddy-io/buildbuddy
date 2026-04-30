@@ -1407,34 +1407,78 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	log.CtxDebugf(ctx, "Running %v", runtimeArgs)
 
-	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
-	cmd.Dir = wd
-	var stdout *bytes.Buffer
-	var stderr *bytes.Buffer
-	// If stdio is nil, the output will be discarded.
-	if stdio != nil {
-		cmd.Stdin = stdio.Stdin
-		if stdio.Stdout == nil {
-			stdout = &bytes.Buffer{}
-			cmd.Stdout = stdout
-			if *commandutil.DebugStreamCommandOutputs {
-				cmd.Stdout = io.MultiWriter(stdout, log.Writer("[crun] "))
-			}
-		} else {
-			stdout = nil
-			cmd.Stdout = stdio.Stdout
-		}
-		if stdio.Stderr == nil {
-			stderr = &bytes.Buffer{}
-			cmd.Stderr = stderr
-			if *commandutil.DebugStreamCommandOutputs {
-				cmd.Stderr = io.MultiWriter(stderr, log.Writer("[crun] "))
-			}
-		} else {
-			stderr = nil
-			cmd.Stderr = stdio.Stderr
+	if stdio == nil {
+		stdio = &interfaces.Stdio{}
+	}
+	outputLimitsEnabled := *commandutil.StdOutErrMaxSize > 0 && !stdio.DisableOutputLimits
+	runCtx := ctx
+	cancelOnOutputLimitExceeded := func(error) {}
+	if outputLimitsEnabled {
+		limitedCtx, cancel := context.WithCancelCause(ctx)
+		var once sync.Once
+		runCtx = limitedCtx
+		defer cancel(nil)
+		cancelOnOutputLimitExceeded = func(err error) {
+			once.Do(func() {
+				cancel(err)
+			})
 		}
 	}
+	onOutputLimitExceeded := cancelOnOutputLimitExceeded
+	if outputLimitsEnabled && len(args) > 0 && args[0] == "exec" && c.cid != "" {
+		var outputLimitOnce sync.Once
+		onOutputLimitExceeded = func(err error) {
+			cancelOnOutputLimitExceeded(err)
+			outputLimitOnce.Do(func() {
+				killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer killCancel()
+				if signalErr := c.Signal(killCtx, syscall.SIGKILL); signalErr != nil {
+					log.CtxWarningf(ctx, "Failed to kill OCI container %q after output limit exceeded: %s", c.cid, signalErr)
+				}
+			})
+		}
+	}
+
+	cmd := exec.CommandContext(runCtx, runtimeArgs[0], runtimeArgs[1:]...)
+	cmd.Dir = wd
+	cmd.Stdin = stdio.Stdin
+	// TODO: Move captured action stdout/stderr to a bounded file-backed sink so
+	// output caps can protect executor memory without depending on in-memory buffers.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	collectStdout := stdio.Stdout == nil
+	collectStderr := stdio.Stderr == nil
+	build := func(primary io.Writer, buf *bytes.Buffer, collect bool) io.Writer {
+		writers := make([]io.Writer, 0, 3)
+		if collect {
+			writers = append(writers, buf)
+		}
+		if primary != nil {
+			writers = append(writers, primary)
+		}
+		if *commandutil.DebugStreamCommandOutputs {
+			writers = append(writers, log.Writer("[crun] "))
+		}
+		switch len(writers) {
+		case 0:
+			if stdio.DisableOutputLimits {
+				return io.Discard
+			}
+			return commandutil.LimitStdOutErrWriterWithCallback(io.Discard, onOutputLimitExceeded)
+		case 1:
+			if stdio.DisableOutputLimits {
+				return writers[0]
+			}
+			return commandutil.LimitStdOutErrWriterWithCallback(writers[0], onOutputLimitExceeded)
+		default:
+			sink := io.MultiWriter(writers...)
+			if stdio.DisableOutputLimits {
+				return sink
+			}
+			return commandutil.LimitStdOutErrWriterWithCallback(sink, onOutputLimitExceeded)
+		}
+	}
+	cmd.Stdout = build(stdio.Stdout, &stdoutBuf, collectStdout)
+	cmd.Stderr = build(stdio.Stderr, &stderrBuf, collectStderr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// In the "run" case, start the runtime in its own pid namespace so that
 	// when it is killed, the container process gets killed automatically
@@ -1452,7 +1496,10 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		// a risk of shadowing a more important error.
 		runError = nil
 	}
-	code, err := commandutil.ExitCode(ctx, cmd, runError)
+	if cause := context.Cause(runCtx); status.IsResourceExhaustedError(cause) {
+		runError = cause
+	}
+	code, err := commandutil.ExitCode(runCtx, cmd, runError)
 
 	// Some actions are prone to SIGSEGV when running on an executor that is close to its memory limits.
 	// Return a retryable error so we can make sure that the failure is not infrastructure related.
@@ -1466,11 +1513,11 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		ExitCode: code,
 		Error:    err,
 	}
-	if stdout != nil {
-		result.Stdout = stdout.Bytes()
+	if collectStdout {
+		result.Stdout = stdoutBuf.Bytes()
 	}
-	if stderr != nil {
-		result.Stderr = stderr.Bytes()
+	if collectStderr {
+		result.Stderr = stderrBuf.Bytes()
 	}
 	return result
 }
