@@ -574,6 +574,15 @@ service ContentAddressableStorage {
   rpc SpliceBlob(SpliceBlobRequest) returns (SpliceBlobResponse) {
     option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:spliceBlob" body: "*" };
   }
+
+  // BUILDBUDDY EXTENSIONS BELOW
+
+  // SpliceChunks is a BuildBuddy-specific streaming variant of SpliceBlob.
+  // Clients stream chunk digests as they become available, then commit the
+  // splice by sending the expected blob digest on the final request.
+  //
+  // This is not part of the upstream Remote Execution API.
+  rpc SpliceChunks(stream SpliceChunksRequest) returns (SpliceBlobResponse);
 }
 
 // The Capabilities service may be used by remote execution clients to query
@@ -2175,6 +2184,7 @@ message SpliceBlobRequest {
   ChunkingFunction.Value chunking_function = 5;
 }
 
+
 // A response message for
 // [ContentAddressableStorage.SpliceBlob][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceBlob].
 message SpliceBlobResponse {
@@ -2647,6 +2657,38 @@ message RequestMetadata {
 /*                BEGIN BUILDBUDDY-SPECIFIC PROTO DECLARATIONS                */
 /*                                                                            */
 /******************************************************************************/
+
+// A BuildBuddy-specific request message for
+// [ContentAddressableStorage.SpliceChunks][build.bazel.remote.execution.v2.ContentAddressableStorage.SpliceChunks].
+//
+// This is not part of the upstream Remote Execution API.
+message SpliceChunksRequest {
+  // The instance of the execution system to operate against. A server may
+  // support multiple instances of the execution system (with their own workers,
+  // storage, caches, etc.). The server MAY require use of this field to select
+  // between them in an implementation-defined fashion, otherwise it can be
+  // omitted. Subsequent requests MAY omit it, but if set it MUST match the
+  // first request.
+  string instance_name = 1;
+
+  // Expected digest of the spliced blob. This commits the splice. Clients
+  // SHOULD only set this on the final request and MUST set it exactly once.
+  Digest blob_digest = 2;
+
+  // The ordered list of digests of the chunks which need to be concatenated to
+  // assemble the original blob. Chunk digests may be split across multiple
+  // stream requests.
+  repeated Digest chunk_digests = 3;
+
+  // The digest function of all chunks to be concatenated and of the blob to be
+  // spliced. The server MUST use the same digest function for both cases.
+  // Subsequent requests MAY omit it, but if set it MUST match the first
+  // request.
+  DigestFunction.Value digest_function = 4;
+
+  // The chunking function that the client used to split the blob.
+  ChunkingFunction.Value chunking_function = 5;
+}
 
 // A metadata to attach to each ActionResult message through
 // [ExecutedActionMetadata][build.bazel.remote.execution.v2.ExecutedActionMetadata]'s

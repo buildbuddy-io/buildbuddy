@@ -290,6 +290,36 @@ func (p *CacheProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest
 	return p.casClient.SpliceBlob(ctx, req)
 }
 
+func (p *CacheProxy) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	clientStream, err := p.casClient.SpliceChunks(stream.Context())
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			resp, err := clientStream.CloseAndRecv()
+			if err != nil {
+				return err
+			}
+			return stream.SendAndClose(resp)
+		}
+		if err != nil {
+			return err
+		}
+		if err := clientStream.Send(req); err != nil {
+			if err == io.EOF {
+				resp, err := clientStream.CloseAndRecv()
+				if err != nil {
+					return err
+				}
+				return stream.SendAndClose(resp)
+			}
+			return err
+		}
+	}
+}
+
 func (p *CacheProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	return p.casClient.SplitBlob(ctx, req)
 }

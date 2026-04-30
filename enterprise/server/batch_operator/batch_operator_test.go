@@ -132,6 +132,11 @@ func (f *fakeCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (
 	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
 }
 
+func (f *fakeCAS) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	f.t.Fatal("Unexpected call to SpliceChunks")
+	return status.InternalError("SpliceChunks RPC is not currently implemented")
+}
+
 func (f *fakeCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	f.t.Fatal("Unexpected call to SplitBlob")
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,9 +26,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
@@ -69,6 +72,88 @@ func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc
 	}
 
 	return clientConn
+}
+
+type quotaCall struct {
+	namespace string
+	quantity  int64
+}
+
+type recordingQuotaManager struct {
+	mu    sync.Mutex
+	calls []quotaCall
+}
+
+func (q *recordingQuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.calls = append(q.calls, quotaCall{namespace: namespace, quantity: quantity})
+	return nil
+}
+
+func (q *recordingQuotaManager) ReloadBucketsAndNotify(ctx context.Context) error {
+	return nil
+}
+
+func (q *recordingQuotaManager) Calls() []quotaCall {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]quotaCall(nil), q.calls...)
+}
+
+func TestSpliceChunks(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	qm := &recordingQuotaManager{}
+	env.SetQuotaManager(qm)
+
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, env)
+	t.Cleanup(func() { clientConn.Close() })
+	client := repb.NewContentAddressableStorageClient(clientConn)
+
+	chunks := [][]byte{
+		[]byte("chunk one "),
+		[]byte("chunk two "),
+		[]byte("chunk three"),
+	}
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	var chunkDigests []*repb.Digest
+	for _, chunk := range chunks {
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_SHA256)
+		require.NoError(t, env.GetCache().Set(ctx, chunkRN.ToProto(), chunk))
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	stream, err := client.SpliceChunks(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests:     chunkDigests[:1],
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}))
+	require.NoError(t, stream.Send(&repb.SpliceChunksRequest{
+		ChunkDigests: chunkDigests[1:],
+		BlobDigest:   blobDigest,
+	}))
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
+	require.True(t, digest.Equal(blobDigest, resp.GetBlobDigest()))
+	require.Contains(t, qm.Calls(), quotaCall{
+		namespace: quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes),
+		quantity:  blobDigest.GetSizeBytes(),
+	})
+
+	manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Equal(t, chunkDigests, manifest.ChunkDigests)
 }
 
 type evilCache struct {

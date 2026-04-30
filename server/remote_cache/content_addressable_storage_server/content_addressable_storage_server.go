@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"slices"
@@ -33,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -1215,6 +1217,160 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	return &repb.SpliceBlobResponse{
 		BlobDigest: req.GetBlobDigest(),
 	}, nil
+}
+
+func (s *ContentAddressableStorageServer) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
+	firstReq, err := stream.Recv()
+	if err != nil {
+		if err == io.EOF {
+			return status.InvalidArgumentError("blob_digest is required")
+		}
+		return err
+	}
+
+	instanceName := firstReq.GetInstanceName()
+	digestFunction := firstReq.GetDigestFunction()
+	validateRequest := func(req *repb.SpliceChunksRequest) error {
+		if req.GetInstanceName() != "" && req.GetInstanceName() != instanceName {
+			return status.InvalidArgumentError("instance_name does not match initial instance_name")
+		}
+		if df := req.GetDigestFunction(); df != repb.DigestFunction_UNKNOWN && df != digestFunction {
+			return status.InvalidArgumentErrorf("digest_function %s does not match initial digest function %s", df, digestFunction)
+		}
+		if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+			return status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+		}
+		return nil
+	}
+	if err := validateRequest(firstReq); err != nil {
+		return err
+	}
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return err
+	}
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return err
+	}
+	if !canWrite {
+		// Match ByteStream.Write / BatchUpdateBlobs behavior for read-only API
+		// keys: pretend the write succeeded without storing anything.
+		for req := firstReq; ; {
+			if err := validateRequest(req); err != nil {
+				return err
+			}
+			if blobDigest := req.GetBlobDigest(); blobDigest != nil {
+				return stream.SendAndClose(&repb.SpliceBlobResponse{BlobDigest: blobDigest})
+			}
+			req, err = stream.Recv()
+			if err == io.EOF {
+				return status.InvalidArgumentError("blob_digest is required")
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+		return status.UnimplementedError("SpliceChunks RPC is not currently enabled")
+	}
+
+	hasher, err := digest.HashForDigestType(digestFunction)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
+	}
+
+	var chunkDigests []*repb.Digest
+	totalSize := int64(0)
+	consumeChunk := func(req *repb.SpliceChunksRequest) error {
+		if err := validateRequest(req); err != nil {
+			return err
+		}
+		for _, chunkDigest := range req.GetChunkDigests() {
+			chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
+			if err := chunkRN.Validate(); err != nil {
+				return status.InvalidArgumentErrorf("invalid chunk resource name %v: %s", chunkRN, err)
+			}
+			totalSize += chunkDigest.GetSizeBytes()
+			rc, err := s.cache.Reader(ctx, chunkRN.ToProto(), 0, 0)
+			if err != nil {
+				return status.WrapErrorf(err, "read chunk %s from CAS", chunkDigest.GetHash())
+			}
+			n, copyErr := io.Copy(hasher, rc)
+			closeErr := rc.Close()
+			if copyErr != nil {
+				return status.WrapErrorf(copyErr, "hash chunk %s", chunkDigest.GetHash())
+			}
+			if closeErr != nil {
+				return status.WrapErrorf(closeErr, "close chunk %s", chunkDigest.GetHash())
+			}
+			if n != chunkDigest.GetSizeBytes() {
+				return status.InvalidArgumentErrorf("read %d bytes for chunk %s, expected %d", n, chunkDigest.GetHash(), chunkDigest.GetSizeBytes())
+			}
+			chunkDigests = append(chunkDigests, chunkDigest)
+		}
+		return nil
+	}
+
+	var blobDigest *repb.Digest
+	for req := firstReq; ; {
+		if blobDigest = req.GetBlobDigest(); blobDigest != nil {
+			blobRN := digest.NewCASResourceName(blobDigest, instanceName, digestFunction)
+			if err := blobRN.Validate(); err != nil {
+				return status.InvalidArgumentErrorf("invalid blob resource name %v: %s", blobRN, err)
+			}
+			if qm := s.env.GetQuotaManager(); qm != nil {
+				if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), blobDigest.GetSizeBytes()); err != nil {
+					return err
+				}
+			}
+		}
+		if err := consumeChunk(req); err != nil {
+			return err
+		}
+		if blobDigest != nil {
+			if totalSize > blobDigest.GetSizeBytes() {
+				return status.InvalidArgumentErrorf("spliced chunks exceed blob size: got %d bytes, expected %d", totalSize, blobDigest.GetSizeBytes())
+			}
+			break
+		}
+		req, err = stream.Recv()
+		if err == io.EOF {
+			return status.InvalidArgumentError("blob_digest is required")
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	if nDigests := len(chunkDigests); nDigests == 0 {
+		return status.InvalidArgumentError("chunk_digests cannot be empty")
+	} else if nDigests == 1 {
+		return status.UnimplementedError("SpliceChunks with only one chunk is not supported")
+	}
+	computedDigest := &repb.Digest{
+		Hash:      hex.EncodeToString(hasher.Sum(nil)),
+		SizeBytes: totalSize,
+	}
+	if !digest.Equal(computedDigest, blobDigest) {
+		return status.InvalidArgumentErrorf("computed digest %s does not match expected %s", digest.String(computedDigest), digest.String(blobDigest))
+	}
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		InstanceName:   instanceName,
+		DigestFunction: digestFunction,
+	}
+	if err := manifest.StoreVerified(ctx, s.cache); err != nil {
+		return err
+	}
+	return stream.SendAndClose(&repb.SpliceBlobResponse{BlobDigest: blobDigest})
 }
 
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
