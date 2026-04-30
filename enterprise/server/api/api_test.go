@@ -83,6 +83,50 @@ func TestGetInvocationWithMetadata(t *testing.T) {
 	assert.Equal(t, 2, len(resp.Invocation[0].WorkspaceStatus))
 }
 
+func TestGetInvocationWithBuildToolLogs(t *testing.T) {
+	const (
+		executionLogDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		executionLogURI    = "bytestream://localhost/blobs/" + executionLogDigest + "/123"
+	)
+
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamBuildWithToolLogs(t, env, testInvocationID)
+	s := NewAPIServer(env)
+
+	// First fetch the invocation without requesting build tool logs. The API
+	// should keep build tool log files out of the response by default.
+	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{
+		Selector: &apipb.InvocationSelector{InvocationId: testInvocationID},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.GetInvocation(), 1)
+	require.Empty(t, resp.GetInvocation()[0].GetBuildToolLogs())
+
+	// Now request build tool logs. Both inline and URI-backed BuildToolLogs
+	// entries should be exposed so callers can read small contents directly or
+	// pass the URI to GetFile.
+	resp, err = s.GetInvocation(ctx, &apipb.GetInvocationRequest{
+		Selector:             &apipb.InvocationSelector{InvocationId: testInvocationID},
+		IncludeBuildToolLogs: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.GetInvocation(), 1)
+	require.Len(t, resp.GetInvocation()[0].GetBuildToolLogs(), 2)
+
+	inlineLog := resp.GetInvocation()[0].GetBuildToolLogs()[0]
+	assert.Equal(t, "elapsed time", inlineLog.GetName())
+	assert.Empty(t, inlineLog.GetUri())
+	assert.Equal(t, []byte("1.23s"), inlineLog.GetContents())
+
+	toolLog := resp.GetInvocation()[0].GetBuildToolLogs()[1]
+	assert.Equal(t, "execution_log.binpb.zst", toolLog.GetName())
+	assert.Equal(t, executionLogURI, toolLog.GetUri())
+	assert.Empty(t, toolLog.GetContents())
+}
+
 func TestGetInvocationNotFound(t *testing.T) {
 	env, ctx := getEnvAndCtx(t, "user1")
 	testUUID, err := uuid.NewRandom()
@@ -935,6 +979,27 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	assert.NoError(t, err)
 }
 
+func streamBuildWithToolLogs(t *testing.T, te *testenv.TestEnv, iid string) {
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), iid)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	events := []*anypb.Any{
+		startedEvent("--remote_header='" + authutil.APIKeyHeader + "=user1'"),
+		buildToolLogsEvent(),
+		finishedEvent(),
+	}
+
+	for idx, evt := range events {
+		err := channel.HandleEvent(streamRequest(evt, iid, int64(idx+1)))
+		require.NoError(t, err)
+	}
+
+	err = channel.FinalizeInvocation(iid)
+	require.NoError(t, err)
+}
+
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
 	return &pepb.PublishBuildToolEventStreamRequest{
 		OrderedBuildEvent: &pepb.OrderedBuildEvent{
@@ -1130,6 +1195,38 @@ func workspaceStatusEvent() *anypb.Any {
 		},
 	})
 	return workspaceStatusAny
+}
+
+func buildToolLogsEvent() *anypb.Any {
+	const (
+		executionLogDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		executionLogURI    = "bytestream://localhost/blobs/" + executionLogDigest + "/123"
+	)
+
+	buildToolLogsAny := &anypb.Any{}
+	buildToolLogsAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_BuildToolLogs{
+			BuildToolLogs: &build_event_stream.BuildToolLogs{
+				Log: []*build_event_stream.File{
+					{
+						Name: "elapsed time",
+						File: &build_event_stream.File_Contents{
+							Contents: []byte("1.23s"),
+						},
+					},
+					{
+						Name: "execution_log.binpb.zst",
+						File: &build_event_stream.File_Uri{
+							Uri: executionLogURI,
+						},
+						Digest: executionLogDigest,
+						Length: 123,
+					},
+				},
+			},
+		},
+	})
+	return buildToolLogsAny
 }
 
 func finishedEvent() *anypb.Any {

@@ -79,6 +79,10 @@ message GetInvocationRequest {
   // If true, include artifacts attached to the invocation.
   bool include_artifacts = 4;
 
+  // If true, include build tool logs, such as the timing profile and compact
+  // execution log if available.
+  bool include_build_tool_logs = 6;
+
   // If true, include child invocations (if this invocation was a workflow).
   bool include_child_invocations = 5;
 
@@ -199,6 +203,10 @@ message Invocation {
   // Any artifacts that were attached to this invocation.
   // Only included if include_artifacts = true.
   repeated File artifacts = 24;
+
+  // Build tool logs, such as timing profiles and compact execution logs. Only
+  // included if include_build_tool_logs = true.
+  repeated File build_tool_logs = 27;
 
   // The state of the build event stream for the invocation.
   InvocationStatus invocationStatus = 25;
@@ -860,6 +868,10 @@ message File {
   string uri = 2;
   string hash = 3;
   int64 size_bytes = 4;
+
+  // Inline file contents, if present in the build event stream. In JSON
+  // responses, this is base64-encoded.
+  bytes contents = 5;
 }
 ```
 

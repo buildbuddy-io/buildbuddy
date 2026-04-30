@@ -63,6 +63,10 @@ message File {
   string uri = 2;
   string hash = 3;
   int64 size_bytes = 4;
+
+  // Inline file contents, if present in the build event stream. In JSON
+  // responses, this is base64-encoded.
+  bytes contents = 5;
 }
 
 // Request object for DeleteFile

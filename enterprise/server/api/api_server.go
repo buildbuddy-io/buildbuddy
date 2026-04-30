@@ -39,9 +39,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -51,6 +48,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 var (
@@ -155,7 +154,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, err
 	}
 
-	if req.IncludeMetadata || req.IncludeArtifacts || req.IncludeChildInvocations {
+	if req.IncludeMetadata || req.IncludeArtifacts || req.IncludeChildInvocations || req.IncludeBuildToolLogs {
 		for _, i := range invocations {
 			_, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, i.Id.InvocationId, func(event *inpb.InvocationEvent) error {
 				switch p := event.GetBuildEvent().GetPayload().(type) {
@@ -196,10 +195,13 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 				case *bespb.BuildEvent_NamedSetOfFiles:
 					if req.IncludeArtifacts {
 						for _, file := range p.NamedSetOfFiles.GetFiles() {
-							i.Artifacts = append(i.Artifacts, &apipb.File{
-								Name: file.GetName(),
-								Uri:  file.GetUri(),
-							})
+							i.Artifacts = append(i.Artifacts, api_common.FileFromBESFile(file))
+						}
+					}
+				case *bespb.BuildEvent_BuildToolLogs:
+					if req.IncludeBuildToolLogs {
+						for _, file := range p.BuildToolLogs.GetLog() {
+							i.BuildToolLogs = append(i.BuildToolLogs, api_common.FileFromBESFile(file))
 						}
 					}
 				}

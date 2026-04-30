@@ -39,28 +39,37 @@ func ActionLabelKey(groupID, iid, targetLabel string) string {
 	return groupID + "/api/a/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
 }
 
-func filesFromOutput(output []*bespb.File) []*apipb.File {
+// FileFromBESFile converts a build event stream File to the public API proto.
+func FileFromBESFile(besFile *bespb.File) *apipb.File {
+	f := &apipb.File{
+		Name: besFile.GetName(),
+	}
+	switch file := besFile.GetFile().(type) {
+	case *bespb.File_Uri:
+		f.Uri = file.Uri
+	case *bespb.File_Contents:
+		f.Contents = file.Contents
+	}
+	return f
+}
+
+func fillFileDigestFromURI(f *apipb.File) {
+	if u, err := url.Parse(f.Uri); err == nil {
+		if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
+			f.Hash = r.GetDigest().GetHash()
+			f.SizeBytes = r.GetDigest().GetSizeBytes()
+		}
+	}
+}
+
+func filesFromOutput(besFiles []*bespb.File) []*apipb.File {
 	files := []*apipb.File{}
-	for _, output := range output {
-		if output == nil {
+	for _, besFile := range besFiles {
+		if besFile == nil {
 			continue
 		}
-		uri := ""
-		switch file := output.GetFile().(type) {
-		case *bespb.File_Uri:
-			uri = file.Uri
-			// Contents files are not currently supported - only the file name will be appended without a uri.
-		}
-		f := &apipb.File{
-			Name: output.GetName(),
-			Uri:  uri,
-		}
-		if u, err := url.Parse(uri); err == nil {
-			if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
-				f.Hash = r.GetDigest().GetHash()
-				f.SizeBytes = r.GetDigest().GetSizeBytes()
-			}
-		}
+		f := FileFromBESFile(besFile)
+		fillFileDigestFromURI(f)
 		files = append(files, f)
 	}
 	return files
