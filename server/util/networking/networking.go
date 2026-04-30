@@ -24,9 +24,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -98,10 +99,10 @@ type DNSOverride struct {
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := otel.Tracer("").Start(ctx, "networking.sudoCommand")
 	defer span.End()
 	commandLabel := getCommandLabel(args...)
-	tracing.AddStringAttributeToCurrentSpan(ctx, "command", commandLabel)
+	span.SetAttributes(attribute.String("command", commandLabel))
 
 	// If we're not running as root, use sudo.
 	// Use "-A" to ensure we never get stuck prompting for
@@ -1330,7 +1331,7 @@ func ReadInterfaceStats(ctx context.Context, device string) (*repb.NetworkStats,
 		return nil, nil
 	}
 
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := otel.Tracer("").Start(ctx, "networking.ReadInterfaceStats")
 	defer spn.End()
 
 	s := &repb.NetworkStats{}

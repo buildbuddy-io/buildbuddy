@@ -15,8 +15,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
@@ -124,7 +124,7 @@ func isTemporary(err error) bool {
 // dialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
 func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := otel.Tracer("").Start(ctx, "vsock.dialHostToGuest")
 	defer span.End()
 
 	var d net.Dialer
@@ -165,7 +165,7 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // hit.
 // N.B. Callers are responsible for closing the returned connection.
 func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := otel.Tracer("").Start(ctx, "vsock.SimpleGRPCDial")
 	defer span.End()
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		// gRPC doesn't pass through the context to the dialer, so manually
