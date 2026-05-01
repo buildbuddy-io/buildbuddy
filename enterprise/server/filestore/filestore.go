@@ -796,7 +796,10 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	fileName := filepath.Join(fileDir, file)
 	tmpDir := fileDir
 	if fs.tmpDir != "" {
-		tmpDir = fs.tmpDir
+		tmpDir = filepath.Join(fs.tmpDir, fileRecord.GetDigest().GetHash()[:2])
+		if err := disk.EnsureDirectoryExists(tmpDir); err != nil {
+			return nil, err
+		}
 	}
 	wc, err := disk.FileWriterWithTmpDir(ctx, tmpDir, fileName)
 	if err != nil {
