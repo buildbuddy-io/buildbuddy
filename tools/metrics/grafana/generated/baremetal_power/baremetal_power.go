@@ -126,7 +126,7 @@ func rackRow() *dashboard.RowBuilder {
 
 func pduVariable() *dashboard.QueryVariableBuilder {
 	return dashboard.NewQueryVariableBuilder("pdu").
-		Datasource(dash.Datasource()).
+		Datasource(dash.Prometheus()).
 		Label("PDU").
 		Description("PDU hostname from Ansible inventory").
 		Query(dashboard.StringOrMap{

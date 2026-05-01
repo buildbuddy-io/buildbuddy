@@ -25,8 +25,9 @@ const (
 	UnitWatts         = "watt"
 )
 
-// Datasource returns a reference to the default Victoria Metrics datasource.
-func Datasource() dashboard.DataSourceRef {
+// Prometheus returns a reference to the default prometheus metrics datasource
+// (backed by VictoriaMetrics).
+func Prometheus() dashboard.DataSourceRef {
 	return dashboard.DataSourceRef{
 		Type: new("prometheus"),
 		Uid:  new("vm"),
@@ -45,7 +46,7 @@ func PromQuery(expr, legend string) *prometheus.DataqueryBuilder {
 func Timeseries(title, unit string) *timeseries.PanelBuilder {
 	return timeseries.NewPanelBuilder().
 		Title(title).
-		Datasource(Datasource()).
+		Datasource(Prometheus()).
 		Unit(unit).
 		LineWidth(1).
 		FillOpacity(0).
@@ -72,7 +73,7 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 // Current, AllValue) as needed.
 func QueryVar(name, query string) *dashboard.QueryVariableBuilder {
 	return dashboard.NewQueryVariableBuilder(name).
-		Datasource(Datasource()).
+		Datasource(Prometheus()).
 		Query(dashboard.StringOrMap{String: &query}).
 		Sort(dashboard.VariableSortAlphabeticalAsc)
 }
