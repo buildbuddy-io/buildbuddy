@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/email"
@@ -39,6 +40,10 @@ var (
 	to      = flag.String("to", "", "Recipient email address, optionally with a display name like 'BuildBuddy <hello@example.com>'.")
 	subject = flag.String("subject", "BuildBuddy email", "Subject for the email.")
 	body    = flag.String("body", "<p>This is an email from BuildBuddy's email notification backend.</p>", "Rich text body for the email.")
+)
+
+const (
+	sendTimeout = 1 * time.Minute
 )
 
 func main() {
@@ -55,19 +60,29 @@ func run() error {
 	if err := config.Load(); err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if err := log.Configure(); err != nil {
+		return fmt.Errorf("configure log: %w", err)
+	}
 
 	recipient, err := parseRecipient(*to)
 	if err != nil {
 		return err
 	}
 
-	if err := email.Send(context.Background(), &email.Message{
+	client := email.NewClient(email.ClientConfig{})
+
+	msg := &email.Message{
 		To:      recipient,
 		Subject: *subject,
 		Body:    *body,
-	}); err != nil {
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	defer cancel()
+	if err := client.Send(ctx, msg); err != nil {
 		return fmt.Errorf("send email: %w", err)
 	}
+
 	log.Infof("Sent email to %s", *to)
 	return nil
 }

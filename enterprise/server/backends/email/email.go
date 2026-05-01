@@ -2,13 +2,15 @@ package email
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	sg "github.com/sendgrid/sendgrid-go"
-	sgmail "github.com/sendgrid/sendgrid-go/helpers/mail"
+	sendgridrest "github.com/sendgrid/rest"
+	sendgrid "github.com/sendgrid/sendgrid-go"
+	sendgridmail "github.com/sendgrid/sendgrid-go/helpers/mail"
 )
 
 var (
@@ -20,8 +22,9 @@ var (
 	sendgridAPIKey = flag.String("notifications.email.sendgrid.api_key", "", "SendGrid API key used to send email notifications.", flag.Secret)
 )
 
-func init() {
-	sg.DefaultClient.HTTPClient = httpclient.New(nil, "sendgrid")
+// IsConfigured returns whether email provider credentials are configured.
+func IsConfigured() bool {
+	return *sendgridAPIKey != ""
 }
 
 // Address identifies an email sender or recipient.
@@ -45,30 +48,56 @@ type Message struct {
 	Body string
 }
 
-// IsConfigured returns whether an email backend is configured.
-func IsConfigured() bool {
-	return *sendgridAPIKey != ""
+// Client sends email notifications.
+type Client struct {
+	client       *sendgridrest.Client
+	sendgridHost string
+}
+
+// ClientConfig configures a Client.
+type ClientConfig struct {
+	// HTTPClient is the HTTP client used to call SendGrid. If nil, a default
+	// BuildBuddy HTTP client is used.
+	HTTPClient *http.Client
+	// SendGridHost overrides the SendGrid API host. If empty, SendGrid's
+	// default host is used.
+	SendGridHost string
+}
+
+// NewClient returns an email notification client.
+func NewClient(config ClientConfig) *Client {
+	httpClient := config.HTTPClient
+	if httpClient == nil {
+		httpClient = httpclient.New(nil, "sendgrid")
+	}
+	return &Client{
+		client:       &sendgridrest.Client{HTTPClient: httpClient},
+		sendgridHost: config.SendGridHost,
+	}
 }
 
 // Send sends msg through the configured backend using the configured
 // notification flags.
-func Send(ctx context.Context, msg *Message) error {
-	if !IsConfigured() {
+func (c *Client) Send(ctx context.Context, msg *Message) error {
+	if *sendgridAPIKey == "" {
 		return status.FailedPreconditionError("SendGrid API key is required")
 	}
 	email, err := buildEmail(msg)
 	if err != nil {
 		return err
 	}
-	return sendWithClient(ctx, newClient(), email)
+	return sendWithClient(ctx, c.client, newRequest(email, c.sendgridHost))
 }
 
-func newClient() *sg.Client {
-	return sg.NewSendClient(*sendgridAPIKey)
+func newRequest(email *sendgridmail.SGMailV3, host string) sendgridrest.Request {
+	request := sendgrid.GetRequest(*sendgridAPIKey, "/v3/mail/send", host)
+	request.Method = sendgridrest.Post
+	request.Body = sendgridmail.GetRequestBody(email)
+	return request
 }
 
-func sendWithClient(ctx context.Context, client *sg.Client, email *sgmail.SGMailV3) error {
-	resp, err := client.SendWithContext(ctx, email)
+func sendWithClient(ctx context.Context, client *sendgridrest.Client, request sendgridrest.Request) error {
+	resp, err := client.SendWithContext(ctx, request)
 	if err != nil {
 		return status.UnavailableErrorf("send email through SendGrid: %s", err)
 	}
@@ -81,7 +110,7 @@ func sendWithClient(ctx context.Context, client *sg.Client, email *sgmail.SGMail
 	return nil
 }
 
-func buildEmail(msg *Message) (*sgmail.SGMailV3, error) {
+func buildEmail(msg *Message) (*sendgridmail.SGMailV3, error) {
 	if msg == nil {
 		return nil, status.InvalidArgumentError("message is required")
 	}
@@ -102,12 +131,12 @@ func buildEmail(msg *Message) (*sgmail.SGMailV3, error) {
 		return nil, status.InvalidArgumentError("body is required")
 	}
 
-	email := sgmail.NewV3Mail()
+	email := sendgridmail.NewV3Mail()
 	email.SetFrom(toSendGridAddress(from))
 	email.Subject = msg.Subject
-	email.AddContent(sgmail.NewContent("text/html", msg.Body))
+	email.AddContent(sendgridmail.NewContent("text/html", msg.Body))
 
-	personalization := sgmail.NewPersonalization()
+	personalization := sendgridmail.NewPersonalization()
 	personalization.AddTos(toSendGridAddress(msg.To))
 	email.AddPersonalizations(personalization)
 
@@ -118,6 +147,6 @@ func defaultFrom() Address {
 	return *defaultFromAddress
 }
 
-func toSendGridAddress(address Address) *sgmail.Email {
-	return sgmail.NewEmail(address.Name, address.Email)
+func toSendGridAddress(address Address) *sendgridmail.Email {
+	return sendgridmail.NewEmail(address.Name, address.Email)
 }

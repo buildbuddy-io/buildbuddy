@@ -5,52 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/email"
-	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
-
-	sg "github.com/sendgrid/sendgrid-go"
 )
-
-type capturedRequest struct {
-	method      string
-	path        string
-	auth        string
-	contentType string
-	payload     sendgridPayload
-}
-
-type requestRecorder struct {
-	t            testing.TB
-	requests     []capturedRequest
-	statusCode   int
-	responseBody string
-}
-
-type payloadAddress struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-type sendgridPayload struct {
-	From             payloadAddress           `json:"from"`
-	Subject          string                   `json:"subject"`
-	Personalizations []payloadPersonalization `json:"personalizations"`
-	Content          []payloadContent         `json:"content"`
-}
-
-type payloadPersonalization struct {
-	To []payloadAddress `json:"to"`
-}
-
-type payloadContent struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
 
 func TestSend(t *testing.T) {
 	validMessage := &email.Message{
@@ -73,8 +34,7 @@ func TestSend(t *testing.T) {
 		},
 	}
 	validRequest := capturedRequest{
-		method:      http.MethodPost,
-		path:        "/v3/mail/send",
+		request:     "POST /v3/mail/send",
 		auth:        "Bearer test-api-key",
 		contentType: "application/json",
 		payload:     validPayload,
@@ -170,69 +130,97 @@ func TestSend(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			configureSendGridFlags(t)
+			flags.Set(t, "notifications.email.sendgrid.api_key", "test-api-key")
+			flags.Set(t, "notifications.email.default_from_address", email.Address{
+				Name:  "BuildBuddy",
+				Email: "notifications@buildbuddy.io",
+			})
 			for name, value := range testCase.flags {
 				flags.Set(t, name, value)
 			}
-			recorder := recordSendGridRequests(t, testCase.statusCode, testCase.responseBody)
+			server := runFakeSendgridServer(t, testCase.statusCode, testCase.responseBody)
+			client := email.NewClient(email.ClientConfig{
+				HTTPClient:   server.httpClient,
+				SendGridHost: server.url,
+			})
 
-			// Send the email for this scenario.
-			err := email.Send(context.Background(), testCase.message)
-
-			// Verify whether the scenario succeeds or returns the expected validation/provider failure.
+			err := client.Send(context.Background(), testCase.message)
 			if testCase.wantErr == "" {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, testCase.wantErr)
 			}
-			require.Equal(t, testCase.wantRequests, recorder.requests)
+			require.Equal(t, testCase.wantRequests, server.capturedRequests)
 		})
 	}
 }
 
-func configureSendGridFlags(t testing.TB) {
-	flags.Set(t, "notifications.email.sendgrid.api_key", "test-api-key")
-	flags.Set(t, "notifications.email.default_from_address", email.Address{
-		Name:  "BuildBuddy",
-		Email: "notifications@buildbuddy.io",
-	})
+type capturedRequest struct {
+	request     string
+	auth        string
+	contentType string
+	payload     sendgridPayload
 }
 
-func recordSendGridRequests(t testing.TB, statusCode int, responseBody string) *requestRecorder {
-	recorder := &requestRecorder{
+type payloadAddress struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type sendgridPayload struct {
+	From             payloadAddress           `json:"from"`
+	Subject          string                   `json:"subject"`
+	Personalizations []payloadPersonalization `json:"personalizations"`
+	Content          []payloadContent         `json:"content"`
+}
+
+type payloadPersonalization struct {
+	To []payloadAddress `json:"to"`
+}
+
+type payloadContent struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type fakeSendgridServer struct {
+	t                testing.TB
+	httpClient       *http.Client
+	url              string
+	capturedRequests []capturedRequest
+	statusCode       int
+	responseBody     string
+}
+
+func runFakeSendgridServer(t testing.TB, statusCode int, responseBody string) *fakeSendgridServer {
+	t.Helper()
+	server := &fakeSendgridServer{
 		t:            t,
 		statusCode:   statusCode,
 		responseBody: responseBody,
 	}
-	client := httpclient.New(nil, "sendgrid_test")
-	client.Transport = recorder
-
-	oldHTTPClient := sg.DefaultClient.HTTPClient
-	sg.DefaultClient.HTTPClient = client
+	httpServer := httptest.NewServer(server)
+	server.httpClient = httpServer.Client()
+	server.url = httpServer.URL
 	t.Cleanup(func() {
-		sg.DefaultClient.HTTPClient = oldHTTPClient
+		httpServer.Close()
 	})
-	return recorder
+	return server
 }
 
-func (r *requestRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
-	require.NotNil(r.t, req.Body)
+func (s *fakeSendgridServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
-
 	body, err := io.ReadAll(req.Body)
-	require.NoError(r.t, err)
+	require.NoError(s.t, err)
 	var payload sendgridPayload
-	require.NoError(r.t, json.Unmarshal(body, &payload))
-	r.requests = append(r.requests, capturedRequest{
-		method:      req.Method,
-		path:        req.URL.Path,
+	require.NoError(s.t, json.Unmarshal(body, &payload))
+	s.capturedRequests = append(s.capturedRequests, capturedRequest{
+		request:     req.Method + " " + req.URL.Path,
 		auth:        req.Header.Get("Authorization"),
 		contentType: req.Header.Get("Content-Type"),
 		payload:     payload,
 	})
-	return &http.Response{
-		StatusCode: r.statusCode,
-		Header:     http.Header{},
-		Body:       io.NopCloser(strings.NewReader(r.responseBody)),
-	}, nil
+	w.WriteHeader(s.statusCode)
+	_, err = w.Write([]byte(s.responseBody))
+	require.NoError(s.t, err)
 }

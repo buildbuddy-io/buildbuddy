@@ -10,6 +10,7 @@ go_library(
         "//server/http/httpclient",
         "//server/util/flag",
         "//server/util/status",
+        "@com_github_sendgrid_rest//:rest",
         "@com_github_sendgrid_sendgrid_go//:sendgrid-go",
         "@com_github_sendgrid_sendgrid_go//helpers/mail",
     ],
@@ -21,9 +22,7 @@ go_test(
     srcs = ["email_test.go"],
     deps = [
         ":email",
-        "//server/http/httpclient",
         "//server/util/testing/flags",
-        "@com_github_sendgrid_sendgrid_go//:sendgrid-go",
         "@com_github_stretchr_testify//require",
     ],
 )
