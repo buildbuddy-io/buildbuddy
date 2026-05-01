@@ -207,6 +207,9 @@ message FrontendConfig {
   // If this field is absent, clients should treat membership requests as
   // enabled.
   optional bool group_membership_requests_enabled = 67;
+
+  // Whether usage alerts are enabled.
+  bool usage_alerts_enabled = 68;
 }
 
 message Region {

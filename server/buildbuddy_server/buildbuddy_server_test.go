@@ -109,6 +109,10 @@ func (s *fakeUsageService) DeleteUsageAlertingRule(ctx context.Context, req *usa
 	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
 }
 
+func (s *fakeUsageService) GetAlertsEnabled() bool {
+	return true
+}
+
 func createInvocationForTesting(te environment.Env, user string) (string, error) {
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()

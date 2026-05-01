@@ -24,7 +24,10 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
-var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+var (
+	usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+	alertsEnabled  = flag.Bool("app.usage_alerts_enabled", false, "If set, usage alerts will be enabled in the UI.")
+)
 
 const (
 	// MaxUsageAlertingRulesPerGroup is the maximum number of usage alerting
@@ -56,6 +59,11 @@ func New(env environment.Env, clock clockwork.Clock) *usageService {
 		clock: clock,
 		start: configuredUsageStartDate(),
 	}
+}
+
+// GetAlertsEnabled returns whether usage alerting should be exposed to the frontend.
+func (s *usageService) GetAlertsEnabled() bool {
+	return *alertsEnabled
 }
 
 // Just a little function to make testing less miserable.

@@ -27,3 +27,23 @@
 .spinner.small-spinner {
   --size: 16px;
 }
+
+.spinner-overlay {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  background: var(--color-overlay-light-strong);
+  opacity: 1;
+  z-index: 1;
+}
+
+.dark .spinner-overlay {
+  background: var(--color-overlay-dark-medium);
+}
+
+.spinner-overlay:before {
+  width: var(--size);
+  height: var(--size);
+  opacity: 0.1;
+}
