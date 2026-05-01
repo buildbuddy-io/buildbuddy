@@ -232,7 +232,6 @@ type PebbleCache struct {
 	partitions        []disk.Partition
 	partitionMappings []disk.PartitionMapping
 
-	maxSizeBytes           int64
 	blockCacheSizeBytes    int64
 	maxInlineFileSizeBytes int64
 
@@ -659,7 +658,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		blobDirectory:               filepath.Join(opts.RootDirectory, "blobs"),
 		partitions:                  opts.Partitions,
 		partitionMappings:           opts.PartitionMappings,
-		maxSizeBytes:                opts.MaxSizeBytes,
 		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
 		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
