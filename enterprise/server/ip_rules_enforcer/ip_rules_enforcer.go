@@ -37,7 +37,6 @@ var (
 	cacheTTL                = flag.Duration("auth.ip_rules.cache_ttl", 2*time.Minute, "Duration of time IP rules will be cached in memory.")
 	remoteIPRulesTarget     = flag.String("auth.ip_rules.remote.target", "", "The gRPC target of the backend storing IP rules.")
 	remoteIPRulesRPCTimeout = flag.Duration("auth.ip_rules.remote.rpc_timeout", 15*time.Second, "Timeout for remote IP rules RPCs.")
-	gRPCClientConnPoolSize  = flag.Int("auth.ip_rules.remote.grpc_connection_pool_size", 10, "The size of the gRPC client connection pool to use for remote IP rules RPCs.")
 )
 
 const (
@@ -254,7 +253,7 @@ type remoteIPRulesProvider struct {
 }
 
 func newRemoteIPRulesProvider(env environment.Env, target string) (*remoteIPRulesProvider, error) {
-	conn, err := grpc_client.DialInternalWithPoolSize(env, target, *gRPCClientConnPoolSize)
+	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to dial remote IP rules backend %q: %v", target, err)
 	}

@@ -36,7 +36,6 @@ var (
 	maxPendingHitsPerKey         = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 3_000_000, "The maximum number of pending cache-hit updates to store in memory for a given (group, usagelabels) tuple.")
 	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 250_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
-	gRPCClientConnPoolSize       = flag.Int("cache_proxy.remote_hit_tracker.grpc_connection_pool_size", 10, "The size of the gRPC client connection pool to use for sending remote hit tracking updates.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -45,7 +44,7 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 
-	conn, err := grpc_client.DialInternalWithPoolSize(env, *remoteHitTrackerTarget, *gRPCClientConnPoolSize)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, *remoteHitTrackerTarget, *remoteHitTrackerWorkers)
 	if err != nil {
 		return err
 	}
