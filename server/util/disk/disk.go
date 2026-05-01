@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -294,6 +295,11 @@ type writeMover struct {
 	tmpFileIsClosed bool
 	ctx             context.Context
 	finalPath       string
+	// anonymous is true if File was opened with O_TMPFILE.
+	anonymous bool
+	// tmpDir is the directory where fallback named temp files are created
+	// (used by the anonymous Commit path on EEXIST).
+	tmpDir string
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
@@ -311,6 +317,33 @@ func (w *writeMover) Commit() error {
 		return err
 	}
 	defer releaseQuota()
+	if w.anonymous {
+		// Fast path: try linking the anonymous file directly to finalPath.
+		// This is the common case (writing a new file). linkat fails with
+		// EEXIST if finalPath already exists, in which case we fall back to
+		// linking to a unique temp name and renaming over the destination.
+		err := linkAnonymousTmpFile(w.File, w.finalPath)
+		if err != nil && errors.Is(err, syscall.EEXIST) {
+			randStr, randErr := random.RandomString(10)
+			if randErr != nil {
+				return randErr
+			}
+			linkPath := filepath.Join(w.tmpDir, filepath.Base(w.finalPath)+fmt.Sprintf(".%s.tmp", randStr))
+			if err = linkAnonymousTmpFile(w.File, linkPath); err == nil {
+				if err = os.Rename(linkPath, w.finalPath); err != nil {
+					RemoveIfExists(linkPath)
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if err := w.File.Close(); err != nil {
+			return err
+		}
+		w.tmpFileIsClosed = true
+		return nil
+	}
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
@@ -329,6 +362,11 @@ func (w *writeMover) Close() error {
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
+	if w.anonymous {
+		// O_TMPFILE inodes are reclaimed automatically when the last fd
+		// reference is closed; nothing else to do.
+		return nil
+	}
 	if err := RemoveIfExists(w.File.Name()); err != nil {
 		alert.CtxUnexpectedEvent(w.ctx, "failed_to_delete_tmp_file", "Failed to delete %s: %s", w.File.Name(), err)
 	}
@@ -346,9 +384,26 @@ func FileWriterWithTmpDir(ctx context.Context, tmpDir, fullPath string) (interfa
 	}
 	defer releaseQuota()
 
-	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+	dir := filepath.Dir(fullPath)
+	if err := EnsureDirectoryExists(dir); err != nil {
 		return nil, err
 	}
+
+	// On Linux, prefer O_TMPFILE so we don't leave a named temp file behind
+	// if the writer is dropped without Commit (e.g. process crash). Falls
+	// back to a named temp file if the filesystem doesn't support it.
+	if f, ok, err := openAnonymousTmpFile(dir); err != nil {
+		return nil, err
+	} else if ok {
+		return &writeMover{
+			File:      f,
+			ctx:       ctx,
+			finalPath: fullPath,
+			tmpDir:    tmpDir,
+			anonymous: true,
+		}, nil
+	}
+
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err

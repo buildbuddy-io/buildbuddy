@@ -5,6 +5,8 @@ go_library(
     srcs = [
         "disk.go",
         "disk_linux.go",
+        "disk_otmpfile_linux.go",
+        "disk_otmpfile_other.go",
         "disk_unix.go",
         "disk_windows.go",
     ],
