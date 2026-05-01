@@ -1275,7 +1275,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"})[$window])",
+              "expr": "sum by (status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{status}}",
@@ -1387,7 +1387,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"})[$window]))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window])))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{status}}",
@@ -1514,7 +1514,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1527,7 +1527,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1540,7 +1540,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1653,7 +1653,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1666,7 +1666,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1679,7 +1679,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1792,7 +1792,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1805,7 +1805,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1818,7 +1818,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1931,7 +1931,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1944,7 +1944,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1957,7 +1957,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2070,7 +2070,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2083,7 +2083,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2096,7 +2096,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2209,7 +2209,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2222,7 +2222,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2235,7 +2235,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2348,7 +2348,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2361,7 +2361,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2374,7 +2374,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}))/rate(sum(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2487,7 +2487,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2500,7 +2500,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2513,7 +2513,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"})))/(rate(sum(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"})))",
+              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}])))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2626,7 +2626,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2639,7 +2639,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (cache_status) (buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum by (cache_status) (buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2652,7 +2652,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "(rate(sum(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"})))/(rate(sum(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"})) + rate(sum(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"})))",
+              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}])))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -7168,7 +7168,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\"})[$window]))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window])))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
               "range": true,
@@ -7387,7 +7387,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"})[$window])",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7490,7 +7490,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"})[$window])",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7593,7 +7593,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"})[$window])",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7696,7 +7696,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"})[$window])",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
