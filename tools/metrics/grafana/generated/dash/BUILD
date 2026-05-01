@@ -9,7 +9,9 @@ go_library(
     deps = [
         "@com_github_grafana_grafana_foundation_sdk_go//common",
         "@com_github_grafana_grafana_foundation_sdk_go//dashboard",
+        "@com_github_grafana_grafana_foundation_sdk_go//heatmap",
         "@com_github_grafana_grafana_foundation_sdk_go//prometheus",
+        "@com_github_grafana_grafana_foundation_sdk_go//stat",
         "@com_github_grafana_grafana_foundation_sdk_go//timeseries",
     ],
 )

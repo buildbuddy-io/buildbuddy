@@ -8,7 +8,9 @@ import (
 
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
+	"github.com/grafana/grafana-foundation-sdk/go/heatmap"
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
+	"github.com/grafana/grafana-foundation-sdk/go/stat"
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
@@ -17,9 +19,13 @@ import (
 const (
 	UnitBytesPerSec   = "Bps"
 	UnitBitsPerSec    = "bps"
+	UnitBytes         = "bytes"
 	UnitPacketsPerSec = "pps"
 	UnitEventsPerSec  = "eps"
+	UnitMicroseconds  = "µs"
+	UnitOps           = "ops"
 	UnitPercent       = "percent"
+	UnitPercentUnit   = "percentunit"
 	UnitSeconds       = "s"
 	UnitShort         = "short"
 	UnitWatts         = "watt"
@@ -40,6 +46,12 @@ func PromQuery(expr, legend string) *prometheus.DataqueryBuilder {
 		Expr(expr).
 		LegendFormat(legend).
 		Range()
+}
+
+// PromHeatmapQuery returns a Prometheus range-query target formatted as a heatmap.
+func PromHeatmapQuery(expr string) *prometheus.DataqueryBuilder {
+	return PromQuery(expr, "__auto").
+		Format(prometheus.PromQueryFormatHeatmap)
 }
 
 // Timeseries returns a timeseries panel preconfigured defaults.
@@ -64,6 +76,72 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 				Mode(common.TooltipDisplayModeMulti).
 				Sort(common.SortOrderDescending),
 		).
+		Height(8).
+		Span(12)
+}
+
+// StackedTimeseries returns a timeseries panel suitable for stacked rates.
+func StackedTimeseries(title, unit string) *timeseries.PanelBuilder {
+	return Timeseries(title, unit).
+		FillOpacity(10).
+		Stacking(
+			common.NewStackingConfigBuilder().
+				Group("A").
+				Mode(common.StackingModeNormal),
+		)
+}
+
+// Stat returns a stat panel preconfigured with common defaults.
+func Stat(title, unit string) *stat.PanelBuilder {
+	return stat.NewPanelBuilder().
+		Title(title).
+		Datasource(Prometheus()).
+		Unit(unit).
+		GraphMode(common.BigValueGraphModeNone).
+		ColorMode(common.BigValueColorModeValue).
+		ReduceOptions(
+			common.NewReduceDataOptionsBuilder().
+				Calcs([]string{"lastNotNull"}).
+				Values(false),
+		).
+		Height(4).
+		Span(4)
+}
+
+// Heatmap returns a heatmap panel preconfigured for Prometheus histogram buckets.
+func Heatmap(title, unit string) *heatmap.PanelBuilder {
+	return heatmap.NewPanelBuilder().
+		Title(title).
+		Datasource(Prometheus()).
+		Unit(unit).
+		Calculate(false).
+		CellGap(1).
+		Color(
+			heatmap.NewHeatmapColorOptionsBuilder().
+				Mode(heatmap.HeatmapColorModeOpacity).
+				Scheme("Oranges").
+				Fill("#3274D9").
+				Scale(heatmap.HeatmapColorScaleExponential).
+				Exponent(0.5).
+				Steps(128).
+				Reverse(false),
+		).
+		FilterValues(heatmap.NewFilterValueRangeBuilder().Le(1e-9)).
+		RowsFrame(heatmap.NewRowsHeatmapOptionsBuilder().Layout(common.HeatmapCellLayoutAuto)).
+		ShowValue(common.VisibilityModeNever).
+		Tooltip(
+			heatmap.NewHeatmapTooltipBuilder().
+				Mode(common.TooltipDisplayModeSingle).
+				YHistogram(true),
+		).
+		YAxis(
+			heatmap.NewYAxisConfigBuilder().
+				AxisPlacement(common.AxisPlacementLeft).
+				Reverse(false).
+				Unit(unit),
+		).
+		ExemplarsColor("rgba(255,0,255,0.7)").
+		HideLegend().
 		Height(8).
 		Span(12)
 }
