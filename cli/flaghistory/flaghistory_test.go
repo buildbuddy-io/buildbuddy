@@ -2,7 +2,6 @@ package flaghistory
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"testing"
@@ -41,7 +40,6 @@ func TestPreviousFlagStorage(t *testing.T) {
 			setup(t)
 
 			flag := "flag" + strconv.Itoa(maxValues)
-			rng := rand.New(rand.NewSource(int64(maxValues)))
 
 			for numStores := 0; numStores <= 3*maxValues; numStores++ {
 				var expectedValues []string
@@ -62,19 +60,7 @@ func TestPreviousFlagStorage(t *testing.T) {
 				require.Equalf(t, expectedValues, actualValues, "numStores=%d", numStores)
 
 				value := fmt.Sprintf("value_%d", numStores+1)
-				flagAndValue := fmt.Sprintf("--%s=%s", flag, value)
-				var argsIn []string
-				var backup string
-				// Deterministically vary whether the flag is specified explicitly.
-				if rng.Int()%2 == 0 {
-					argsIn = []string{flagAndValue}
-					backup = ""
-				} else {
-					argsIn = []string{}
-					backup = value
-				}
-				argsOut := saveFlag(argsIn, flag, backup, maxValues)
-				require.Equal(t, flagAndValue, argsOut[len(argsOut)-1])
+				saveFlag(flag, value, maxValues)
 			}
 		})
 	}

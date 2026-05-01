@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -86,10 +87,12 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			}
 
 			// Supported Bazel commands should receive the discovered API key.
-			args, err := ConfigureAPIKey([]string{"build", "//foo:bar"})
+			args, err := arg.NewBazelArgs([]string{"build", "//foo:bar"})
+			require.NoError(t, err)
+			err = ConfigureAPIKey(args)
 
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedArgs, args)
+			require.Equal(t, testCase.expectedArgs, args.Resolved)
 		})
 	}
 }

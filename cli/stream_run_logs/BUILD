@@ -11,9 +11,8 @@ go_library(
     srcs = ["stream_run_logs.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs",
     deps = [
+        "//cli/arg",
         "//cli/log",
-        "//cli/parser",
-        "//cli/parser/parsed",
         "//cli/stream_run_logs/option_definitions",
         "//cli/terminal",
         "//proto:buildbuddy_service_go_proto",

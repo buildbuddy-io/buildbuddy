@@ -338,7 +338,10 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	// - For "run" commands, if there is no target pattern, then the first arg
 	//   after "--" is treated as the pattern.
 	if len(execArgs) == 0 {
-		bazelArgs = picker.HandlePicker(bazelArgs)
+		bazelArgs, err = picker.HandlePicker(bazelArgs)
+		if err != nil {
+			return 1, err
+		}
 	}
 
 	bazelArgs, streamRunLogsOpts, err = stream_run_logs.Configure(bazelArgs, setupResult.OriginalBESBackend)
@@ -364,8 +367,9 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	// plugins to control how the output is rendered to the terminal.
 	log.Debugf("bb initialized in %s", time.Since(start))
 	outputPath := filepath.Join(tempDir, "bazel.log")
+	// TODO(#7216): Use the forwarded args here.
 	exitCode, err = plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(bazelArgs, execArgs),
+		arg.JoinExecutableArgs(bazelArgs.Resolved, execArgs),
 		outputPath, plugins)
 	if err != nil {
 		return 1, err

@@ -6,7 +6,179 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 )
+
+type BazelArgs struct {
+	// TODO(#7216): Add a Forwarded args fields that represents the non-expanded args
+	// that are eventually passed to Bazelisk.
+
+	// Resolved are the Bazel args that are used internally within the bb parser.
+	// --config and --bazelrc flags are expanded, so the parser has a complete view of the args.
+	Resolved []string
+}
+
+// New returns a BazelArgs struct from a slice of bazel args.
+func NewBazelArgs(args []string) (*BazelArgs, error) {
+	parsed := &BazelArgs{}
+	if err := parsed.Set(args); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// Set updates the BazelArgs struct with a new slice of bazel args.
+// It also recomputes the resolved args.
+func (a *BazelArgs) Set(args []string) error {
+	// Normalize args - apply stable sorting and consistent option representation.
+	normalizedArgs, err := parser.CanonicalizeArgs(args)
+	if err != nil {
+		return err
+	}
+	// TODO(#7216): Set the Forwarded args field.
+	return a.resolve(normalizedArgs)
+}
+
+// Append adds a new bazel arg.
+func (a *BazelArgs) Append(arg string) error {
+	// TODO(#7216): Set the Forwarded args field.
+
+	// If the arg is a --config or --bazelrc flag, we need to recompute the resolved args.
+	if strings.HasPrefix(arg, "--config") || strings.HasPrefix(arg, "--bazelrc") {
+		return a.Set(append(a.Resolved, arg))
+	}
+	a.Resolved = append(a.Resolved, arg)
+	return nil
+}
+
+// Prepend adds a new bazel arg to the beginning of the list of args, just after the bazel command.
+// If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
+// be overriden by later flags.
+func (a *BazelArgs) Prepend(arg string) error {
+	// TODO(#7216): Set the Forwarded args field.
+
+	updatedResolvedArgs := prepend(a.Resolved, arg)
+	if strings.HasPrefix(arg, "--config") || strings.HasPrefix(arg, "--bazelrc") {
+		return a.Set(updatedResolvedArgs)
+	}
+	a.Resolved = updatedResolvedArgs
+	return nil
+}
+
+func prepend(args []string, arg string) []string {
+	_, commandIndex := parser.GetBazelCommandAndIndex(args)
+	if commandIndex == -1 {
+		return append([]string{arg}, args...)
+	}
+	args = args[:commandIndex+1]
+	args = append(args, arg)
+	args = append(args, args[commandIndex+1:]...)
+	return args
+}
+
+// Get returns the value of a flag.
+// It reads from the resolved args to ensure that flags expanded from --config or --bazelrc are included.
+func (a *BazelArgs) Get(flagName string) string {
+	return Get(a.Resolved, flagName)
+}
+
+func (a *BazelArgs) Has(flagName string) bool {
+	return a.Get(flagName) != ""
+}
+
+// TODO(#7216): Read the Forwarded args field, instead of passing in args.
+// resolve re-evaluates the args and expands all flags.
+func (a *BazelArgs) resolve(args []string) error {
+	// Expand --config and --bazelrc flags, then normalize the result.
+	resolved, err := parser.ResolveAndCanonicalizeArgs(args)
+	if err != nil {
+		return err
+	}
+	a.Resolved = resolved
+	return nil
+}
+
+func (a *BazelArgs) GetTargets() []string {
+	return GetTargets(a.Resolved)
+}
+
+func (a *BazelArgs) GetCommand() string {
+	return GetCommand(a.Resolved)
+}
+
+func (a *BazelArgs) GetAllFlagsWithName(flagName string) []string {
+	return GetMulti(a.Resolved, flagName)
+}
+
+// StripBBFlag removes a CLI-only string flag from the args (so it is
+// not passed to Bazelisk) and returns its value.
+func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
+	// TODO(#7216): Read the Forwarded args field - we can't strip a field set in a rc file.
+	parsed, err := parser.ParseArgs(a.Resolved)
+	if err != nil {
+		return "", err
+	}
+	if _, err := parser.GetCLICommandOptionVal(parsed, flagName); err != nil {
+		return "", err
+	}
+	if err := a.Set(parsed.Format()); err != nil {
+		return "", err
+	}
+	return a.Get(flagName), nil
+}
+
+// StripBBBoolFlag removes a CLI-only bool flag from the forwarded args (so it
+// is not passed to Bazelisk) and returns whether it was set.
+func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
+	// TODO(#7216): Read the Forwarded args field - we can't strip a field set in a rc file.
+	parsed, err := parser.ParseArgs(a.Resolved)
+	if err != nil {
+		return false, err
+	}
+	set, err := parser.IsCLICommandOptionSet(parsed, flagName)
+	if err != nil {
+		return false, err
+	}
+	if err := a.Set(parsed.Format()); err != nil {
+		return false, err
+	}
+	return set, nil
+}
+
+// GetRemoteHeaderVal returns the value of a --remote_header flag matching the
+// given key, reading from the resolved args.
+func (a *BazelArgs) GetRemoteHeaderVal(key string) string {
+	parsed, err := parser.ParseArgs(a.Resolved)
+	if err != nil {
+		return ""
+	}
+	return parser.GetRemoteHeaderVal(parsed, key)
+}
+
+// TODO(#7216): Add a test where the resolved flags add another version of flagName at the end of the args.
+// We shouldn't pop the newly resolved arg.
+//
+// Pop removes a flag and returns its value.
+// NOTE: Pop does not remove boolean flags.
+func (a *BazelArgs) Pop(flagName string) (string, error) {
+	value, newArgs := Pop(a.Resolved, flagName)
+
+	if value == "" {
+		return "", nil
+	}
+
+	if strings.HasPrefix(flagName, "--config") || strings.HasPrefix(flagName, "--bazelrc") {
+		if err := a.Set(newArgs); err != nil {
+			return "", err
+		}
+	} else {
+		a.Resolved = newArgs
+	}
+	// TODO(#7216): Return an error if the flag is only present in the resolved args (i.e. set
+	// via a config file), since it cannot be removed from the forwarded args in that case.
+	return value, nil
+}
 
 // Returns true if the list of args contains desiredArg
 func Has(args []string, desiredArg string) bool {
@@ -35,6 +207,8 @@ func GetMulti(args []string, name string) []string {
 }
 
 // Returns the value of the given desiredArg and a slice with that arg removed
+//
+// NOTE: Pop does not remove boolean flags.
 func Pop(args []string, desiredArg string) (string, []string) {
 	arg, i, length := Find(args, desiredArg)
 	if i < 0 {
