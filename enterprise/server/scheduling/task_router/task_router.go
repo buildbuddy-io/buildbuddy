@@ -48,7 +48,7 @@ const (
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
 
-	affinityRouterUseTargetLabelExperiment = "remote_execution.affinity_router_use_target_label"
+	affinityRouterUseTargetPackageExperiment = "remote_execution.affinity_router_use_target_package"
 )
 
 type taskRouter struct {
@@ -340,7 +340,7 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 	}
 	useTargetPackageForAffinityRouting := false
 	if fp := env.GetExperimentFlagProvider(); fp != nil {
-		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetLabelExperiment, false)
+		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetPackageExperiment, false)
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	return routingParams{

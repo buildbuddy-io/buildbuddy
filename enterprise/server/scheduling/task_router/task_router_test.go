@@ -223,7 +223,7 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesTargetPackageForSelectedGroups
 	const testFlags = `{
 	  "$schema": "https://flagd.dev/schema/v0/flags.json",
 	  "flags": {
-	    "remote_execution.affinity_router_use_target_label": {
+	    "remote_execution.affinity_router_use_target_package": {
 	      "state": "ENABLED",
 	      "variants": {
 	        "enabled": true,
@@ -284,7 +284,7 @@ func TestTaskRouter_RankNodes_AffinityRouting_TargetLabelExperimentFallsBackToFi
 
 	testProvider := openfeatureTesting.NewTestProvider()
 	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		"remote_execution.affinity_router_use_target_label": {
+		"remote_execution.affinity_router_use_target_package": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "enabled",
 			Variants: map[string]any{
