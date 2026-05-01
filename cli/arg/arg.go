@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 )
 
+// TODO(#7216): Add getters for these fields, so they can't be modified directly, potentially breaking
+// the contract for how they should be simultaneously updated.
 type BazelArgs struct {
 	// TODO(#7216): Add a Forwarded args fields that represents the non-expanded args
 	// that are eventually passed to Bazelisk.
@@ -54,7 +56,7 @@ func (a *BazelArgs) Append(arg string) error {
 
 // Prepend adds a new bazel arg to the beginning of the list of args, just after the bazel command.
 // If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
-// be overriden by later flags.
+// be overridden by later flags.
 func (a *BazelArgs) Prepend(arg string) error {
 	// TODO(#7216): Set the Forwarded args field.
 
@@ -71,10 +73,11 @@ func prepend(args []string, arg string) []string {
 	if commandIndex == -1 {
 		return append([]string{arg}, args...)
 	}
-	args = args[:commandIndex+1]
-	args = append(args, arg)
-	args = append(args, args[commandIndex+1:]...)
-	return args
+
+	out := append([]string{}, args[:commandIndex+1]...)
+	out = append(out, arg)
+	out = append(out, args[commandIndex+1:]...)
+	return out
 }
 
 // Get returns the value of a flag.
@@ -119,13 +122,16 @@ func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := parser.GetCLICommandOptionVal(parsed, flagName); err != nil {
+	// Remove the flag from the parsed args and return its value.
+	flagVal, err := parser.GetCLICommandOptionVal(parsed, flagName)
+	if err != nil {
 		return "", err
 	}
+	// Update the args to not have the removed flag.
 	if err := a.Set(parsed.Format()); err != nil {
 		return "", err
 	}
-	return a.Get(flagName), nil
+	return flagVal, nil
 }
 
 // StripBBBoolFlag removes a CLI-only bool flag from the forwarded args (so it

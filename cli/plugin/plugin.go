@@ -626,13 +626,10 @@ func (p *Plugin) commandEnv() []string {
 // plugin to return a set of transformed bazel arguments.
 //
 // Plugins receive as their first argument a path to a file containing the
-// arguments to be passed to bazel (--config and --bazelrc flags are not expanded).
-// The plugin can read and write that file to modify the args (most commonly, just appending to the file), which
-// will then be fed to the next plugin in the pipeline, or passed to Bazel if
-// this is the last plugin.
-//
-// Plugins can also read the resolved arg view (i.e. all --config flags expanded) from the
-// file at RESOLVED_BAZEL_ARGS_FILE, but changes to that file are ignored.
+// arguments to be passed to bazel. The plugin can read and write that file to
+// modify the args (most commonly, just appending to the file), which will then
+// be fed to the next plugin in the pipeline, or passed to Bazel if this is the
+// last plugin.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
@@ -720,11 +717,10 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
 	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
-	// Resolve bazel args after each plugin is run, so every following plugin gets
+	// TODO(#7216): Resolve bazel args after each plugin is run, so every following plugin gets
 	// a refreshed resolved view of the bazel args (i.e. all --config flags expanded).
-	if err := bazelArgs.Set(newArgs); err != nil {
-		return nil, nil, err
-	}
+	bazelArgs.Resolved = newArgs
+
 	return bazelArgs, newExecArgs, nil
 }
 

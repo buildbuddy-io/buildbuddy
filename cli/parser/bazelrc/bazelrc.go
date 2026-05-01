@@ -39,6 +39,7 @@ var (
 		"info":               {},
 		"license":            {},
 		"mobile-install":     {},
+		"mod":                {},
 		"print_action":       {},
 		"query":              {},
 		"run":                {},

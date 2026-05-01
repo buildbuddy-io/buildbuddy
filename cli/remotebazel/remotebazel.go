@@ -1351,14 +1351,10 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	// to expand --config and --bazelrc flags for an internal view of resolved flags.
 	// (Attempting to use the parser would actually fail, because we add --config flags that
 	// are only defined on the remote runners.)
-	// The login code expects the arg.BazelArgs struct though, so artificially construct one here.
+	// Manually construct a BazelArgs struct because the login code expects it.
 	// TODO: Find a less hacky way to handle this.
-
-	// Use BazelArgs only for ConfigureAPIKey, which needs the resolved view to
-	// check whether an API key is already present.
-	bazelArgsStruct, err := arg.NewBazelArgs(bazelArgs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolve bazel args: %w", err)
+	bazelArgsStruct := &arg.BazelArgs{
+		Resolved: bazelArgs,
 	}
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
