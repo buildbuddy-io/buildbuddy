@@ -207,6 +207,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	if opts.KubePeerWatcher != nil && len(opts.Nodes) > 0 {
 		return nil, status.InvalidArgumentErrorf("cannot set both Nodes and KubePeerWatcher")
 	}
+	if opts.ClusterSize > 0 && opts.ReplicationFactor > opts.ClusterSize {
+		return nil, status.InvalidArgumentErrorf("replication factor (%d) cannot be greater than cluster size (%d)", opts.ReplicationFactor, opts.ClusterSize)
+	}
 	hashFn, err := parseConsistentHash(*consistentHashFunction)
 	if err != nil {
 		return nil, err
@@ -684,14 +687,17 @@ func (c *Cache) peerZone(peer string) (string, bool) {
 	return "", false
 }
 
-// peers returns the ordered slice of replicationFactor peers responsible for
-// this key. They should be tried in order.
-func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
+// writePeers returns the ordered slice of replicationFactor peers responsible
+// for writing this key. They should be tried in order.
+func (c *Cache) writePeers(d *repb.Digest) (*peerset.PeerSet, error) {
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
 	if len(c.opts.NewNodes) > 0 && !*newNodesReadOnly {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
 	}
-	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:])
+	if len(allPeers) < c.opts.ReplicationFactor {
+		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(allPeers), c.opts.ReplicationFactor)
+	}
+	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:]), nil
 }
 
 func dedupe(in []string) []string {
@@ -1494,7 +1500,10 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		return nil, err
 	}
 
-	ps := c.writePeers(r.GetDigest())
+	ps, err := c.writePeers(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
