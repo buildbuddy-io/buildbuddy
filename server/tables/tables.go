@@ -17,6 +17,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -875,6 +876,39 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+// UsageAlertingRule stores usage alert configuration and evaluator status for a group.
+type UsageAlertingRule struct {
+	Model
+
+	// UsageAlertingRuleID is the primary key for the usage alerting rule.
+	UsageAlertingRuleID string `gorm:"primaryKey"`
+
+	// GroupID is the group that owns this alerting rule.
+	GroupID string `gorm:"not null;index:usage_alerting_rule_group_id_idx;uniqueIndex:usage_alerting_rule_group_config_idx,priority:1"`
+
+	// UserID is the user that created this alerting rule.
+	UserID string `gorm:"not null;default:''"`
+
+	// UsageAlertingMetric is the user-facing usage metric to alert on.
+	UsageAlertingMetric usagepb.UsageAlertingMetric_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:2"`
+
+	// AbsoluteThreshold is the usage value above which this alert fires.
+	AbsoluteThreshold int64 `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:3"`
+
+	// Window is the usage alerting window enum value.
+	Window usagepb.UsageAlertingWindow_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:4"`
+
+	// LastEvaluationUsec is the last time this rule was evaluated.
+	LastEvaluationUsec int64 `gorm:"not null;default:0"`
+
+	// LastFiredUsec is the last time this rule fired.
+	LastFiredUsec int64 `gorm:"not null;default:0"`
+}
+
+func (*UsageAlertingRule) TableName() string {
+	return "UsageAlertingRules"
+}
+
 // DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
 // quota configuration exclusively from flagd. This table can be safely removed once
 // any existing quota data has been migrated to flagd configuration.
@@ -1476,5 +1510,6 @@ func RegisterTables() {
 	registerTable("UL", &UserList{})
 	registerTable("UU", &UserUserList{})
 	registerTable("UM", &UserListGroup{})
+	registerTable("UR", &UsageAlertingRule{})
 	registerTable("WF", &Workflow{})
 }

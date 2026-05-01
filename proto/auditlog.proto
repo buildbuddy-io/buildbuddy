@@ -10,6 +10,7 @@ import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
 import "proto/secrets.proto";
+import "proto/usage.proto";
 import "proto/user_list.proto";
 import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
@@ -108,6 +109,8 @@ message Entry {
     user_list.DeleteUserListRequest delete_user_list = 21;
     user_list.UpdateUserListRequest update_user_list = 22;
     user_list.UpdateUserListMembershipRequest update_user_list_membership = 23;
+    usage.CreateUsageAlertingRuleRequest create_usage_alerting_rule = 24;
+    usage.DeleteUsageAlertingRuleRequest delete_usage_alerting_rule = 25;
   }
   message Request {
     APIRequest api_request = 1;

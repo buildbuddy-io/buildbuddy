@@ -9,14 +9,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func TestGetUsage(t *testing.T) {
@@ -106,4 +109,265 @@ func TestGetUsage(t *testing.T) {
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
+}
+
+func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	// Freeze DB timestamps so the created timestamp is deterministic.
+	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(now)
+	env.GetDBHandle().SetNowFunc(clock.Now)
+	service := usage_service.New(env, clock)
+
+	// Create a usage alerting rule for the authenticated org.
+	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+			AbsoluteThreshold: 123,
+			Window:            usagepb.UsageAlertingWindow_WEEK,
+		},
+	})
+	require.NoError(t, err)
+	ruleID := createRsp.GetUsageAlertingRule().GetMetadata().GetUsageAlertingRuleId()
+	require.NotEmpty(t, ruleID)
+
+	// The created rule includes server-controlled metadata and the saved configuration.
+	expectedRule := &usagepb.UsageAlertingRule{
+		Metadata: &usagepb.UsageAlertingRuleMetadata{
+			UsageAlertingRuleId: ruleID,
+			CreatedByUser: &uidpb.DisplayUser{
+				UserId: &uidpb.UserId{Id: "US1"},
+			},
+			CreatedTimestamp: timestamppb.New(now),
+		},
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+			AbsoluteThreshold: 123,
+			Window:            usagepb.UsageAlertingWindow_WEEK,
+		},
+		Status: &usagepb.UsageAlertingRuleStatus{},
+	}
+	assert.Empty(t, cmp.Diff(expectedRule, createRsp.GetUsageAlertingRule(), protocmp.Transform()))
+
+	// Simulate evaluator-controlled status updates and verify listing returns them.
+	lastEvaluation := now.Add(10 * time.Minute)
+	lastFired := now.Add(20 * time.Minute)
+	err = env.GetDBHandle().NewQuery(ctx, "test_update_usage_alerting_rule_status").Raw(`
+		UPDATE "UsageAlertingRules"
+		SET last_evaluation_usec = ?, last_fired_usec = ?
+		WHERE usage_alerting_rule_id = ?
+	`, lastEvaluation.UnixMicro(), lastFired.UnixMicro(), ruleID).Exec().Error
+	require.NoError(t, err)
+
+	listRsp, err := service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+	})
+	require.NoError(t, err)
+	expectedRule.Status = &usagepb.UsageAlertingRuleStatus{
+		LastEvaluationTimestamp: timestamppb.New(lastEvaluation),
+		LastFiredTimestamp:      timestamppb.New(lastFired),
+	}
+	assert.Empty(t, cmp.Diff(
+		&usagepb.GetUsageAlertingRulesResponse{UsageAlertingRule: []*usagepb.UsageAlertingRule{expectedRule}},
+		listRsp,
+		protocmp.Transform(),
+	))
+
+	// Deleting the rule removes it from subsequent list responses.
+	_, err = service.DeleteUsageAlertingRule(ctx1, &usagepb.DeleteUsageAlertingRuleRequest{
+		RequestContext:      &ctxpb.RequestContext{GroupId: "GR1"},
+		UsageAlertingRuleId: ruleID,
+	})
+	require.NoError(t, err)
+	listRsp, err = service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, listRsp.GetUsageAlertingRule())
+}
+
+func TestUsageAlertingRules_AreScopedToAuthenticatedGroup(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	ctx2, err := ta.WithAuthenticatedUser(ctx, "US2")
+	require.NoError(t, err)
+
+	// Create a rule as a user in GR1.
+	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(now)
+	env.GetDBHandle().SetNowFunc(clock.Now)
+	service := usage_service.New(env, clock)
+	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+			AbsoluteThreshold: 1,
+			Window:            usagepb.UsageAlertingWindow_DAY,
+		},
+	})
+	require.NoError(t, err)
+
+	// A user in GR2 cannot list or delete GR1's rule.
+	listRsp, err := service.GetUsageAlertingRules(ctx2, &usagepb.GetUsageAlertingRulesRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, listRsp.GetUsageAlertingRule())
+	_, err = service.DeleteUsageAlertingRule(ctx2, &usagepb.DeleteUsageAlertingRuleRequest{
+		UsageAlertingRuleId: createRsp.GetUsageAlertingRule().GetMetadata().GetUsageAlertingRuleId(),
+	})
+	assert.True(t, status.IsNotFoundError(err))
+
+	// The original GR1 user can still see the rule after the failed GR2 delete.
+	listRsp, err = service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{})
+	require.NoError(t, err)
+	require.Len(t, listRsp.GetUsageAlertingRule(), 1)
+}
+
+func TestUsageAlertingRules_ValidateConfiguration(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	service := usage_service.New(env, clockwork.NewFakeClock())
+
+	for _, testCase := range []struct {
+		name   string
+		config *usagepb.UsageAlertingRuleConfiguration
+	}{
+		{
+			name: "MissingConfiguration",
+		},
+		{
+			name: "MissingUsageAlertingMetric",
+			config: &usagepb.UsageAlertingRuleConfiguration{
+				AbsoluteThreshold: 1,
+				Window:            usagepb.UsageAlertingWindow_DAY,
+			},
+		},
+		{
+			name: "NegativeThreshold",
+			config: &usagepb.UsageAlertingRuleConfiguration{
+				Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+				AbsoluteThreshold: -1,
+				Window:            usagepb.UsageAlertingWindow_DAY,
+			},
+		},
+		{
+			name: "ZeroThreshold",
+			config: &usagepb.UsageAlertingRuleConfiguration{
+				Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+				AbsoluteThreshold: 0,
+				Window:            usagepb.UsageAlertingWindow_DAY,
+			},
+		},
+		{
+			name: "MissingWindow",
+			config: &usagepb.UsageAlertingRuleConfiguration{
+				Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+				AbsoluteThreshold: 1,
+			},
+		},
+		{
+			name: "UnsupportedUsageAlertingMetric",
+			config: &usagepb.UsageAlertingRuleConfiguration{
+				Metric:            usagepb.UsageAlertingMetric_Value(999),
+				AbsoluteThreshold: 1,
+				Window:            usagepb.UsageAlertingWindow_DAY,
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Invalid user-controlled configuration is rejected before inserting a row.
+			_, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+				Configuration: testCase.config,
+			})
+			assert.True(t, status.IsInvalidArgumentError(err))
+		})
+	}
+
+	// None of the invalid create requests should have persisted a rule.
+	listRsp, err := service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, listRsp.GetUsageAlertingRule())
+}
+
+func TestUsageAlertingRules_DuplicateConfigurationRejected(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	service := usage_service.New(env, clockwork.NewFakeClock())
+
+	configuration := &usagepb.UsageAlertingRuleConfiguration{
+		Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+		AbsoluteThreshold: 123,
+		Window:            usagepb.UsageAlertingWindow_DAY,
+	}
+
+	// Creating a rule with a new configuration succeeds.
+	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: configuration,
+	})
+	require.NoError(t, err)
+
+	// Creating another rule with the exact same configuration is rejected.
+	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: configuration,
+	})
+	assert.True(t, status.IsAlreadyExistsError(err))
+
+	// A rule that changes any part of the configuration is still allowed.
+	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+			AbsoluteThreshold: 456,
+			Window:            usagepb.UsageAlertingWindow_DAY,
+		},
+	})
+	require.NoError(t, err)
+}
+
+func TestUsageAlertingRules_MaxRulesPerGroup(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	service := usage_service.New(env, clockwork.NewFakeClock())
+
+	// Rules up to the per-group cap are accepted.
+	for i := range usage_service.MaxUsageAlertingRulesPerGroup {
+		_, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+			Configuration: &usagepb.UsageAlertingRuleConfiguration{
+				Metric:            usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+				AbsoluteThreshold: int64(i + 1),
+				Window:            usagepb.UsageAlertingWindow_DAY,
+			},
+		})
+		require.NoError(t, err)
+	}
+
+	// The next rule would exceed the per-group cap, so it is rejected.
+	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+			AbsoluteThreshold: int64(usage_service.MaxUsageAlertingRulesPerGroup + 1),
+			Window:            usagepb.UsageAlertingWindow_DAY,
+		},
+	})
+	assert.True(t, status.IsResourceExhaustedError(err))
 }

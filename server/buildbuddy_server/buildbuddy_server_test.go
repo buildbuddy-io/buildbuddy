@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -38,14 +39,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
 
 const (
@@ -85,6 +89,24 @@ func (s *fakeGetTreeStream) Context() context.Context { return s.ctx }
 func (s *fakeGetTreeStream) Send(rsp *capb.GetTreeResponse) error {
 	s.responses = append(s.responses, proto.Clone(rsp).(*capb.GetTreeResponse))
 	return nil
+}
+
+type fakeUsageService struct{}
+
+func (s *fakeUsageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
+	return &usagepb.GetUsageResponse{}, nil
+}
+
+func (s *fakeUsageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	return &usagepb.GetUsageAlertingRulesResponse{}, nil
+}
+
+func (s *fakeUsageService) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
+	return &usagepb.CreateUsageAlertingRuleResponse{}, nil
+}
+
+func (s *fakeUsageService) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
+	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
 }
 
 func createInvocationForTesting(te environment.Env, user string) (string, error) {
@@ -133,6 +155,48 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 		return "", err
 	}
 	return testInvocationID, nil
+}
+
+func TestUsageAlertingRules_AuditLogsCreateAndDelete(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(auth)
+	te.SetUsageService(&fakeUsageService{})
+	al := testauditlog.New(t)
+	te.SetAuditLogger(al)
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	// Creating a usage alerting rule records the admin mutation against the authenticated group.
+	createReq := &usagepb.CreateUsageAlertingRuleRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group1},
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_CAS_CACHE_HITS,
+			AbsoluteThreshold: 1,
+			Window:            usagepb.UsageAlertingWindow_DAY,
+		},
+	}
+	_, err = server.CreateUsageAlertingRule(ctx, createReq)
+	require.NoError(t, err)
+
+	// Deleting a usage alerting rule is audited the same way.
+	deleteReq := &usagepb.DeleteUsageAlertingRuleRequest{
+		RequestContext:      &ctxpb.RequestContext{GroupId: group1},
+		UsageAlertingRuleId: "UR1",
+	}
+	_, err = server.DeleteUsageAlertingRule(ctx, deleteReq)
+	require.NoError(t, err)
+
+	entries := al.GetAllEntries()
+	require.Len(t, entries, 2)
+	require.Equal(t, &alpb.ResourceID{Type: alpb.ResourceType_GROUP, Id: group1}, entries[0].Resource)
+	require.Equal(t, alpb.Action_CREATE, entries[0].Action)
+	require.Same(t, createReq, entries[0].Request)
+	require.Equal(t, &alpb.ResourceID{Type: alpb.ResourceType_GROUP, Id: group1}, entries[1].Resource)
+	require.Equal(t, alpb.Action_DELETE, entries[1].Action)
+	require.Same(t, deleteReq, entries[1].Request)
 }
 
 func TestGetInvocation(t *testing.T) {

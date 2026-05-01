@@ -197,6 +197,9 @@ var (
 		buildBuddyServicePrefix + "GetExecutionNodes",
 		// BuildBuddy usage data
 		buildBuddyServicePrefix + "GetUsage",
+		buildBuddyServicePrefix + "GetUsageAlertingRules",
+		buildBuddyServicePrefix + "CreateUsageAlertingRule",
+		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",

@@ -9,18 +9,27 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+
+const (
+	// MaxUsageAlertingRulesPerGroup is the maximum number of usage alerting
+	// rules a group can create.
+	MaxUsageAlertingRulesPerGroup = 100
+)
 
 type usageService struct {
 	env   environment.Env
@@ -128,6 +137,129 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	return s.GetUsageInternal(ctx, g, req)
 }
 
+func (s *usageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+
+	rq := s.env.GetDBHandle().NewQuery(ctx, "usage_service_get_alerting_rules").Raw(`
+		SELECT *
+		FROM "UsageAlertingRules"
+		WHERE group_id = ?
+		ORDER BY created_at_usec ASC, usage_alerting_rule_id ASC
+	`, groupID)
+	rows, err := db.ScanAll(rq, &tables.UsageAlertingRule{})
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &usagepb.GetUsageAlertingRulesResponse{}
+	for _, row := range rows {
+		rule, err := s.usageAlertingRuleToProto(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		rsp.UsageAlertingRule = append(rsp.UsageAlertingRule, rule)
+	}
+	return rsp, nil
+}
+
+func (s *usageService) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+
+	config := req.GetConfiguration()
+	if err := validateUsageAlertingRuleConfiguration(config); err != nil {
+		return nil, err
+	}
+	id, err := tables.PrimaryKeyForTable((&tables.UsageAlertingRule{}).TableName())
+	if err != nil {
+		return nil, err
+	}
+	row := &tables.UsageAlertingRule{
+		UsageAlertingRuleID: id,
+		GroupID:             groupID,
+		UserID:              u.GetUserID(),
+		UsageAlertingMetric: config.GetMetric(),
+		AbsoluteThreshold:   config.GetAbsoluteThreshold(),
+		Window:              config.GetWindow(),
+	}
+	err = s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		count, err := s.countUsageAlertingRules(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		if count >= MaxUsageAlertingRulesPerGroup {
+			return status.ResourceExhaustedErrorf("usage alerting rule limit exceeded (%d)", MaxUsageAlertingRulesPerGroup)
+		}
+		return tx.NewQuery(ctx, "usage_service_create_alerting_rule").Create(row)
+	})
+	if err != nil {
+		if s.env.GetDBHandle().IsDuplicateKeyError(err) {
+			return nil, status.AlreadyExistsError("usage alerting rule already exists")
+		}
+		return nil, err
+	}
+
+	rule, err := s.usageAlertingRuleToProto(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	return &usagepb.CreateUsageAlertingRuleResponse{
+		UsageAlertingRule: rule,
+	}, nil
+}
+
+func (s *usageService) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	ruleID := req.GetUsageAlertingRuleId()
+	if ruleID == "" {
+		return nil, status.InvalidArgumentError("usage alerting rule ID is required")
+	}
+
+	result := s.env.GetDBHandle().NewQuery(ctx, "usage_service_delete_alerting_rule").Raw(`
+		DELETE FROM "UsageAlertingRules"
+		WHERE usage_alerting_rule_id = ? AND group_id = ?
+	`, ruleID, groupID).Exec()
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("usage alerting rule not found")
+	}
+	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
+}
+
+func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfaces.DB, groupID string) (int64, error) {
+	row := &struct{ Count int64 }{}
+	if err := dbh.NewQuery(ctx, "usage_service_count_alerting_rules").Raw(`
+		SELECT COUNT(*) AS count
+		FROM "UsageAlertingRules"
+		WHERE group_id = ?
+	`, groupID).Take(row); err != nil {
+		return 0, err
+	}
+	return row.Count, nil
+}
+
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "usage_service_scan").Raw(`
@@ -157,6 +289,76 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		ORDER BY period ASC
 	`, start.UnixMicro(), end.UnixMicro(), groupID)
 	return db.ScanAll(rq, &usagepb.Usage{})
+}
+
+func validateUsageAlertingRuleConfiguration(config *usagepb.UsageAlertingRuleConfiguration) error {
+	if config == nil {
+		return status.InvalidArgumentError("configuration is required")
+	}
+	if !isValidUsageAlertingMetric(config.GetMetric()) {
+		return status.InvalidArgumentError("usage alerting metric is required")
+	}
+	if config.GetAbsoluteThreshold() <= 0 {
+		return status.InvalidArgumentError("absolute threshold must be positive")
+	}
+	if !isValidUsageAlertingWindow(config.GetWindow()) {
+		return status.InvalidArgumentError("usage alerting window is required")
+	}
+	return nil
+}
+
+func isValidUsageAlertingMetric(metric usagepb.UsageAlertingMetric_Value) bool {
+	_, ok := usagepb.UsageAlertingMetric_Value_name[int32(metric)]
+	return metric != usagepb.UsageAlertingMetric_UNKNOWN && ok
+}
+
+func isValidUsageAlertingWindow(window usagepb.UsageAlertingWindow_Value) bool {
+	_, ok := usagepb.UsageAlertingWindow_Value_name[int32(window)]
+	return window != usagepb.UsageAlertingWindow_UNKNOWN && ok
+}
+
+func (s *usageService) usageAlertingRuleToProto(ctx context.Context, row *tables.UsageAlertingRule) (*usagepb.UsageAlertingRule, error) {
+	return &usagepb.UsageAlertingRule{
+		Metadata: &usagepb.UsageAlertingRuleMetadata{
+			UsageAlertingRuleId: row.UsageAlertingRuleID,
+			CreatedByUser:       s.displayUser(ctx, row.UserID),
+			CreatedTimestamp:    timestampFromUsec(row.CreatedAtUsec),
+		},
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            row.UsageAlertingMetric,
+			AbsoluteThreshold: row.AbsoluteThreshold,
+			Window:            row.Window,
+		},
+		Status: &usagepb.UsageAlertingRuleStatus{
+			LastEvaluationTimestamp: timestampFromUsec(row.LastEvaluationUsec),
+			LastFiredTimestamp:      timestampFromUsec(row.LastFiredUsec),
+		},
+	}, nil
+}
+
+func (s *usageService) displayUser(ctx context.Context, userID string) *uidpb.DisplayUser {
+	if userID == "" {
+		return nil
+	}
+	if udb := s.env.GetUserDB(); udb != nil {
+		u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID)
+		if err == nil {
+			return u.ToProto()
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Could not load user %q for usage alerting rule: %s", userID, err)
+		}
+	}
+	return &uidpb.DisplayUser{
+		UserId: &uidpb.UserId{Id: userID},
+	}
+}
+
+func timestampFromUsec(usec int64) *timestamppb.Timestamp {
+	if usec == 0 {
+		return nil
+	}
+	return timestamppb.New(time.UnixMicro(usec).UTC())
 }
 
 type usagePeriod struct {

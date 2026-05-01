@@ -149,6 +149,42 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:      true,
 		},
 		{
+			Name:         "GetUsageAlertingRules_NonAdmin_NotAllowed",
+			RPC:          buildBuddyServicePrefix + "GetUsageAlertingRules",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "GetUsageAlertingRules_Admin_Allowed",
+			RPC:          buildBuddyServicePrefix + "GetUsageAlertingRules",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
+		},
+		{
+			Name:         "CreateUsageAlertingRule_NonAdmin_NotAllowed",
+			RPC:          buildBuddyServicePrefix + "CreateUsageAlertingRule",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "CreateUsageAlertingRule_Admin_Allowed",
+			RPC:          buildBuddyServicePrefix + "CreateUsageAlertingRule",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
+		},
+		{
+			Name:         "DeleteUsageAlertingRule_NonAdmin_NotAllowed",
+			RPC:          buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "DeleteUsageAlertingRule_Admin_Allowed",
+			RPC:          buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
+		},
+		{
 			Name: "ServerAdminOnly_NonServerAdmin_NotAllowed",
 			RPC:  buildBuddyServicePrefix + "ApplyBucket",
 			// Note: this user is an org admin but not a server admin.

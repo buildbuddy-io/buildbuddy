@@ -235,6 +235,12 @@ service BuildBuddyService {
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
+  rpc GetUsageAlertingRules(usage.GetUsageAlertingRulesRequest)
+      returns (usage.GetUsageAlertingRulesResponse);
+  rpc CreateUsageAlertingRule(usage.CreateUsageAlertingRuleRequest)
+      returns (usage.CreateUsageAlertingRuleResponse);
+  rpc DeleteUsageAlertingRule(usage.DeleteUsageAlertingRuleRequest)
+      returns (usage.DeleteUsageAlertingRuleResponse);
 
   // Quota API
   rpc GetNamespace(quota.GetNamespaceRequest)

@@ -2225,6 +2225,49 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		return us.GetUsageAlertingRules(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rsp, err := us.CreateUsageAlertingRule(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_CREATE, req)
+		}
+		return rsp, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rsp, err := us.DeleteUsageAlertingRule(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
+		}
+		return rsp, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
 	if us := s.env.GetSuggestionService(); us != nil {
 		return us.GetSuggestion(ctx, req)
