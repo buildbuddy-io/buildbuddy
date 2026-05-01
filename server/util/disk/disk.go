@@ -323,20 +323,22 @@ func (w *writeMover) Commit() error {
 		// EEXIST if finalPath already exists, in which case we fall back to
 		// linking to a unique temp name and renaming over the destination.
 		err := linkAnonymousTmpFile(w.File, w.finalPath)
-		if err != nil && errors.Is(err, syscall.EEXIST) {
+		if err != nil {
+			if !errors.Is(err, syscall.EEXIST) {
+				return err
+			}
 			randStr, randErr := random.RandomString(10)
 			if randErr != nil {
 				return randErr
 			}
 			linkPath := filepath.Join(w.tmpDir, filepath.Base(w.finalPath)+fmt.Sprintf(".%s.tmp", randStr))
-			if err = linkAnonymousTmpFile(w.File, linkPath); err == nil {
-				if err = os.Rename(linkPath, w.finalPath); err != nil {
-					RemoveIfExists(linkPath)
-				}
+			if err := linkAnonymousTmpFile(w.File, linkPath); err != nil {
+				return err
 			}
-		}
-		if err != nil {
-			return err
+			if err := os.Rename(linkPath, w.finalPath); err != nil {
+				RemoveIfExists(linkPath)
+				return err
+			}
 		}
 		if err := w.File.Close(); err != nil {
 			return err
