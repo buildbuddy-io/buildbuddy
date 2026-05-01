@@ -4,10 +4,21 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 03 Mar 2026 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Fri, 01 May 2026 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Remote Cache CDC: Reusing Bytes]]></title>
+            <link>https://www.buildbuddy.io/blog/content-defined-chunking</link>
+            <guid>https://www.buildbuddy.io/blog/content-defined-chunking</guid>
+            <pubDate>Fri, 01 May 2026 12:00:00 GMT</pubDate>
+            <description><![CDATA[How content-defined chunking makes remote cache uploads smaller by reusing the bytes that did not change.]]></description>
+            <category>product</category>
+            <category>engineering</category>
+            <category>performance</category>
+            <category>bazel</category>
+        </item>
         <item>
             <title><![CDATA[Welcoming Keith Smiley]]></title>
             <link>https://www.buildbuddy.io/blog/welcoming-keith-smiley</link>
@@ -179,14 +190,6 @@
             <pubDate>Tue, 18 Jul 2023 12:00:00 GMT</pubDate>
             <description><![CDATA[New York City – July 18, 2023 – BuildBuddy, which provides an enterprise software for the Bazel ecosystem, announces its inclusion in the first edition of the Redpoint InfraRed 100, a comprehensive list of the next 100 promising private companies in Cloud Infrastructure. This curated selection of companies represents the next generation of leaders in the industry, poised to make a significant impact in the cloud infrastructure market.]]></description>
             <category>company</category>
-        </item>
-        <item>
-            <title><![CDATA[PostgreSQL Support for BuildBuddy]]></title>
-            <link>https://www.buildbuddy.io/blog/postgres-support</link>
-            <guid>https://www.buildbuddy.io/blog/postgres-support</guid>
-            <pubDate>Wed, 21 Jun 2023 12:00:00 GMT</pubDate>
-            <description><![CDATA[We're happy to announce PostgreSQL support for BuildBuddy.]]></description>
-            <category>product</category>
         </item>
     </channel>
 </rss>

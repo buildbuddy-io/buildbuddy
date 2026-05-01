@@ -2,11 +2,26 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-03-03T12:00:00.000Z</updated>
+    <updated>2026-05-01T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Remote Cache CDC: Reusing Bytes]]></title>
+        <id>https://www.buildbuddy.io/blog/content-defined-chunking</id>
+        <link href="https://www.buildbuddy.io/blog/content-defined-chunking"/>
+        <updated>2026-05-01T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[How content-defined chunking makes remote cache uploads smaller by reusing the bytes that did not change.]]></summary>
+        <author>
+            <name>Tyler French</name>
+            <uri>https://www.linkedin.com/in/tylerdfrench/</uri>
+        </author>
+        <category label="product" term="product"/>
+        <category label="engineering" term="engineering"/>
+        <category label="performance" term="performance"/>
+        <category label="bazel" term="bazel"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Welcoming Keith Smiley]]></title>
         <id>https://www.buildbuddy.io/blog/welcoming-keith-smiley</id>
@@ -254,17 +269,5 @@
             <uri>https://www.linkedin.com/in/siggisim/</uri>
         </author>
         <category label="company" term="company"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[PostgreSQL Support for BuildBuddy]]></title>
-        <id>https://www.buildbuddy.io/blog/postgres-support</id>
-        <link href="https://www.buildbuddy.io/blog/postgres-support"/>
-        <updated>2023-06-21T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[We're happy to announce PostgreSQL support for BuildBuddy.]]></summary>
-        <author>
-            <name>Zoey Greer</name>
-            <uri>https://www.github.com/tempoz</uri>
-        </author>
-        <category label="product" term="product"/>
     </entry>
 </feed>
