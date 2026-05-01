@@ -139,10 +139,10 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (version)(buildbuddy_version{region=\"${region}\", job=\"${job}\"})",
+              "expr": "sum by (version, commit) (buildbuddy_version{region=\"${region}\", job=\"${job}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "{{version}}",
+              "legendFormat": "{{version}} ({{commit}})",
               "queryType": "randomWalk",
               "range": true,
               "refId": "A"
