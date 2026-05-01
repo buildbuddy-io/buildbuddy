@@ -80,6 +80,7 @@ ts_library(
         "//app/components/select",
         "//app/components/spinner",
         "//app/components/tooltip",
+        "//app/components/tooltip:help_tooltip",
         "//app/errors:error_service",
         "//app/format",
         "//app/invocation:invocation_execution_util",

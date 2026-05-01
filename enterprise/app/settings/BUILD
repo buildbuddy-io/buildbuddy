@@ -114,9 +114,8 @@ ts_library(
     srcs = ["github_tooltip.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
         "//:node_modules/react",
-        "//app/components/tooltip",
+        "//app/components/tooltip:help_tooltip",
     ],
 )
 

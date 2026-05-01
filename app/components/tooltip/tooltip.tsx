@@ -169,7 +169,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
       portal = document.createElement("div");
       portal.id = "tooltip-portal";
       portal.style.position = "fixed";
-      portal.style.zIndex = "1";
+      portal.style.zIndex = "1001";
       document.body.appendChild(portal);
     }
     this.portalElement = portal;

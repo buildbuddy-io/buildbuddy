@@ -122,17 +122,6 @@
   gap: 10px;
 }
 
-.github-hovercard {
-  margin: 12px;
-  background: var(--color-settings-hovercard-bg);
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 1px 3px var(--color-shadow-strong);
-  font-size: 14px;
-  backdrop-filter: blur(3px);
-  display: flex;
-}
-
 .setup-button-container {
   display: flex;
   flex-direction: column;

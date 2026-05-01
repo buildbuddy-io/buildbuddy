@@ -594,21 +594,10 @@
   gap: 8px;
 }
 
-.cache-requests-card-hovercard {
-  margin: 12px;
-  background: var(--color-cache-hovercard-bg);
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 1px 3px var(--color-shadow-strong);
-  font-size: 14px;
-  backdrop-filter: blur(3px);
-  display: flex;
-}
-
 .cache-result-hovercard {
   margin: 12px;
-  background: var(--color-cache-hovercard-bg);
-  color: var(--color-cache-hovercard-text);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px var(--color-shadow-light);

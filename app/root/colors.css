@@ -211,8 +211,6 @@
   --color-button-primary-bg: var(--color-gray-900);
   --color-button-primary-hover: var(--color-gray-700);
   --color-button-primary-text: var(--color-white);
-  --color-cache-hovercard-bg: var(--color-overlay-light-strong);
-  --color-cache-hovercard-text: inherit;
   --color-chart-black: var(--color-gray-900);
   --color-chart-stroke: var(--color-white);
   --color-code-text: var(--color-black);
@@ -362,7 +360,6 @@
   --color-select-hover-bg: var(--color-overlay-neutral);
   --color-settings-button-selected-bg: var(--color-teal-500);
   --color-settings-button-selected-text: var(--color-white);
-  --color-settings-hovercard-bg: var(--color-overlay-light-full);
   --color-settings-input-description: var(--color-gray-800);
   --color-settings-internal-bg: var(--color-banner-impersonation-bg);
   --color-settings-tab-active-bg: var(--color-teal-50);
@@ -471,8 +468,6 @@
   --color-button-primary-bg: var(--color-gray-800);
   --color-button-primary-hover: var(--color-gray-700);
   --color-button-primary-text: var(--color-white);
-  --color-cache-hovercard-bg: var(--color-overlay-dark-solid);
-  --color-cache-hovercard-text: var(--color-white);
   --color-chart-black: var(--color-white);
   --color-chart-stroke: var(--color-bg-card);
   --color-code-text: var(--color-white);
@@ -618,7 +613,6 @@
   --color-select-disabled-text: var(--color-text-muted);
   --color-select-hover-bg: var(--color-bg-hover);
   --color-settings-button-selected-bg: var(--color-teal-600);
-  --color-settings-hovercard-bg: var(--color-bg-card);
   --color-settings-input-description: var(--color-text-secondary);
   --color-settings-tab-active-bg: var(--color-teal-900);
   --color-settings-tab-active-text: var(--color-teal-200);

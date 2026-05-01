@@ -1,0 +1,50 @@
+.help-tooltip {
+  color: var(--color-text-tertiary);
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+}
+
+.help-tooltip .help-tooltip-icon {
+  /* 
+   * Let the icon size adapt to the current font size,
+   * but don't go lower than 16px since it becomes illegible. 
+   */
+  font-size: inherit;
+  width: 1em;
+  height: 1em;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+.help-tooltip[role="button"] {
+  cursor: pointer;
+}
+
+.help-tooltip[role="button"] .help-tooltip-icon {
+  stroke: var(--color-link);
+}
+
+.help-tooltip[role="button"]:hover .help-tooltip-icon {
+  stroke: var(--color-link-hover);
+}
+
+.help-tooltip-content {
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px var(--color-shadow-strong);
+  font-size: 14px;
+  line-height: 1.4;
+  max-width: 400px;
+  padding: 12px;
+  backdrop-filter: blur(3px);
+}
+
+.help-tooltip-content p {
+  margin: 0;
+}
+
+.help-tooltip-content p:not(:last-child) {
+  margin-bottom: 8px;
+}
