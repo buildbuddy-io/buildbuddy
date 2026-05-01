@@ -516,11 +516,14 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	log.CtxInfof(ctx, "SCIM create user request:\n%s", string(req))
 	ur := UserResource{}
 	if err := json.Unmarshal(req, &ur); err != nil {
+		log.CtxWarningf(ctx, "SCIM create user request failed to parse: %s\nrequest body:\n%s", err, string(req))
 		return nil, err
 	}
+	// We can't control which attributes are sent from upstream so don't log
+	// the raw request to avoid logging any sensitive fields.
+	log.CtxInfof(ctx, "SCIM create user request: %+v", ur)
 
 	defaultRole := defaultRoleForRequest(r)
 	userRole, err := mapRole(&ur, defaultRole)
