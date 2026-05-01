@@ -960,7 +960,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 }
 
 func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
-	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return false, err
 	}

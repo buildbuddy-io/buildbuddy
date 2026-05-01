@@ -546,6 +546,13 @@ type GetGroupUsersOpts struct {
 	SubIDPrefix string
 }
 
+// GetUserOpts customizes user lookups.
+type GetUserOpts struct {
+	// DirectMembershipsOnly excludes group memberships derived from user
+	// lists, so the returned user's Groups reflect only direct memberships.
+	DirectMembershipsOnly bool
+}
+
 type UserDB interface {
 	// User API
 	InsertUser(ctx context.Context, u *tables.User) error
@@ -554,9 +561,9 @@ type UserDB interface {
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
-	GetUserByID(ctx context.Context, id string) (*tables.User, error)
-	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
-	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
+	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
+	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error

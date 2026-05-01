@@ -924,7 +924,7 @@ func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserA
 	}
 
 	// Get user's role-based capabilities within the group.
-	reqUser, err := userdb.GetUserByIDWithoutAuthCheck(ctx, req.GetUserId())
+	reqUser, err := userdb.GetUserByIDWithoutAuthCheck(ctx, req.GetUserId(), &interfaces.GetUserOpts{})
 	if err != nil {
 		return nil, err
 	}

@@ -500,7 +500,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		r = role.Admin
 	}
 
-	_, err = d.getUserByUserID(ctx, tx, userID)
+	_, err = d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -558,7 +558,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	}
 	var membershipStatus grpb.GroupMembershipStatus
 	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		tu, err := d.getUserByUserID(ctx, tx, u.GetUserID())
+		tu, err := d.getUserByUserID(ctx, tx, u.GetUserID(), &interfaces.GetUserOpts{})
 		if err != nil {
 			return err
 		}
@@ -994,8 +994,8 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 	})
 }
 
-func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
-	user, err := d.getUserByUserID(ctx, d.h, id)
+func (d *UserDB) GetUserByID(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	user, err := d.getUserByUserID(ctx, d.h, id, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -1012,15 +1012,15 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 	return nil, errUserNotFound
 }
 
-func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
-	return d.getUserByUserID(ctx, d.h, id)
+func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	return d.getUserByUserID(ctx, d.h, id, opts)
 }
 
-func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error) {
+func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *interfaces.GetUserOpts) (*tables.User, error) {
 	if subID == "" {
 		return nil, status.FailedPreconditionErrorf("subID not specified")
 	}
-	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID})
+	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID, directMembershipsOnly: opts.DirectMembershipsOnly})
 }
 
 // processUserGroupMemberships updates the groupRoles map using the results
@@ -1087,14 +1087,15 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	if u.GetUserID() == "" {
 		return nil, errUserNotFound
 	}
-	return d.getUserByUserID(ctx, d.h, u.GetUserID())
+	return d.getUserByUserID(ctx, d.h, u.GetUserID(), &interfaces.GetUserOpts{})
 }
 
 // getUserOpts specifies query criteria.
-// Only one field must be set.
+// Exactly one of userID or subID must be set.
 type getUserOpts struct {
-	userID string
-	subID  string
+	userID                string
+	subID                 string
+	directMembershipsOnly bool
 }
 
 func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUserOpts) (*tables.User, error) {
@@ -1133,7 +1134,7 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	}
 
 	// Query indirect membership via user lists, if enabled.
-	if authutil.UserListsEnabled() {
+	if authutil.UserListsEnabled() && !opts.directMembershipsOnly {
 		qb := query_builder.NewQuery(`
 			SELECT u.*, g.*, ug.*
 			FROM "Users" u
@@ -1173,8 +1174,8 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	return user, nil
 }
 
-func (d *UserDB) getUserByUserID(ctx context.Context, h interfaces.DB, userID string) (*tables.User, error) {
-	return d.getUserByID(ctx, h, &getUserOpts{userID: userID})
+func (d *UserDB) getUserByUserID(ctx context.Context, h interfaces.DB, userID string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	return d.getUserByID(ctx, h, &getUserOpts{userID: userID, directMembershipsOnly: opts.DirectMembershipsOnly})
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
@@ -1214,7 +1215,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 
 func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	// Permission check.
-	_, err := d.GetUserByID(ctx, userID)
+	_, err := d.GetUserByID(ctx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return err
 	}
@@ -1245,7 +1246,7 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 
 func (d *UserDB) UpdateUser(ctx context.Context, u *tables.User) error {
 	// Permission check.
-	_, err := d.GetUserByID(ctx, u.UserID)
+	_, err := d.GetUserByID(ctx, u.UserID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return err
 	}

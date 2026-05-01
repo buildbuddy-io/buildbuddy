@@ -343,7 +343,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(email, g))
+	u, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(email, g), &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -455,7 +455,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 
 func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +535,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	// exist in our system. If we get a create request for such a user then
 	// we need to translate it to an update request.
 	updateExistingUser := false
-	user, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(ur.UserName, g))
+	user, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, saml.SubIDForUserName(ur.UserName, g), &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}
@@ -615,7 +615,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -733,7 +733,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		return nil, err
 	}

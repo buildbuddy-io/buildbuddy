@@ -331,7 +331,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	if userDB == nil {
 		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return nil, err
 	}
