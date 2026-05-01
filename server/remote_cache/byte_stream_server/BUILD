@@ -21,6 +21,7 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",
         "//server/util/capabilities",
+        "//server/util/cdc",
         "//server/util/compression",
         "//server/util/flag",
         "//server/util/ioutil",
@@ -28,9 +29,12 @@ go_library(
         "//server/util/prefix",
         "//server/util/quota",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//peer",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

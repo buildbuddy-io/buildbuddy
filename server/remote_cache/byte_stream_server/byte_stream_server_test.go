@@ -362,6 +362,106 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	require.Equal(t, blob, buf.String())
 }
 
+func TestRPCWriteChunkedInterceptAndFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		compressor  repb.Compressor_Value
+		blobSize    int64
+		wantChunked bool
+	}{
+		{name: "identity", compressor: repb.Compressor_IDENTITY, blobSize: 3 * 1024 * 1024, wantChunked: true},
+		{name: "zstd", compressor: repb.Compressor_ZSTD, blobSize: 3 * 1024 * 1024, wantChunked: true},
+		{name: "too_small", compressor: repb.Compressor_IDENTITY, blobSize: 64, wantChunked: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up chunked-write flags and a cache with ZSTD support.
+			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache.chunking_enabled": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "true",
+					Variants: map[string]any{
+						"true":  true,
+						"false": false,
+					},
+				},
+				"cache.intercept_and_chunk_large_writes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "true",
+					Variants: map[string]any{
+						"true":  true,
+						"false": false,
+					},
+				},
+			})
+			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+			if tc.compressor == repb.Compressor_ZSTD {
+				flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			}
+
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			baseCache := te.GetCache()
+			te.SetCache(&casCompressionCache{Cache: baseCache})
+			te.SetExperimentFlagProvider(fp)
+			clientConn := runByteStreamServer(ctx, t, te)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+
+			rnProto, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "")
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			uploadData := blob
+			if tc.compressor == repb.Compressor_ZSTD {
+				rn.SetCompressor(repb.Compressor_ZSTD)
+				uploadData = compression.CompressZstd(nil, blob)
+			}
+
+			// Write through ByteStream; large blobs should be stored as chunks, while small blobs fall back to direct writes.
+			byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, rn.NewUploadString(), uploadData, true)
+
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+			manifest, err := chunking.LoadManifest(cacheCtx, te.GetCache(), rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+			wholeBlobRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+			if !tc.wantChunked {
+				// Check fallback writes the whole blob directly without a chunk manifest.
+				require.True(t, status.IsNotFoundError(err))
+				found, err := te.GetCache().Contains(cacheCtx, wholeBlobRN.ToProto())
+				require.NoError(t, err)
+				require.True(t, found)
+			} else {
+				// Check the manifest and verify every stored chunk is individually ZSTD-compressed.
+				require.NoError(t, err)
+				require.Greater(t, len(manifest.ChunkDigests), 1)
+				for _, chunkDigest := range manifest.ChunkDigests {
+					chunkRN := digest.NewCASResourceName(chunkDigest, rn.GetInstanceName(), rn.GetDigestFunction())
+					chunkRN.SetCompressor(repb.Compressor_ZSTD)
+					found, err := te.GetCache().Contains(cacheCtx, chunkRN.ToProto())
+					require.NoError(t, err)
+					require.True(t, found)
+					stored, err := baseCache.Get(cacheCtx, chunkRN.ToProto())
+					require.NoError(t, err)
+					decompressed, err := compression.DecompressZstd(nil, stored)
+					require.NoError(t, err)
+					computed, err := digest.Compute(bytes.NewReader(decompressed), rn.GetDigestFunction())
+					require.NoError(t, err)
+					require.True(t, digest.Equal(chunkDigest, computed))
+				}
+				found, err := te.GetCache().Contains(cacheCtx, wholeBlobRN.ToProto())
+				require.NoError(t, err)
+				require.False(t, found)
+			}
+
+			// Check reads reconstruct the original blob.
+			var got bytes.Buffer
+			require.NoError(t, cachetools.GetBlob(ctx, bsClient, wholeBlobRN, &got))
+			require.Equal(t, blob, got.Bytes())
+		})
+	}
+}
+
 func TestRPCWriteAndReadCompressed(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -1238,10 +1338,11 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 		compressor repb.Compressor_Value
 	}{
 		{name: "identity_few_chunks", chunkCount: 3, want: 3, compressor: repb.Compressor_IDENTITY},
-		{name: "identity_many_chunks", chunkCount: 2 * defaultChunkedReadMaxInFlight, want: defaultChunkedReadMaxInFlight, compressor: repb.Compressor_IDENTITY},
-		{name: "zstd_many_chunks", chunkCount: 2 * defaultChunkedReadMaxInFlight, want: defaultChunkedReadMaxInFlight, compressor: repb.Compressor_ZSTD},
+		{name: "identity_many_chunks", chunkCount: 2 * defaultChunkedTransferMaxInFlight, want: defaultChunkedTransferMaxInFlight, compressor: repb.Compressor_IDENTITY},
+		{name: "zstd_many_chunks", chunkCount: 2 * defaultChunkedTransferMaxInFlight, want: defaultChunkedTransferMaxInFlight, compressor: repb.Compressor_ZSTD},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Set up chunked-read flags.
 			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 				"cache.chunking_enabled": {
 					State:          memprovider.Enabled,

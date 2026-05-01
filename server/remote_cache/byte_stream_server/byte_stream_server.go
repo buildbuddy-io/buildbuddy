@@ -7,6 +7,8 @@ import (
 	"hash"
 	"io"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -19,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -26,7 +29,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -36,7 +42,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const defaultChunkedReadMaxInFlight = 32
+const defaultChunkedTransferMaxInFlight = 32
 
 var compressBufSize = int(4e6) // 4MB
 
@@ -352,7 +358,7 @@ func (r *chunkedBlobReader) advance() error {
 }
 
 func (r *chunkedBlobReader) fillWindow() {
-	for r.nextStart < len(r.rns) && r.nextStart-r.nextRead < defaultChunkedReadMaxInFlight {
+	for r.nextStart < len(r.rns) && r.nextStart-r.nextRead < defaultChunkedTransferMaxInFlight {
 		r.spawn(r.nextStart)
 		r.nextStart++
 	}
@@ -466,14 +472,14 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 	return nil
 }
 
-func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeHandler) error {
+func checkWriteRequestPreconditions(req *bspb.WriteRequest, resourceName string, offset int64) error {
 	if req.ResourceName != "" {
-		if req.ResourceName != ws.resourceNameString {
-			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
+		if req.ResourceName != resourceName {
+			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, resourceName)
 		}
 	}
-	if req.WriteOffset != ws.offset {
-		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.offset, req.WriteOffset)
+	if req.WriteOffset != offset {
+		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", offset, req.WriteOffset)
 	}
 	return nil
 }
@@ -512,15 +518,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
 	}
 
-	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-	if s.cache.SupportsCompressor(r.GetCompressor()) {
-		casRN.SetCompressor(r.GetCompressor())
-	}
-	compressData := false
-	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
-		casRN.SetCompressor(repb.Compressor_ZSTD)
-		compressData = true
-	}
+	casRN, compressData := s.cacheWriteResourceName(r)
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
@@ -610,7 +608,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 }
 
 func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
-	if err := checkSubsequentPreconditions(req, w); err != nil {
+	if err := checkWriteRequestPreconditions(req, w.resourceNameString, w.offset); err != nil {
 		return nil, err
 	}
 
@@ -664,6 +662,353 @@ func (w *writeHandler) Close() error {
 	return w.cacheCloser.Close()
 }
 
+func (s *ByteStreamServer) writeChunkingEnabled(ctx context.Context) bool {
+	if cdc.EnabledViaHeader(ctx) {
+		return true
+	}
+	efp := s.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return false
+	}
+	return chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "cache.intercept_and_chunk_large_writes", false)
+}
+
+type writeChunkedResult struct {
+	firstReq              *bspb.WriteRequest
+	fallbackToDirectWrite bool
+}
+
+func (s *ByteStreamServer) cacheWriteResourceName(r *digest.CASResourceName) (*digest.CASResourceName, bool) {
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	if s.cache.SupportsCompressor(r.GetCompressor()) {
+		casRN.SetCompressor(r.GetCompressor())
+	}
+	compressData := false
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+		casRN.SetCompressor(repb.Compressor_ZSTD)
+		compressData = true
+	}
+	return casRN, compressData
+}
+
+func recordChunkedWriteMetrics(rn *digest.CASResourceName, chunkBytesDeduped int64, totalDuration, chunkingDuration time.Duration) {
+	chunkedLabels := prometheus.Labels{
+		metrics.StatusLabel:     status.MetricsLabel(nil),
+		metrics.CompressionType: rn.GetCompressor().String(),
+	}
+	metrics.ByteStreamChunkedWriteBlobBytes.With(chunkedLabels).Add(float64(rn.GetDigest().GetSizeBytes()))
+	if chunkBytesDeduped > 0 {
+		metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(chunkBytesDeduped))
+	}
+	metrics.ByteStreamChunkedWriteDurationUsec.With(chunkedLabels).Observe(float64(totalDuration.Microseconds()))
+	metrics.ByteStreamChunkedWriteChunkingDurationUsec.With(chunkedLabels).Observe(float64(chunkingDuration.Microseconds()))
+}
+
+func (s *ByteStreamServer) writeChunked(ctx context.Context, stream bspb.ByteStream_WriteServer) (writeChunkedResult, error) {
+	totalStart := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	firstReq, err := stream.Recv()
+	if err == io.EOF {
+		return writeChunkedResult{}, nil
+	}
+	if err != nil {
+		return writeChunkedResult{}, status.WrapErrorf(err, "receive first request")
+	}
+	if err := checkInitialPreconditions(firstReq); err != nil {
+		return writeChunkedResult{}, err
+	}
+	rn, err := digest.ParseUploadResourceName(firstReq.GetResourceName())
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	blobSize := rn.GetDigest().GetSizeBytes()
+	if !s.supportsCompressor(rn.GetCompressor()) {
+		return writeChunkedResult{firstReq: firstReq, fallbackToDirectWrite: true}, nil
+	}
+	if blobSize <= chunking.MaxChunkSizeBytes() {
+		return writeChunkedResult{firstReq: firstReq, fallbackToDirectWrite: true}, nil
+	}
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.Int64("blob_size", blobSize),
+			attribute.String("compressor", rn.GetCompressor().String()),
+		)
+	}
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), blobSize); err != nil {
+			return writeChunkedResult{}, err
+		}
+	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	if !canWrite {
+		return writeChunkedResult{}, s.handleAlreadyExists(ctx, hitTracker, stream, firstReq)
+	}
+
+	casRN, _ := s.cacheWriteResourceName(rn)
+	exists, err := s.cache.Contains(ctx, casRN.ToProto())
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	if exists {
+		return writeChunkedResult{}, s.handleAlreadyExists(ctx, hitTracker, stream, firstReq)
+	}
+	manifestCheckCtx, manifestCheckSpn := tracing.StartNamedSpan(ctx, "hasExistingChunkedManifest")
+	existingManifest, err := chunking.LoadManifest(manifestCheckCtx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	if status.IsNotFoundError(err) {
+		exists = false
+		err = nil
+	} else if err == nil {
+		if manifestCheckSpn.IsRecording() {
+			manifestCheckSpn.SetAttributes(attribute.Int("chunk_count", len(existingManifest.ChunkDigests)))
+		}
+		missing, findErr := s.cache.FindMissing(manifestCheckCtx, existingManifest.ChunkResourceNames())
+		if findErr != nil {
+			err = findErr
+		} else {
+			if manifestCheckSpn.IsRecording() {
+				manifestCheckSpn.SetAttributes(attribute.Int("missing_chunk_count", len(missing)))
+			}
+			// TODO: If missing is non-empty, reuse a valid existing manifest and upload only its missing chunks instead of re-chunking.
+			exists = len(missing) == 0
+		}
+	}
+	manifestCheckSpn.End()
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	if exists {
+		return writeChunkedResult{}, s.handleAlreadyExists(ctx, hitTracker, stream, firstReq)
+	}
+
+	uploadTracker := hitTracker.TrackUpload(rn.GetDigest())
+	bytesReceived := int64(0)
+	defer func() {
+		if err := uploadTracker.CloseWithBytesTransferred(bytesReceived, bytesReceived, rn.GetCompressor(), "byte_stream_server"); err != nil {
+			log.Debugf("ByteStream chunked Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+		}
+	}()
+
+	blobHasher, err := digest.HashForDigestType(rn.GetDigestFunction())
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	blobChecksum := NewChecksum(blobHasher, rn.GetDigestFunction())
+
+	var chunkDigests []*repb.Digest
+	var dedupedChunkBytes atomic.Int64
+	seenChunks := make(map[digest.Key]struct{})
+	chunkCompressor := repb.Compressor_IDENTITY
+	if s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
+		chunkCompressor = repb.Compressor_ZSTD
+	}
+
+	chunkWriteGroup, chunkWriteCtx := errgroup.WithContext(ctx)
+	chunkWriteGroup.SetLimit(defaultChunkedTransferMaxInFlight)
+	chunkWriteFn := func(chunkData []byte) error {
+		if err := chunkWriteCtx.Err(); err != nil {
+			return err
+		}
+		chunkCtx, chunkSpn := tracing.StartNamedSpan(ctx, "chunkWriteFn")
+		defer chunkSpn.End()
+
+		if int64(len(chunkData)) > blobSize-blobChecksum.BytesWritten() {
+			return status.InvalidArgumentError("uploaded data exceeds declared digest size")
+		}
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), rn.GetDigestFunction())
+		if err != nil {
+			return status.InternalErrorf("computing chunk digest for Write: %s", err)
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		if _, err := blobChecksum.Write(chunkData); err != nil {
+			return status.InternalErrorf("hashing chunk data for Write: %s", err)
+		}
+
+		dk := digest.NewKey(chunkDigest)
+		if _, ok := seenChunks[dk]; ok {
+			dedupedChunkBytes.Add(chunkDigest.GetSizeBytes())
+			return nil
+		}
+		seenChunks[dk] = struct{}{}
+
+		chunkRN := digest.NewCASResourceName(chunkDigest, rn.GetInstanceName(), rn.GetDigestFunction())
+		if chunkCompressor != repb.Compressor_IDENTITY {
+			chunkRN.SetCompressor(chunkCompressor)
+		}
+		chunkRNProto := chunkRN.ToProto()
+		chunkDownloadString := chunkRN.DownloadString()
+		chunkDigestSize := chunkDigest.GetSizeBytes()
+
+		var poolBuf []byte
+		var data []byte
+		if chunkCompressor == repb.Compressor_ZSTD {
+			poolBuf = s.bufferPool.Get(compression.ZstdCompressBound(int64(len(chunkData))))
+			_, compressSpn := tracing.StartNamedSpan(chunkCtx, "CompressZstd")
+			data = compression.CompressZstd(poolBuf, chunkData)
+			compressSpn.End()
+		} else {
+			poolBuf = s.bufferPool.Get(int64(len(chunkData)))
+			data = append(poolBuf[:0], chunkData...)
+		}
+		if chunkSpn.IsRecording() {
+			chunkSpn.SetAttributes(
+				attribute.Int("chunk_size", len(chunkData)),
+				attribute.Int("stored_size", len(data)),
+			)
+		}
+
+		chunkWriteGroup.Go(func() error {
+			if poolBuf != nil {
+				defer s.bufferPool.Put(poolBuf)
+			}
+			localWriteCtx, localWriteSpn := tracing.StartNamedSpan(chunkWriteCtx, "localChunkWrite")
+			defer localWriteSpn.End()
+
+			exists, err := s.cache.Contains(localWriteCtx, chunkRNProto)
+			if err != nil {
+				return err
+			}
+			if exists {
+				dedupedChunkBytes.Add(chunkDigestSize)
+				return nil
+			}
+			// Don't use Set here; some caches retain the byte slice, and data is backed by a pooled buffer.
+			wc, err := s.cache.Writer(localWriteCtx, chunkRNProto)
+			if err != nil {
+				return status.InternalErrorf("opening writer for chunk %s: %s", chunkDownloadString, err)
+			}
+			defer wc.Close()
+			if _, err := wc.Write(data); err != nil {
+				return status.InternalErrorf("writing chunk %s to cache: %s", chunkDownloadString, err)
+			}
+			if err := wc.Commit(); err != nil {
+				return status.InternalErrorf("committing chunk %s to cache: %s", chunkDownloadString, err)
+			}
+			return nil
+		})
+		return nil
+	}
+
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	if err != nil {
+		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
+	}
+	defer chunker.Close()
+
+	var chunkInput io.Writer = chunker
+	var decompressor io.WriteCloser
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		decompressor, err = compression.NewZstdDecompressor(chunker)
+		if err != nil {
+			return writeChunkedResult{}, status.InternalErrorf("creating decompressor: %s", err)
+		}
+		defer func() {
+			if decompressor != nil {
+				_ = decompressor.Close()
+			}
+		}()
+		chunkInput = decompressor
+	}
+
+	chunkingStart := time.Now()
+	req := firstReq
+	for {
+		if err := checkWriteRequestPreconditions(req, firstReq.GetResourceName(), bytesReceived); err != nil {
+			return writeChunkedResult{}, err
+		}
+		_, pipeWriteSpn := tracing.StartNamedSpan(ctx, "chunkInputWrite")
+		_, err := chunkInput.Write(req.GetData())
+		pipeWriteSpn.End()
+		if err != nil {
+			return writeChunkedResult{}, status.InternalErrorf("writing data to chunker: %s", err)
+		}
+		bytesReceived += int64(len(req.GetData()))
+		if req.GetFinishWrite() {
+			break
+		}
+
+		_, recvSpn := tracing.StartNamedSpan(ctx, "streamRecv")
+		req, err = stream.Recv()
+		recvSpn.End()
+		if err == io.EOF {
+			return writeChunkedResult{}, status.InvalidArgumentError("received EOF before FinishWrite; stream cannot be recovered")
+		}
+		if err != nil {
+			return writeChunkedResult{}, status.InternalErrorf("receiving request after partially consuming stream; stream cannot be recovered: %s", err)
+		}
+	}
+
+	if decompressor != nil {
+		_, closeSpn := tracing.StartNamedSpan(ctx, "closeDecompressor")
+		err := decompressor.Close()
+		closeSpn.End()
+		if err != nil {
+			return writeChunkedResult{}, status.InternalErrorf("closing decompressor: %s", err)
+		}
+		decompressor = nil
+	}
+
+	_, closeChunkerSpn := tracing.StartNamedSpan(ctx, "closeChunker")
+	err = chunker.Close()
+	closeChunkerSpn.End()
+	if err != nil {
+		return writeChunkedResult{}, status.InternalErrorf("closing chunker: %s", err)
+	}
+
+	_, waitChunkWritesSpn := tracing.StartNamedSpan(ctx, "waitChunkWrites")
+	err = chunkWriteGroup.Wait()
+	waitChunkWritesSpn.End()
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+	chunkingDuration := time.Since(chunkingStart)
+
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.Int("chunks_total", len(chunkDigests)),
+			attribute.Int64("chunk_bytes_total", blobSize),
+		)
+	}
+	if err := blobChecksum.Check(rn); err != nil {
+		return writeChunkedResult{}, err
+	}
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     rn.GetDigest(),
+		ChunkDigests:   chunkDigests,
+		InstanceName:   rn.GetInstanceName(),
+		DigestFunction: rn.GetDigestFunction(),
+	}
+	// The full blob checksum was verified while writing chunks, so this can skip rereading chunks.
+	manifestCtx, manifestSpn := tracing.StartNamedSpan(ctx, "manifest.StoreWithoutVerification")
+	err = manifest.StoreWithoutVerification(manifestCtx, s.cache)
+	manifestSpn.End()
+	if err != nil {
+		return writeChunkedResult{}, err
+	}
+
+	if err := s.warner.Warn(ctx); err != nil {
+		return writeChunkedResult{}, err
+	}
+	if err := stream.SendAndClose(&bspb.WriteResponse{CommittedSize: bytesReceived}); err != nil {
+		return writeChunkedResult{}, err
+	}
+	recordChunkedWriteMetrics(rn, dedupedChunkBytes.Load(), time.Since(totalStart), chunkingDuration)
+	return writeChunkedResult{}, nil
+}
+
 // `Write()` is used to send the contents of a resource as a sequence of
 // bytes. The bytes are sent in a sequence of request protos of a client-side
 // streaming FUNC (S *BYTESTREAMSERVER).
@@ -688,32 +1033,45 @@ func (w *writeHandler) Close() error {
 // `complete` or not.
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-	var streamState *writeHandler
-	for {
-		req, err := stream.Recv()
+	var req *bspb.WriteRequest
+	if s.writeChunkingEnabled(ctx) {
+		result, err := s.writeChunked(ctx, stream)
+		if err != nil {
+			return err
+		}
+		if result.fallbackToDirectWrite {
+			req = result.firstReq
+		} else {
+			return nil
+		}
+	}
+
+	var err error
+	if req == nil {
+		req, err = stream.Recv()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
+	}
 
-		if streamState == nil {
-			streamState, err = s.beginWrite(ctx, req)
-			if status.IsAlreadyExistsError(err) {
-				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
-			}
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if err := streamState.Close(); err != nil {
-					log.Error(err.Error())
-				}
-			}()
+	streamState, err := s.beginWrite(ctx, req)
+	if status.IsAlreadyExistsError(err) {
+		hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+		return s.handleAlreadyExists(ctx, hitTracker, stream, req)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := streamState.Close(); err != nil {
+			log.Error(err.Error())
 		}
+	}()
 
+	for {
 		resp, err := streamState.Write(req)
 		if err != nil {
 			return err
@@ -724,6 +1082,14 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			return stream.SendAndClose(resp)
+		}
+
+		req, err = stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
 		}
 	}
 }
