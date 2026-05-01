@@ -44,8 +44,16 @@ jobs:
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //server/cmd/buildbuddy:buildbuddy \
             //enterprise/server/cmd/server:buildbuddy \
-            //enterprise/server/cmd/executor:executor
+            //enterprise/server/cmd/executor:executor \
+            //enterprise/server/cmd/executor:executor_linux_amd64_static
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
+          cp bazel-out/linux_x86_64_musl-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64-static
+          gh release upload \
+            ${{ inputs.version_tag }} \
+            buildbuddy-linux-amd64 \
+            buildbuddy-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64-static \
+            --clobber
