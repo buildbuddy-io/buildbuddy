@@ -1,9 +1,6 @@
 name: "Build Linux amd64 Github Release Artifacts"
 
 on:
-  pull_request:
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       release_branch:
@@ -33,7 +30,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
-          ref: ${{ inputs.release_branch || github.sha }}
+          ref: ${{ inputs.release_branch }}
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
@@ -53,14 +50,10 @@ jobs:
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
           cp bazel-out/linux_x86_64_musl-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64-static
-          stat buildbuddy-linux-amd64
-          stat buildbuddy-enterprise-linux-amd64
-          stat executor-enterprise-linux-amd64
-          stat executor-enterprise-linux-amd64-static
-          # gh release upload \
-          #   ${{ inputs.version_tag }} \
-          #   buildbuddy-linux-amd64 \
-          #   buildbuddy-enterprise-linux-amd64 \
-          #   executor-enterprise-linux-amd64 \
-          #   executor-enterprise-linux-amd64-static \
-          #   --clobber
+          gh release upload \
+            ${{ inputs.version_tag }} \
+            buildbuddy-linux-amd64 \
+            buildbuddy-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64-static \
+            --clobber
