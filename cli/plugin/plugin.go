@@ -790,9 +790,10 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
 		// Signal EOF to downstream now that all pty data has been
-		// forwarded. This is the happy-path close; the redundant
-		// pw.Close() in the other goroutine handles the case where
-		// this write is stuck on a dead downstream reader.
+		// forwarded. If a downstream reader has exited, it will have
+		// closed its end of the pipe (via PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, so we reach this point
+		// without hanging.
 		pw.Close()
 	}()
 	go func() {
@@ -813,11 +814,17 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 		// only applies when closing tty while the child is still
 		// writing.
 		tty.Close()
-		// Close pw to unblock the copy goroutine if it's stuck writing
-		// to a downstream reader that exited early. This is safe to
-		// call concurrently with the copy goroutine's pw.Close()
-		// because io.Pipe's Close is concurrency-safe and idempotent.
-		pw.Close()
+		// Wait for the copy goroutine to finish draining remaining
+		// pty data and close pw. We must wait here rather than closing
+		// pw first, because closing pw would race with the copy
+		// goroutine's writes, causing data loss (the copy goroutine
+		// would get ErrClosedPipe and drop buffered pty output).
+		//
+		// This won't deadlock: after tty.Close(), ptmx reads will
+		// return EIO once the buffer is drained, so the copy goroutine
+		// always terminates. If a downstream reader has exited, it
+		// closes its end of the pipe (see PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, also causing termination.
 		<-doneCopying
 		// Flush any remaining data from the preceding stage, to prevent
 		// the output writer for the preceding stage from getting stuck.
@@ -847,6 +854,14 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 	go func() {
 		defer close(doneCopying)
 		io.Copy(w, pluginOutput)
+		// Close the plugin output reader so that any upstream plugin's
+		// pw.Write() returns ErrClosedPipe instead of blocking forever.
+		// Without this, if w (e.g. os.Stderr) becomes unwritable, the
+		// upstream copy goroutine would hang on pw.Write() indefinitely
+		// since io.Pipe is synchronous.
+		if closer, ok := pluginOutput.(io.Closer); ok {
+			closer.Close()
+		}
 	}()
 	out := &overrideCloser{
 		WriteCloser: pw,
