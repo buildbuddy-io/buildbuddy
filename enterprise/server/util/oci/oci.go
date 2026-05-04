@@ -441,15 +441,6 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	)
 }
 
-// mapRegistryTransportError translates a remote-registry transport error
-// into a gRPC status error. 401 Unauthorized indicates the caller lacks
-// permission to access the resource; 429 Too Many Requests indicates the
-// registry is rate-limiting and the caller should back off rather than retry
-// immediately. Other errors are surfaced as Unavailable so callers can
-// distinguish transient registry failures from auth/throttling issues.
-//
-// msg is included as a prefix in the returned error message and should
-// describe the operation that failed (e.g. "cannot access image manifest").
 func mapRegistryTransportError(err error, msg string) error {
 	if t, ok := err.(*transport.Error); ok {
 		switch t.StatusCode {
