@@ -126,6 +126,12 @@ const (
 )
 
 var (
+	// cronParser parses 5-field cron expressions (no seconds field):
+	// "minute hour day-of-month month day-of-week"
+	// Examples:
+	//   "0 * * * *"       - every hour
+	//   "30 6 * * 1-5"    - 6:30 AM on weekdays
+	//   "0 0 1 * *"       - midnight on the 1st of each month
 	cronParser = cron.NewParser(
 		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
 	)
@@ -1952,7 +1958,7 @@ func (ws *workflowService) getWorkflowForScheduledDispatch(ctx context.Context, 
 		return nil, status.WrapErrorf(err, "get GitHub app for owner %q", parsedURL.Owner)
 	}
 	// The cron scheduler does not use an authenticated context, so we use this method.
-	accessToken, err := app.GetInstallationTokenForStatusReportingOnly(ctx, parsedURL.Owner)
+	accessToken, err := app.GetInstallationTokenForInternalUseOnly(ctx, parsedURL.Owner)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "get installation token for owner %q", parsedURL.Owner)
 	}
@@ -1969,11 +1975,12 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		return err
 	}
 	wd := &interfaces.WebhookData{
-		EventName:     webhook_data.EventName.ScheduledDispatch,
-		PushedRepoURL: scheduled.RepoURL,
-		PushedBranch:  defaultBranch,
-		TargetRepoURL: scheduled.RepoURL,
-		TargetBranch:  defaultBranch,
+		EventName:               webhook_data.EventName.ScheduledDispatch,
+		PushedRepoURL:           scheduled.RepoURL,
+		PushedBranch:            defaultBranch,
+		TargetRepoURL:           scheduled.RepoURL,
+		TargetBranch:            defaultBranch,
+		TargetRepoDefaultBranch: defaultBranch,
 	}
 	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {

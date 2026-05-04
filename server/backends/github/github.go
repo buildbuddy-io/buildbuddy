@@ -596,7 +596,7 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if err != nil {
 		return nil, err
 	}
-	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
+	return app.GetInstallationTokenForInternalUseOnly(ctx, parts[0])
 }
 
 func (c *GithubClient) getToken(ctx context.Context, ownerRepo string) (string, error) {

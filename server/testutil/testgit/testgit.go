@@ -186,7 +186,7 @@ func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, grou
 	return a.Token, nil
 }
 
-func (a *FakeGitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
+func (a *FakeGitHubApp) GetInstallationTokenForInternalUseOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
 	return &github.InstallationToken{Token: &a.Token}, nil
 }
 

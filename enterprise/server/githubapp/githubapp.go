@@ -594,14 +594,14 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-// GetInstallationTokenForStatusReportingOnly returns an installation token for the given owner.
+// GetInstallationTokenForInternalUseOnly returns an installation token for the given owner.
 // It does not authorize the user, because we don't have an authenticated context when handling
-// webhooks, so should be used for status reporting only.
+// webhooks, so should be used for internal use only.
 //
 // Use GetRepositoryInstallationToken in other cases that should authorize the user.
-func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
+func (a *GitHubApp) GetInstallationTokenForInternalUseOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
 	var installation tables.GitHubAppInstallation
-	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
+	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_internal").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE owner = ?

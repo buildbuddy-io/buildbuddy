@@ -158,7 +158,7 @@ func TestGetRepositoryInstallationToken_RepoNotImported(t *testing.T) {
 	require.Empty(t, tok)
 	require.Equal(t, 0, client.createTokenCalls)
 }
-func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
+func TestGetInstallationTokenForInternalUseOnly(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
 	app := newTestApp(te, &fakeAppClient{
@@ -166,7 +166,7 @@ func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 		wantInstallationID: testInstallationID,
 	})
 
-	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner)
+	tok, err := app.GetInstallationTokenForInternalUseOnly(ctx, testOwner)
 	require.NoError(t, err)
 	require.Equal(t, fakeToken, tok.GetToken())
 
