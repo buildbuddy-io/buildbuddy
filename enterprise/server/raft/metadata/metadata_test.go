@@ -474,6 +474,12 @@ func TestLRU(t *testing.T) {
 	// Force the sampler to refresh its pebble iterator on
 	// every read so that samples have up-to-date atimes.
 	flags.Set(t, "cache.raft.samples_per_batch", 0)
+	// Make the sample channel unbuffered so it can't hold stale samples
+	// produced before atime updates from the test's Find() calls were
+	// applied to pebble. Without this, the eviction consumer reads stale
+	// samples whose Timestamp doesn't match the current pebble atime, and
+	// every Delete is rejected with "Atime mismatch".
+	flags.Set(t, "cache.raft.sample_buffer_size", 0)
 	flags.Set(t, "cache.raft.sample_pool_size", 10)
 	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
