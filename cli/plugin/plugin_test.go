@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -234,6 +236,100 @@ func TestParsePluginSpec(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, tc.ExpectedConfig, cfg)
 	}
+}
+
+// TestPipelineWriter_HandlesFinalLine guards against a regression in which
+// the plugin output handler dropped the last line of plugin output due to a
+// race between draining the pty and closing the pipe. The plugin here only
+// emits a single line, so any lost-tail-output bug shows up as a missing line
+// in the captured output. See: cli/test/integration/cli TestBazelBuildWithLocalPlugin.
+func TestPipelineWriter_HandlesFinalLine(t *testing.T) {
+	ws, _ := setup(t)
+	pluginDir := testfs.MakeDirAll(t, ws, "plugins/echo")
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		"handle_bazel_output.sh": "echo 'final line'\n",
+	})
+
+	const trials = 200
+	for i := 0; i < trials; i++ {
+		cfgFile := &config.File{
+			Path:       filepath.Join(ws, "buildbuddy.yaml"),
+			RootConfig: &config.RootConfig{},
+		}
+		plugins := []*Plugin{{
+			config:     &config.PluginConfig{Path: "./plugins/echo"},
+			configFile: cfgFile,
+		}}
+
+		var out bytes.Buffer
+		wc, err := PipelineWriter(&out, plugins)
+		require.NoError(t, err)
+		_, err = wc.Write([]byte("some bazel output\n"))
+		require.NoError(t, err)
+
+		done := make(chan error, 1)
+		go func() { done <- wc.Close() }()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("trial %d: Close hung", i)
+		}
+		require.Containsf(t, out.String(), "final line",
+			"trial %d: plugin's final output line was dropped; got %q", i, out.String())
+	}
+}
+
+func TestPipelineWriter_ClosesPluginOutputPipes(t *testing.T) {
+	// /dev/fd is a symlink to /proc/self/fd on Linux and a real fdesc
+	// filesystem on macOS; either way it lists the calling process's open
+	// fds, so the leak check works on both.
+	if _, err := os.Stat("/dev/fd"); err != nil {
+		t.Skip("/dev/fd is not available")
+	}
+
+	ws, _ := setup(t)
+	pluginDir := testfs.MakeDirAll(t, ws, "plugins/echo")
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		"handle_bazel_output.sh": "cat >/dev/null\necho 'final line'\n",
+	})
+	cfgFile := &config.File{
+		Path:       filepath.Join(ws, "buildbuddy.yaml"),
+		RootConfig: &config.RootConfig{},
+	}
+	plugins := []*Plugin{{
+		config:     &config.PluginConfig{Path: "./plugins/echo"},
+		configFile: cfgFile,
+	}}
+
+	before := openFDCount(t)
+	const trials = 20
+	for i := 0; i < trials; i++ {
+		var out bytes.Buffer
+		wc, err := PipelineWriter(&out, plugins)
+		require.NoError(t, err)
+		_, err = wc.Write([]byte("some bazel output\n"))
+		require.NoError(t, err)
+		require.NoError(t, wc.Close())
+		require.Contains(t, out.String(), "final line")
+	}
+	after := openFDCount(t)
+	require.LessOrEqualf(t, after, before+2,
+		"PipelineWriter leaked file descriptors; before=%d after=%d", before, after)
+}
+
+func openFDCount(t *testing.T) int {
+	t.Helper()
+	// Use Readdirnames rather than os.ReadDir: on macOS, /dev/fd is the
+	// fdesc filesystem, and os.ReadDir lstats every entry, which fails
+	// with EBADF for fds that get closed during iteration (including the
+	// directory fd itself).
+	f, err := os.Open("/dev/fd")
+	require.NoError(t, err)
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	require.NoError(t, err)
+	return len(names)
 }
 
 func setup(t *testing.T) (ws, home string) {
