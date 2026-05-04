@@ -300,6 +300,11 @@ type writeMover struct {
 	// tmpDir is the directory where fallback named temp files are created
 	// (used by the anonymous Commit path on EEXIST).
 	tmpDir string
+	// tmpFileBytes is the number of bytes attributed to this writer's temp
+	// file in the DiskFileWriterTmpFileBytes gauge. Released back to the
+	// gauge when the temp file is committed to its final path or deleted.
+	tmpFileBytes   int64
+	metricReleased bool
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
@@ -308,7 +313,22 @@ func (w *writeMover) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	defer releaseQuota()
-	return w.File.Write(p)
+	n, err := w.File.Write(p)
+	if n > 0 {
+		w.tmpFileBytes += int64(n)
+		metrics.DiskFileWriterTmpFileBytes.Add(float64(n))
+	}
+	return n, err
+}
+
+func (w *writeMover) releaseTmpFileBytesMetric() {
+	if w.metricReleased {
+		return
+	}
+	w.metricReleased = true
+	if w.tmpFileBytes > 0 {
+		metrics.DiskFileWriterTmpFileBytes.Sub(float64(w.tmpFileBytes))
+	}
 }
 
 func (w *writeMover) Commit() error {
@@ -340,6 +360,7 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
+		w.releaseTmpFileBytesMetric()
 		if err := w.File.Close(); err != nil {
 			return err
 		}
@@ -351,7 +372,11 @@ func (w *writeMover) Commit() error {
 		return err
 	}
 	w.tmpFileIsClosed = true
-	return os.Rename(tmpName, w.finalPath)
+	if err := os.Rename(tmpName, w.finalPath); err != nil {
+		return err
+	}
+	w.releaseTmpFileBytesMetric()
+	return nil
 }
 
 func (w *writeMover) Close() error {
@@ -367,11 +392,14 @@ func (w *writeMover) Close() error {
 	if w.anonymous {
 		// O_TMPFILE inodes are reclaimed automatically when the last fd
 		// reference is closed; nothing else to do.
+		w.releaseTmpFileBytesMetric()
 		return nil
 	}
 	if err := RemoveIfExists(w.File.Name()); err != nil {
 		alert.CtxUnexpectedEvent(w.ctx, "failed_to_delete_tmp_file", "Failed to delete %s: %s", w.File.Name(), err)
+		return nil
 	}
+	w.releaseTmpFileBytesMetric()
 	return nil
 }
 

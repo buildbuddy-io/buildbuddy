@@ -4135,6 +4135,13 @@ var (
 		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
 	})
 
+	DiskFileWriterTmpFileBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "disk",
+		Name:      "file_writer_tmp_file_bytes",
+		Help:      "Total size, in bytes, of temporary files currently staging writes for in-progress FileWriter operations. Incremented as bytes are written to the temp file, and decremented when the temp file is committed to its final path or deleted.",
+	})
+
 	// ## Container image fetch metrics
 
 	ImageFetchDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
