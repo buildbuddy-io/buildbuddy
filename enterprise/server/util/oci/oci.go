@@ -441,16 +441,34 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	)
 }
 
+// mapRegistryTransportError translates a remote-registry transport error
+// into a gRPC status error. 401 Unauthorized indicates the caller lacks
+// permission to access the resource; 429 Too Many Requests indicates the
+// registry is rate-limiting and the caller should back off rather than retry
+// immediately. Other errors are surfaced as Unavailable so callers can
+// distinguish transient registry failures from auth/throttling issues.
+//
+// msg is included as a prefix in the returned error message and should
+// describe the operation that failed (e.g. "cannot access image manifest").
+func mapRegistryTransportError(err error, msg string) error {
+	if t, ok := err.(*transport.Error); ok {
+		switch t.StatusCode {
+		case http.StatusUnauthorized:
+			return status.PermissionDeniedErrorf("%s: %s", msg, err)
+		case http.StatusTooManyRequests:
+			return status.ResourceExhaustedErrorf("%s: rate limited by remote registry: %s", msg, err)
+		}
+	}
+	return status.UnavailableErrorf("%s: %s", msg, err)
+}
+
 // fetchManifestMetadata makes a HEAD request for the manifest metadata using the puller.
 // This is only used when useOCIFetcher=false; when useOCIFetcher=true, we skip the
 // metadata request and fetch the full manifest directly via fetchManifest.
 func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller) (*gcr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+		return nil, mapRegistryTransportError(err, "cannot retrieve manifest metadata from remote")
 	}
 	return desc, nil
 }
@@ -483,10 +501,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 
 	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return nil, nil, mapRegistryTransportError(err, "could not retrieve manifest from remote")
 	}
 	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
@@ -761,7 +776,11 @@ func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFr
 		desc:   desc,
 		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
 			ref := repo.Digest(digest.String())
-			return puller.Layer(image.ctx, ref)
+			layer, err := puller.Layer(image.ctx, ref)
+			if err != nil {
+				return nil, mapRegistryTransportError(err, "could not access blob in remote registry")
+			}
+			return layer, nil
 		}),
 	}
 }
@@ -864,7 +883,11 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return remoteLayer.Compressed()
+	rc, err := remoteLayer.Compressed()
+	if err != nil {
+		return nil, mapRegistryTransportError(err, "could not fetch blob from remote registry")
+	}
+	return rc, nil
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
@@ -885,7 +908,11 @@ func (l *layerFromDigest) Size() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return remoteLayer.Size()
+	sz, err := remoteLayer.Size()
+	if err != nil {
+		return 0, mapRegistryTransportError(err, "could not fetch blob size from remote registry")
+	}
+	return sz, nil
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {

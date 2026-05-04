@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1696,6 +1697,82 @@ func TestRegistryETLDPlusOne(t *testing.T) {
 		t.Run(tt.imageRef, func(t *testing.T) {
 			got := oci.RegistryETLDPlusOne(tt.imageRef)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestResolve_BlobErrorsMapStatusCodes verifies that errors from the
+// remote registry's blob endpoints (GET /v2/.../blobs/...) are translated
+// into appropriate gRPC status codes when the legacy (non-OCIFetcher)
+// resolver path is used.
+//
+// Specifically:
+//   - 401 Unauthorized -> PermissionDenied (caller lacks credentials)
+//   - 429 Too Many Requests -> ResourceExhausted (registry is throttling;
+//     callers should back off rather than treat as a generic remote error)
+func TestResolve_BlobErrorsMapStatusCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		checkErr   func(error) bool
+	}{
+		{
+			name:       "401_maps_to_PermissionDenied",
+			statusCode: http.StatusUnauthorized,
+			checkErr:   status.IsPermissionDeniedError,
+		},
+		{
+			name:       "429_maps_to_ResourceExhausted",
+			statusCode: http.StatusTooManyRequests,
+			checkErr:   status.IsResourceExhaustedError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// pushed gates the interceptor: until the test image is
+			// fully pushed, all requests must succeed (otherwise
+			// PushRandomImage itself fails). Only after push do we
+			// start failing blob GET/HEAD requests.
+			var pushed atomic.Bool
+			reg := testregistry.Run(t, testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					if !pushed.Load() {
+						return true
+					}
+					if strings.Contains(r.URL.Path, "/blobs/") &&
+						(r.Method == http.MethodGet || r.Method == http.MethodHead) {
+						w.WriteHeader(tc.statusCode)
+						return false
+					}
+					return true
+				},
+			})
+			imageName, _ := reg.PushRandomImage(t, nil)
+			pushed.Store(true)
+
+			te := testenv.GetTestEnv(t)
+			img, err := newResolver(t, te).Resolve(
+				context.Background(),
+				imageName,
+				&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+				oci.Credentials{},
+				false, /*=useOCIFetcher*/
+			)
+			// Resolve itself only fetches the manifest, which we don't
+			// fail. The error must surface when accessing layer blobs.
+			if err != nil {
+				require.True(t, tc.checkErr(err), "unexpected error from Resolve: %v", err)
+				return
+			}
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			require.NotEmpty(t, layers)
+			rc, err := layers[0].Compressed()
+			if err == nil {
+				_, err = io.Copy(io.Discard, rc)
+				rc.Close()
+			}
+			require.Error(t, err)
+			require.True(t, tc.checkErr(err), "expected error matching %s, got: %v", tc.name, err)
 		})
 	}
 }
