@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/changelog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-04-23T10:00:00.000Z</updated>
+    <updated>2026-05-04T10:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Auto-cancel duplicate CI runs on the same branch]]></title>
+        <id>https://www.buildbuddy.io/changelog/workflow-auto-cancel</id>
+        <link href="https://www.buildbuddy.io/changelog/workflow-auto-cancel"/>
+        <updated>2026-05-04T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Starting June 1, 2026, BuildBuddy will automatically cancel in-progress Workflow runs when a newer run is triggered for the same action on a non-default branch. This helps avoid wasting resources on outdated runs when, for example, several commits are pushed in quick succession to a pull request branch.]]></summary>
+        <author>
+            <name>Maggie Lou</name>
+            <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
+        </author>
+        <category label="CI" term="CI"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[End-to-end CDC support]]></title>
         <id>https://www.buildbuddy.io/changelog/bazel-remote-cache-cdc</id>

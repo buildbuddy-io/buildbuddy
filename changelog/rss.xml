@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Thu, 23 Apr 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 04 May 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Auto-cancel duplicate CI runs on the same branch]]></title>
+            <link>https://www.buildbuddy.io/changelog/workflow-auto-cancel</link>
+            <guid>https://www.buildbuddy.io/changelog/workflow-auto-cancel</guid>
+            <pubDate>Mon, 04 May 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[Starting June 1, 2026, BuildBuddy will automatically cancel in-progress Workflow runs when a newer run is triggered for the same action on a non-default branch. This helps avoid wasting resources on outdated runs when, for example, several commits are pushed in quick succession to a pull request branch.]]></description>
+            <category>CI</category>
+        </item>
         <item>
             <title><![CDATA[End-to-end CDC support]]></title>
             <link>https://www.buildbuddy.io/changelog/bazel-remote-cache-cdc</link>
