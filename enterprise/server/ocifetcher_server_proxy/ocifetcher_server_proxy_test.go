@@ -195,7 +195,7 @@ func TestHappyPath(t *testing.T) {
 // the blob is written to the proxy's local BS cache and can be served from
 // there on a subsequent request.
 func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -230,6 +230,37 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
 	require.Equal(t, expectedData, data2)
+}
+
+func TestFetchBlob_AnonymousSkipsLocalCache(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	ref := imageName + "@" + digest.String()
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	stream, err = proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	require.Equal(t, int32(2), counter.fetchBlobCount.Load())
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -565,7 +596,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
 func TestFetchBlob_Singleflight(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -666,6 +697,13 @@ func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
 	testcache.Setup(t, te, lis)
 	go runServer()
 	return te.GetByteStreamClient()
+}
+
+func authenticatedContext() context.Context {
+	return testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:  "US123",
+		GroupID: "GR123",
+	})
 }
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.

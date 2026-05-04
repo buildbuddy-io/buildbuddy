@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -154,16 +155,19 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
-	if err == nil {
-		return nil
-	}
-	if !status.IsNotFoundError(err) {
-		// It is possible this error occurred while writing to the stream.
-		// Since we do not know the state of the stream, it is not safe
-		// to write bytes to the stream past this point.
-		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
-		return err
+	useCache := !isAnonymousUser(ctx)
+	if useCache {
+		err = s.fetchBlobFromCache(ctx, stream, repo, hash)
+		if err == nil {
+			return nil
+		}
+		if !status.IsNotFoundError(err) {
+			// It is possible this error occurred while writing to the stream.
+			// Since we do not know the state of the stream, it is not safe
+			// to write bytes to the stream past this point.
+			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
+			return err
+		}
 	}
 
 	if req.GetBypassRegistry() {
@@ -171,11 +175,17 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	start := time.Now()
+	if !useCache {
+		_, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream, false /* writeToCache */)
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
+		return err
+	}
+
 	key := ocicache.NewBlobFetchKey(repo, hash, req.GetCredentials())
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream, true /* writeToCache */)
 		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 
@@ -238,15 +248,18 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
-	if err == nil {
-		return &ofpb.FetchBlobMetadataResponse{
-			Size:      metadata.GetContentLength(),
-			MediaType: metadata.GetContentType(),
-		}, nil
-	}
-	if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
+	useCache := !isAnonymousUser(ctx)
+	if useCache {
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+		if err == nil {
+			return &ofpb.FetchBlobMetadataResponse{
+				Size:      metadata.GetContentLength(),
+				MediaType: metadata.GetContentType(),
+			}, nil
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
+		}
 	}
 
 	if req.GetBypassRegistry() {
@@ -323,17 +336,20 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	}
 
 	repo := imageRef.Context()
-	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, repo, hash, imageRef)
-	if err == nil {
-		return &ofpb.FetchManifestResponse{
-			Digest:    hash.String(),
-			Size:      int64(len(cached.GetRaw())),
-			MediaType: cached.GetContentType(),
-			Manifest:  cached.GetRaw(),
-		}, nil
-	}
-	if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
+	useCache := !isAnonymousUser(ctx)
+	if useCache {
+		cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, repo, hash, imageRef)
+		if err == nil {
+			return &ofpb.FetchManifestResponse{
+				Digest:    hash.String(),
+				Size:      int64(len(cached.GetRaw())),
+				MediaType: cached.GetContentType(),
+				Manifest:  cached.GetRaw(),
+			}, nil
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
+		}
 	}
 
 	if req.GetBypassRegistry() {
@@ -347,8 +363,10 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		return nil, err
 	}
 
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+	if useCache {
+		if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
+			log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+		}
 	}
 
 	return &ofpb.FetchManifestResponse{
@@ -454,7 +472,7 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer, writeToCache bool) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -494,8 +512,8 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(r, stream)
 	}
 
-	// Skip caching when metadata is unavailable.
-	if mediaType == "" || size == 0 {
+	// Skip caching when disabled or metadata is unavailable.
+	if !writeToCache || mediaType == "" || size == 0 {
 		return 0, streamAndClose(rc)
 	}
 
@@ -614,6 +632,11 @@ func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
 	}
 	return status.NotFoundError("bypass_registry is not yet supported")
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
 }
 
 type grpcStreamWriter struct {

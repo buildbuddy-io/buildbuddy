@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -87,6 +89,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
+	}
+
+	if isAnonymousUser(ctx) {
+		return s.fetchBlobFromUpstreamToResponse(ctx, req, &grpcStreamWriter{stream: stream})
 	}
 
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
@@ -168,6 +174,25 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 	}
 }
 
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToResponse(ctx context.Context, req *ofpb.FetchBlobRequest, w io.Writer) error {
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(resp.GetData()); err != nil {
+			return err
+		}
+	}
+}
+
 // fetchBlobFromLocalBS reads a blob from the local byte stream cache.
 func fetchBlobFromLocalBS(ctx context.Context, bsClient bspb.ByteStreamClient, hash gcr.Hash, size int64, w io.Writer) error {
 	blobDigest := &repb.Digest{
@@ -199,4 +224,9 @@ func (w *grpcStreamWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
 }

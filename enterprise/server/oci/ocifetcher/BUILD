@@ -15,6 +15,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/bytebufferpool",
         "//server/util/claims",
         "//server/util/flag",
