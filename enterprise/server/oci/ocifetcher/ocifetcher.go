@@ -471,13 +471,24 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		if err != nil {
 			return nil, err
 		}
-		// Best-effort metadata for read-through caching.
+		// Best-effort metadata for read-through caching. Most metadata
+		// failures are tolerated (the blob body fetch may still succeed),
+		// but 401 Unauthorized and 429 Too Many Requests indicate that the
+		// follow-up GET would hit the same error: propagate them now to
+		// avoid doubling requests against an unauthorized or throttled
+		// registry.
 		if mt, err := layer.MediaType(); err != nil {
+			if isAuthOrRateLimitError(err) {
+				return nil, err
+			}
 			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
 		} else {
 			mediaType = string(mt)
 		}
 		if sz, err := layer.Size(); err != nil {
+			if isAuthOrRateLimitError(err) {
+				return nil, err
+			}
 			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
 		} else {
 			size = sz
@@ -568,6 +579,14 @@ func withPullerRetry[T any](
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return zero, err
 	}
+	// Don't retry on 429 Too Many Requests. The registry is asking us to
+	// back off, and a fresh puller will just hit the same rate limit (and
+	// can re-run an auth flow on the way, doubling registry pressure).
+	// Surface the error as ResourceExhausted so callers can treat it as
+	// a throttling signal rather than a generic remote failure.
+	if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusTooManyRequests {
+		return zero, status.ResourceExhaustedErrorf("rate limited by remote registry: %s", err)
+	}
 
 	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
 	s.evictPuller(ref, creds)
@@ -577,18 +596,29 @@ func withPullerRetry[T any](
 	}
 
 	result, err = op(puller)
+	if err == nil {
+		return result, nil
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return zero, err
 	}
-	if err != nil {
-		s.evictPuller(ref, creds)
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+	s.evictPuller(ref, creds)
+	if t, ok := err.(*transport.Error); ok {
+		switch t.StatusCode {
+		case http.StatusUnauthorized:
 			return zero, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
+		case http.StatusTooManyRequests:
+			return zero, status.ResourceExhaustedErrorf("rate limited by remote registry: %s", err)
 		}
-		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
 	}
+	return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+}
 
-	return result, nil
+func isAuthOrRateLimitError(err error) bool {
+	if t, ok := err.(*transport.Error); ok {
+		return t.StatusCode == http.StatusUnauthorized || t.StatusCode == http.StatusTooManyRequests
+	}
+	return false
 }
 
 // authorizeBypassRegistry checks if bypass_registry is enabled and if so,

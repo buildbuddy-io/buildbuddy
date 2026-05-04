@@ -627,6 +627,70 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 	})
 }
 
+// TestFetchBlobNoRetryOn429 verifies that withPullerRetry does NOT retry
+// when the registry returns 429 Too Many Requests, and that the error is
+// returned as a ResourceExhausted gRPC status. Retrying on 429 would
+// amplify load against a registry that's already throttling us.
+func TestFetchBlobNoRetryOn429(t *testing.T) {
+	var blobAttempts atomic.Int32
+	var afterPush atomic.Bool
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if afterPush.Load() && strings.Contains(r.URL.Path, "/blobs/") &&
+			(r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			blobAttempts.Add(1)
+			w.WriteHeader(http.StatusTooManyRequests)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-no-retry-on-429", nil)
+	afterPush.Store(true)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.Error(t, err)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %v", err)
+	require.Equal(t, int32(1), blobAttempts.Load(), "expected exactly 1 blob attempt (no retry on 429)")
+}
+
+// TestFetchBlobRetryOn401MapsToUnauthenticated verifies that 401 still
+// retries (one fresh-puller retry to handle expired Bearer tokens) and that
+// if the second attempt also returns 401, the error is mapped to
+// Unauthenticated.
+func TestFetchBlobRetryOn401MapsToUnauthenticated(t *testing.T) {
+	var blobAttempts atomic.Int32
+	var afterPush atomic.Bool
+	reg, _ := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if afterPush.Load() && strings.Contains(r.URL.Path, "/blobs/") &&
+			(r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			blobAttempts.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-401-unauthenticated", nil)
+	afterPush.Store(true)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got %v", err)
+	require.GreaterOrEqual(t, blobAttempts.Load(), int32(2), "expected at least 2 blob attempts (initial + retry)")
+}
+
 func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	var failBlobHead atomic.Bool
 	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
@@ -1599,12 +1663,12 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Three blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401).
-		http.MethodGet + " " + blobPath: 3,
+		// One blob GET: creds1 succeeds. creds2 short-circuits on the
+		// 401 from layer.Size() (HEAD) without issuing a GET, since a
+		// follow-up GET would just hit the same 401.
+		http.MethodGet + " " + blobPath: 1,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
-		// two for creds2 (Size is fetched before Compressed, so each
-		// attempt calls it before the blob GET fails).
+		// two for creds2 (initial 401 + retry 401).
 		http.MethodHead + " " + blobPath: 3,
 	})
 }
