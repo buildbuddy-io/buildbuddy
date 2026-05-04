@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
-load("@rules_img//img:layer.bzl", "layer_from_tar", "image_layer")
+load("@rules_img//img:layer.bzl", "image_layer", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//rules:utils.bzl", "runfiles_directory")
@@ -168,25 +168,25 @@ image_layer(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    compress = "gzip",
     # Do not include runfiles so that we can separate configuration files out
     # into a separate layer. This lets us use a base image without those files
     # when building our production images.
     include_runfiles = False,
-    compress = "gzip",
 )
 
 pkg_tar(
     name = "runfiles_tar",
     srcs = [
-        ":runfiles",
         ":licenses",
+        ":runfiles",
     ],
     include_runfiles = True,
     package_dir = PACKAGE_ROOT,
+    portable_mtime = False,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
-    portable_mtime = False,
 )
 
 layer_from_tar(
@@ -205,7 +205,6 @@ layer_from_tar(
 
 image_manifest(
     name = "base_image_manifest",
-    base = "//images/distroless/base-nossl:manifest",
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
         "org.opencontainers.image.description": (
@@ -215,6 +214,7 @@ image_manifest(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    base = "//images/distroless/base-nossl:manifest",
     entrypoint = [
         "/%s/%s" % (
             PACKAGE_ROOT,
@@ -260,7 +260,6 @@ flatten(
     ],
 )
 
-
 layer_from_tar(
     name = "config_layer",
     src = "config_tar",
@@ -275,7 +274,6 @@ layer_from_tar(
 
 image_manifest(
     name = "image_manifest",
-    base = ":base_image_manifest",
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
         "org.opencontainers.image.description": (
@@ -285,6 +283,7 @@ image_manifest(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    base = ":base_image_manifest",
     layers = [
         ":config_layer",
     ],
