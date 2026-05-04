@@ -131,6 +131,9 @@ const (
 	// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
+	// Short action name, such as "GoCompile".
+	ActionMnemonic = "action_mnemonic"
+
 	// OS associated with the request.
 	OS = "os"
 
@@ -3695,29 +3698,109 @@ var (
 		CompressionType,
 		GroupID,
 	})
-	CacheClientChunkedUploadChunkBytesTotal = promauto.NewCounter(prometheus.CounterOpts{
+	ByteStreamChunkedWriteChunkBytesByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_total",
+		Help:      "Total chunk bytes produced during chunked writes by action mnemonic (sum of all chunk sizes).",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		ActionMnemonic,
+	})
+	ByteStreamChunkedWriteDedupedChunkBytesByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_deduped",
+		Help:      "Chunk bytes that were deduplicated (already existed on remote) during chunked writes by action mnemonic.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		ActionMnemonic,
+	})
+	ByteStreamChunkedWriteChunksTotalByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_action_mnemonic_chunks_total",
+		Help:      "Total number of chunks produced during chunked writes by action mnemonic.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		ActionMnemonic,
+	})
+	ByteStreamChunkedWriteChunksDedupedByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_action_mnemonic_chunks_deduped",
+		Help:      "Number of chunks that were deduplicated (already existed on remote) during chunked writes by action mnemonic.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		ActionMnemonic,
+	})
+	CacheClientChunkedUploadChunkBytesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "cache_client",
 		Name:      "chunked_upload_chunk_bytes_total",
 		Help:      "Total uncompressed chunk bytes produced during chunked uploads.",
+	}, []string{
+		GroupID,
 	})
-	CacheClientChunkedUploadChunkBytesDeduped = promauto.NewCounter(prometheus.CounterOpts{
+	CacheClientChunkedUploadChunkBytesDeduped = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "cache_client",
 		Name:      "chunked_upload_chunk_bytes_deduped",
 		Help:      "Uncompressed chunk bytes deduplicated (already existed on remote) during chunked uploads.",
+	}, []string{
+		GroupID,
 	})
-	CacheClientChunkedUploadChunksTotal = promauto.NewCounter(prometheus.CounterOpts{
+	CacheClientChunkedUploadChunksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "cache_client",
 		Name:      "chunked_upload_chunks_total",
 		Help:      "Total number of chunks produced during chunked uploads.",
+	}, []string{
+		GroupID,
 	})
-	CacheClientChunkedUploadChunksDeduped = promauto.NewCounter(prometheus.CounterOpts{
+	CacheClientChunkedUploadChunksDeduped = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "cache_client",
 		Name:      "chunked_upload_chunks_deduped",
 		Help:      "Number of chunks deduplicated (already existed on remote) during chunked uploads.",
+	}, []string{
+		GroupID,
+	})
+	CacheClientChunkedUploadChunkBytesTotalByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_by_action_mnemonic_chunk_bytes_total",
+		Help:      "Total uncompressed chunk bytes produced during chunked uploads by action mnemonic.",
+	}, []string{
+		ActionMnemonic,
+	})
+	CacheClientChunkedUploadChunkBytesDedupedByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_by_action_mnemonic_chunk_bytes_deduped",
+		Help:      "Uncompressed chunk bytes deduplicated (already existed on remote) during chunked uploads by action mnemonic.",
+	}, []string{
+		ActionMnemonic,
+	})
+	CacheClientChunkedUploadChunksTotalByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_by_action_mnemonic_chunks_total",
+		Help:      "Total number of chunks produced during chunked uploads by action mnemonic.",
+	}, []string{
+		ActionMnemonic,
+	})
+	CacheClientChunkedUploadChunksDedupedByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache_client",
+		Name:      "chunked_upload_by_action_mnemonic_chunks_deduped",
+		Help:      "Number of chunks deduplicated (already existed on remote) during chunked uploads by action mnemonic.",
+	}, []string{
+		ActionMnemonic,
 	})
 	CacheClientChunkedDownloadChunkBytesTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,

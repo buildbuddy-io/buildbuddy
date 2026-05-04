@@ -234,6 +234,54 @@ func deduplicationSavingsPanel() *timeseries.PanelBuilder {
 		WithTarget(q(totalChunkBytes, "total chunk bytes").RefId("B"))
 }
 
+func executorUploadDedupRatioByGroupPanel() *timeseries.PanelBuilder {
+	dedupedBytes := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped", executorFilter)
+	totalBytes := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_total", executorFilter)
+
+	return dash.Timeseries("Executor Upload Dedup Ratio by Group", dash.UnitPercentUnit).
+		Description("Executor/client-side CDC upload byte deduplication ratio by group ID.").
+		Min(0).
+		Max(1).
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(dedupedBytes+` / `+totalBytes, "{{group_id}}").RefId("A"))
+}
+
+func executorUploadUniqueChunksByGroupPanel() *timeseries.PanelBuilder {
+	totalChunks := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunks_total", executorFilter)
+	dedupedChunks := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunks_deduped", executorFilter)
+
+	return dash.Timeseries("Executor Upload Unique Chunks by Group", "suffix:c/s").
+		Description("Estimated executor/client-side GCS PUT pressure from unique CDC chunks by group ID.").
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(`topk(20, (`+totalChunks+`) - (`+dedupedChunks+`))`, "{{group_id}} unique chunks/s").RefId("A"))
+}
+
+func writeDedupRatioByActionPanel() *timeseries.PanelBuilder {
+	dedupedBytes := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_deduped", region=~"` + proxyRegion + `"}[` + window + `]))`
+	totalBytes := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_total", region=~"` + proxyRegion + `"}[` + window + `]))`
+
+	return dash.Timeseries("Write Dedup Ratio by Action [proxy + executor]", dash.UnitPercentUnit).
+		Description("CDC write byte deduplication ratio by action mnemonic, combining proxy-side and executor/client-side chunked uploads.").
+		Min(0).
+		Max(1).
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(dedupedBytes+` / `+totalBytes, "{{action_mnemonic}}").RefId("A"))
+}
+
+func writeUniqueChunksByActionPanel() *timeseries.PanelBuilder {
+	totalChunks := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_total", region=~"` + proxyRegion + `"}[` + window + `]))`
+	dedupedChunks := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_deduped", region=~"` + proxyRegion + `"}[` + window + `]))`
+
+	return dash.Timeseries("Unique Chunks by Action [proxy + executor]", "suffix:c/s").
+		Description("Estimated GCS PUT pressure from unique CDC chunks by action mnemonic, combining proxy-side and executor/client-side chunked uploads.").
+		LineWidth(2).
+		FillOpacity(10).
+		WithTarget(q(`topk(20, (`+totalChunks+`) - (`+dedupedChunks+`))`, "{{action_mnemonic}} unique chunks/s").RefId("A"))
+}
+
 func chunkReadHitRatiosPanel() *timeseries.PanelBuilder {
 	proxyLocalChunks := sumRate("buildbuddy_proxy_byte_stream_chunked_read_chunks_local", proxyFilter)
 	proxyTotalChunks := sumRate("buildbuddy_proxy_byte_stream_chunked_read_chunks_total", proxyFilter)
@@ -398,6 +446,10 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(rowAt("Deduplication", collapsedRowsStartY+2).
 			WithPanel(writeDeduplicationRatioPanel()).
 			WithPanel(deduplicationSavingsPanel()).
+			WithPanel(executorUploadDedupRatioByGroupPanel()).
+			WithPanel(executorUploadUniqueChunksByGroupPanel()).
+			WithPanel(writeDedupRatioByActionPanel()).
+			WithPanel(writeUniqueChunksByActionPanel()).
 			WithPanel(chunkReadHitRatiosPanel()).
 			WithPanel(validationMarkerHitRatePanel())).
 		WithRow(rowAt("Write latency", collapsedRowsStartY+3).

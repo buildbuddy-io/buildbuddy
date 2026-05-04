@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -54,6 +55,14 @@ func groupIDForMetrics(ctx context.Context) string {
 		return interfaces.AuthAnonymousUser
 	}
 	return c.GroupID
+}
+
+func actionMnemonicForMetrics(ctx context.Context) string {
+	actionMnemonic := bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()
+	if actionMnemonic == "" {
+		return "unknown"
+	}
+	return actionMnemonic
 }
 
 func (s *ByteStreamServerProxy) shouldBypassLocalCacheForEncryption(ctx context.Context) bool {
@@ -763,6 +772,7 @@ type byteStreamMetrics struct {
 	requestType       string
 	compressor        string
 	groupID           string
+	actionMnemonic    string
 	err               error
 	bytes             int64
 	chunked           bool
@@ -878,6 +888,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 				requestType:       requestTypeLabel,
 				compressor:        meteredStream.compressor,
 				groupID:           groupIDForMetrics(ctx),
+				actionMnemonic:    actionMnemonicForMetrics(ctx),
 				err:               nil,
 				bytes:             meteredStream.bytes,
 				chunked:           true,
@@ -1034,6 +1045,10 @@ func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStr
 }
 
 func recordWriteMetrics(bsm byteStreamMetrics) {
+	actionMnemonic := bsm.actionMnemonic
+	if actionMnemonic == "" {
+		actionMnemonic = "unknown"
+	}
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
@@ -1055,18 +1070,30 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 			metrics.CompressionType: bsm.compressor,
 			metrics.GroupID:         bsm.groupID,
 		}
+
+		// Keep group ID and action mnemonic separate, so we avoid multiplicative
+		// cardinality increase, while preserving the insights.
+		chunkedLabelsWithActionMnemonic := prometheus.Labels{
+			metrics.StatusLabel:     status.MetricsLabel(bsm.err),
+			metrics.CompressionType: bsm.compressor,
+			metrics.ActionMnemonic:  actionMnemonic,
+		}
 		metrics.ByteStreamChunkedWriteBlobBytes.With(chunkedLabels).Add(float64(bsm.blobBytes))
 		if bsm.chunksTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunksTotal.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksTotal))
+			metrics.ByteStreamChunkedWriteChunksTotalByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunksTotal))
 		}
 		if bsm.chunksDeduped > 0 {
 			metrics.ByteStreamChunkedWriteChunksDeduped.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksDeduped))
+			metrics.ByteStreamChunkedWriteChunksDedupedByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunksDeduped))
 		}
 		if bsm.chunkBytesTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesTotal))
+			metrics.ByteStreamChunkedWriteChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesTotal))
 		}
 		if bsm.chunkBytesDeduped > 0 {
 			metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesDeduped))
+			metrics.ByteStreamChunkedWriteDedupedChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesDeduped))
 		}
 		totalDuration := bsm.chunkingDuration + bsm.remoteDuration
 		metrics.ByteStreamChunkedWriteDurationUsec.With(chunkedLabels).Observe(float64(totalDuration.Microseconds()))

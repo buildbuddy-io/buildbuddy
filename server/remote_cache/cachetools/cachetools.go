@@ -22,7 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
@@ -42,6 +44,36 @@ import (
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
+
+func chunkedUploadGroupMetricLabels(ctx context.Context) prometheus.Labels {
+	groupID := interfaces.AuthAnonymousUser
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		if gid := c.GetGroupID(); gid != "" {
+			groupID = gid
+		}
+	}
+	return prometheus.Labels{
+		metrics.GroupID: groupID,
+	}
+}
+
+func chunkedUploadActionMnemonicMetricLabels(ctx context.Context) prometheus.Labels {
+	var actionMnemonic string
+	if rmd := bazel_request.GetRequestMetadata(ctx); rmd != nil {
+		actionMnemonic = rmd.GetActionMnemonic()
+	} else if data, ok := ctx.Value(bazel_request.RequestMetadataKey).(string); ok {
+		rmd := &repb.RequestMetadata{}
+		if err := proto.Unmarshal([]byte(data), rmd); err == nil {
+			actionMnemonic = rmd.GetActionMnemonic()
+		}
+	}
+	if actionMnemonic == "" {
+		actionMnemonic = "unknown"
+	}
+	return prometheus.Labels{
+		metrics.ActionMnemonic: actionMnemonic,
+	}
+}
 
 const (
 	// uploadBufSizeBytes controls the size of the buffers used for uploading
@@ -625,10 +657,19 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	for _, d := range missingRsp.GetMissingBlobDigests() {
 		dedupedBytes -= d.GetSizeBytes()
 	}
-	metrics.CacheClientChunkedUploadChunksTotal.Add(float64(len(chunkDigests)))
-	metrics.CacheClientChunkedUploadChunksDeduped.Add(float64(dedupedChunks))
-	metrics.CacheClientChunkedUploadChunkBytesTotal.Add(float64(totalChunkBytes))
-	metrics.CacheClientChunkedUploadChunkBytesDeduped.Add(float64(dedupedBytes))
+	groupLabels := chunkedUploadGroupMetricLabels(ctx)
+	metrics.CacheClientChunkedUploadChunksTotal.With(groupLabels).Add(float64(len(chunkDigests)))
+	metrics.CacheClientChunkedUploadChunksDeduped.With(groupLabels).Add(float64(dedupedChunks))
+	metrics.CacheClientChunkedUploadChunkBytesTotal.With(groupLabels).Add(float64(totalChunkBytes))
+	metrics.CacheClientChunkedUploadChunkBytesDeduped.With(groupLabels).Add(float64(dedupedBytes))
+
+	// Keep group ID and action mnemonic separate, so we avoid multiplicative
+	// cardinality increase, while preserving the insights.
+	actionMnemonicLabels := chunkedUploadActionMnemonicMetricLabels(ctx)
+	metrics.CacheClientChunkedUploadChunksTotalByActionMnemonic.With(actionMnemonicLabels).Add(float64(len(chunkDigests)))
+	metrics.CacheClientChunkedUploadChunksDedupedByActionMnemonic.With(actionMnemonicLabels).Add(float64(dedupedChunks))
+	metrics.CacheClientChunkedUploadChunkBytesTotalByActionMnemonic.With(actionMnemonicLabels).Add(float64(totalChunkBytes))
+	metrics.CacheClientChunkedUploadChunkBytesDedupedByActionMnemonic.With(actionMnemonicLabels).Add(float64(dedupedBytes))
 
 	var uploadedBytes atomic.Int64
 	eg, egCtx := errgroup.WithContext(ctx)
