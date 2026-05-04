@@ -777,6 +777,14 @@ type ScheduledRun struct {
 	// However if the lease duration is long enough, duplicates are unlikely
 	// to happen because the servers only need to dispatch the execution, which should be quick.
 	LeaseExpiresUsec int64
+
+	// Number of consecutive failed dispatch attempts within the current scheduled window.
+	// Reset to 0 when the window is successfully dispatched or the schedule advances.
+	FailedAttemptCount int64
+
+	// Number of consecutive scheduled windows that have exhausted all retries.
+	// If too high, the workflow will be paused and requires manual re-enabling.
+	ConsecutiveScheduleFailureCount int64
 }
 
 func (sr *ScheduledRun) TableName() string {

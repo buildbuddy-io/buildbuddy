@@ -1324,3 +1324,149 @@ actions:
 	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled2.NextRunUsec)
 	require.Equal(t, int64(0), scheduled2.LeaseExpiresUsec)
 }
+
+func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	authCtx, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	provider := setupFakeGitProvider(t, te)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Use a RepoURL with no matching GitRepository to cause a dispatch failure.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test-backoff",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr := getScheduledRun(t, te, "test-backoff")
+	require.Equal(t, int64(1), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(30*time.Second).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+
+	// Advance clock past the first backoff and trigger a second failure.
+	// The backoff should be twice as long (i.e. 1 min).
+	now2 := now.Add(31 * time.Second)
+	te.SetClock(clockwork.NewFakeClockAt(now2))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr = getScheduledRun(t, te, "test-backoff")
+	require.Equal(t, int64(2), sr.FailedAttemptCount)
+	require.Equal(t, now2.Add(60*time.Second).UnixMicro(), sr.NextRunUsec)
+
+	// Create a matching GitRepository to allow the workflow to be scheduled.
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	// Advance clock to the next scheduled time and verify the workflow is scheduled.
+	now3 := now2.Add(61 * time.Second)
+	te.SetClock(clockwork.NewFakeClockAt(now3))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	select {
+	case execReq := <-execClient.executeRequests:
+		// When fetching the executions, make sure to use the authenticated context.
+		actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+		require.Equal(t, "Test", actionName)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scheduled workflow execution")
+	}
+
+	sr = getScheduledRun(t, te, "test-backoff")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Use a RepoURL with no matching GitRepository to cause a dispatch failure.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test-max-retries",
+		GroupID:    "some-group",
+		RepoURL:    "https://github.com/nonexistent/repo",
+		ActionName: "Test",
+		// Run every hour, on the hour.
+		CronExpr:           "0 * * * *",
+		NextRunUsec:        now.UnixMicro(),
+		FailedAttemptCount: workflow.ScheduledWorkflowMaxRetries - 1, // The next failure will trigger the retry limit
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// The schedule should advance to the next cron window (4PM), not apply backoff.
+	sr := getScheduledRun(t, te, "test-max-retries")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, int64(1), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-populate counters so the next failure triggers a pause.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:                      "test",
+		GroupID:                         "some-group",
+		RepoURL:                         "https://github.com/nonexistent/repo",
+		ActionName:                      "Test",
+		CronExpr:                        "0 * * * *",
+		NextRunUsec:                     now.UnixMicro(),
+		FailedAttemptCount:              workflow.ScheduledWorkflowMaxRetries - 1,
+		ConsecutiveScheduleFailureCount: workflow.ScheduledWorkflowMaxConsecutiveFailures - 1,
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr := getScheduledRun(t, te, "test")
+	require.Equal(t, int64(workflow.ScheduledWorkflowMaxConsecutiveFailures), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+
+	// Advance the clock to the next scheduled time and verify the workflow is not scheduled.
+	// It should be untouched.
+	te.SetClock(clockwork.NewFakeClockAt(now.Add(1 * time.Hour)))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr = getScheduledRun(t, te, "test")
+	require.Equal(t, int64(workflow.ScheduledWorkflowMaxConsecutiveFailures), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+}
