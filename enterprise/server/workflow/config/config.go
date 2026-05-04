@@ -93,6 +93,7 @@ func (a *Action) GetGitFetchFilters() []string {
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+	Schedule    *ScheduleTrigger    `yaml:"schedule"`
 }
 
 func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
@@ -123,9 +124,12 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
-// TODO(Maggie): Default this to false, after testing the merge commit SHA is stable.
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
 	return t.GetMergeWithBase() && (t.ForceManualMergeWithBase == nil || *t.ForceManualMergeWithBase)
+}
+
+type ScheduleTrigger struct {
+	Crons []string `yaml:"crons"`
 }
 
 type ResourceRequests struct {
@@ -435,7 +439,7 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 // MatchesAnyTrigger returns whether the action is triggered by the event
 // published to the given branch or tag.
 func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
-	// If user has manually or scheduled action dispatch, always run it
+	// If action was manually or automatically (via schedule) dispatched, always run it
 	if event == webhook_data.EventName.ManualDispatch || event == webhook_data.EventName.ScheduledDispatch {
 		return true
 	}
