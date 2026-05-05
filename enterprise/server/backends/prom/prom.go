@@ -263,7 +263,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
 	cachedMetrics, err := q.getCachedMetrics(ctx, groupID)
 	if err != nil {
-		log.Warningf("failed to get cached metrics (groupID=%s): %s", groupID, err)
+		log.CtxWarningf(ctx, "failed to get cached metrics (groupID=%s): %s", groupID, err)
 		// Failed to get metrics from Redis. Let's try query prometheus.
 	}
 	if cachedMetrics != nil {
@@ -276,12 +276,12 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 	}
 	metricFamilies, err := queryResultsToMetrics(vectorMap)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to prase metrics fetched from prometheus (groupID: %s): %s", groupID, err)
+		return nil, status.InternalErrorf("failed to parse metrics fetched from prometheus (groupID: %s): %s", groupID, err)
 	}
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
 	if err != nil {
-		log.Warningf("failed to set metrics to redis (groupID: %s): %s", groupID, err)
+		log.CtxWarningf(ctx, "failed to set metrics to redis (groupID: %s): %s", groupID, err)
 	}
 	return metricFamilies.GetMetricFamilies(), nil
 }
@@ -383,9 +383,12 @@ func (q *promQuerier) query(ctx context.Context, metricName string, sumByFields 
 	} else {
 		query = fmt.Sprintf("sum(%s{group_id='%s'})", metricName, groupID)
 	}
-	result, _, err := q.api.Query(ctx, query, now)
+	result, warnings, err := q.api.Query(ctx, query, now)
 	if err != nil {
 		return nil, err
+	}
+	if len(warnings) > 0 {
+		log.CtxWarningf(ctx, "prometheus query returned warnings (groupID=%s, query=%q): %v", groupID, query, warnings)
 	}
 	resultVector, ok := result.(model.Vector)
 	if !ok {
