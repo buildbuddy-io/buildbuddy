@@ -308,10 +308,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
 	}
 	isAnon := isAnonymousUser(ctx)
-	if cacheEnabled && isAnon {
-		log.CtxInfof(ctx, "Anonymous user request, skipping manifest and layer cache for %q", imageRef)
+	if cacheEnabled && isAnon && !credentials.IsEmpty() {
+		log.CtxInfof(ctx, "Anonymous user request with credentials, skipping manifest and layer cache for %q", imageRef)
 	}
-	useCache := cacheEnabled && !isAnon
+	useCache := cacheEnabled && (!isAnon || credentials.IsEmpty())
 
 	if useOCIFetcher && r.env.GetOCIFetcherClient() == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")

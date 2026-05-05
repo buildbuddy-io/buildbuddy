@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -485,6 +486,12 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					expected = map[string]int{
 						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 					}
+					if useCachePercent == 100 {
+						// Anonymous + empty creds now uses the cache, so the
+						// read-through cacher requests config blob metadata
+						// (size + media type) via a HEAD before fetching.
+						expected[http.MethodHead+" /v2/"+nameToResolve+"/blobs/"+configDigest.String()] = 1
+					}
 
 					// To make the DiffID() request counts always be zero,
 					// fetch the config file here. Otherwise the first
@@ -825,10 +832,112 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
+// TestResolve_AnonymousRequest_CacheUsage verifies cache behavior for
+// anonymous requests on both useOCIFetcher paths:
+//   - empty creds (public-image pull): cache IS used
+//   - non-empty creds: cache is skipped (per-user, would not be sharable)
+func TestResolve_AnonymousRequest_CacheUsage(t *testing.T) {
+	for _, useOCIFetcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useOCIFetcher=%v/empty_creds_uses_cache", useOCIFetcher), func(t *testing.T) {
+			te, imageName, imageAddress, counter := setupAnonResolveTest(t)
+			resolve := anonResolveFn(t, te, imageAddress, useOCIFetcher)
+
+			// First resolve populates the cache.
+			counter.Reset()
+			resolve(oci.Credentials{})
+			first := counter.Snapshot()
+			require.Greater(t, first[http.MethodGet+" /v2/"+imageName+"/manifests/latest"], 0,
+				"first resolve should fetch the manifest from the registry")
+
+			// Second resolve should hit the cache: no GET manifest, no GET blob.
+			counter.Reset()
+			resolve(oci.Credentials{})
+			second := counter.Snapshot()
+			assert.Zero(t, second[http.MethodGet+" /v2/"+imageName+"/manifests/latest"],
+				"second anonymous public-image resolve should be served from cache")
+			for key := range second {
+				if strings.HasPrefix(key, http.MethodGet+" /v2/"+imageName+"/blobs/") {
+					t.Errorf("second anonymous public-image resolve unexpectedly fetched blob: %s", key)
+				}
+			}
+		})
+
+	}
+
+	// Anonymous + non-empty creds bypasses the executor-side OCI cache.
+	// Only meaningful on useOCIFetcher=false; on useOCIFetcher=true the
+	// apps-side OCIFetcher server has its own cache that is independent
+	// of the executor-side useCache decision.
+	t.Run("useOCIFetcher=false/with_creds_skips_cache", func(t *testing.T) {
+		te, imageName, imageAddress, counter := setupAnonResolveTest(t)
+		resolve := anonResolveFn(t, te, imageAddress, false /*=useOCIFetcher*/)
+		creds := oci.Credentials{Username: "u", Password: "p"}
+
+		// First resolve.
+		counter.Reset()
+		resolve(creds)
+		first := counter.Snapshot()
+		require.Greater(t, first[http.MethodGet+" /v2/"+imageName+"/manifests/latest"], 0,
+			"first resolve should fetch the manifest from the registry")
+
+		// Second resolve should still hit the registry: anonymous + creds
+		// is not a cacheable identity.
+		counter.Reset()
+		resolve(creds)
+		second := counter.Snapshot()
+		assert.Greater(t, second[http.MethodGet+" /v2/"+imageName+"/manifests/latest"], 0,
+			"anonymous request with creds should not use the executor-side cache")
+	})
+}
+
+func setupAnonResolveTest(t *testing.T) (*testenv.TestEnv, string, string, *testhttp.RequestCounter) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	counter := testhttp.NewRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName := "resolve_anon"
+	imageFiles := map[string][]byte{
+		"/name": []byte("anonymous resolve test image"),
+	}
+	_, _ = registry.PushNamedImageWithFiles(t, imageName, imageFiles, nil)
+	return te, imageName, registry.ImageAddress(imageName), counter
+}
+
+func anonResolveFn(t *testing.T, te *testenv.TestEnv, imageAddress string, useOCIFetcher bool) func(oci.Credentials) {
+	return func(creds oci.Credentials) {
+		t.Helper()
+		pulledImage, err := newResolver(t, te).Resolve(
+			context.Background(),
+			imageAddress,
+			&rgpb.Platform{
+				Arch: runtime.GOARCH,
+				Os:   runtime.GOOS,
+			},
+			creds,
+			useOCIFetcher,
+		)
+		require.NoError(t, err)
+		layers, err := pulledImage.Layers()
+		require.NoError(t, err)
+		require.Len(t, layers, 1)
+		rc, err := layers[0].Compressed()
+		require.NoError(t, err)
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+	}
+}
+
 // contextWithUnverifiedJWT creates a JWT with the given claims
 // and attaches it to the returned context.
-// Necessary now that we do not allow anonymous requests to access
-// the OCI cache.
+// Necessary for tests that exercise authenticated cache access; anonymous
+// requests with non-empty credentials still skip the OCI cache.
 func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
 	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
