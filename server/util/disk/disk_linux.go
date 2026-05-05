@@ -178,6 +178,7 @@ func openAnonymousTmpFile(dir string) (f *os.File, ok bool, err error) {
 		// (and pre-3.11 kernels) return EISDIR or EINVAL instead.
 		if errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.EISDIR) || errors.Is(err, syscall.EINVAL) {
 			skipO_TMPFILE.Store(true)
+			log.Info("O_TMPFILE not supported, falling back to named temp files")
 			return nil, false, nil
 		}
 		return nil, false, &os.PathError{Op: "open", Path: dir, Err: err}
