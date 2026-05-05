@@ -1,0 +1,102 @@
+# total sized symbols: 398,398,837
+
+## Top external modules
+ 297,594,767  github.com/buildbuddy-io/buildbuddy
+   7,535,958  k8s.io/api
+   4,605,499  github.com/aws/aws-sdk-go-v2
+   3,920,694  k8s.io/client-go
+   3,544,187  github.com/envoyproxy/go-control-plane
+   2,920,584  github.com/aws/aws-sdk-go
+   1,627,003  github.com/go-redis/redis
+   1,453,260  google.golang.org/grpc
+   1,406,249  github.com/ClickHouse/ch-go
+   1,390,273  github.com/cockroachdb/pebble
+   1,317,402  golang.org/x
+   1,306,900  github.com/jackc/pgx
+   1,243,627  cloud.google.com/go
+   1,113,727  google.golang.org/api
+     973,468  google.golang.org/protobuf
+     926,732  github.com/google/gnostic-models
+     888,458  go.opentelemetry.io/otel
+     842,280  github.com/Azure/azure-storage-blob-go
+     706,495  k8s.io/apimachinery
+     697,587  github.com/andybalholm/brotli
+     653,079  github.com/google/go-github
+     637,823  github.com/go-git/go-git
+     627,777  github.com/gogo/protobuf
+     580,530  github.com/ClickHouse/clickhouse-go
+     526,515  gorm.io/gorm
+     382,663  go.yaml.in/yaml
+     289,034  github.com/miekg/dns
+     283,507  github.com/lestrrat-go/jwx
+     247,868  github.com/cncf/xds
+     245,699  github.com/klauspost/compress
+     240,628  github.com/ProtonMail/go-crypto
+     240,596  k8s.io/kube-openapi
+     237,045  gorm.io/driver
+     220,049  github.com/google/go-containerregistry
+     208,983  gopkg.in/yaml%2ev3
+     207,008  github.com/prometheus/client_golang
+     203,232  github.com/cloudflare/circl
+     195,129  github.com/json-iterator/go
+     181,601  gopkg.in/yaml%2ev2
+     174,651  go.uber.org/zap
+     174,297  github.com/santhosh-tekuri/jsonschema
+     163,758  github.com/fxamacker/cbor
+     156,993  google.golang.org/genproto
+     151,704  github.com/bits-and-blooms/bitset
+     143,581  go.opentelemetry.io/contrib
+     135,903  github.com/cockroachdb/errors
+     134,688  github.com/rs/zerolog
+     126,932  github.com/RoaringBitmap/roaring
+     121,519  github.com/google/s2a-go
+     121,399  github.com/go-jose/go-jose
+
+## Stdlib top-level + runtime
+  34,876,915  crypto
+   1,469,600  runtime
+     882,454  net
+     401,198  encoding
+     308,124  vendor
+     299,493  internal
+     183,956  reflect
+     183,319  math
+     148,459  text
+     145,174  html
+     134,260  slices
+     114,222  regexp
+      92,715  unicode
+      88,551  time
+      88,291  database
+      84,712  os
+      81,573  log
+      66,653  compress
+      63,885  fmt
+      47,182  syscall
+      45,996  mime
+      45,208  sqlite3VdbeExec
+      38,741  image
+      34,282  strings
+      28,167  io
+
+## Other / misc
+   8,522,914  <go runtime metadata>
+     230,874  ('other', 'connectrpc.com')
+      52,197  ('other', 'filippo.io')
+      48,900  ('other', 'kythe.io')
+      32,159  ('other', 'cel.dev')
+      26,713  ('other', 'buf.build')
+      15,985  ('other', 'dario.cat')
+       7,629  ('other', 'slices.partitionCmpFunc[go.shape.struct { encoding')
+       6,053  ('other', 'slices.pdqsortCmpFunc[go.shape.struct { encoding')
+       5,728  ('other', 'slices.partialInsertionSortCmpFunc[go.shape.struct { encoding')
+       4,904  ('other', 'slices.partitionCmpFunc[go.shape.struct { Key string "json:\\"key,omitempty\\""; Value go.opentelemetry.io')
+       4,774  ('other', 'slices.pdqsortCmpFunc[go.shape.struct { Key string "json:\\"key,omitempty\\""; Value go.opentelemetry.io')
+       4,665  ('other', 'slices.partitionCmpFunc[go.shape.struct { github.com')
+       4,631  ('other', 'slices.pdqsortCmpFunc[go.shape.struct { github.com')
+       3,894  ('other', 'slices.partialInsertionSortCmpFunc[go.shape.struct { Key string "json:\\"key,omitempty\\""; Value go.opentelemetry.io')
+       3,758  ('other', 'slices.partitionEqualCmpFunc[go.shape.struct { encoding')
+       3,666  ('other', 'slices.partialInsertionSortCmpFunc[go.shape.struct { github.com')
+       3,511  ('other', 'slices.pdqsortCmpFunc[go.shape.struct { compress')
+       3,004  ('other', 'slices.siftDownCmpFunc[go.shape.struct { encoding')
+       2,997  ('other', 'slices.medianCmpFunc[go.shape.struct { encoding')
