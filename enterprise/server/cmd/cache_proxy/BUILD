@@ -49,6 +49,8 @@ go_library(
         "//server/rpc/interceptors",
         "//server/ssl",
         "//server/util/grpc_client",
+        "//server/util/kuberesolver",
+        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",

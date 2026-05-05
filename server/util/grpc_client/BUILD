@@ -11,7 +11,6 @@ go_library(
         "//server/rpc/interceptors",
         "//server/util/canary",
         "//server/util/flag",
-        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/rpcutil",
         "//server/util/status",
@@ -22,7 +21,6 @@ go_library(
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//mem",
-        "@org_golang_google_grpc//xds",
         "@org_golang_x_sync//errgroup",
     ],
 )

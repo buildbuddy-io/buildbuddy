@@ -36,6 +36,8 @@ go_library(
         "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/grpc_client",
+        "//server/util/kuberesolver",
+        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",

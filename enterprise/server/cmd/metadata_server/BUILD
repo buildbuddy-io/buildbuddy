@@ -20,6 +20,8 @@ go_library(
         "//server/http/interceptors",
         "//server/real_environment",
         "//server/ssl",
+        "//server/util/kuberesolver",
+        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
