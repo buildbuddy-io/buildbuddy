@@ -76,9 +76,11 @@ message FetchBlobRequest {
 message FetchBlobResponse {
   bytes data = 1;
 
-  // The total size of the blob, in bytes. Set on the first response message
-  // and zero on subsequent messages. Allows callers (e.g. the proxy) to size
-  // a downstream byte-stream upload without making a separate metadata RPC.
+  // The total size of the blob, in bytes. Stamped on every response message
+  // and constant for the lifetime of the stream; clients may trust the first
+  // size they see and assume it will not change. Allows callers (e.g. the
+  // proxy) to size a downstream byte-stream upload without making a separate
+  // metadata RPC.
   int64 size = 2;
 }
 

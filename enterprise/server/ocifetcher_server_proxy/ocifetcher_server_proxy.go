@@ -150,7 +150,24 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 	}
 	size := first.GetSize()
 	if size <= 0 {
-		return status.UnavailableErrorf("upstream FetchBlob did not include blob size on first message")
+		// Version-skew fallback: an older upstream may not stamp the size on
+		// FetchBlobResponse messages. Fall back to a FetchBlobMetadata RPC
+		// to learn the size. This costs an extra registry HEAD upstream, but
+		// only during skew with old apps -- new apps stamp size on every
+		// message and skip this path.
+		log.CtxInfof(ctx, "upstream FetchBlob did not include blob size; falling back to FetchBlobMetadata (likely version skew)")
+		meta, metaErr := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+			Ref:            req.GetRef(),
+			Credentials:    req.GetCredentials(),
+			BypassRegistry: req.GetBypassRegistry(),
+		})
+		if metaErr != nil {
+			return status.WrapError(metaErr, "FetchBlobMetadata fallback")
+		}
+		size = meta.GetSize()
+		if size <= 0 {
+			return status.UnavailableErrorf("upstream did not return a blob size (FetchBlob and FetchBlobMetadata both returned size=0)")
+		}
 	}
 
 	cacheWriter, err := newLocalBSWriter(ctx, s.localBSClient, hash, size)

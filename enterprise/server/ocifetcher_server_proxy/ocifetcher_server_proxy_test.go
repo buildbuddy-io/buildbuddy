@@ -611,6 +611,48 @@ func TestFetchBlob_DoesNotCallUpstreamFetchBlobMetadata(t *testing.T) {
 		"expected 0 upstream FetchBlobMetadata calls after warm fetch")
 }
 
+// TestFetchBlob_VersionSkew_UpstreamOmitsSize verifies that the proxy still
+// works when the upstream OCIFetcher does not stamp Size on FetchBlobResponse
+// messages (simulating an older app that predates the size field). In that
+// case the proxy must fall back to FetchBlobMetadata to learn the size, and
+// the blob data must still arrive correctly at the executor.
+func TestFetchBlob_VersionSkew_UpstreamOmitsSize(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	// Layer the wrappers: counter on the outside (so it sees what the proxy
+	// actually calls), size-stripper inside (so FetchBlob streams arrive
+	// without a Size field, like an old app would produce).
+	stripper := &sizeStrippingOCIFetcherClient{OCIFetcherClient: ociFetcherClient}
+	counter := &countingOCIFetcherClient{inner: stripper}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	ref := imageName + "@" + digest.String()
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data,
+		"blob data must round-trip correctly even when upstream omits Size")
+
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+		"expected exactly 1 upstream FetchBlob call")
+	require.Equal(t, int32(1), counter.fetchBlobMetadataCount.Load(),
+		"expected exactly 1 FetchBlobMetadata fallback when upstream omits Size")
+}
+
 // TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
@@ -802,6 +844,33 @@ func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fetc
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	c.fetchBlobMetadataCount.Add(1)
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
+}
+
+// sizeStrippingOCIFetcherClient wraps an OCIFetcherClient and zeroes out the
+// Size field on every FetchBlobResponse, simulating a version-skewed upstream
+// (an old app that doesn't know about the size field).
+type sizeStrippingOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+}
+
+func (c *sizeStrippingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	inner, err := c.OCIFetcherClient.FetchBlob(ctx, req, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &sizeStrippingFetchBlobClient{OCIFetcher_FetchBlobClient: inner}, nil
+}
+
+type sizeStrippingFetchBlobClient struct {
+	ofpb.OCIFetcher_FetchBlobClient
+}
+
+func (s *sizeStrippingFetchBlobClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	resp, err := s.OCIFetcher_FetchBlobClient.Recv()
+	if resp != nil {
+		resp.Size = 0
+	}
+	return resp, err
 }
 
 // collectBlobData reads all data from a FetchBlob stream.
