@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -2131,20 +2130,7 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 // updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,
 // and updates the db accordingly.
 func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *tables.GitRepository, cfg *config.BuildBuddyConfig, defaultBranch string) error {
-	existing, err := db.ScanAll(ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_repository_schedules").Raw(`
-		SELECT *
-		FROM "ScheduledRuns"
-		WHERE group_id = ? AND repo_url = ?
-	`, repo.GroupID, repo.RepoURL), &tables.ScheduledRun{})
-	if err != nil {
-		return err
-	}
-	dbSchedules := make(map[string]*tables.ScheduledRun, len(existing))
-	for _, schedule := range existing {
-		dbSchedules[schedule.ScheduleID] = schedule
-	}
-
-	currentSchedules := make(set.Set[string])
+	desiredSchedules := make(map[string]*tables.ScheduledRun)
 	if cfg != nil {
 		for _, action := range cfg.Actions {
 			if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
@@ -2153,17 +2139,11 @@ func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *t
 
 			for _, cronExpr := range action.Triggers.Schedule.Crons {
 				scheduleID := workflowScheduleID(repo.GroupID, repo.RepoURL, action.Name, cronExpr)
-				currentSchedules.Add(scheduleID)
-
-				if _, alreadyInDB := dbSchedules[scheduleID]; alreadyInDB {
-					continue
-				}
-
 				nextRunUsec, err := ws.calculateNextRunTimeUsec(cronExpr)
 				if err != nil {
 					return err
 				}
-				schedule := &tables.ScheduledRun{
+				desiredSchedules[scheduleID] = &tables.ScheduledRun{
 					ScheduleID:  scheduleID,
 					GroupID:     repo.GroupID,
 					RepoURL:     repo.RepoURL,
@@ -2171,34 +2151,58 @@ func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *t
 					CronExpr:    cronExpr,
 					NextRunUsec: nextRunUsec,
 				}
-				if err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_create_scheduled_run").Create(schedule); err != nil {
-					// If there are two webhook notifications in quick succession, there could be a a race condition where the scheduled
-					// row is created twice. In this case, we can ignore the error.
-					if ws.env.GetDBHandle().IsDuplicateKeyError(err) {
-						continue
-					}
-					return err
-				}
 			}
 		}
 	}
 
-	staleScheduleIDs := make([]string, 0, len(dbSchedules))
-	for _, schedule := range dbSchedules {
-		if _, ok := currentSchedules[schedule.ScheduleID]; ok {
-			continue
-		}
-		staleScheduleIDs = append(staleScheduleIDs, schedule.ScheduleID)
-	}
-	if len(staleScheduleIDs) > 0 {
-		if err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_stale_scheduled_runs").Raw(`
-			DELETE FROM "ScheduledRuns"
-			WHERE schedule_id IN ?
-		`, staleScheduleIDs).Exec().Error; err != nil {
+	dbh := ws.env.GetDBHandle()
+	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		// Lock the repo to prevent concurrent updates to the scheduled workflows.
+		if err := tx.NewQuery(ctx, "workflow_service_lock_repository_schedules").Raw(`
+			SELECT *
+			FROM "GitRepositories"
+			WHERE group_id = ? AND repo_url = ?
+			`+dbh.SelectForUpdateModifier(), repo.GroupID, repo.RepoURL).Take(&tables.GitRepository{}); err != nil {
 			return err
 		}
-	}
-	return nil
+
+		existing, err := db.ScanAll(tx.NewQuery(ctx, "workflow_service_get_repository_schedules").Raw(`
+			SELECT *
+			FROM "ScheduledRuns"
+			WHERE group_id = ? AND repo_url = ?
+		`, repo.GroupID, repo.RepoURL), &tables.ScheduledRun{})
+		if err != nil {
+			return err
+		}
+		staleScheduleIDs := make(map[string]struct{}, len(existing))
+		for _, schedule := range existing {
+			staleScheduleIDs[schedule.ScheduleID] = struct{}{}
+		}
+
+		for scheduleID, schedule := range desiredSchedules {
+			if _, alreadyInDB := staleScheduleIDs[scheduleID]; alreadyInDB {
+				delete(staleScheduleIDs, scheduleID)
+				continue
+			}
+			if err := tx.NewQuery(ctx, "workflow_service_create_scheduled_run").Create(schedule); err != nil {
+				return err
+			}
+		}
+
+		if len(staleScheduleIDs) > 0 {
+			ids := make([]string, 0, len(staleScheduleIDs))
+			for scheduleID := range staleScheduleIDs {
+				ids = append(ids, scheduleID)
+			}
+			if err := tx.NewQuery(ctx, "workflow_service_delete_stale_scheduled_runs").Raw(`
+				DELETE FROM "ScheduledRuns"
+				WHERE schedule_id IN ?
+			`, ids).Exec().Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func workflowScheduleID(groupID, repoURL, actionName, cronExpr string) string {
@@ -2207,6 +2211,8 @@ func workflowScheduleID(groupID, repoURL, actionName, cronExpr string) string {
 
 // On pushes to the default branch, we should check whether the workflow config for scheduled workflows has changed,
 // so we can update the db accordingly.
+//
+// TODO(Maggie): Only return true if the buildbuddy.yaml config has changed.
 func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.GitRepository) bool {
 	return repo != nil &&
 		wd.TargetRepoDefaultBranch != "" &&

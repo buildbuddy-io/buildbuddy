@@ -37,7 +37,6 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/db",
         "//server/util/git",
-        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/platform",
