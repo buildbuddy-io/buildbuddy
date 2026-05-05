@@ -129,7 +129,7 @@ const (
 	ScheduledWorkflowMaxRetries = 5
 
 	// Max number of times a scheduled workflow can exhaust all its retries.
-	// Aftwards, the scheduled workflow will be paused and requires manual re-enabling.
+	// Afterwards, the scheduled workflow will be paused and requires manual re-enabling.
 	ScheduledWorkflowMaxConsecutiveFailures = 20
 )
 
@@ -1941,13 +1941,13 @@ func (ws *workflowService) handleScheduledWorkflowFailure(ctx context.Context, s
 	// Exhausted all retries for this window - alert and advance to next cron time.
 	msg := fmt.Sprintf("Scheduled workflow %s failed all attempts. Skipping until next scheduled time", scheduled.ScheduleID)
 	log.CtxErrorf(ctx, "%s: %s", msg, dispatchErr)
-	alert.CtxUnexpectedEvent(ctx, msg)
+	alert.CtxUnexpectedEvent(ctx, "scheduled workflow dispatch failure", msg)
 
 	newConsecutiveFailures := scheduled.ConsecutiveScheduleFailureCount + 1
 	if newConsecutiveFailures >= ScheduledWorkflowMaxConsecutiveFailures {
 		msg := fmt.Sprintf("Scheduled workflow %s has failed %d consecutive scheduled windows. Pausing until manually re-enabled.", scheduled.ScheduleID, newConsecutiveFailures)
 		log.CtxError(ctx, msg)
-		alert.CtxUnexpectedEvent(ctx, msg)
+		alert.CtxUnexpectedEvent(ctx, "scheduled workflow paused due to consecutive failures", msg)
 	}
 
 	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)

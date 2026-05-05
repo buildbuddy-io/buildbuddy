@@ -780,11 +780,11 @@ type ScheduledRun struct {
 
 	// Number of consecutive failed dispatch attempts within the current scheduled window.
 	// Reset to 0 when the window is successfully dispatched or the schedule advances.
-	FailedAttemptCount int64
+	FailedAttemptCount int64 `gorm:"not null;default:0"`
 
 	// Number of consecutive scheduled windows that have exhausted all retries.
 	// If too high, the workflow will be paused and requires manual re-enabling.
-	ConsecutiveScheduleFailureCount int64
+	ConsecutiveScheduleFailureCount int64 `gorm:"not null;default:0"`
 }
 
 func (sr *ScheduledRun) TableName() string {
