@@ -99,3 +99,39 @@ jobs:
           repository: buildbuddy-io/buildbuddy-helm
           github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
           branch: master
+
+      - name: Sleep for 3 minutes
+        run: sleep 180s
+        shell: bash
+
+      - name: Bump Cache Proxy Version
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+
+          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
+          export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
+
+          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-enterprise-cache-proxy/Chart.yaml
+          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed cache proxy/appVersion: $APP_VERSION_NUMBER # Version of deployed cache proxy/g" charts/buildbuddy-enterprise-cache-proxy/Chart.yaml
+          sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise-cache-proxy/README.md
+          sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise-cache-proxy/values.yaml
+
+      - name: Commit
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+          git config --local user.email "releasebot@buildbuddy.io"
+          git config --local user.name "BuildBuddy Release Bot"
+
+          git add charts/buildbuddy-enterprise-cache-proxy/Chart.yaml
+          git add charts/buildbuddy-enterprise-cache-proxy/README.md
+          git add charts/buildbuddy-enterprise-cache-proxy/values.yaml
+
+          git commit -m "Bumping Cache Proxy to ${{ github.event.release.tag_name }}" -a
+
+      - name: Push changes
+        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        with:
+          directory: buildbuddy-helm
+          repository: buildbuddy-io/buildbuddy-helm
+          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          branch: master
