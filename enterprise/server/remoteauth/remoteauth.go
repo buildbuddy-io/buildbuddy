@@ -60,6 +60,7 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	env.SetAuthenticator(authenticator)
+	env.GetHealthChecker().AddHealthCheck("remote_auth_es256_keys", authenticator)
 	return nil
 }
 
@@ -88,9 +89,11 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		quit:   make(chan struct{}),
 	}
 
-	// Fetch the initial keys
+	// Try to fetch the initial keys. If this fails, the registered health
+	// check will keep the server unhealthy until the background refresher
+	// succeeds.
 	if err := provider.refreshES256PublicKeys(); err != nil {
-		return nil, status.WrapError(err, "Error fetching initial JWT ES256 keys")
+		log.Warningf("Error fetching initial JWT ES256 keys: %v", err)
 	}
 
 	claimsParser, err := claims.NewClaimsParser(provider.provide)
@@ -114,6 +117,10 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 
 func (a *RemoteAuthenticator) Stop() {
 	a.keyProvider.stop()
+}
+
+func (a *RemoteAuthenticator) Check(ctx context.Context) error {
+	return a.keyProvider.check()
 }
 
 type keyProvider struct {
@@ -170,6 +177,15 @@ func (kp *keyProvider) refreshLoop(refreshInterval time.Duration) {
 			}
 		}
 	}
+}
+
+func (kp *keyProvider) check() error {
+	kp.mu.RLock()
+	defer kp.mu.RUnlock()
+	if kp.keys == nil {
+		return status.UnavailableError("ES256 public keys have not been fetched yet")
+	}
+	return nil
 }
 
 func (kp *keyProvider) refreshES256PublicKeys() error {

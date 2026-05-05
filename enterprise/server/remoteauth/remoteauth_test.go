@@ -471,6 +471,44 @@ func TestES256KeysBackgroundRefreshError(t *testing.T) {
 	require.Equal(t, "bar", user.GetUserID())
 }
 
+func TestES256KeysHealthCheck(t *testing.T) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	flags.Set(t, "auth.remote.key_refresh_interval", 10*time.Millisecond)
+
+	fakeAuth := &fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
+	// Make the initial GetPublicKeys call fail.
+	fakeAuth.setPublicKeysErr(status.InternalError("server error"))
+
+	te := testenv.GetTestEnv(t)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	authpb.RegisterAuthServiceServer(grpcServer, fakeAuth)
+	go runServer()
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	require.NoError(t, err)
+
+	// Construction should succeed even though the initial key fetch fails.
+	authenticator, err := NewWithTarget(te, conn)
+	require.NoError(t, err)
+	t.Cleanup(authenticator.Stop)
+
+	// Health check should fail until keys are fetched.
+	require.Error(t, authenticator.Check(t.Context()))
+
+	// Restore working keys so the background refresher succeeds.
+	fakeAuth.setPublicKeys([]string{keyPair.PublicKeyPEM})
+
+	// Health check should eventually pass.
+	require.Eventually(t, func() bool {
+		return authenticator.Check(t.Context()) == nil
+	}, time.Second, 5*time.Millisecond)
+}
+
 func TestHS256ReauthResultIsCached(t *testing.T) {
 	keyPair := testkeys.GenerateES256KeyPair(t)
 	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
