@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"maps"
 	"math/rand"
 	"regexp"
 	"slices"
@@ -755,7 +754,7 @@ func filterToDebugExecutorLabels(ctx context.Context, nodes []*executionNode, ta
 		}
 	}
 	if len(out) == 0 {
-		alert.CtxUnexpectedEvent(ctx, "unrecognized_debug_executor_labels", "no executors found with debug-executor-labels %v; scheduling without filter", slices.Sorted(maps.Keys(requested)))
+		alert.CtxUnexpectedEvent(ctx, "unrecognized_debug_executor_labels", "no executors found with debug-executor-labels %v; scheduling without filter", requested)
 		return nodes
 	}
 	return out
