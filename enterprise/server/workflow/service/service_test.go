@@ -1351,6 +1351,7 @@ func pushToDefaultBranch(t *testing.T, te *testenv.TestEnv, repo *tables.GitRepo
 		PushedBranch:            "main",
 		SHA:                     "abc123",
 		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
 	}
 	err := te.GetWorkflowService().HandleRepositoryEvent(context.Background(), repo, provider.WebhookData, "faketoken")
 	require.NoError(t, err)
@@ -1475,6 +1476,7 @@ actions:
 		PushedBranch:            "main",
 		SHA:                     "abc123",
 		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
 	}
 	provider.WebhookData = webhookData
 
@@ -1649,6 +1651,68 @@ actions:
 	require.Equal(t, threePM.UnixMicro(), run.NextRunUsec)
 }
 
+func TestUpdateScheduledWorkflows_SkipsWithoutConfigChange(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-insert a schedule.
+	cron := "0 15 * * *"
+	existingScheduleID := fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Schedule", threePM)
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  existingScheduleID,
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Schedule",
+		CronExpr:    cron,
+		NextRunUsec: threePM.UnixMicro(),
+	})
+
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Nightly"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`,
+	}
+	// Push to the default branch, but without buildbuddy.yaml in the changed files.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repoURL,
+		PushedBranch:            "main",
+		SHA:                     "abc123",
+		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{"README.md"},
+	}
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// The pre-existing schedule should be untouched.
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+
+	run := runs[0]
+	require.Equal(t, "Schedule", run.ActionName)
+	require.Equal(t, cron, run.CronExpr)
+	require.Equal(t, threePM.UnixMicro(), run.NextRunUsec)
+}
+
 func TestUpdateScheduledWorkflows_ConfigFileDeleted(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
@@ -1684,6 +1748,7 @@ actions:
 		PushedBranch:            "main",
 		SHA:                     "def456",
 		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
 	}
 	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
 	require.NoError(t, err)

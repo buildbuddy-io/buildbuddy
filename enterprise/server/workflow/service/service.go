@@ -2211,11 +2211,17 @@ func workflowScheduleID(groupID, repoURL, actionName, cronExpr string) string {
 
 // On pushes to the default branch, we should check whether the workflow config for scheduled workflows has changed,
 // so we can update the db accordingly.
-//
-// TODO(Maggie): Only return true if the buildbuddy.yaml config has changed.
 func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.GitRepository) bool {
-	return repo != nil &&
-		wd.TargetRepoDefaultBranch != "" &&
-		wd.EventName == webhook_data.EventName.Push &&
-		wd.PushedBranch == wd.TargetRepoDefaultBranch
+	if repo == nil ||
+		wd.TargetRepoDefaultBranch == "" ||
+		wd.EventName != webhook_data.EventName.Push ||
+		wd.PushedBranch != wd.TargetRepoDefaultBranch {
+		return false
+	}
+	for _, f := range wd.ChangedFiles {
+		if f == config.FilePath {
+			return true
+		}
+	}
+	return false
 }

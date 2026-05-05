@@ -906,6 +906,10 @@ type WebhookData struct {
 	// request, if applicable.
 	// Ex: "acmedev123"
 	PullRequestApprover string
+
+	// ChangedFiles is the list of files changed by branch push events. Only
+	// populated for branch push events.
+	ChangedFiles []string
 }
 
 type SplashPrinter interface {

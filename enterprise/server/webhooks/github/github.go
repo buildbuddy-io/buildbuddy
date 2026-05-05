@@ -146,6 +146,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 			TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 			TargetBranch:            branch,
 			IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
+			ChangedFiles:            pushEventChangedFiles(event),
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -181,6 +182,26 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	default:
 		return nil, nil
 	}
+}
+
+// pushEventChangedFiles returns any files modified by a push event.
+func pushEventChangedFiles(event *gh.PushEvent) []string {
+	seen := map[string]struct{}{}
+	var files []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				files = append(files, p)
+			}
+		}
+	}
+	for _, c := range event.Commits {
+		add(c.Added)
+		add(c.Removed)
+		add(c.Modified)
+	}
+	return files
 }
 
 type HasPullRequestEvent interface {
