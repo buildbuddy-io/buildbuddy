@@ -28,7 +28,6 @@ go_library(
         "//server/util/statusz",
         "//server/util/tracing",
         "//server/version",
-        "@org_golang_google_grpc//xds",
     ],
 )
 

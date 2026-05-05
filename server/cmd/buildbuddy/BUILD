@@ -73,7 +73,6 @@ go_library(
         "//server/telemetry",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
-        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/version",
         "@org_golang_google_grpc//xds",

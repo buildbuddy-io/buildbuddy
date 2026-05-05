@@ -96,7 +96,6 @@ go_library(
         "//server/version",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//stats",
-        "@org_golang_google_grpc//xds",
     ],
 )
 

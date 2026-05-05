@@ -88,7 +88,6 @@ import (
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
-	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")

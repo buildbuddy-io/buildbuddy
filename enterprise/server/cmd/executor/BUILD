@@ -54,7 +54,6 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
-        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/shlex",

@@ -26,7 +26,6 @@ import (
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
-	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 )
 
 var (
