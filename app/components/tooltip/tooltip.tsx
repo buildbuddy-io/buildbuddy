@@ -71,7 +71,7 @@ export class Tooltip extends React.Component<TooltipProps> {
  * Function that returns the screen coordinates of the position to which the
  * *upper left* corner of the tooltip should be pinned.
  */
-type PinPositionFunc = (context: PinContext) => [left: number, top: number];
+export type PinPositionFunc = (context: PinContext) => [left: number, top: number];
 
 type PinContext = {
   tooltip: { clientWidth: number; clientHeight: number };

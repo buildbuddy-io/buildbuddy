@@ -15,8 +15,9 @@ export default function GitHubTooltip() {
       <p>
         <b>2. Install the BuildBuddy GitHub app to your GitHub organization.</b>
         <br />
-        This grants the app necessary permissions to your desired repositories. This GitHub app powers our GitHub related
-        features. Any requests from these features will be authenticated under the app, and not a specific GitHub user.
+        This grants the app necessary permissions to your desired repositories. This GitHub app powers our GitHub
+        related features. Any requests from these features will be authenticated under the app, and not a specific
+        GitHub user.
       </p>
       <p>
         <b>3. Import the app installation to BuildBuddy.</b>

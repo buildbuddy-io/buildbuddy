@@ -984,7 +984,10 @@ fi
                   {capabilities.config.bazelButtonsEnabled &&
                     group.results[0]?.targetId &&
                     group.results[0]?.targetId.startsWith("//") && (
-                      <HelpTooltip onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}>
+                      <HelpTooltip
+                        aria-label="Run bazel query"
+                        onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
+                        pin={pinBottomMiddleToMouse}>
                         <p>Why did this target build?</p>
                       </HelpTooltip>
                     )}
