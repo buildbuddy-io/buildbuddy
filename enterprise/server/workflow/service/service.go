@@ -1935,7 +1935,7 @@ func (ws *workflowService) handleScheduledWorkflowFailure(ctx context.Context, s
 		backoff := 30 * time.Second << uint(currentAttempt)
 		nextRunUsec := ws.env.GetClock().Now().Add(backoff).UnixMicro()
 		log.CtxWarningf(ctx, "Scheduled workflow %s failed attempt %v: %s", scheduled.ScheduleID, currentAttempt, dispatchErr)
-		return ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID, nextRunUsec, currentAttempt)
+		return ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, currentAttempt)
 	}
 
 	// Exhausted all retries for this window - alert and advance to next cron time.
@@ -1956,11 +1956,13 @@ func (ws *workflowService) handleScheduledWorkflowFailure(ctx context.Context, s
 	}
 	// Reset the failed attempt count to 0 so that the next time the cron expression fires,
 	// the workflow is retried.
-	return ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, nextRunUsec, 0 /*failedAttemptCount*/, newConsecutiveFailures)
+	return ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, newConsecutiveFailures)
 }
 
 // unclaimScheduledWorkflow unclaims the scheduled workflow lease after a dispatch failure, so that another server can retry it.
-func (ws *workflowService) unclaimScheduledWorkflow(ctx context.Context, scheduleID string, nextRunUsec int64, currentAttempt int64) error {
+//
+// We filter on expected lease expire time to avoid race conditions if the lease has been acquired by another server.
+func (ws *workflowService) unclaimScheduledWorkflow(ctx context.Context, scheduleID string, expectedLeaseExpiresUsec int64, nextRunUsec int64, currentAttempt int64) error {
 	newAttempt := currentAttempt + 1
 	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_set_scheduled_workflow_retry").Raw(`
 		UPDATE "ScheduledRuns"
@@ -1968,7 +1970,8 @@ func (ws *workflowService) unclaimScheduledWorkflow(ctx context.Context, schedul
 		    lease_expires_usec = 0,
 		    failed_attempt_count = ?
 		WHERE schedule_id = ?
-	`, nextRunUsec, newAttempt, scheduleID).Exec()
+		  AND lease_expires_usec = ?
+	`, nextRunUsec, newAttempt, scheduleID, expectedLeaseExpiresUsec).Exec()
 	if result.Error != nil {
 		return result.Error
 	}
@@ -2045,7 +2048,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
 		return err
 	}
-	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, nextRunUsec, 0 /*failedAttemptCount*/, 0 /*consecutiveScheduleFailureCount*/); err != nil {
+	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, 0 /*consecutiveScheduleFailureCount*/); err != nil {
 		alert.CtxUnexpectedEvent(ctx, "Failed to advance scheduled workflow %s to %d: %s", scheduled.ScheduleID, nextRunUsec, err)
 		return err
 	}
@@ -2075,7 +2078,10 @@ func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string) (int64, err
 	return sched.Next(now).UnixMicro(), nil
 }
 
-func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, scheduleID string, nextRunUsec int64, failedAttemptCount int64, consecutiveScheduleFailureCount int64) error {
+// advanceWorkflowSchedule advances the scheduled workflow to the next run time, resetting the failed attempt count and consecutive schedule failure count.
+//
+// We filter on expected lease expire time to avoid race conditions if the lease has been acquired by another server.
+func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, scheduleID string, expectedLeaseExpiresUsec int64, nextRunUsec int64, failedAttemptCount int64, consecutiveScheduleFailureCount int64) error {
 	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_advance_schedule").Raw(`
 		UPDATE "ScheduledRuns"
 		SET next_run_usec = ?,
@@ -2083,7 +2089,8 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 		    failed_attempt_count = ?,
 		    consecutive_schedule_failure_count = ?
 		WHERE schedule_id = ?
-	`, nextRunUsec, failedAttemptCount, consecutiveScheduleFailureCount, scheduleID).Exec()
+		  AND lease_expires_usec = ?
+	`, nextRunUsec, failedAttemptCount, consecutiveScheduleFailureCount, scheduleID, expectedLeaseExpiresUsec).Exec()
 	if result.Error != nil {
 		return result.Error
 	}
