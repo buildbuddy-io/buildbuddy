@@ -189,7 +189,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return err
 	}
 
-	w := &grpcStreamWriter{stream: stream}
+	w := &grpcStreamWriter{stream: stream, size: result.contentLength}
 	err = ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, result.contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
@@ -446,7 +446,7 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	if err != nil {
 		return err
 	}
-	w := &grpcStreamWriter{stream: stream}
+	w := &grpcStreamWriter{stream: stream, size: metadata.GetContentLength()}
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
 }
 
@@ -489,9 +489,10 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	}
 
 	// streamAndClose streams from reader and closes it when done.
+	// size is included on the first response message (zero if unknown).
 	streamAndClose := func(r io.ReadCloser) error {
 		defer r.Close()
-		return s.streamBlob(r, stream)
+		return s.streamBlob(r, stream, size)
 	}
 
 	// Skip caching when metadata is unavailable.
@@ -509,13 +510,22 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.
-func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_FetchBlobServer) error {
+// size, if non-zero, is sent on the first response message so callers
+// (e.g. the cache proxy) can size a downstream byte-stream upload without
+// making a separate metadata RPC.
+func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_FetchBlobServer, size int64) error {
 	buf := blobBufPool.Get(blobChunkSize)
 	defer blobBufPool.Put(buf)
+	first := true
 	for {
 		n, err := rc.Read(buf)
 		if n > 0 {
-			if sendErr := stream.Send(&ofpb.FetchBlobResponse{Data: buf[:n]}); sendErr != nil {
+			resp := &ofpb.FetchBlobResponse{Data: buf[:n]}
+			if first {
+				resp.Size = size
+				first = false
+			}
+			if sendErr := stream.Send(resp); sendErr != nil {
 				return status.WrapError(sendErr, "send")
 			}
 		}
@@ -618,10 +628,18 @@ func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 
 type grpcStreamWriter struct {
 	stream ofpb.OCIFetcher_FetchBlobServer
+	// size is included on the first response message (zero if unknown).
+	size int64
+	sentFirst bool
 }
 
 func (w *grpcStreamWriter) Write(p []byte) (int, error) {
-	if err := w.stream.Send(&ofpb.FetchBlobResponse{Data: p}); err != nil {
+	resp := &ofpb.FetchBlobResponse{Data: p}
+	if !w.sentFirst {
+		resp.Size = w.size
+		w.sentFirst = true
+	}
+	if err := w.stream.Send(resp); err != nil {
 		return 0, status.WrapError(err, "send")
 	}
 	return len(p), nil

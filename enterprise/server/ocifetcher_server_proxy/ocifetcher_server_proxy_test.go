@@ -561,6 +561,56 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 	}
 }
 
+// TestFetchBlob_DoesNotCallUpstreamFetchBlobMetadata verifies that the proxy's
+// FetchBlob implementation does not make any upstream FetchBlobMetadata calls.
+// Avoiding that extra RPC eliminates a redundant registry HEAD against the
+// upstream OCI registry on every blob fetch (the app-side FetchBlob already
+// has the size from the GET response's Content-Length).
+func TestFetchBlob_DoesNotCallUpstreamFetchBlobMetadata(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	ref := imageName + "@" + digest.String()
+
+	// Cold fetch: must hit upstream FetchBlob exactly once and NOT call
+	// FetchBlobMetadata at all.
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data := collectBlobData(t, stream)
+	require.Equal(t, expectedData, data)
+
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+		"expected exactly 1 upstream FetchBlob call on cold fetch")
+	require.Equal(t, int32(0), counter.fetchBlobMetadataCount.Load(),
+		"expected 0 upstream FetchBlobMetadata calls on cold fetch (proxy must not issue a metadata HEAD)")
+
+	// Warm fetch (served from local BS): must hit no upstream methods.
+	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	data2 := collectBlobData(t, stream2)
+	require.Equal(t, expectedData, data2)
+
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+		"expected upstream FetchBlob count to remain 1 after warm fetch")
+	require.Equal(t, int32(0), counter.fetchBlobMetadataCount.Load(),
+		"expected 0 upstream FetchBlobMetadata calls after warm fetch")
+}
+
 // TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
@@ -729,10 +779,11 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 	return data
 }
 
-// countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
+// countingOCIFetcherClient wraps an OCIFetcherClient and counts calls to each method.
 type countingOCIFetcherClient struct {
-	inner          ofpb.OCIFetcherClient
-	fetchBlobCount atomic.Int32
+	inner                  ofpb.OCIFetcherClient
+	fetchBlobCount         atomic.Int32
+	fetchBlobMetadataCount atomic.Int32
 }
 
 func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
@@ -749,6 +800,7 @@ func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fetc
 }
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.fetchBlobMetadataCount.Add(1)
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 

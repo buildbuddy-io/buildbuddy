@@ -89,18 +89,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
 	}
 
-	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
-		Ref:            req.GetRef(),
-		Credentials:    req.GetCredentials(),
-		BypassRegistry: req.GetBypassRegistry(),
-	})
-	if err != nil {
-		return err
-	}
-	size := metaResp.GetSize()
-
-	// Fast path: serve from local BS cache.
-	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
+	// Fast path: serve from local BS cache. The local cache lookup is
+	// hash-based, so the size in the resource name does not affect the
+	// lookup result; use a placeholder.
+	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, localBSReadPlaceholderSize, &grpcStreamWriter{stream: stream})
 	if err == nil {
 		return nil // local cache hit
 	}
@@ -117,7 +109,7 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	isLeader := false
 	_, _, err = s.fetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
-		return struct{}{}, s.fetchBlobFromUpstreamToLocalBS(ctx, req, hash, size)
+		return struct{}{}, s.fetchBlobFromUpstreamToLocalBS(ctx, req, hash)
 	})
 	if err != nil {
 		return err
@@ -130,16 +122,35 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	}
 
 	// Stream the blob from local BSS to the caller.
-	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
+	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, localBSReadPlaceholderSize, &grpcStreamWriter{stream: stream})
 }
 
 // fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher
 // and writes it to the local byte stream cache. It does not stream to any
 // caller; callers read from local BSS after this completes.
-func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash gcr.Hash, size int64) error {
+//
+// The blob size is read from the first FetchBlobResponse message rather than
+// being fetched in a separate FetchBlobMetadata RPC. This avoids an extra
+// upstream round trip (which today translates into a registry HEAD against
+// the OCI registry).
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash gcr.Hash) error {
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
+	}
+
+	// Read the first message to learn the blob size before opening the
+	// local-BS upload writer (which needs the size up front).
+	first, err := remoteStream.Recv()
+	if err != nil {
+		if err == io.EOF {
+			return status.UnavailableError("upstream FetchBlob returned no data and no size")
+		}
+		return err
+	}
+	size := first.GetSize()
+	if size <= 0 {
+		return status.UnavailableErrorf("upstream FetchBlob did not include blob size on first message")
 	}
 
 	cacheWriter, err := newLocalBSWriter(ctx, s.localBSClient, hash, size)
@@ -147,6 +158,26 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 		return err
 	}
 	defer cacheWriter.Close()
+
+	writeData := func(data []byte) error {
+		_, writeErr := cacheWriter.Write(data)
+		if writeErr != nil {
+			if status.IsAlreadyExistsError(writeErr) {
+				// Blob was cached by another writer; we're done.
+				return io.EOF
+			}
+		}
+		return writeErr
+	}
+
+	if data := first.GetData(); len(data) > 0 {
+		if err := writeData(data); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
 
 	for {
 		resp, err := remoteStream.Recv()
@@ -156,17 +187,20 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 		if err != nil {
 			return err
 		}
-
-		_, writeErr := cacheWriter.Write(resp.GetData())
-		if writeErr != nil {
-			if status.IsAlreadyExistsError(writeErr) {
-				// Blob was cached by another writer; we're done.
+		if err := writeData(resp.GetData()); err != nil {
+			if err == io.EOF {
 				return nil
 			}
-			return writeErr
+			return err
 		}
 	}
 }
+
+// localBSReadPlaceholderSize is used in the size component of the local-BS
+// resource name when reading. The local cache lookup is hash-based, so the
+// size in the resource name does not affect the lookup; we just need a
+// non-empty value to satisfy URL parsing and avoid the empty-blob fast path.
+const localBSReadPlaceholderSize = 1
 
 // fetchBlobFromLocalBS reads a blob from the local byte stream cache.
 func fetchBlobFromLocalBS(ctx context.Context, bsClient bspb.ByteStreamClient, hash gcr.Hash, size int64, w io.Writer) error {
