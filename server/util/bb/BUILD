@@ -9,8 +9,8 @@ genrule(
     srcs = select({
         "//platforms/configs:linux_x86_64": [":bb-linux-x86_64"],
         "//platforms/configs:linux_arm64": [":bb-linux-arm64"],
-        "//platforms/configs:macos_x86_64": ["//cli/cmd/bb"],
-        "//platforms/configs:macos_arm64": ["//cli/cmd/bb"],
+        "//platforms/configs:macos_x86_64": ["//cli/cmd/bb:bb-stripped"],
+        "//platforms/configs:macos_arm64": ["//cli/cmd/bb:bb-stripped"],
         "//conditions:default": [],
     }),
     outs = ["bb-bin"],
@@ -28,12 +28,12 @@ go_library(
 
 linux_arm64_musl_alias(
     name = "bb-linux-arm64",
-    actual = "//cli/cmd/bb",
+    actual = "//cli/cmd/bb:bb-stripped",
     tags = ["manual"],
 )
 
 linux_x86_64_musl_alias(
     name = "bb-linux-x86_64",
-    actual = "//cli/cmd/bb",
+    actual = "//cli/cmd/bb:bb-stripped",
     tags = ["manual"],
 )

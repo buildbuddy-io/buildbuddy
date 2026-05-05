@@ -49,6 +49,20 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+# Same as :bb, but with debug info / symbol table stripped via -s -w.
+# Used for the bb binary embedded in the enterprise app and executor; in-process
+# Go stack traces still work (gopclntab is preserved), but external debuggers
+# and `go tool nm` won't have symbol names.
+go_binary(
+    name = "bb-stripped",
+    embed = [":bb_lib"],
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_binary(
     name = "bb-darwin-amd64",
     out = "bb-darwin-amd64",

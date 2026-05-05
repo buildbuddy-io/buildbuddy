@@ -56,6 +56,14 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":main"],
+    # Strip the symbol table and DWARF debug info to keep this binary small;
+    # it is embedded into the enterprise app/executor as a //go:embed asset and
+    # also shipped as a static binary in the ci_runner image. Go stack traces
+    # at runtime still work because .gopclntab is preserved.
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
     pure = "on",
     static = "on",
 )
