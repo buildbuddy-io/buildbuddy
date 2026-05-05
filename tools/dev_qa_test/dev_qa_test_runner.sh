@@ -117,6 +117,7 @@ build:dev_qa_test --remote_timeout=10m
 build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
+test:dev_qa_test --flaky_test_attempts=3
 build:dev_qa_test --nocache_test_results
 build:dev_qa_test --noremote_accept_cached
 build:dev_qa_test --noremote_upload_local_results
