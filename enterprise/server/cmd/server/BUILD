@@ -88,15 +88,15 @@ go_library(
         "//server/remote_cache/capabilities_server",
         "//server/telemetry",
         "//server/util/clickhouse",
-        "//server/util/kuberesolver",
-        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//stats",
+        "@org_golang_google_grpc//xds",
     ],
 )
 

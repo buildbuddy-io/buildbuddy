@@ -52,10 +52,9 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/grpc_client",
-        "//server/util/kuberesolver",
-        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/shlex",
@@ -70,6 +69,7 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//encoding/gzip",
+        "@org_golang_google_grpc//xds",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [

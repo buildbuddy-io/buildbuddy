@@ -54,7 +54,7 @@ import (
 	"google.golang.org/grpc"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
-	_ "google.golang.org/grpc/xds" // registers xds:// resolver.
+	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"

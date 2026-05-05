@@ -71,11 +71,11 @@ go_library(
         "//server/libmain",
         "//server/remote_cache/capabilities_server",
         "//server/telemetry",
-        "//server/util/kuberesolver",
-        "@org_golang_google_grpc//xds",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/version",
+        "@org_golang_google_grpc//xds",
     ],
 )

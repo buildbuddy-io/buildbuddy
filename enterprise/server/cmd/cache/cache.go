@@ -40,7 +40,7 @@ import (
 	"google.golang.org/grpc"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
-	_ "google.golang.org/grpc/xds" // registers xds:// resolver.
+	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"

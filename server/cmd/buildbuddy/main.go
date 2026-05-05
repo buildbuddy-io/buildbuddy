@@ -17,7 +17,7 @@ import (
 	app_bundle "github.com/buildbuddy-io/buildbuddy/app"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
-	_ "google.golang.org/grpc/xds" // registers xds:// resolver.
+	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 )
 
 var (
