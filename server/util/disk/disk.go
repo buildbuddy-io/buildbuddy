@@ -262,11 +262,11 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
-var fileWriterInProgressCounter atomic.Int64
-var fileWriterTmpFileBytesCounter atomic.Int64
+var fileWriterInProgressGauge atomic.Int64
+var fileWriterTmpFileBytesGauge atomic.Int64
 
 func updateTmpFileBytesMetric(delta int64) {
-	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesCounter.Add(delta)))
+	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesGauge.Add(delta)))
 }
 
 // reserveFileWriterQuota blocks until quota is available.
@@ -274,7 +274,7 @@ func updateTmpFileBytesMetric(delta int64) {
 // to release the quota.
 func reserveFileWriterQuota(ctx context.Context) (func(), error) {
 	updateMetric := func(delta int64) {
-		metrics.DiskFileWriterInProgressOps.Set(float64(fileWriterInProgressCounter.Add(delta)))
+		metrics.DiskFileWriterInProgressOps.Set(float64(fileWriterInProgressGauge.Add(delta)))
 	}
 
 	updateMetric(1)
