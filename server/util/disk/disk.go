@@ -263,10 +263,17 @@ var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
 var fileWriterInProgressCounter atomic.Int64
-var fileWriterTmpFileBytesCounter atomic.Int64
+
+var (
+	fileWriterTmpFileBytesMu    sync.Mutex
+	fileWriterTmpFileBytesValue int64
+)
 
 func updateTmpFileBytesMetric(delta int64) {
-	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesCounter.Add(delta)))
+	fileWriterTmpFileBytesMu.Lock()
+	defer fileWriterTmpFileBytesMu.Unlock()
+	fileWriterTmpFileBytesValue += delta
+	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesValue))
 }
 
 // reserveFileWriterQuota blocks until quota is available.
@@ -365,11 +372,15 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
-		if err := w.File.Close(); err != nil {
-			return err
-		}
+		// The file is now linked to its final path, so the temp fd's bytes
+		// are no longer attributable to this writer regardless of whether
+		// Close succeeds.
+		closeErr := w.File.Close()
 		w.tmpFileIsClosed = true
 		w.releaseTmpFileBytesMetric()
+		if closeErr != nil {
+			return closeErr
+		}
 		return nil
 	}
 	tmpName := w.File.Name()
