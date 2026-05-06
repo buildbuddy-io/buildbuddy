@@ -31,6 +31,8 @@ go_test(
     deps = [
         "//cli/config",
         "//cli/log",
+        "//cli/parser",
+        "//cli/parser/test_data",
         "//cli/workspace",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",

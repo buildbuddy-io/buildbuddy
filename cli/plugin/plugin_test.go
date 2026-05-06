@@ -9,6 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +19,7 @@ import (
 
 func init() {
 	log.Configure("--verbose=1")
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
 func TestGetConfiguredPlugins_CombinesUserAndWorkspaceConfigs(t *testing.T) {
@@ -238,6 +241,63 @@ func TestParsePluginSpec(t *testing.T) {
 	}
 }
 
+func TestPreBazel(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// Plugin 1 sets a bunch of non-canonicalized flags.
+		"plugins/plugin1/pre_bazel.sh": `cat > "$1" <<'EOF'
+test
+-c
+opt
+--bes_backend
+grpc://old
+--bes_backend
+grpc://new
+--remote_header
+x-buildbuddy-foo=1
+--remote_header
+x-buildbuddy-bar=2
+//foo
+EOF
+`,
+	})
+
+	plugin1 := testPlugin(t, ws, "./plugins/plugin1")
+
+	args, execArgs, err := plugin1.PreBazel([]string{"test", "//initial"}, []string{"--exec"})
+	require.NoError(t, err)
+
+	// We expect the output args to be canonicalized.
+	expectedArgs := []string{
+		"test",
+		"--compilation_mode=opt",
+		"--bes_backend=grpc://new",
+		"--remote_header=x-buildbuddy-foo=1",
+		"--remote_header=x-buildbuddy-bar=2",
+		"//foo",
+	}
+	require.Equal(t, expectedArgs, args)
+	// Exec args should be passed through unchanged.
+	require.Equal(t, []string{"--exec"}, execArgs)
+}
+
+// TODO(#7216): Refactor the CLI to resolve flags after each plugin,
+// so each plugin sees the fully resolved args.
+func TestPreBazel_AddConfig(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc":                    "test:plugin_cfg --test_output=all\n",
+		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$1"`,
+	})
+	p := testPlugin(t, ws, "./plugins/config")
+
+	args, execArgs, err := p.PreBazel([]string{"test", "//initial"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args)
+	require.Empty(t, execArgs)
+	require.NotContains(t, args, "--test_output=all")
+}
+
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which
 // the plugin output handler dropped the last line of plugin output due to a
 // race between draining the pty and closing the pipe. The plugin here only
@@ -330,6 +390,18 @@ func openFDCount(t *testing.T) int {
 	names, err := f.Readdirnames(-1)
 	require.NoError(t, err)
 	return len(names)
+}
+
+func testPlugin(t *testing.T, ws, path string) *Plugin {
+	t.Helper()
+	return &Plugin{
+		config: &config.PluginConfig{Path: path},
+		configFile: &config.File{
+			Path:       filepath.Join(ws, "buildbuddy.yaml"),
+			RootConfig: &config.RootConfig{},
+		},
+		tempDir: t.TempDir(),
+	}
 }
 
 func setup(t *testing.T) (ws, home string) {

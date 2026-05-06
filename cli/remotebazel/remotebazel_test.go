@@ -456,3 +456,42 @@ func resetRepoRootPathForTest(t *testing.T) {
 		return os.Getwd()
 	})
 }
+
+func TestParseArgs(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "test-api-key")
+
+	bazelArgs, execArgs, err := parseArgs([]string{
+		"--output_base", "/tmp/output_base",
+		"test",
+		"-c", "opt",
+		"--config=remote_only",
+		"--bes_backend=grpc://user-bes",
+		"--remote_cache=grpc://user-cache",
+		"--remote_header=x-custom=1",
+		"//foo",
+		"--",
+		"--exec_arg",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		// Startup flags should be preserved.
+		"--output_base=/tmp/output_base",
+		"test",
+		// Bazel flags should be canonicalized.
+		"--compilation_mode=opt",
+		// Config flags should not be expanded and passed through to the remote runner as is.
+		"--config=remote_only",
+		// Remote headers should be preserved.
+		"--remote_header=x-custom=1",
+		// API key should be set.
+		"--remote_header=x-buildbuddy-api-key=test-api-key",
+		"//foo",
+		// Remote flags should be removed and replaced by the CLI.
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
+	}, bazelArgs)
+	// Exec args should be preserved.
+	require.Equal(t, []string{"--exec_arg"}, execArgs)
+}

@@ -20,5 +20,8 @@ go_test(
     name = "flaghistory_test",
     srcs = ["flaghistory_test.go"],
     embed = [":flaghistory"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//cli/arg",
+        "@com_github_stretchr_testify//require",
+    ],
 )

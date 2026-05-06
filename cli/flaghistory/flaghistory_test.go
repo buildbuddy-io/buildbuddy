@@ -7,8 +7,14 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/stretchr/testify/require"
 )
+
+func setup(t *testing.T) {
+	// Flag history is written to this dir.
+	t.Setenv("BUILDBUDDY_CACHE_DIR", t.TempDir())
+}
 
 func TestMain(m *testing.M) {
 	// Change to a directory that looks like a Bazel workspace so that
@@ -32,13 +38,7 @@ func TestMain(m *testing.M) {
 func TestPreviousFlagStorage(t *testing.T) {
 	for maxValues := 1; maxValues <= 3; maxValues++ {
 		t.Run("maxValues="+strconv.Itoa(maxValues), func(t *testing.T) {
-			previousCacheDir := os.Getenv("BUILDBUDDY_CACHE_DIR")
-			err := os.Setenv("BUILDBUDDY_CACHE_DIR", t.TempDir())
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				err := os.Setenv("BUILDBUDDY_CACHE_DIR", previousCacheDir)
-				require.NoError(t, err)
-			})
+			setup(t)
 
 			flag := "flag" + strconv.Itoa(maxValues)
 			rng := rand.New(rand.NewSource(int64(maxValues)))
@@ -79,4 +79,73 @@ func TestPreviousFlagStorage(t *testing.T) {
 		})
 	}
 
+}
+
+func TestSaveFlags(t *testing.T) {
+	setup(t)
+
+	args := SaveFlags([]string{
+		"build",
+		"--bes_backend=grpc://backend.example",
+		"--bes_results_url=https://app.buildbuddy.io/invocation/abc",
+		"--invocation_id=explicit-invocation-id",
+		"//foo",
+	})
+
+	require.Equal(t, "explicit-invocation-id", arg.Get(args, InvocationIDFlagName))
+	requirePreviousFlag(t, besBackendFlagName, "grpc://backend.example")
+	requirePreviousFlag(t, BesResultsUrlFlagName, "https://app.buildbuddy.io/invocation/abc")
+	requirePreviousFlag(t, InvocationIDFlagName, "explicit-invocation-id")
+}
+
+func TestSaveFlags_ClearsStaleHistory(t *testing.T) {
+	setup(t)
+
+	// Save some flags originally.
+	SaveFlags([]string{
+		"build",
+		"--bes_backend=grpc://backend.example",
+		"--bes_results_url=https://app.buildbuddy.io/invocation/abc",
+		"--invocation_id=explicit-invocation-id",
+		"//foo",
+	})
+	requirePreviousFlag(t, besBackendFlagName, "grpc://backend.example")
+	requirePreviousFlag(t, BesResultsUrlFlagName, "https://app.buildbuddy.io/invocation/abc")
+	requirePreviousFlag(t, InvocationIDFlagName, "explicit-invocation-id")
+
+	// Run another build that does not set --bes_backend or --bes_results_url.
+	// This should clear the old flags.
+	args := SaveFlags([]string{"build", "//foo"})
+
+	requirePreviousFlag(t, besBackendFlagName, "")
+	requirePreviousFlag(t, BesResultsUrlFlagName, "")
+	// The invocation ID should be set to an automatically generated one.
+	// It should not be the value that was saved from the original run.
+	invocationID := arg.Get(args, InvocationIDFlagName)
+	require.NotEmpty(t, invocationID)
+	require.NotEqual(t, "explicit-invocation-id", invocationID)
+	requirePreviousFlag(t, InvocationIDFlagName, invocationID)
+}
+
+func TestSaveFlags_NonBazelCommands(t *testing.T) {
+	setup(t)
+
+	// Save some bazel flags.
+	SaveFlags([]string{
+		"build",
+		"--bes_backend=grpc://backend.example",
+		"//foo",
+	})
+
+	// Run another command that doesn't support flag history.
+	args := SaveFlags([]string{"install", "--bes_backend=shouldnt_apply"})
+
+	require.Equal(t, []string{"install", "--bes_backend=shouldnt_apply"}, args)
+	requirePreviousFlag(t, besBackendFlagName, "grpc://backend.example")
+}
+
+func requirePreviousFlag(t *testing.T, flagName, expected string) {
+	actual, err := GetPreviousFlag(flagName)
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
