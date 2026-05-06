@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -263,8 +264,10 @@ EOF
 	})
 
 	plugin1 := testPlugin(t, ws, "./plugins/plugin1")
+	args, err := arg.NewBazelArgs([]string{"test", "//initial"})
+	require.NoError(t, err)
 
-	args, execArgs, err := plugin1.PreBazel([]string{"test", "//initial"}, []string{"--exec"})
+	args, execArgs, err := plugin1.PreBazel(args, []string{"--exec"})
 	require.NoError(t, err)
 
 	// We expect the output args to be canonicalized.
@@ -276,7 +279,7 @@ EOF
 		"--remote_header=x-buildbuddy-bar=2",
 		"//foo",
 	}
-	require.Equal(t, expectedArgs, args)
+	require.Equal(t, expectedArgs, args.Resolved)
 	// Exec args should be passed through unchanged.
 	require.Equal(t, []string{"--exec"}, execArgs)
 }
@@ -290,12 +293,14 @@ func TestPreBazel_AddConfig(t *testing.T) {
 		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$1"`,
 	})
 	p := testPlugin(t, ws, "./plugins/config")
-
-	args, execArgs, err := p.PreBazel([]string{"test", "//initial"}, nil)
+	args, err := arg.NewBazelArgs([]string{"test", "//initial"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args)
+
+	args, execArgs, err := p.PreBazel(args, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--config=plugin-cfg", "//initial"}, args.Resolved)
 	require.Empty(t, execArgs)
-	require.NotContains(t, args, "--test_output=all")
+	require.NotContains(t, args.Resolved, "--test_output=all")
 }
 
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which

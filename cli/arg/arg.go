@@ -134,9 +134,10 @@ func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 		return "", err
 	}
 	// Update the args to not have the removed flag.
-	if err := a.Set(parsed.Format()); err != nil {
-		return "", err
-	}
+	// Use direct assignment rather than Set() to avoid re-resolving rc/config
+	// flags, which would fail if a plugin added a  --config flag.
+	// TODO(#7216): This will be cleaner when we can safely re-resolve the Forwarded args.
+	a.Resolved = parsed.Format()
 	return flagVal, nil
 }
 
@@ -152,9 +153,11 @@ func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := a.Set(parsed.Format()); err != nil {
-		return false, err
-	}
+	// Update the args to not have the removed flag.
+	// Use direct assignment rather than Set() to avoid re-resolving rc/config
+	// flags, which would fail if a plugin added a  --config flag.
+	// TODO(#7216): This will be cleaner when we can safely re-resolve the Forwarded args.
+	a.Resolved = parsed.Format()
 	return set, nil
 }
 

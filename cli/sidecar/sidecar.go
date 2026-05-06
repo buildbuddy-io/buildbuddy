@@ -310,7 +310,9 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
 		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
-		args.Append("--bes_upload_mode=wait_for_upload_complete")
+		if err := args.Append("--bes_upload_mode=wait_for_upload_complete"); err != nil {
+			return nil, err
+		}
 	}
 
 	sidecarArgs = append(sidecarArgs, []string{
@@ -351,14 +353,20 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 			continue
 		}
 		if sidecarBESEnabled {
-			args.Append(fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
+			if err := args.Append(fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath)); err != nil {
+				return nil, err
+			}
 		}
 		if sidecarCacheEnabled {
-			args.Append(fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
+			if err := args.Append(fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath)); err != nil {
+				return nil, err
+			}
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.
 			instanceName := args.Get("remote_instance_name")
-			args.Append(fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
+			if err := args.Append(fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName))); err != nil {
+				return nil, err
+			}
 		}
 		return instance, nil
 	}

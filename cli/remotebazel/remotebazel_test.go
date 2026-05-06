@@ -484,9 +484,9 @@ func TestParseArgs(t *testing.T) {
 		"--config=remote_only",
 		// Remote headers should be preserved.
 		"--remote_header=x-custom=1",
+		"//foo",
 		// API key should be set.
 		"--remote_header=x-buildbuddy-api-key=test-api-key",
-		"//foo",
 		// Remote flags should be removed and replaced by the CLI.
 		"--config=buildbuddy_bes_backend",
 		"--config=buildbuddy_bes_results_url",

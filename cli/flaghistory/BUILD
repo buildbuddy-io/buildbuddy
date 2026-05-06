@@ -22,6 +22,8 @@ go_test(
     embed = [":flaghistory"],
     deps = [
         "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
         "@com_github_stretchr_testify//require",
     ],
 )

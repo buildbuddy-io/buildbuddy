@@ -5,17 +5,23 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
 
 func TestAppendBuildMetadata(t *testing.T) {
 	ws, commitSHA := testgit.MakeTempRepo(t, map[string]string{"WORKSPACE": ""})
 	testgit.ConfigureRemoteOrigin(t, ws, "https://user:secret@example.com/org/repo.git")
 	workspace.SetForTest(t, ws)
 
-	args := []string{
+	argStr := []string{
 		"build",
 		// Even though AppendBuildMetadata sets branch metadata, the user value should take precedence.
 		"--build_metadata=BRANCH_NAME=user-provided-branch",
@@ -23,14 +29,15 @@ func TestAppendBuildMetadata(t *testing.T) {
 		"--build_metadata=USER=1",
 		"//foo",
 	}
-	updatedArgs, err := AppendBuildMetadata(args, append([]string{"/usr/local/bin/bb"}, args...))
+	args, err := arg.NewBazelArgs(argStr)
+	require.NoError(t, err)
+	updatedArgs, err := AppendBuildMetadata(args, append([]string{"/usr/local/bin/bb"}, argStr...))
 	require.NoError(t, err)
 
-	expectedOriginalArgsJSON, err := json.Marshal(append([]string{"bb"}, args...))
+	expectedOriginalArgsJSON, err := json.Marshal(append([]string{"bb"}, argStr...))
 	require.NoError(t, err)
 
-	// All metadata should be appended after the bazel command.
-	require.Equal(t, "build", updatedArgs[0])
+	require.Equal(t, "build", updatedArgs.GetCommand())
 
 	// Check all the expected metadata flags are present.
 	require.ElementsMatch(t, []string{
@@ -40,8 +47,8 @@ func TestAppendBuildMetadata(t *testing.T) {
 		"BRANCH_NAME=master",
 		"BRANCH_NAME=user-provided-branch",
 		"USER=1",
-	}, arg.GetMulti(updatedArgs, "build_metadata"))
+	}, updatedArgs.GetAllFlagsWithName("build_metadata"))
 
 	// The user-provided branch name should take precedence.
-	require.Equal(t, "user-provided-branch", arg.Get(updatedArgs, "build_metadata=BRANCH_NAME"))
+	require.Equal(t, "user-provided-branch", updatedArgs.Get("build_metadata=BRANCH_NAME"))
 }
