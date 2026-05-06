@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
@@ -40,10 +41,6 @@ const (
 	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
 	gormQueryNameKey                 = "bb_clickhouse:query_name"
-	// zeroUUID is written to Execution.ExecutionUUID when execution_id is empty
-	// or unparseable, so ClickHouse's UUID column accepts the row. Queries that
-	// rely on ExecutionUUID being meaningful must filter it out.
-	zeroUUID = "00000000-0000-0000-0000-000000000000"
 
 	// How long to wait for a single invocation batch insert to complete
 	// before timing out and logging an error.
@@ -335,13 +332,11 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 
 // FillExecutionResourceFields populates the split columns (InstanceName,
 // ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
-// ActionDigestSize) on out by parsing out.ExecutionID. When ExecutionID is
-// empty or unparseable, ExecutionUUID is set to the zero UUID so that
-// ClickHouse's UUID column accepts the row.
+// ActionDigestSize) on out by parsing out.ExecutionID. Returns
+// InvalidArgumentError when ExecutionID is empty or unparseable.
 func FillExecutionResourceFields(out *schema.Execution) error {
-	out.ExecutionUUID = zeroUUID
 	if out.ExecutionID == "" {
-		return nil
+		return status.InvalidArgumentError("execution ID is empty")
 	}
 
 	rn, uploadID, err := digest.ParseUploadResourceNameWithUUID(out.ExecutionID)
@@ -359,9 +354,7 @@ func FillExecutionResourceFields(out *schema.Execution) error {
 	}
 
 	out.InstanceName = rn.GetInstanceName()
-	if uploadID != "" {
-		out.ExecutionUUID = uploadID
-	}
+	out.ExecutionUUID = uploadID
 	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
 	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
 	out.ActionDigestHash = string(digestBytes)
@@ -474,25 +467,18 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
-	var firstConvertErr error
-	convertErrs := 0
 	for _, e := range executions {
-		// Rows with parse failures are still inserted with zero/empty split
-		// columns so we don't drop execution data on malformed IDs; downstream
-		// queries must filter out zero UUIDs if they rely on split columns.
 		entry, err := ExecutionFromProto(e, inv)
 		if err != nil {
-			convertErrs++
-			if firstConvertErr == nil {
-				firstConvertErr = err
-			}
+			alert.UnexpectedEvent("clickhouse_malformed_execution_id", "invocation %q: %s", inv.GetInvocationId(), err)
+			continue
 		}
 		entries = append(entries, entry)
 	}
-	if firstConvertErr != nil {
-		log.Warningf("ClickHouse execution split columns: %d/%d executions had parse errors for invocation %q; first error: %s", convertErrs, len(executions), inv.GetInvocationId(), firstConvertErr)
-	}
 	num := len(entries)
+	if num == 0 {
+		return nil
+	}
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {
 		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, inv.GetInvocationId(), err)
 	}

@@ -161,10 +161,11 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		// Convert buffered representation to OLAP table representation.
 		inProgressExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
-			// Note: invocation metadata is not needed in this case (since this
-			// RPC only returns the execution metadata). Split-column parse errors
-			// are ignored; this RPC doesn't read those columns.
-			inProgressExecutions[i], _ = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			entry, err := clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			if err != nil {
+				return status.WrapError(err, "convert in-progress execution to OLAP row")
+			}
+			inProgressExecutions[i] = entry
 		}
 		return nil
 	})
@@ -193,10 +194,11 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		// Convert buffered representation to OLAP table representation.
 		bufferedExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
-			// Note: invocation metadata is not needed in this case (since this
-			// RPC only returns the execution metadata). Split-column parse errors
-			// are ignored; this RPC doesn't read those columns.
-			bufferedExecutions[i], _ = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			entry, err := clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			if err != nil {
+				return status.WrapError(err, "convert buffered execution to OLAP row")
+			}
+			bufferedExecutions[i] = entry
 		}
 		return nil
 	})

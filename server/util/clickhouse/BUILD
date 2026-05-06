@@ -14,6 +14,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/clickhouse/schema",
         "//server/util/flag",
         "//server/util/gormutil",
@@ -31,11 +32,21 @@ go_library(
 go_test(
     name = "clickhouse_test",
     srcs = ["clickhouse_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "clickhouse25.3",
+    },
+    tags = ["docker"],
     deps = [
         ":clickhouse",
         "//proto:remote_execution_go_proto",
+        "//proto:stored_invocation_go_proto",
         "//server/remote_cache/digest",
+        "//server/testutil/testenv",
         "//server/util/clickhouse/schema",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

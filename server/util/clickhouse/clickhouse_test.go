@@ -1,14 +1,19 @@
 package clickhouse_test
 
 import (
+	"context"
 	"encoding/hex"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -70,4 +75,93 @@ func reconstructExecutionID(e *schema.Execution) string {
 	id += "/" + hex.EncodeToString([]byte(e.ActionDigestHash))
 	id += "/" + strconv.FormatUint(uint64(e.ActionDigestSize), 10)
 	return id
+}
+
+func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	invocationID := "6ec99c6d-5504-4934-9f31-a9b65af4ec76"
+	invocationUUID := strings.ReplaceAll(invocationID, "-", "")
+	invocation := &sipb.StoredInvocation{InvocationId: invocationID}
+	nowUsec := time.Now().UnixMicro()
+
+	validExecutionID := digest.NewCASResourceName(
+		&repb.Digest{
+			Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
+			SizeBytes: 1234,
+		},
+		"test-instance-name",
+		repb.DigestFunction_SHA256,
+	).NewUploadString()
+
+	err := env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, []*repb.StoredExecution{
+		{
+			ExecutionId:    validExecutionID,
+			InvocationUuid: invocationUUID,
+			UpdatedAtUsec:  nowUsec,
+			CreatedAtUsec:  nowUsec,
+		},
+		{
+			ExecutionId:    "not-a-resource-name",
+			InvocationUuid: invocationUUID,
+			UpdatedAtUsec:  nowUsec,
+			CreatedAtUsec:  nowUsec,
+		},
+		{
+			// Empty execution ID is also rejected.
+			ExecutionId:    "",
+			InvocationUuid: invocationUUID,
+			UpdatedAtUsec:  nowUsec,
+			CreatedAtUsec:  nowUsec,
+		},
+	})
+	require.NoError(t, err)
+
+	var rows []schema.Execution
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_query_executions").Where(
+		"invocation_uuid = ?", invocationUUID,
+	).Find(&rows).Error
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, validExecutionID, reconstructExecutionID(&rows[0]))
+}
+
+func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	invocationID := "7118a8ef-f598-4e83-9953-a3b4b799d3ab"
+	invocationUUID := strings.ReplaceAll(invocationID, "-", "")
+	invocation := &sipb.StoredInvocation{InvocationId: invocationID}
+	nowUsec := time.Now().UnixMicro()
+
+	err := env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, []*repb.StoredExecution{
+		{
+			ExecutionId:    "bad-1",
+			InvocationUuid: invocationUUID,
+			UpdatedAtUsec:  nowUsec,
+			CreatedAtUsec:  nowUsec,
+		},
+		{
+			ExecutionId:    "bad-2",
+			InvocationUuid: invocationUUID,
+			UpdatedAtUsec:  nowUsec,
+			CreatedAtUsec:  nowUsec,
+		},
+	})
+	require.NoError(t, err)
+
+	var count int64
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_count_executions").Model(&schema.Execution{}).Where(
+		"invocation_uuid = ?", invocationUUID,
+	).Count(&count).Error
+	require.NoError(t, err)
+	require.Zero(t, count)
 }
