@@ -1128,6 +1128,9 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
+	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
+		return false
+	}
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}

@@ -32,7 +32,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -71,6 +73,10 @@ const (
 
 type noOpCAS struct {
 	t testing.TB
+}
+
+type noOpCASClient struct {
+	repb.ContentAddressableStorageClient
 }
 
 func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
@@ -130,6 +136,19 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	})
 	require.True(t, status.IsUnimplementedError(err))
 	require.NotNil(t, result.firstReq)
+}
+
+func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(cdc.EnabledHeaderName, "true"))
+	ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ActionId: "bes-upload"})
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+	}
+	require.False(t, s.writeChunkingEnabled(ctx))
+
+	ctx = bazel_request.OverrideRequestMetadata(context.Background(), &repb.RequestMetadata{ActionId: "compile"})
+	require.True(t, s.writeChunkingEnabled(ctx))
 }
 
 type casRPCRecorder struct {
