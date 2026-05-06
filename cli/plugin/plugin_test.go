@@ -412,7 +412,7 @@ func setup(t *testing.T) (ws, home string) {
 
 	setTestHomeDir(t, home)
 	setTestWorkDir(t, ws)
-	workspace.SetForTest(ws)
+	workspace.SetForTest(t, ws)
 
 	return ws, home
 }

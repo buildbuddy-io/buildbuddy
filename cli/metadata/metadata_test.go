@@ -13,7 +13,7 @@ import (
 func TestAppendBuildMetadata(t *testing.T) {
 	ws, commitSHA := testgit.MakeTempRepo(t, map[string]string{"WORKSPACE": ""})
 	testgit.ConfigureRemoteOrigin(t, ws, "https://user:secret@example.com/org/repo.git")
-	workspace.SetForTest(ws)
+	workspace.SetForTest(t, ws)
 
 	args := []string{
 		"build",

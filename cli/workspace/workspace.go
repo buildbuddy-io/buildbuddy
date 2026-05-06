@@ -72,9 +72,21 @@ func path() (string, string, error) {
 }
 
 // TODO: Take workspace dir as a param everywhere so that this isn't needed.
-func SetForTest(path string) {
+func SetForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, path string) {
 	_, _ = Path()
+	previousPathVal := pathVal
+	previousPathErr := pathErr
+	previousBasename := basename
 	pathVal, pathErr = path, nil
+	basename = ""
+	t.Cleanup(func() {
+		pathVal = previousPathVal
+		pathErr = previousPathErr
+		basename = previousBasename
+	})
 }
 
 func CreateModuleIfNotExists() (string, string, error) {
