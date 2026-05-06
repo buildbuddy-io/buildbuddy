@@ -58,8 +58,12 @@ func groupIDForMetrics(ctx context.Context) string {
 }
 
 func actionMnemonicForMetrics(ctx context.Context) string {
-	actionMnemonic := bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()
+	requestMetadata := bazel_request.GetRequestMetadata(ctx)
+	actionMnemonic := requestMetadata.GetActionMnemonic()
 	if actionMnemonic == "" {
+		if requestMetadata.GetActionId() == bazel_request.BESUploadActionID {
+			return bazel_request.BESUploadActionID
+		}
 		return "unknown"
 	}
 	return actionMnemonic

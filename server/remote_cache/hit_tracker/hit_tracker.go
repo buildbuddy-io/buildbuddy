@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
@@ -427,7 +428,7 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	}
 	// Target/action mnemonic metadata is not expected for BES uploads, but
 	// otherwise this metadata is expected if action ID is present.
-	if h.requestMetadata.GetActionId() != "bes-upload" && (h.requestMetadata.GetActionMnemonic() == "" || h.requestMetadata.GetTargetId() == "") {
+	if h.requestMetadata.GetActionId() != bazel_request.BESUploadActionID && (h.requestMetadata.GetActionMnemonic() == "" || h.requestMetadata.GetTargetId() == "") {
 		log.Debugf("Cache request for invocation %s is missing ActionMnemonic and/or TargetId: %+v", h.iid, h.requestMetadata)
 	}
 

@@ -59,16 +59,23 @@ func chunkedUploadGroupMetricLabels(ctx context.Context) prometheus.Labels {
 
 func chunkedUploadActionMnemonicMetricLabels(ctx context.Context) prometheus.Labels {
 	var actionMnemonic string
+	var actionID string
 	if rmd := bazel_request.GetRequestMetadata(ctx); rmd != nil {
 		actionMnemonic = rmd.GetActionMnemonic()
+		actionID = rmd.GetActionId()
 	} else if data, ok := ctx.Value(bazel_request.RequestMetadataKey).(string); ok {
 		rmd := &repb.RequestMetadata{}
 		if err := proto.Unmarshal([]byte(data), rmd); err == nil {
 			actionMnemonic = rmd.GetActionMnemonic()
+			actionID = rmd.GetActionId()
 		}
 	}
 	if actionMnemonic == "" {
-		actionMnemonic = "unknown"
+		if actionID == bazel_request.BESUploadActionID {
+			actionMnemonic = bazel_request.BESUploadActionID
+		} else {
+			actionMnemonic = "unknown"
+		}
 	}
 	return prometheus.Labels{
 		metrics.ActionMnemonic: actionMnemonic,

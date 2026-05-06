@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -303,7 +304,7 @@ func blobNameDeprecated(invocationID string) string {
 // uploaded via BEP.
 func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
 	for _, result := range sc.Results {
-		if result.ActionId != "bes-upload" {
+		if result.ActionId != bazel_request.BESUploadActionID {
 			continue
 		}
 		f := files[result.Digest.GetHash()]
