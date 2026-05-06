@@ -289,6 +289,22 @@ func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfac
 	return cm.store(ctx, cache)
 }
 
+// StoreVerified saves the chunked manifest to the cache without re-reading the
+// chunks. Callers must only use this after verifying that the ordered chunk
+// bytes hash to BlobDigest.
+func (cm *Manifest) StoreVerified(ctx context.Context, cache interfaces.Cache) error {
+	if cm.BlobDigest == nil {
+		return status.InvalidArgumentError("blob digest is required")
+	}
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	if err := cm.setSharedValidationMarker(ctx, cache); err != nil {
+		log.CtxWarningf(ctx, "Failed to set shared validation marker for blob %s: %v", cm.BlobDigest.GetHash(), err)
+	}
+	return cm.store(ctx, cache)
+}
+
 func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
@@ -395,6 +411,17 @@ func (cm *Manifest) checkOrVerifyChunks(ctx context.Context, cache interfaces.Ca
 		log.CtxWarningf(ctx, "Failed to set shared validation marker for blob %s: %v", cm.BlobDigest.GetHash(), err)
 	}
 	return nil
+}
+
+func (cm *Manifest) setSharedValidationMarker(ctx context.Context, cache interfaces.Cache) error {
+	if *chunkedManifestSalt == "" {
+		return nil
+	}
+	sharedValRN, sharedValContent, err := sharedValidationResourceName(cm)
+	if err != nil {
+		return err
+	}
+	return cache.Set(ctx, sharedValRN, sharedValContent)
 }
 
 // verifyChunks pipelines chunk verification using 2 goroutines:

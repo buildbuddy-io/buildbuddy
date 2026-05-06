@@ -431,6 +431,10 @@ func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 	panic("unimplemented")
 }
 
+func (f *fakeCasClient) SpliceChunks(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_SpliceChunksClient, error) {
+	return nil, status.UnimplementedError("SpliceChunks not implemented")
+}
+
 func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
 	if f.splitBlobFn != nil {
 		return f.splitBlobFn(ctx, req)

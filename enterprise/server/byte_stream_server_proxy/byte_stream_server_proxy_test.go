@@ -97,9 +97,23 @@ func (c *noOpCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (
 	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
 }
 
+func (c *noOpCAS) SpliceChunks(stream repb.ContentAddressableStorage_SpliceChunksServer) error {
+	return status.UnimplementedError("SpliceChunks not implemented")
+}
+
 func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	c.t.Fatal("Unexpected call to SplitBlob")
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
+}
+
+type unexpectedSpliceCAS struct {
+	repb.ContentAddressableStorageClient
+	t *testing.T
+}
+
+func (c *unexpectedSpliceCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	c.t.Fatal("Unexpected call to SpliceBlob")
+	return nil, status.InternalError("Unexpected call to SpliceBlob")
 }
 
 type casRPCRecorder struct {
@@ -2280,6 +2294,13 @@ func TestWriteChunked(t *testing.T) {
 				"false": false,
 			},
 		},
+		"cache_proxy.splice_stream_threshold_bytes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "zero",
+			Variants: map[string]any{
+				"zero": 0,
+			},
+		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 
@@ -2325,6 +2346,7 @@ func TestWriteChunked(t *testing.T) {
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
 	proxyServer, err := New(proxyEnv)
 	require.NoError(t, err)
+	proxyServer.remoteCAS = &unexpectedSpliceCAS{ContentAddressableStorageClient: casClient, t: t}
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
