@@ -470,7 +470,7 @@ func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvo
 	for _, e := range executions {
 		entry, err := ExecutionFromProto(e, inv)
 		if err != nil {
-			alert.UnexpectedEvent("clickhouse_malformed_execution_id", "invocation %q: %s", inv.GetInvocationId(), err)
+			alert.CtxUnexpectedEvent(ctx, "clickhouse_malformed_execution_id", "invocation %q: %s", inv.GetInvocationId(), err)
 			continue
 		}
 		entries = append(entries, entry)
