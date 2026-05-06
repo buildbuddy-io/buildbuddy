@@ -365,15 +365,11 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
-		// The file is now linked to its final path, so the temp fd's bytes
-		// are no longer attributable to this writer regardless of whether
-		// Close succeeds.
-		closeErr := w.File.Close()
-		w.tmpFileIsClosed = true
 		w.releaseTmpFileBytesMetric()
-		if closeErr != nil {
-			return closeErr
+		if err := w.File.Close(); err != nil {
+			return err
 		}
+		w.tmpFileIsClosed = true
 		return nil
 	}
 	tmpName := w.File.Name()
