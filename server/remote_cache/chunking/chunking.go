@@ -418,8 +418,7 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 	var totalSize int64
 	// This should be high enough to send at least 1 request per cache shard,
 	// but low enough to avoid buffering too much data in memory. The
-	// distributed cache splits the request per shard, but the local caches
-	// will usually proccess their batches sequentially.
+	// distributed cache sends requests to shards in parallel.
 	const batchSize = 20
 	resources := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
