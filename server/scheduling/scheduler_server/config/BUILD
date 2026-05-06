@@ -6,4 +6,5 @@ go_library(
     name = "config",
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config",
+    deps = ["//server/util/flag"],
 )
