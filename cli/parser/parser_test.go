@@ -505,6 +505,43 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 	}
 }
 
+func TestResolveArgsMutatesParsedArgsWhileReturningExpandedArgs(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	remoteRC := filepath.Join(ws, "remote.bazelrc")
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE":      "",
+		"remote.bazelrc": "test:remote --test_arg=from_remote_config",
+		"unused.bazelrc": "test --test_arg=unused",
+	})
+	parsedArgs, err := ParseArgs([]string{
+		"--bazelrc=" + remoteRC,
+		"test",
+		"//:target",
+		"--config=remote",
+	})
+	require.NoError(t, err)
+
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"test",
+		"//:target",
+		"--test_arg=from_remote_config",
+	}, expandedArgs.Format())
+	// Characterize the current behavior before an immutable-args refactor:
+	// resolving consumes --bazelrc and appends --ignore_all_rc_files on the
+	// original parsed args object even though config expansion is returned as a
+	// separate OrderedArgs.
+	assert.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"test",
+		"//:target",
+		"--config=remote",
+	}, parsedArgs.Format())
+}
+
 func TestCanonicalizeArgs(t *testing.T) {
 	// Use some args that look like bazel commands but are actually
 	// specifying flag values.

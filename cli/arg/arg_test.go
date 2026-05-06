@@ -104,3 +104,24 @@ func TestGetCommand(t *testing.T) {
 	assert.Equal(t, "command", command)
 	assert.Equal(t, 1, index)
 }
+
+func TestPopRemovesArgAndMutatesBackingArray(t *testing.T) {
+	args := []string{"build", "--sync=true", "//:target", "--bes_backend=grpc://example.com"}
+
+	value, remaining := Pop(args, "sync")
+
+	assert.Equal(t, "true", value)
+	assert.Equal(t, []string{"build", "//:target", "--bes_backend=grpc://example.com"}, remaining)
+	// Characterize the current slice aliasing behavior. Pop returns a shortened
+	// slice, but it also shifts elements in the input slice's backing array.
+	assert.Equal(t, []string{"build", "//:target", "--bes_backend=grpc://example.com"}, args[:len(remaining)])
+}
+
+func TestAppendPreservesOriginalVisibleArgs(t *testing.T) {
+	args := []string{"run", "//:target", "--", "--exec_arg"}
+
+	appended := Append(args, "--test_arg=1", "extra_exec_arg")
+
+	assert.Equal(t, []string{"run", "//:target", "--", "--exec_arg"}, args)
+	assert.Equal(t, []string{"run", "//:target", "--test_arg=1", "--", "--exec_arg", "extra_exec_arg"}, appended)
+}

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -14,5 +14,17 @@ go_library(
         "//cli/parser/options",
         "//server/util/lib/set",
         "//server/util/shlex",
+    ],
+)
+
+go_test(
+    name = "parsed_test",
+    srcs = ["parsed_test.go"],
+    embed = [":parsed"],
+    deps = [
+        "//cli/parser/arguments",
+        "//cli/parser/options",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
