@@ -18,7 +18,7 @@ single_version_override(
     patches = [
         "//buildpatches/bazel_dep:bzlmod_googleapis.patch",
     ],
-    version = "0.0.0-20260223-edfe7983",
+    version = "0.0.0-20260422-20ac242a",
 )
 
 # Note that this is 'rules_nodejs-core'
