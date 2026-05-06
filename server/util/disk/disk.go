@@ -263,17 +263,10 @@ var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
 var fileWriterInProgressCounter atomic.Int64
-
-var (
-	fileWriterTmpFileBytesMu    sync.Mutex
-	fileWriterTmpFileBytesValue int64
-)
+var fileWriterTmpFileBytesCounter atomic.Int64
 
 func updateTmpFileBytesMetric(delta int64) {
-	fileWriterTmpFileBytesMu.Lock()
-	defer fileWriterTmpFileBytesMu.Unlock()
-	fileWriterTmpFileBytesValue += delta
-	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesValue))
+	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesCounter.Add(delta)))
 }
 
 // reserveFileWriterQuota blocks until quota is available.
