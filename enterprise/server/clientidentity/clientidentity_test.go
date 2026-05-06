@@ -159,8 +159,6 @@ func TestClearIdentity(t *testing.T) {
 func TestAddIdentityToContext_PreservesExisting(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	sis := newService(t, clock)
-	flags.Set(t, "app.client_identity.client", "local")
-	flags.Set(t, "app.client_identity.origin", "local-origin")
 
 	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: "upstream-origin",
