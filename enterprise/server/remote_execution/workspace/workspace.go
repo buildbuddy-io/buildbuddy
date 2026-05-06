@@ -525,7 +525,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			cmd,
 			executeResponse.Result,
 			addToFileCache,
-			int64(ws.task.GetFastCdc_2020Params().GetAvgChunkSizeBytes()),
+			ws.task.GetFastCdc_2020Params(),
 		)
 		return err
 	})

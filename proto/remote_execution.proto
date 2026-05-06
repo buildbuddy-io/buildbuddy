@@ -2518,6 +2518,10 @@ message FastCdc2020Params {
   // All clients sharing a cache SHOULD use the same seed to maximize
   // chunk reuse.
   uint32 seed = 2;
+
+  // BuildBuddy-only: maximum blob size eligible for chunked writes.
+  // If unset or <= 0, no maximum is applied.
+  int64 buildbuddy_max_chunked_write_size_bytes = 1000;
 }
 
 // Parameters for the RepMaxCDC content-defined chunking algorithm.

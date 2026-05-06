@@ -605,10 +605,10 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 // uploadFromReaderWithChunking uploads a blob to the CAS using FastCDC if
 // the blob is large enough. Missing chunks are uploaded and then SpliceBlob
-// is used to tell the server how to reassemble them. Blobs less than the
-// threshold are uploaded normally.
-func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, avgChunkSizeBytes int64) (*repb.Digest, int64, error) {
-	if !shouldUploadChunked(env, r.GetDigest(), avgChunkSizeBytes) {
+// is used to tell the server how to reassemble them. Blobs outside the chunked
+// upload size range are uploaded normally.
+func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, chunkingParams *repb.FastCdc2020Params) (*repb.Digest, int64, error) {
+	if !shouldUploadChunked(env, r.GetDigest(), chunkingParams) {
 		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
 	}
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
@@ -616,7 +616,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	}
 
 	var chunkDigests []*repb.Digest
-	chunker, err := chunking.NewChunker(ctx, int(avgChunkSizeBytes), func(chunkData []byte) error {
+	chunker, err := chunking.NewChunker(ctx, int(chunkingParams.GetAvgChunkSizeBytes()), func(chunkData []byte) error {
 		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction())
 		if err != nil {
 			return err
@@ -713,12 +713,20 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	return r.GetDigest(), uploadedBytes.Load(), nil
 }
 
-func shouldUploadChunked(env environment.Env, d *repb.Digest, avgChunkSizeBytes int64) bool {
-	return env != nil &&
-		env.GetByteStreamClient() != nil &&
-		env.GetContentAddressableStorageClient() != nil &&
-		avgChunkSizeBytes > 0 &&
-		d.GetSizeBytes() > avgChunkSizeBytes*4
+func shouldUploadChunked(env environment.Env, d *repb.Digest, chunkingParams *repb.FastCdc2020Params) bool {
+	if env == nil || env.GetByteStreamClient() == nil || env.GetContentAddressableStorageClient() == nil {
+		return false
+	}
+	avgChunkSizeBytes := int64(chunkingParams.GetAvgChunkSizeBytes())
+	if avgChunkSizeBytes <= 0 {
+		return false
+	}
+	sizeBytes := d.GetSizeBytes()
+	if sizeBytes <= avgChunkSizeBytes*4 {
+		return false
+	}
+	maxWriteSizeBytes := chunkingParams.GetBuildbuddyMaxChunkedWriteSizeBytes()
+	return maxWriteSizeBytes <= 0 || sizeBytes <= maxWriteSizeBytes
 }
 
 type uploadRetryResult = struct {
@@ -953,32 +961,32 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
-	ctx               context.Context
-	env               environment.Env
-	eg                *errgroup.Group
-	unsentBatchReq    *repb.BatchUpdateBlobsRequest
-	uploads           map[digest.Key]struct{}
-	instanceName      string
-	digestFunction    repb.DigestFunction_Value
-	unsentBatchSize   int64
-	stats             UploadStats
-	avgChunkSizeBytes int64
+	ctx             context.Context
+	env             environment.Env
+	eg              *errgroup.Group
+	unsentBatchReq  *repb.BatchUpdateBlobsRequest
+	uploads         map[digest.Key]struct{}
+	instanceName    string
+	digestFunction  repb.DigestFunction_Value
+	unsentBatchSize int64
+	stats           UploadStats
+	chunkingParams  *repb.FastCdc2020Params
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, avgChunkSizeBytes int64) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingParams *repb.FastCdc2020Params) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
-		ctx:               ctx,
-		env:               env,
-		eg:                eg,
-		unsentBatchReq:    &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
-		unsentBatchSize:   0,
-		instanceName:      instanceName,
-		digestFunction:    digestFunction,
-		uploads:           make(map[digest.Key]struct{}),
-		avgChunkSizeBytes: avgChunkSizeBytes,
+		ctx:             ctx,
+		env:             env,
+		eg:              eg,
+		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
+		unsentBatchSize: 0,
+		instanceName:    instanceName,
+		digestFunction:  digestFunction,
+		uploads:         make(map[digest.Key]struct{}),
+		chunkingParams:  chunkingParams,
 	}
 }
 
@@ -1013,10 +1021,10 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
-		if ras, ok := rsc.(readAtSeeker); ok && ul.avgChunkSizeBytes > 0 {
+		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingParams.GetAvgChunkSizeBytes() > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
-				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.avgChunkSizeBytes)
+				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.chunkingParams)
 				return err
 			})
 			return nil
@@ -1203,7 +1211,7 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, 0 /*=avgChunkSizeBytes*/)
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction, nil /*=chunkingParams*/)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)

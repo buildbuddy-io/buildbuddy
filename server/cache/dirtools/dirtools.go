@@ -465,7 +465,7 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, avgChunkSizeBytes int64) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
@@ -551,7 +551,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, avgChunkSizeBytes)
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, chunkingParams)
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.

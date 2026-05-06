@@ -1035,7 +1035,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, 0 /*=avgChunkSizeBytes*/)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, nil /*=chunkingParams*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
@@ -1057,7 +1057,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, 0 /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, nil /*=chunkingParams*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1473,7 +1473,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	blobSize := int64(3 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.AvgChunkSizeBytes())
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams())
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 
@@ -1482,4 +1482,49 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
 	require.NoError(t, err)
 	require.Equal(t, buf, out.Bytes())
+}
+
+func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ctx := context.Background()
+	blobSize := int64(3 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+
+	chunkingParams := chunking.FastCDCParams()
+	chunkingParams.BuildbuddyMaxChunkedWriteSizeBytes = 2 * 1024 * 1024
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunkingParams)
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
+
+	_, err = te.GetContentAddressableStorageClient().SplitBlob(ctx, &repb.SplitBlobRequest{
+		InstanceName:   rn.GetInstanceName(),
+		BlobDigest:     rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
+	require.True(t, status.IsNotFoundError(err))
 }

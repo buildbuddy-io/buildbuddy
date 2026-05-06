@@ -72,6 +72,47 @@ func TestChunker_ReassemblesOriginalData(t *testing.T) {
 	require.Equal(t, originalData, reassembled.Bytes(), "reassembled data should match original")
 }
 
+func TestShouldUploadChunkedWithMax(t *testing.T) {
+	avgChunkSizeBytes := int64(512 * 1024)
+
+	for _, tc := range []struct {
+		name              string
+		sizeBytes         int64
+		maxWriteSizeBytes int64
+		want              bool
+	}{
+		{
+			name:              "below minimum",
+			sizeBytes:         1 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              false,
+		},
+		{
+			name:              "within range",
+			sizeBytes:         3 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              true,
+		},
+		{
+			name:              "above max",
+			sizeBytes:         6 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              false,
+		},
+		{
+			name:              "unset max",
+			sizeBytes:         3 * 1024 * 1024,
+			maxWriteSizeBytes: 0,
+			want:              true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &repb.Digest{Hash: "hash", SizeBytes: tc.sizeBytes}
+			require.Equal(t, tc.want, chunking.ShouldUploadChunkedWithMax(d, avgChunkSizeBytes, tc.maxWriteSizeBytes))
+		})
+	}
+}
+
 func TestChunker_DeterministicChunking(t *testing.T) {
 	ctx := context.Background()
 

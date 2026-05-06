@@ -198,6 +198,72 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
+func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
+	env, _, _ := setupEnv(t)
+
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "cache.chunking_enabled": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "executor.upload_outputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "cache.chunking_max_write_size_bytes": {
+      "state": "ENABLED",
+      "variants": {
+        "limited": 123456789
+      },
+      "defaultVariant": "limited"
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
+	require.NoError(t, err)
+	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
+}
+
 func TestDispatch_RecordsClientIP(t *testing.T) {
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, _, _ := setupEnv(t)

@@ -1161,8 +1161,8 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	blobSize := rn.GetDigest().GetSizeBytes()
-	if blobSize <= chunking.MaxChunkSizeBytes() {
-		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob too small for chunking")
+	if !chunking.ShouldUploadChunked(ctx, s.efp, rn.GetDigest()) {
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob outside chunking size range")
 	}
 
 	if spn.IsRecording() {

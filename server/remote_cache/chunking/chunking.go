@@ -39,6 +39,9 @@ const (
 	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
 	chunkOutputFilePrefix        = "chunk_"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
+
+	// Default max blob size eligible for chunked writes. Values <= 0 mean no maximum.
+	defaultMaxChunkedWriteSizeBytes = -1
 )
 
 func AvgChunkSizeBytes() int64 {
@@ -57,8 +60,36 @@ func FastCDCParams() *repb.FastCdc2020Params {
 	}
 }
 
+func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
+	params := FastCDCParams()
+	if params != nil {
+		params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
+	}
+	return params
+}
+
 func MaxChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes * 4
+}
+
+func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	if efp == nil {
+		return defaultMaxChunkedWriteSizeBytes
+	}
+	return efp.Int64(ctx, "cache.chunking_max_write_size_bytes", defaultMaxChunkedWriteSizeBytes)
+}
+
+func ShouldUploadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, d *repb.Digest) bool {
+	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(), MaxWriteSizeBytes(ctx, efp))
+}
+
+// ShouldUploadChunkedWithMax returns whether a blob is eligible for chunked upload.
+func ShouldUploadChunkedWithMax(d *repb.Digest, avgChunkSizeBytes, maxWriteSizeBytes int64) bool {
+	if avgChunkSizeBytes <= 0 {
+		return false
+	}
+	size := d.GetSizeBytes()
+	return size > avgChunkSizeBytes*4 && (maxWriteSizeBytes <= 0 || size <= maxWriteSizeBytes)
 }
 
 func ValidateConfig() error {

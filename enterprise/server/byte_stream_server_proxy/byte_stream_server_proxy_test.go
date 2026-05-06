@@ -102,6 +102,36 @@ func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*r
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
 }
 
+func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_max_write_size_bytes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "max",
+			Variants: map[string]any{
+				"max": 5 * 1024 * 1024,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 6 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	s := &ByteStreamServerProxy{efp: fp}
+	result, err := s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         []byte("x"),
+	})
+	require.True(t, status.IsUnimplementedError(err))
+	require.NotNil(t, result.firstReq)
+}
+
 type casRPCRecorder struct {
 	mu           sync.Mutex
 	fmbGroups    [][]string
