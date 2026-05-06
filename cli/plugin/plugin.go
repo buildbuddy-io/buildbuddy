@@ -717,9 +717,15 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
 	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
-	// TODO(#7216): Resolve bazel args after each plugin is run, so every following plugin gets
+	// Canonicalize args after each plugin is run, so that every plugin gets
+	// canonicalized args as input.
+	canonicalizedArgs, err := parser.CanonicalizeArgs(newArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	// TODO(#7216): Resolve bazel args after each plugin is run (using bazelArgs.Set), so every following plugin gets
 	// a refreshed resolved view of the bazel args (i.e. all --config flags expanded).
-	bazelArgs.Resolved = newArgs
+	bazelArgs.Resolved = canonicalizedArgs
 
 	return bazelArgs, newExecArgs, nil
 }

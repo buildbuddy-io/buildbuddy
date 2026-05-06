@@ -46,8 +46,7 @@ func (a *BazelArgs) Set(args []string) error {
 func (a *BazelArgs) Append(arg string) error {
 	// TODO(#7216): Set the Forwarded args field.
 
-	// If the arg is a --config or --bazelrc flag, we need to recompute the resolved args.
-	if strings.HasPrefix(arg, "--config") || strings.HasPrefix(arg, "--bazelrc") {
+	if requiresResolve(arg) {
 		return a.Set(append(a.Resolved, arg))
 	}
 	a.Resolved = append(a.Resolved, arg)
@@ -61,7 +60,7 @@ func (a *BazelArgs) Prepend(arg string) error {
 	// TODO(#7216): Set the Forwarded args field.
 
 	updatedResolvedArgs := prepend(a.Resolved, arg)
-	if strings.HasPrefix(arg, "--config") || strings.HasPrefix(arg, "--bazelrc") {
+	if requiresResolve(arg) {
 		return a.Set(updatedResolvedArgs)
 	}
 	a.Resolved = updatedResolvedArgs
@@ -78,6 +77,13 @@ func prepend(args []string, arg string) []string {
 	out = append(out, arg)
 	out = append(out, args[commandIndex+1:]...)
 	return out
+}
+
+// requiresResolve returns true if the arg can change rc/config expansion.
+func requiresResolve(arg string) bool {
+	flagName, _ := SplitOptionValue(arg)
+	flagName = strings.TrimPrefix(flagName, "--")
+	return flagName == "config" || flagName == "bazelrc"
 }
 
 // Get returns the value of a flag.
@@ -174,7 +180,7 @@ func (a *BazelArgs) Pop(flagName string) (string, error) {
 		return "", nil
 	}
 
-	if strings.HasPrefix(flagName, "--config") || strings.HasPrefix(flagName, "--bazelrc") {
+	if requiresResolve(flagName) {
 		if err := a.Set(newArgs); err != nil {
 			return "", err
 		}
