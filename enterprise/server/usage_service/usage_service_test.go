@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -17,10 +18,26 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
+
+func testUsageUser(userID, groupID string, caps ...cappb.Capability) *testauth.TestUser {
+	return &testauth.TestUser{
+		UserID:        userID,
+		GroupID:       groupID,
+		AllowedGroups: []string{groupID},
+		Capabilities:  caps,
+		GroupMemberships: []*interfaces.GroupMembership{
+			{
+				GroupID:      groupID,
+				Capabilities: caps,
+			},
+		},
+	}
+}
 
 func TestGetUsage(t *testing.T) {
 	group := &tables.Group{
@@ -114,7 +131,9 @@ func TestGetUsage(t *testing.T) {
 func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1", cappb.Capability_ORG_ADMIN),
+	})
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -196,7 +215,10 @@ func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 func TestUsageAlertingRules_AreScopedToAuthenticatedGroup(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1", cappb.Capability_ORG_ADMIN),
+		"US2": testUsageUser("US2", "GR2", cappb.Capability_ORG_ADMIN),
+	})
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -232,10 +254,44 @@ func TestUsageAlertingRules_AreScopedToAuthenticatedGroup(t *testing.T) {
 	require.Len(t, listRsp.GetUsageAlertingRule(), 1)
 }
 
+func TestUsageAlertingRules_RequiresOrgAdmin(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1"),
+	})
+	env.SetAuthenticator(ta)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	service := usage_service.New(env, clockwork.NewFakeClock())
+
+	// A group member without ORG_ADMIN cannot list usage alerting rules.
+	_, err = service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{})
+	assert.True(t, status.IsPermissionDeniedError(err))
+
+	// The same non-admin member cannot create usage alerting rules, even with a valid configuration.
+	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+			AbsoluteThreshold: 1,
+			Window:            usagepb.UsageAlertingWindow_DAY,
+		},
+	})
+	assert.True(t, status.IsPermissionDeniedError(err))
+
+	// The same non-admin member cannot delete usage alerting rules.
+	_, err = service.DeleteUsageAlertingRule(ctx1, &usagepb.DeleteUsageAlertingRuleRequest{
+		UsageAlertingRuleId: "UAR1",
+	})
+	assert.True(t, status.IsPermissionDeniedError(err))
+}
+
 func TestUsageAlertingRules_ValidateConfiguration(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1", cappb.Capability_ORG_ADMIN),
+	})
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -305,7 +361,9 @@ func TestUsageAlertingRules_ValidateConfiguration(t *testing.T) {
 func TestUsageAlertingRules_DuplicateConfigurationRejected(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1", cappb.Capability_ORG_ADMIN),
+	})
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -343,7 +401,9 @@ func TestUsageAlertingRules_DuplicateConfigurationRejected(t *testing.T) {
 func TestUsageAlertingRules_MaxRulesPerGroup(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": testUsageUser("US1", "GR1", cappb.Capability_ORG_ADMIN),
+	})
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)

@@ -2233,39 +2233,41 @@ func (s *BuildBuddyServer) GetUsageAlertingRules(ctx context.Context, req *usage
 }
 
 func (s *BuildBuddyServer) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
-	if us := s.env.GetUsageService(); us != nil {
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rsp, err := us.CreateUsageAlertingRule(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		if al := s.env.GetAuditLogger(); al != nil {
-			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_CREATE, req)
-		}
-		return rsp, nil
+	us := s.env.GetUsageService()
+	if us == nil {
+		return nil, status.UnimplementedError("Not implemented")
 	}
-	return nil, status.UnimplementedError("Not implemented")
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := us.CreateUsageAlertingRule(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_CREATE, req)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
-	if us := s.env.GetUsageService(); us != nil {
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rsp, err := us.DeleteUsageAlertingRule(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		if al := s.env.GetAuditLogger(); al != nil {
-			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
-		}
-		return rsp, nil
+	us := s.env.GetUsageService()
+	if us == nil {
+		return nil, status.UnimplementedError("Not implemented")
 	}
-	return nil, status.UnimplementedError("Not implemented")
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := us.DeleteUsageAlertingRule(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {

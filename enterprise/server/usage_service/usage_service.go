@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -146,6 +147,9 @@ func (s *usageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.G
 	if groupID == "" {
 		return nil, status.PermissionDeniedError("group ID is required")
 	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
+	}
 
 	rq := s.env.GetDBHandle().NewQuery(ctx, "usage_service_get_alerting_rules").Raw(`
 		SELECT *
@@ -177,6 +181,9 @@ func (s *usageService) CreateUsageAlertingRule(ctx context.Context, req *usagepb
 	groupID := u.GetGroupID()
 	if groupID == "" {
 		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
 	}
 
 	config := req.GetConfiguration()
@@ -229,6 +236,9 @@ func (s *usageService) DeleteUsageAlertingRule(ctx context.Context, req *usagepb
 	groupID := u.GetGroupID()
 	if groupID == "" {
 		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
 	}
 	ruleID := req.GetUsageAlertingRuleId()
 	if ruleID == "" {
@@ -341,7 +351,8 @@ func (s *usageService) displayUser(ctx context.Context, userID string) *uidpb.Di
 		return nil
 	}
 	if udb := s.env.GetUserDB(); udb != nil {
-		u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID)
+		// We only need user profile fields, so only fetch direct memberships.
+		u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 		if err == nil {
 			return u.ToProto()
 		}
