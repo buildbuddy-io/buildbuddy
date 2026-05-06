@@ -2453,6 +2453,9 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
+		if _, err := s.deleteTask(ctx, taskID); err != nil {
+			log.CtxWarningf(ctx, "Failed to delete task after scheduling failure: %s", err)
+		}
 		return nil, err
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
