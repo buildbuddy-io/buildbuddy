@@ -325,7 +325,6 @@ func TestIPRulesRBE(t *testing.T) {
 	flags.Set(t, "auth.trust_xforwardedfor_header", true)
 	flags.Set(t, "app.client_identity.client", "cache-proxy")
 	flags.Set(t, "app.client_identity.key", "key")
-	flags.Set(t, "app.client_identity.override_propagated", false)
 
 	rbe := rbetest.NewRBETestEnv(t)
 	backend := rbe.AddBuildBuddyServer()
