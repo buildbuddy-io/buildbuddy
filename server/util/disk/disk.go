@@ -365,11 +365,11 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
-		w.releaseTmpFileBytesMetric()
 		if err := w.File.Close(); err != nil {
 			return err
 		}
 		w.tmpFileIsClosed = true
+		w.releaseTmpFileBytesMetric()
 		return nil
 	}
 	tmpName := w.File.Name()
