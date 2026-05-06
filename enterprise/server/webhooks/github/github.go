@@ -278,7 +278,7 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 	return level.GetPermission() == "admin" || level.GetPermission() == "write", nil
 }
 
-func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
+func (g *githubGitProvider) CreateStatus(ctx context.Context, token, groupID, repoURL, commitSHA string, payload any) error {
 	s, ok := payload.(*gh_backend.GithubStatusPayload)
 	if !ok {
 		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh_backend.GithubStatusPayload{})
@@ -288,7 +288,7 @@ func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, co
 	if err != nil {
 		return err
 	}
-	return client.CreateStatus(ctx, ownerRepo, commitSHA, s)
+	return client.CreateStatus(ctx, groupID, ownerRepo, commitSHA, s)
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {

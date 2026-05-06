@@ -64,9 +64,9 @@ func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
 	r.baseBBURL = url
 }
 
-func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
+func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, groupID, repoURL string) bool {
 	r.once.Do(func() {
-		enabled, err := r.githubClient.IsStatusReportingEnabled(ctx, repoURL)
+		enabled, err := r.githubClient.IsStatusReportingEnabled(ctx, groupID, repoURL)
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to check if GitHub status reporting is enabled: %s", err)
 			return
@@ -141,11 +141,18 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		return
 	}
 
+	userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get authenticated user: %s", err)
+		return
+	}
+	groupID := userInfo.GetGroupID()
+
 	// Don't report statuses if we don't yet have the metadata, it's explicitly
 	// disabled in build metadata, or it's not enabled for this repo.
 	if !r.buildEventAccumulator.MetadataIsLoaded() ||
 		r.buildEventAccumulator.DisableCommitStatusReporting() ||
-		!r.isStatusReportingEnabled(ctx, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
+		!r.isStatusReportingEnabled(ctx, groupID, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
 		return
 	}
 
@@ -165,7 +172,7 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		}
 		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
 		if ownerRepo != "" && commitSHA != "" {
-			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
+			err = r.githubClient.CreateStatus(ctx, groupID, ownerRepo, commitSHA, payload)
 			if err != nil {
 				// Note: using info-level log since this is often due to client
 				// misconfiguration (e.g. user doesn't have BB GitHub app

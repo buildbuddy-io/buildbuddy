@@ -90,7 +90,7 @@ func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user
 	}
 	return false, nil
 }
-func (p *FakeProvider) CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error {
+func (p *FakeProvider) CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error {
 	p.Statuses <- &Status{accessToken, repoURL, commitSHA, payload}
 	return nil
 }

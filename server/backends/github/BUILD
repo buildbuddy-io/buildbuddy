@@ -1,4 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_test(
+    name = "github_test",
+    srcs = ["github_test.go"],
+    deps = [
+        ":github",
+        "//server/testutil/testenv",
+        "@com_github_stretchr_testify//require",
+    ],
+)
 
 go_library(
     name = "github",

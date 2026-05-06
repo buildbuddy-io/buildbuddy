@@ -531,12 +531,12 @@ func (c *OAuthHandler) handleInstallAppCallback(w http.ResponseWriter, r *http.R
 	return false, nil
 }
 
-func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
+func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
 	if ownerRepo == "" {
 		return status.InvalidArgumentErrorf("failed to create GitHub status: ownerRepo argument is empty")
 	}
 
-	enabled, err := c.IsStatusReportingEnabled(ctx, ownerRepo)
+	enabled, err := c.IsStatusReportingEnabled(ctx, groupID, ownerRepo)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to check if status reporting is enabled for %s", ownerRepo)
 	}
@@ -676,7 +676,7 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 	return nil
 }
 
-func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error) {
+func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, groupID string, repoURL string) (bool, error) {
 	if AlwaysEnableStatusReporting() {
 		return true, nil
 	}
@@ -686,11 +686,6 @@ func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, repoURL str
 		return false, status.InternalError("no database handle")
 	}
 
-	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return false, status.WrapError(err, "failed to get authenticated user")
-	}
-
 	parsedRepo, err := gitutil.ParseGitHubRepoURL(repoURL)
 	if err != nil {
 		return false, status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
@@ -698,7 +693,7 @@ func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, repoURL str
 
 	installation := &tables.GitHubAppInstallation{}
 	err = dbh.NewQuery(ctx, "build_status_reporter_get_app_installation").Raw(
-		`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, userInfo.GetGroupID(), parsedRepo.Owner).Take(installation)
+		`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, groupID, parsedRepo.Owner).Take(installation)
 	if err == nil {
 		return installation.ReportCommitStatusesForCIBuilds, nil
 	} else if !db.IsRecordNotFound(err) {
@@ -720,7 +715,7 @@ func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, repoURL str
 
 	groupWithLegacyToken := &struct{ Count int64 }{}
 	err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
-		`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> '' AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
+		`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> '' AND github_token IS NOT NULL`, groupID).Take(groupWithLegacyToken)
 	if err == nil && groupWithLegacyToken.Count > 0 {
 		return true, nil
 	} else if err != nil {

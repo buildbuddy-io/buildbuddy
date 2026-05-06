@@ -1733,7 +1733,7 @@ func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf 
 		return err
 	}
 	ghc := github.NewGithubClient(ws.env, wf.AccessToken)
-	return ghc.CreateStatus(ctx, ownerRepo, wd.SHA, status)
+	return ghc.CreateStatus(ctx, wf.GroupID, ownerRepo, wd.SHA, status)
 }
 
 func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
@@ -1748,7 +1748,7 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID, errorMessage string) error {
@@ -1763,7 +1763,7 @@ func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf 
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 // getStatusReportingURL returns the URL the workflow should report statuses to
@@ -1795,7 +1795,7 @@ func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {
