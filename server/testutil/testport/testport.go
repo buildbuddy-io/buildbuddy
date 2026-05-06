@@ -20,7 +20,7 @@ type freePortLeaser struct {
 }
 
 func (p *freePortLeaser) findAPort(t testing.TB) int {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}
