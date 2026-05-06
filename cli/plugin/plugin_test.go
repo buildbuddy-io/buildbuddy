@@ -9,6 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +19,7 @@ import (
 
 func init() {
 	log.Configure("--verbose=1")
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
 func TestGetConfiguredPlugins_CombinesUserAndWorkspaceConfigs(t *testing.T) {
@@ -236,6 +239,47 @@ func TestParsePluginSpec(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, tc.ExpectedConfig, cfg)
 	}
+}
+
+func TestPreBazel_AllowsPluginToMutateBazelAndExecArgs(t *testing.T) {
+	ws, _ := setup(t)
+	pluginDir := testfs.MakeDirAll(t, ws, "plugins/pre-bazel")
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		"pre_bazel.sh": `#!/usr/bin/env bash
+set -euo pipefail
+
+grep -qx 'build' "$1"
+grep -qx '//foo:bar' "$1"
+grep -qx 'runner-arg' "$EXEC_ARGS_FILE"
+
+printf '%s\n' 'build' '--compilation_mode=opt' '//foo:bar' '--remote_header=x-plugin=1' > "$1"
+printf '%s\n' 'runner-arg' 'from-plugin' > "$EXEC_ARGS_FILE"
+`,
+	})
+	require.NoError(t, os.Chmod(filepath.Join(pluginDir, "pre_bazel.sh"), 0755))
+	cfgFile := &config.File{
+		Path:       filepath.Join(ws, "buildbuddy.yaml"),
+		RootConfig: &config.RootConfig{},
+	}
+	p := &Plugin{
+		config:     &config.PluginConfig{Path: "./plugins/pre-bazel"},
+		configFile: cfgFile,
+		tempDir:    t.TempDir(),
+	}
+
+	bazelArgs, execArgs, err := p.PreBazel(
+		[]string{"build", "//foo:bar"},
+		[]string{"runner-arg"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"build",
+		"--compilation_mode=opt",
+		"--remote_header=x-plugin=1",
+		"//foo:bar",
+	}, bazelArgs)
+	require.Equal(t, []string{"runner-arg", "from-plugin"}, execArgs)
 }
 
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which

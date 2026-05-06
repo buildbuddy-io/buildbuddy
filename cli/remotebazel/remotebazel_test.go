@@ -219,6 +219,33 @@ func TestParseRemoteCliFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgs_PreparesRemoteBazelInvocation(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "env-api-key")
+
+	bazelArgs, execArgs, err := parseArgs([]string{
+		"--output_base", "output-base",
+		"build",
+		"//foo:bar",
+		"--bes_backend=grpc://local-bes",
+		"--remote_cache=grpc://local-cache",
+		"--",
+		"runner-arg",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"runner-arg"}, execArgs)
+	require.Equal(t, []string{
+		"--output_base=output-base",
+		"build",
+		"--remote_header=x-buildbuddy-api-key=env-api-key",
+		"//foo:bar",
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
+		"--remote_upload_local_results",
+	}, bazelArgs)
+}
+
 func TestGitConfig_BranchAndSha(t *testing.T) {
 	// Setup the "remote" repo
 	remoteRepoPath, originalMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
