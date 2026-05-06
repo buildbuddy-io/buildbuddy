@@ -1018,6 +1018,20 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	require.False(t, resp.GetExists())
 }
 
+func TestScheduleTask_DeletesTaskOnEnqueueFailure(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Don't register any executors, so enqueuing task reservations will fail
+	// with an "No registered executors" error.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.Error(t, err)
+
+	resp, err := env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: req.GetTaskId()})
+	require.NoError(t, err)
+	require.False(t, resp.GetExists())
+}
+
 func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
