@@ -42,12 +42,12 @@ const (
 var (
 	authHeaders = []string{authutil.APIKeyHeader}
 
-	target                   = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
-	jwtCacheTTL              = flag.Duration("auth.remote.jwt_cache_ttl", time.Minute, "TTL for locally cached JWTs. If this is <= 0, TTL-based expiry is disabled and cached JWTs are only evicted by LRU size limits.")
-	jwtExpirationBuffer      = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
-	alwaysUseES256SignedJWTs = flag.Bool("auth.remote.use_es256_jwts", true, "Always request and use ES-256 signed JWTs from the remote auth service, regardless of the experiment configuration.")
-	keyRefreshInterval       = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
-	getKeysTimeout           = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
+	target              = flag.String("auth.remote.target", "", "The gRPC target of the remote authentication API.")
+	jwtCacheTTL         = flag.Duration("auth.remote.jwt_cache_ttl", time.Minute, "TTL for locally cached JWTs. If this is <= 0, TTL-based expiry is disabled and cached JWTs are only evicted by LRU size limits.")
+	jwtExpirationBuffer = flag.Duration("auth.remote.jwt_expiration_buffer", time.Minute, "Discard remote-auth minted JWTs if they're within this time buffer of their expiration time.")
+	useES256SignedJWTs  = flag.Bool("auth.remote.use_es256_jwts", true, "Request and use ES-256 signed JWTs from the remote auth service.")
+	keyRefreshInterval  = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
+	getKeysTimeout      = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -82,7 +82,6 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	client := authpb.NewAuthServiceClient(conn)
 	provider := &keyProvider{
 		ctx:    env.GetServerContext(),
-		env:    env,
 		client: client,
 		clock:  env.GetClock(),
 		quit:   make(chan struct{}),
@@ -107,7 +106,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 		hs256Cache:          hs256Cache,
 		jwtExpirationBuffer: *jwtExpirationBuffer,
 		claimsParser:        claimsParser,
-		env:                 env,
+		clock:               env.GetClock(),
 		keyProvider:         provider,
 	}, nil
 }
@@ -118,7 +117,6 @@ func (a *RemoteAuthenticator) Stop() {
 
 type keyProvider struct {
 	ctx    context.Context
-	env    environment.Env
 	client authpb.AuthServiceClient
 	clock  clockwork.Clock
 	mu     sync.RWMutex
@@ -127,7 +125,7 @@ type keyProvider struct {
 }
 
 func (kp *keyProvider) provide(ctx context.Context) ([]claims.VerificationKey, error) {
-	if useES256SignedJWTs(ctx, kp.env.GetExperimentFlagProvider()) {
+	if *useES256SignedJWTs {
 		return kp.getES256PublicKeys(ctx), nil
 	}
 	defaultKeys, err := claims.DefaultKeyProvider(ctx)
@@ -139,6 +137,9 @@ func (kp *keyProvider) provide(ctx context.Context) ([]claims.VerificationKey, e
 }
 
 func (kp *keyProvider) getES256PublicKeys(ctx context.Context) []claims.VerificationKey {
+	if !*useES256SignedJWTs {
+		return []claims.VerificationKey{}
+	}
 	kp.mu.RLock()
 	defer kp.mu.RUnlock()
 	keys := make([]claims.VerificationKey, len(kp.keys))
@@ -149,7 +150,9 @@ func (kp *keyProvider) getES256PublicKeys(ctx context.Context) []claims.Verifica
 }
 
 func (kp *keyProvider) startRefresher(refreshInterval time.Duration) {
-	go kp.refreshLoop(refreshInterval)
+	if *useES256SignedJWTs {
+		go kp.refreshLoop(refreshInterval)
+	}
 }
 
 func (kp *keyProvider) stop() {
@@ -201,16 +204,6 @@ func (kp *keyProvider) fetchES256PublicKeys() ([]string, error) {
 	return keys, nil
 }
 
-func useES256SignedJWTs(
-	ctx context.Context,
-	experimentFlagProvider interfaces.ExperimentFlagProvider) bool {
-	if experimentFlagProvider == nil {
-		return *alwaysUseES256SignedJWTs
-	}
-	return *alwaysUseES256SignedJWTs ||
-		experimentFlagProvider.Boolean(ctx, "auth.remote.use_es256_jwts", false)
-}
-
 // The claims cache must be keyed by subdomain and API key to avoid keys
 // leaking across subdomain boundaries. This function extracts an API key and
 // subdomain from a context and builds a claims cache key with them.
@@ -231,7 +224,7 @@ type RemoteAuthenticator struct {
 	hs256Cache          lru.LRU[string]
 	jwtExpirationBuffer time.Duration
 	claimsParser        *claims.ClaimsParser
-	env                 environment.Env
+	clock               clockwork.Clock
 	keyProvider         *keyProvider
 }
 
@@ -356,7 +349,7 @@ func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
 	sd := subdomain.Get(ctx)
 	req := authpb.AuthenticateRequest{Subdomain: &sd}
-	if useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
+	if *useES256SignedJWTs {
 		req.JwtSigningMethod = authpb.JWTSigningMethod_ES256.Enum()
 	}
 	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
@@ -380,7 +373,7 @@ func (a *RemoteAuthenticator) shouldReauthenticateHS256JWT(ctx context.Context, 
 	if getLastMetadataValue(ctx, authutil.APIKeyHeader) != "" {
 		return false
 	}
-	if !useES256SignedJWTs(ctx, a.env.GetExperimentFlagProvider()) {
+	if !*useES256SignedJWTs {
 		return false
 	}
 	alg, err := jwtSigningAlgorithm(incomingJWT)
@@ -462,7 +455,7 @@ func (a *RemoteAuthenticator) jwtIsValid(ctx context.Context, jwt string) (*clai
 	if err != nil {
 		return nil, err
 	}
-	if claims.ExpiresAt < a.env.GetClock().Now().Add(a.jwtExpirationBuffer).Unix() {
+	if claims.ExpiresAt < a.clock.Now().Add(a.jwtExpirationBuffer).Unix() {
 		return nil, status.NotFoundError("JWT will expire soon")
 	}
 	return claims, nil

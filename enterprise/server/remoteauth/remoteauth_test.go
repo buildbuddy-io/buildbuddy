@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
@@ -18,8 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -306,50 +303,6 @@ func TestSubdomains(t *testing.T) {
 	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
-}
-
-func setupExperimentProvider(t *testing.T, flagValue bool) interfaces.ExperimentFlagProvider {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"auth.remote.use_es256_jwts": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "default",
-			Variants: map[string]any{
-				"default": flagValue,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	return fp
-}
-
-func TestUseES256SignedJWTs(t *testing.T) {
-	ctx := t.Context()
-
-	// Test with nil experiment provider and flag disabled (default)
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	require.False(t, useES256SignedJWTs(ctx, nil))
-
-	// Test with nil experiment provider and flag enabled
-	flags.Set(t, "auth.remote.use_es256_jwts", true)
-	require.True(t, useES256SignedJWTs(ctx, nil))
-
-	// Test with experiment provider returning false and flag disabled
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	provider := setupExperimentProvider(t, false)
-	require.False(t, useES256SignedJWTs(ctx, provider))
-
-	// Test with experiment provider returning true and flag disabled
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	provider = setupExperimentProvider(t, true)
-	require.True(t, useES256SignedJWTs(ctx, provider))
-
-	// Test with experiment provider returning false and flag enabled (flag takes precedence)
-	flags.Set(t, "auth.remote.use_es256_jwts", true)
-	provider = setupExperimentProvider(t, false)
-	require.True(t, useES256SignedJWTs(ctx, provider))
 }
 
 func TestAuthenticateRequestsES256WhenEnabled(t *testing.T) {
