@@ -263,6 +263,11 @@ var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
 var fileWriterInProgressCounter atomic.Int64
+var fileWriterTmpFileBytesCounter atomic.Int64
+
+func updateTmpFileBytesMetric(delta int64) {
+	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesCounter.Add(delta)))
+}
 
 // reserveFileWriterQuota blocks until quota is available.
 // If a reservation is obtained, the returned function must be called
@@ -316,7 +321,7 @@ func (w *writeMover) Write(p []byte) (int, error) {
 	n, err := w.File.Write(p)
 	if n > 0 {
 		w.tmpFileBytes += int64(n)
-		metrics.DiskFileWriterTmpFileBytes.Add(float64(n))
+		updateTmpFileBytesMetric(int64(n))
 	}
 	return n, err
 }
@@ -327,7 +332,7 @@ func (w *writeMover) releaseTmpFileBytesMetric() {
 	}
 	w.metricReleased = true
 	if w.tmpFileBytes > 0 {
-		metrics.DiskFileWriterTmpFileBytes.Sub(float64(w.tmpFileBytes))
+		updateTmpFileBytesMetric(-w.tmpFileBytes)
 	}
 }
 
@@ -360,11 +365,11 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
-		w.releaseTmpFileBytesMetric()
 		if err := w.File.Close(); err != nil {
 			return err
 		}
 		w.tmpFileIsClosed = true
+		w.releaseTmpFileBytesMetric()
 		return nil
 	}
 	tmpName := w.File.Name()
