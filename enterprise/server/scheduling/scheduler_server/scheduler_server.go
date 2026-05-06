@@ -1145,8 +1145,8 @@ type SchedulerServer struct {
 	forceUserOwnedDarwinExecutors bool
 	// Force windows executions to use executors owned by user.
 	forceUserOwnedWindowsExecutors bool
-	// Reject anonymous requests for ARM remote build execution.
-	disableAnonymousArmExecution bool
+	// Reject anonymous requests for ARM Linux remote build execution.
+	disableAnonymousArmLinuxExecution bool
 	// If enabled, executors will be required to present an API key with appropriate capabilities in order to register.
 	requireExecutorAuthorization bool
 
@@ -1231,7 +1231,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		forceUserOwnedWindowsExecutors:    remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedWindowsExecutors(),
-		disableAnonymousArmExecution:      remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.DisableAnonymousArmExecution(),
+		disableAnonymousArmLinuxExecution: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.DisableAnonymousArmLinuxExecution(),
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
@@ -1346,8 +1346,8 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, arch, requestedPo
 			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
 			}
-			if s.disableAnonymousArmExecution && arch == platform.ARM64ArchitectureName {
-				return nil, status.FailedPreconditionErrorf("ARM remote build execution is not enabled for anonymous requests.")
+			if s.disableAnonymousArmLinuxExecution && os == platform.LinuxOperatingSystemName && arch == platform.ARM64ArchitectureName {
+				return nil, status.FailedPreconditionErrorf("ARM Linux remote build execution is not enabled for anonymous requests.")
 			}
 			if poolType == platform.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")

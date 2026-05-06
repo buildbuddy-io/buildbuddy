@@ -1,12 +1,12 @@
 package config
 
-import "flag"
+import "github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
 var (
-	enableUserOwnedExecutors       = flag.Bool("remote_execution.enable_user_owned_executors", false, "If enabled, users can register their own executors with the scheduler.")
-	forceUserOwnedDarwinExecutors  = flag.Bool("remote_execution.force_user_owned_darwin_executors", false, "If enabled, darwin actions will always run on user-owned executors.")
-	forceUserOwnedWindowsExecutors = flag.Bool("remote_execution.force_user_owned_windows_executors", false, "If enabled, windows actions will always run on user-owned executors.")
-	disableAnonymousArmExecution   = flag.Bool("remote_execution.disable_anonymous_arm_execution", false, "If enabled, anonymous requests for ARM remote build execution will be rejected.")
+	enableUserOwnedExecutors          = flag.Bool("remote_execution.enable_user_owned_executors", false, "If enabled, users can register their own executors with the scheduler.")
+	forceUserOwnedDarwinExecutors     = flag.Bool("remote_execution.force_user_owned_darwin_executors", false, "If enabled, darwin actions will always run on user-owned executors.")
+	forceUserOwnedWindowsExecutors    = flag.Bool("remote_execution.force_user_owned_windows_executors", false, "If enabled, windows actions will always run on user-owned executors.")
+	disableAnonymousArmLinuxExecution = flag.Bool("remote_execution.disable_anonymous_arm_linux_execution", false, "If enabled, anonymous requests for ARM Linux remote build execution will be rejected.", flag.Internal)
 )
 
 func UserOwnedExecutorsEnabled() bool {
@@ -21,6 +21,6 @@ func ForceUserOwnedWindowsExecutors() bool {
 	return *forceUserOwnedWindowsExecutors
 }
 
-func DisableAnonymousArmExecution() bool {
-	return *disableAnonymousArmExecution
+func DisableAnonymousArmLinuxExecution() bool {
+	return *disableAnonymousArmLinuxExecution
 }
