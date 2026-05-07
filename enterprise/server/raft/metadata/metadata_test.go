@@ -470,7 +470,16 @@ func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
-	flags.Set(t, "cache.raft.min_eviction_age", 0)
+	// The test creates records at fake-clock T0, then Find()s subsets at T1,
+	// T2, T3, leaving records 18-24 with atime T0. Final fake-clock time is
+	// T4 = T0+20min. Setting min_eviction_age=18min restricts the eviction
+	// sampler to only records 18-24 (age 20min); the Find()'d records (age
+	// 5/10/15min) are skipped entirely. This eliminates two flake sources:
+	// (1) the LRU evictor's real-time 1s ticker firing during the test's
+	// setup phase and evicting random records before atime updates apply,
+	// and (2) stale-atime samples making recently-Find()'d records appear
+	// old enough to evict.
+	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
 	// Force the sampler to refresh its pebble iterator on
 	// every read so that samples have up-to-date atimes.
 	flags.Set(t, "cache.raft.samples_per_batch", 0)
