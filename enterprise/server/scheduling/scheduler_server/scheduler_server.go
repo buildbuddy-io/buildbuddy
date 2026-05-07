@@ -721,11 +721,9 @@ func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map
 	if raw == "" {
 		return nil
 	}
-	if expected := *debugExecutorLabelsKey; expected != "" {
-		if platform.FindEffectiveValue(task, "debug-executor-labels-key") != expected {
-			alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
-			return nil
-		}
+	if *debugExecutorLabelsKey != "" && platform.FindEffectiveValue(task, "debug-executor-labels-key") != *debugExecutorLabelsKey {
+		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+		return nil
 	}
 	out := make(map[string]string)
 	for entry := range strings.SplitSeq(raw, ",") {
