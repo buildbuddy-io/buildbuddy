@@ -79,7 +79,7 @@ bazel_dep(name = "protobuf", version = "34.0.bcr.1", repo_name = "com_google_pro
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
-bazel_dep(name = "aspect_rules_esbuild", version = "0.23.0")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
 bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
 bazel_dep(name = "aspect_rules_js", version = "3.0.3")
 bazel_dep(name = "aspect_rules_swc", version = "2.5.0")
