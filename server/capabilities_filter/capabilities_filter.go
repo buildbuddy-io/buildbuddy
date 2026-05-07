@@ -152,6 +152,8 @@ var (
 		buildBuddyServicePrefix + "SaveWorkspace",
 		buildBuddyServicePrefix + "GetWorkspaceDirectory",
 		buildBuddyServicePrefix + "GetWorkspaceFile",
+		// Billing (read-only subscription info)
+		buildBuddyServicePrefix + "GetSubscription",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
@@ -214,6 +216,9 @@ var (
 		buildBuddyServicePrefix + "SetIPRulesConfig",
 		// GCP
 		buildBuddyServicePrefix + "GetGCPProject",
+		// Billing (admin-only actions)
+		buildBuddyServicePrefix + "CreateCheckoutSession",
+		buildBuddyServicePrefix + "GetCustomerPortal",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

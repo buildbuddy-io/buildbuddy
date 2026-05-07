@@ -66,6 +66,8 @@ type RealEnv struct {
 	invocationStatService                interfaces.InvocationStatService
 	usageService                         interfaces.UsageService
 	usageTracker                         interfaces.UsageTracker
+	billingService                       interfaces.BillingService
+	usageLimiter                         interfaces.UsageLimiter
 	splashPrinter                        interfaces.SplashPrinter
 	actionCacheClient                    repb.ActionCacheClient
 	byteStreamClient                     bspb.ByteStreamClient
@@ -244,6 +246,20 @@ func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
 }
 func (r *RealEnv) SetUsageTracker(t interfaces.UsageTracker) {
 	r.usageTracker = t
+}
+
+func (r *RealEnv) GetBillingService() interfaces.BillingService {
+	return r.billingService
+}
+func (r *RealEnv) SetBillingService(s interfaces.BillingService) {
+	r.billingService = s
+}
+
+func (r *RealEnv) GetUsageLimiter() interfaces.UsageLimiter {
+	return r.usageLimiter
+}
+func (r *RealEnv) SetUsageLimiter(ul interfaces.UsageLimiter) {
+	r.usageLimiter = ul
 }
 
 func (r *RealEnv) GetBuildEventProxyClients() []pepb.PublishBuildEventClient {

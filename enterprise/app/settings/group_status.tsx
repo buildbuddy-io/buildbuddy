@@ -26,6 +26,7 @@ interface GroupStatusState {
 const STATUS_OPTIONS: Array<{ value: grp.Group.GroupStatus; label: string }> = [
   { value: grp.Group.GroupStatus.UNKNOWN_GROUP_STATUS, label: "Unknown" },
   { value: grp.Group.GroupStatus.FREE_TIER_GROUP_STATUS, label: "Free Tier" },
+  { value: grp.Group.GroupStatus.PREMIUM_GROUP_STATUS, label: "Premium" },
   { value: grp.Group.GroupStatus.ENTERPRISE_GROUP_STATUS, label: "Enterprise" },
   { value: grp.Group.GroupStatus.ENTERPRISE_TRIAL_GROUP_STATUS, label: "Enterprise Trial" },
   { value: grp.Group.GroupStatus.BLOCKED_GROUP_STATUS, label: "Blocked" },

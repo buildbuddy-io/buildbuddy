@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package billing;
+
+option go_package = "billing";
+
+enum SubscriptionPlan {
+  UNKNOWN_PLAN = 0;
+  FREE_PLAN = 1;
+  USAGE_BASED_PREMIUM_PLAN = 2;
+}
+
+enum SubscriptionStatus {
+  UNKNOWN_SUBSCRIPTION_STATUS = 0;
+  // No subscription exists.
+  NONE = 1;
+  // Subscription is active and billing for overage.
+  ACTIVE = 2;
+  // Subscription payment is past due.
+  PAST_DUE = 3;
+  // Subscription has been cancelled.
+  CANCELLED = 4;
+}
+
+message GetSubscriptionRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetSubscriptionResponse {
+  context.ResponseContext response_context = 1;
+
+  // The group's current billing plan.
+  SubscriptionPlan plan = 2;
+
+  // The subscription status (only meaningful for USAGE_BASED_PREMIUM_PLAN).
+  SubscriptionStatus status = 3;
+
+  // End of the current billing period (microseconds since epoch).
+  int64 current_period_end_usec = 4;
+}
+
+message CreateCheckoutSessionRequest {
+  context.RequestContext request_context = 1;
+}
+
+message CreateCheckoutSessionResponse {
+  context.ResponseContext response_context = 1;
+
+  // URL to redirect the user to for Stripe checkout.
+  string checkout_url = 2;
+}
+
+message GetCustomerPortalRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetCustomerPortalResponse {
+  context.ResponseContext response_context = 1;
+
+  // URL to redirect the user to for Stripe customer portal.
+  string portal_url = 2;
+}

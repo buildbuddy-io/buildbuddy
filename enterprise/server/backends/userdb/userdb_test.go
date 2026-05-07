@@ -493,6 +493,61 @@ func TestUpdateGroup(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBuildBuddyServerUpdateGroup_MonthlyUsageBudgetCents(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	group := getGroup(t, ctx1, env).Group
+	group.Name = "old name"
+	group.URLIdentifier = "budget-test"
+	group.MonthlyUsageBudgetCents = 12345
+	_, err := udb.UpdateGroup(ctx1, &group)
+	require.NoError(t, err)
+
+	_, err = env.GetBuildBuddyServer().UpdateGroup(ctx1, &grpb.UpdateGroupRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Name:           "new name",
+		UrlIdentifier:  "budget-test",
+	})
+	require.NoError(t, err)
+
+	updatedGroup, err := udb.GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, int64(12345), updatedGroup.MonthlyUsageBudgetCents)
+
+	updatedBudget := int64(67890)
+	_, err = env.GetBuildBuddyServer().UpdateGroup(ctx1, &grpb.UpdateGroupRequest{
+		RequestContext:          &ctxpb.RequestContext{GroupId: group.GroupID},
+		Name:                    "new name",
+		UrlIdentifier:           "budget-test",
+		MonthlyUsageBudgetCents: &updatedBudget,
+	})
+	require.NoError(t, err)
+
+	updatedGroup, err = udb.GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, updatedBudget, updatedGroup.MonthlyUsageBudgetCents)
+
+	negativeBudget := int64(-1)
+	_, err = env.GetBuildBuddyServer().UpdateGroup(ctx1, &grpb.UpdateGroupRequest{
+		RequestContext:          &ctxpb.RequestContext{GroupId: group.GroupID},
+		Name:                    "new name",
+		UrlIdentifier:           "budget-test",
+		MonthlyUsageBudgetCents: &negativeBudget,
+	})
+	require.True(t, status.IsInvalidArgumentError(err))
+
+	updatedGroup, err = udb.GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, updatedBudget, updatedGroup.MonthlyUsageBudgetCents)
+}
+
 func TestCreateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)

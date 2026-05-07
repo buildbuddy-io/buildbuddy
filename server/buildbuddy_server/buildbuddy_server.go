@@ -55,6 +55,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	blpb "github.com/buildbuddy-io/buildbuddy/proto/billing"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -356,6 +357,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			ExternalUserManagement:            g.ExternalUserManagement,
 			AllowedUserApiKeyCapabilities:     allowedUserAPIKeyCapabilities,
 			Status:                            g.Status,
+			MonthlyUsageBudgetCents:           g.MonthlyUsageBudgetCents,
 		})
 	}
 	return groups, nil
@@ -665,6 +667,12 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()
+	if req.MonthlyUsageBudgetCents != nil {
+		if req.GetMonthlyUsageBudgetCents() < 0 {
+			return nil, status.InvalidArgumentError("Monthly usage budget cannot be negative")
+		}
+		group.MonthlyUsageBudgetCents = req.GetMonthlyUsageBudgetCents()
+	}
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
 		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 	}
@@ -3067,4 +3075,28 @@ func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetG
 	}
 
 	return gcpService.GetGCPProject(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetSubscription(ctx context.Context, req *blpb.GetSubscriptionRequest) (*blpb.GetSubscriptionResponse, error) {
+	bs := s.env.GetBillingService()
+	if bs == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	return bs.GetSubscription(ctx, req)
+}
+
+func (s *BuildBuddyServer) CreateCheckoutSession(ctx context.Context, req *blpb.CreateCheckoutSessionRequest) (*blpb.CreateCheckoutSessionResponse, error) {
+	bs := s.env.GetBillingService()
+	if bs == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	return bs.CreateCheckoutSession(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetCustomerPortal(ctx context.Context, req *blpb.GetCustomerPortalRequest) (*blpb.GetCustomerPortalResponse, error) {
+	bs := s.env.GetBillingService()
+	if bs == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	return bs.GetCustomerPortal(ctx, req)
 }

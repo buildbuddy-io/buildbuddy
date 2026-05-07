@@ -265,10 +265,60 @@ type Group struct {
 
 	// The status of the group: free tier, enterprise, etc.
 	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
+
+	// User-configurable monthly usage budget in cents. 0 means no
+	// self-imposed limit (system defaults apply). Applies to all tiers.
+	MonthlyUsageBudgetCents int64 `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {
 	return "Groups"
+}
+
+// BillingCustomer maps a BuildBuddy group to an external billing provider
+// customer (e.g. Stripe). One customer per group.
+type BillingCustomer struct {
+	Model
+	BillingCustomerID  string `gorm:"primaryKey;"`
+	GroupID            string `gorm:"not null;uniqueIndex:billing_customer_group_idx"`
+	ExternalCustomerID string `gorm:"not null;uniqueIndex:billing_customer_ext_idx"`
+}
+
+func (bc *BillingCustomer) TableName() string {
+	return "BillingCustomers"
+}
+
+// BillingSubscription tracks a group's current billing subscription state.
+// One active subscription per group.
+type BillingSubscription struct {
+	Model
+	BillingSubscriptionID          string `gorm:"primaryKey;"`
+	GroupID                        string `gorm:"not null;uniqueIndex:billing_sub_group_idx"`
+	ExternalSubscriptionID         string `gorm:"not null;uniqueIndex:billing_sub_ext_idx"`
+	SubscriptionStatus             string `gorm:"not null;default:'none'"`
+	CurrentPeriodStartUsec         int64  `gorm:"not null;default:0"`
+	CurrentPeriodEndUsec           int64  `gorm:"not null;default:0"`
+	LastExternalEventTimestampUsec int64  `gorm:"not null;default:0"`
+	// JSON-encoded map of ExternalSubscriptionItemID -> SKU for metered line items.
+	SubscriptionItemsJSON string `gorm:"not null;default:'{}'"`
+}
+
+func (bs *BillingSubscription) TableName() string {
+	return "BillingSubscriptions"
+}
+
+// BillingWebhookEvent provides idempotency for external billing webhook events.
+type BillingWebhookEvent struct {
+	Model
+	BillingWebhookEventID string `gorm:"primaryKey;"`
+	ExternalEventID       string `gorm:"not null;uniqueIndex:billing_event_ext_idx"`
+	EventType             string `gorm:"not null;default:''"`
+	ReceivedAtUsec        int64  `gorm:"not null;default:0"`
+	ProcessedAtUsec       int64  `gorm:"not null;default:0"`
+}
+
+func (bw *BillingWebhookEvent) TableName() string {
+	return "BillingWebhookEvents"
 }
 
 type UserGroup struct {
@@ -1484,6 +1534,9 @@ func RegisterTables() {
 	// Keep these sorted by two-letter prefix (and when adding new tables,
 	// use a unique prefix if possible):
 	registerTable("AK", &APIKey{})
+	registerTable("BC", &BillingCustomer{})
+	registerTable("BS", &BillingSubscription{})
+	registerTable("BW", &BillingWebhookEvent{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
 	registerTable("EK", &EncryptionKey{})

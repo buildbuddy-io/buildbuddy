@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -34,6 +35,26 @@ const (
 	redisQuotaKeyPrefix          = "quota"
 	bucketQuotaExperimentName    = "quota.buckets"
 	quotaExceededMessageTemplate = "quota exceeded for %q - to increase quota, request a quote at https://buildbuddy.io/request-quote"
+	fixedWindowAllowScript       = `
+local quantity = tonumber(ARGV[1])
+local max = tonumber(ARGV[2])
+local ttl_millis = tonumber(ARGV[3])
+local initial = tonumber(ARGV[4])
+local existing = redis.call("GET", KEYS[1])
+local current = initial
+if existing then
+  current = tonumber(existing)
+end
+if current + quantity > max then
+  return 0
+end
+if existing then
+  redis.call("INCRBY", KEYS[1], quantity)
+else
+  redis.call("SET", KEYS[1], current + quantity, "PX", ttl_millis)
+end
+return 1
+`
 )
 
 var (
@@ -124,6 +145,73 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 	return status.ResourceExhaustedErrorf(quotaExceededMessageTemplate, namespace)
 }
 
+func (qm *QuotaManager) AllowWithFixedWindow(ctx context.Context, nsName string, quantity int64, fixedWindowQuota *interfaces.FixedWindowQuota) error {
+	if err := qm.checkGroupBlocked(ctx); err != nil {
+		return err
+	}
+
+	if quantity < 0 {
+		return status.InvalidArgumentErrorf("quantity (%d) must be non-negative", quantity)
+	}
+
+	if fixedWindowQuota == nil {
+		return status.InvalidArgumentError("fixed window quota is required")
+	}
+	if fixedWindowQuota.Name == "" {
+		return status.InvalidArgumentError("fixed window quota name cannot be empty")
+	}
+	if fixedWindowQuota.InitialQuantity < 0 {
+		return status.InvalidArgumentErrorf("fixed window initial quantity (%d) must be non-negative", fixedWindowQuota.InitialQuantity)
+	}
+	if fixedWindowQuota.MaxQuantity <= 0 {
+		return status.InvalidArgumentErrorf("fixed window max quantity (%d) must be positive", fixedWindowQuota.MaxQuantity)
+	}
+	if fixedWindowQuota.WindowDurationUsec <= 0 {
+		return status.InvalidArgumentError("fixed window duration must be positive")
+	}
+
+	key, err := quota.GetKey(ctx, qm.env)
+	if err != nil {
+		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
+			metrics.QuotaNamespace: nsName,
+		}).Inc()
+		return nil
+	}
+
+	rdb := qm.env.GetDefaultRedisClient()
+	if rdb == nil {
+		return status.FailedPreconditionError("default redis client not configured")
+	}
+	ttl := time.Duration(fixedWindowQuota.WindowDurationUsec) * time.Microsecond
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis < 1 {
+		ttlMillis = 1
+	}
+	redisKey := fixedWindowRedisKey(nsName, fixedWindowQuota.Name, key)
+	allow, err := rdb.Eval(
+		ctx,
+		fixedWindowAllowScript,
+		[]string{redisKey},
+		quantity,
+		fixedWindowQuota.MaxQuantity,
+		ttlMillis,
+		fixedWindowQuota.InitialQuantity,
+	).Int()
+	if err != nil {
+		log.CtxWarningf(ctx, "Fixed-window quota check for %q failed: %s", nsName, err)
+		return nil
+	}
+	if allow == 1 {
+		return nil
+	}
+
+	metrics.QuotaExceeded.With(prometheus.Labels{
+		metrics.QuotaNamespace: nsName,
+		metrics.QuotaKey:       key,
+	}).Inc()
+	return status.ResourceExhaustedErrorf(quotaExceededMessageTemplate, nsName)
+}
+
 type namespace struct {
 	name         string
 	bucketsByKey sync.Map // map[string]Bucket
@@ -205,6 +293,10 @@ func createGCRABucket(env environment.Env, config *bucketConfig) (Bucket, error)
 		config:      config,
 		rateLimiter: rateLimiter,
 	}, nil
+}
+
+func fixedWindowRedisKey(namespace, bucketName, key string) string {
+	return strings.Join([]string{redisQuotaKeyPrefix, "fixed_window", namespace, bucketName, key}, ":")
 }
 
 func newQuotaManager(env environment.Env, factory bucketFactory) (*QuotaManager, error) {

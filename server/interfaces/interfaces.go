@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -27,6 +28,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	blpb "github.com/buildbuddy-io/buildbuddy/proto/billing"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -654,6 +656,20 @@ type UsageTracker interface {
 	// Increment adds the given usage counts to the current collection period
 	// for the authenticated group ID. It is safe for concurrent access.
 	Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error
+}
+
+// BillingService handles self-serve usage-based billing.
+type BillingService interface {
+	GetSubscription(ctx context.Context, req *blpb.GetSubscriptionRequest) (*blpb.GetSubscriptionResponse, error)
+	CreateCheckoutSession(ctx context.Context, req *blpb.CreateCheckoutSessionRequest) (*blpb.CreateCheckoutSessionResponse, error)
+	GetCustomerPortal(ctx context.Context, req *blpb.GetCustomerPortalRequest) (*blpb.GetCustomerPortalResponse, error)
+	WebhookHandler() http.Handler
+}
+
+// UsageLimiter enforces usage limits (free tier caps, user-configurable
+// budgets). Returns ResourceExhausted if the limit would be exceeded.
+type UsageLimiter interface {
+	Allow(ctx context.Context, s sku.SKU, quantity int64) error
 }
 
 type ApiService interface {
@@ -1415,6 +1431,19 @@ type DistributedLock interface {
 	Unlock(ctx context.Context) error
 }
 
+type FixedWindowQuota struct {
+	// Name identifies the bucket within a namespace.
+	Name string
+	// InitialQuantity seeds a newly-created window from the caller's durable
+	// usage store. It is ignored once the window key exists.
+	InitialQuantity int64
+	// MaxQuantity is the maximum total quantity allowed in the window.
+	MaxQuantity int64
+	// WindowDurationUsec is the remaining fixed-window duration. The bucket is
+	// reset when the backing store key expires.
+	WindowDurationUsec int64
+}
+
 // QuotaManager manages quota.
 type QuotaManager interface {
 	// Allow checks whether a user (identified from the ctx) has exceeded a rate
@@ -1423,6 +1452,10 @@ type QuotaManager interface {
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
 	Allow(ctx context.Context, namespace string, quantity int64) error
+
+	// AllowWithFixedWindow checks whether a user has exhausted a fixed-window
+	// quota and increments usage if the request fits within the window.
+	AllowWithFixedWindow(ctx context.Context, namespace string, quantity int64, quota *FixedWindowQuota) error
 
 	// Reloads the quota buckets, but does not reset their state. This would
 	// remove a bucket that longer applies to a group. It will send a notification

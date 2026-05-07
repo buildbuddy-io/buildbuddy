@@ -121,10 +121,17 @@ message Group {
 
     // The group is blocked.
     BLOCKED_GROUP_STATUS = 4;
+
+    // The group is on the self-serve usage-based premium plan.
+    PREMIUM_GROUP_STATUS = 5;
   }
 
   // The status of the group.
   GroupStatus status = 21;
+
+  // User-configurable monthly usage budget in cents. 0 means no self-imposed
+  // limit (system defaults apply). Applies to all tiers.
+  int64 monthly_usage_budget_cents = 22;
 }
 
 message JoinGroupRequest {
@@ -357,6 +364,10 @@ message UpdateGroupRequest {
 
   // Whether to enable codesearch.
   bool code_search_enabled = 13;
+
+  // User-configurable monthly usage budget in cents. 0 means no self-imposed
+  // limit. Applies to all tiers (free, premium, enterprise).
+  optional int64 monthly_usage_budget_cents = 14;
 }
 
 message UpdateGroupResponse {

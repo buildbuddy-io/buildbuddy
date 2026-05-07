@@ -10,9 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
@@ -60,6 +62,45 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 		numRequests: 0,
 		maxRequests: limit,
 	}, nil
+}
+
+func TestFixedWindowQuota(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	env := testenv.GetTestEnv(t)
+	env.SetDefaultRedisClient(redisHandle.Client())
+	testUsers := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
+
+	qm, err := newQuotaManager(env, createTestBucket)
+	require.NoError(t, err)
+
+	fixedWindowQuota := &interfaces.FixedWindowQuota{
+		Name:               "monthly",
+		MaxQuantity:        5,
+		WindowDurationUsec: 60 * 1000 * 1000,
+	}
+	require.NoError(t, qm.AllowWithFixedWindow(ctx, "billing:test", 3, fixedWindowQuota))
+	require.NoError(t, qm.AllowWithFixedWindow(ctx, "billing:test", 2, fixedWindowQuota))
+	err = qm.AllowWithFixedWindow(ctx, "billing:test", 1, fixedWindowQuota)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %s", err)
+
+	seededQuota := &interfaces.FixedWindowQuota{
+		Name:               "monthly",
+		InitialQuantity:    4,
+		MaxQuantity:        5,
+		WindowDurationUsec: 60 * 1000 * 1000,
+	}
+	require.NoError(t, qm.AllowWithFixedWindow(ctx, "billing:seeded", 1, seededQuota))
+	err = qm.AllowWithFixedWindow(ctx, "billing:seeded", 1, seededQuota)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %s", err)
+
+	otherNamespaceQuota := &interfaces.FixedWindowQuota{
+		Name:               "monthly",
+		MaxQuantity:        5,
+		WindowDurationUsec: 60 * 1000 * 1000,
+	}
+	require.NoError(t, qm.AllowWithFixedWindow(ctx, "billing:other", 5, otherNamespaceQuota))
 }
 
 func TestQuotaFlagdBuckets(t *testing.T) {

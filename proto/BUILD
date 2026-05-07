@@ -81,6 +81,14 @@ proto_library(
 )
 
 proto_library(
+    name = "billing_proto",
+    srcs = ["billing.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "bazel_flags_proto",
     srcs = ["bazel_flags.proto"],
 )
@@ -654,6 +662,7 @@ proto_library(
         ":api_key_proto",
         ":auditlog_proto",
         ":bazel_config_proto",
+        ":billing_proto",
         ":cache_proto",
         ":encryption_proto",
         ":eventlog_proto",
@@ -1013,6 +1022,15 @@ go_proto_library(
     name = "stardoc_output_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/stardoc_output",
     proto = ":stardoc_output_proto",
+)
+
+go_proto_library(
+    name = "billing_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/billing",
+    proto = ":billing_proto",
+    deps = [
+        ":context_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -1475,6 +1493,7 @@ go_proto_library(
         ":api_key_go_proto",
         ":auditlog_go_proto",
         ":bazel_config_go_proto",
+        ":billing_go_proto",
         ":cache_go_proto",
         ":encryption_go_proto",
         ":eventlog_go_proto",
@@ -1904,6 +1923,14 @@ ts_proto_library(
     proto = ":bazel_config_proto",
     deps = [
         ":api_key_ts_proto",
+        ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "billing_ts_proto",
+    proto = ":billing_proto",
+    deps = [
         ":context_ts_proto",
     ],
 )
@@ -2378,6 +2405,7 @@ ts_proto_library(
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
         ":bazel_config_ts_proto",
+        ":billing_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
         ":eventlog_ts_proto",

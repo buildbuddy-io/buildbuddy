@@ -198,12 +198,17 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return rsp, nil
 	}
 
+	totalUploadSize := int64(0)
+	for _, uploadRequest := range req.Requests {
+		totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
+	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalUploadSize := int64(0)
-		for _, uploadRequest := range req.Requests {
-			totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
-		}
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Allow(ctx, sku.RemoteCacheCASUploadedBytes, totalUploadSize); err != nil {
 			return nil, err
 		}
 	}
@@ -335,12 +340,17 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return nil, err
 	}
 
+	totalDownloadSize := int64(0)
+	for _, readDigest := range req.GetDigests() {
+		totalDownloadSize += readDigest.GetSizeBytes()
+	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalDownloadSize := int64(0)
-		for _, readDigest := range req.GetDigests() {
-			totalDownloadSize += readDigest.GetSizeBytes()
-		}
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Allow(ctx, sku.RemoteCacheCASDownloadedBytes, totalDownloadSize); err != nil {
 			return nil, err
 		}
 	}

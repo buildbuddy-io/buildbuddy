@@ -138,6 +138,11 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 			return err
 		}
 	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Allow(ctx, sku.RemoteCacheCASDownloadedBytes, r.GetDigest().GetSizeBytes()); err != nil {
+			return err
+		}
+	}
 
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
@@ -498,6 +503,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	// Check quota before writing - use digest size as expected upload size
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Allow(ctx, sku.RemoteCacheCASUploadedBytes, r.GetDigest().GetSizeBytes()); err != nil {
 			return nil, err
 		}
 	}

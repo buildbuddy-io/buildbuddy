@@ -1043,6 +1043,11 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 				return err
 			}
 		}
+		if ul := s.env.GetUsageLimiter(); ul != nil {
+			if err := ul.Allow(ctx, sku.RemoteExecutionExecuteWorkerCPUNanos, 1); err != nil {
+				return err
+			}
+		}
 
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
@@ -1620,6 +1625,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
 			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
 				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
+		if ul := s.env.GetUsageLimiter(); ul != nil {
+			if err := ul.Allow(ctx, sku.RemoteExecutionExecuteWorkerCPUNanos, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "Usage limit exhausted after execution: %s", err)
 			}
 		}
 	}

@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
+import "proto/billing.proto";
 import "proto/cache.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
@@ -353,4 +354,12 @@ service BuildBuddyService {
   // GCP API
   rpc GetGCPProject(gcp.GetGCPProjectRequest)
       returns (gcp.GetGCPProjectResponse);
+
+  // Billing API
+  rpc GetSubscription(billing.GetSubscriptionRequest)
+      returns (billing.GetSubscriptionResponse);
+  rpc CreateCheckoutSession(billing.CreateCheckoutSessionRequest)
+      returns (billing.CreateCheckoutSessionResponse);
+  rpc GetCustomerPortal(billing.GetCustomerPortalRequest)
+      returns (billing.GetCustomerPortalResponse);
 }
