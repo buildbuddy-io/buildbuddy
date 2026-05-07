@@ -68,6 +68,17 @@ type ResourceAttribute struct {
 	Value string `json:"value" yaml:"value"`
 }
 
+// ConfiguredResourceAttribute returns the value configured for the first trace
+// resource attribute with the given key, or "" if no matching attribute is set.
+func ConfiguredResourceAttribute(key string) string {
+	for _, attr := range *traceResourceAttributes {
+		if attr.Key == key {
+			return attr.Value
+		}
+	}
+	return ""
+}
+
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
 // Based on TraceIDRatioBased sampler from the OpenTelemetry library.
 type fractionSampler struct {

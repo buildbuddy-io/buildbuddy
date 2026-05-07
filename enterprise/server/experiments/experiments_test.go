@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
@@ -421,6 +422,55 @@ func TestRegionTargeting(t *testing.T) {
 	t.Run("disabled in non-targeted region", func(t *testing.T) {
 		flags.Set(t, "app.region", "us-central1")
 		require.False(t, fp.Boolean(ctx, "regional_feature", false))
+	})
+}
+
+func TestDeploymentRegionTargeting(t *testing.T) {
+	ctx := context.Background()
+
+	const testFlags = `{
+	  "$schema": "https://flagd.dev/schema/v0/flags.json",
+	  "flags": {
+	    "deployment_regional_feature": {
+	      "state": "ENABLED",
+	      "variants": {
+	        "enabled": true,
+	        "disabled": false
+	      },
+	      "defaultVariant": "disabled",
+	      "targeting": {
+	        "if": [
+	          { "==": [{ "var": "deployment_region" }, "us-sjc"] },
+	          "enabled",
+	          "disabled"
+	        ]
+	      }
+	    }
+	  }
+	}
+	`
+
+	offlineFlagPath := writeFlagConfig(t, testFlags)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+
+	fp, err := experiments.NewFlagProvider("test-name")
+	require.NoError(t, err)
+
+	t.Run("enabled from cloud region resource attribute", func(t *testing.T) {
+		flags.Set(t, "app.trace_resource_attributes", []tracing.ResourceAttribute{
+			{Key: "cloud.region", Value: "us-sjc"},
+		})
+		require.True(t, fp.Boolean(ctx, "deployment_regional_feature", false))
+	})
+
+	t.Run("app region takes precedence over cloud region resource attribute", func(t *testing.T) {
+		flags.Set(t, "app.region", "us-west1")
+		flags.Set(t, "app.trace_resource_attributes", []tracing.ResourceAttribute{
+			{Key: "cloud.region", Value: "us-sjc"},
+		})
+		require.False(t, fp.Boolean(ctx, "deployment_regional_feature", false))
 	})
 }
 

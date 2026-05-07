@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/open-feature/go-sdk/openfeature"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -121,6 +122,8 @@ type Option func(*Options)
 //   - invocation_id: Parsed from the bazel request metadata, if set.
 //   - action_id: Parsed from the bazel request metadata, if set.
 //   - region: Parsed from app.region, if set.
+//   - deployment_region: Parsed from app.region, if set; otherwise parsed from
+//     app.trace_resource_attributes cloud.region, if set.
 //
 // The fields allow enabling features at the group level (default), or by
 // user, invocation, or action. Care should be taken to not enable experiments
@@ -154,6 +157,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if currentRegion := region.ConfiguredAppRegion(); currentRegion != "" {
 		options.attributes["region"] = currentRegion
+		options.attributes["deployment_region"] = currentRegion
+	} else if deploymentRegion := tracing.ConfiguredResourceAttribute("cloud.region"); deploymentRegion != "" {
+		options.attributes["deployment_region"] = deploymentRegion
 	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {

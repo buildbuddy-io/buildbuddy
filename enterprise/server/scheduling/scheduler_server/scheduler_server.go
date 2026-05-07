@@ -2206,7 +2206,7 @@ type enqueueTaskReservationOpts struct {
 	scheduleOnConnectedExecutors bool
 }
 
-func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, task *repb.ExecutionTask, opts enqueueTaskReservationOpts) error {
+func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, task *repb.ExecutionTask, opts enqueueTaskReservationOpts) (int, error) {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, enqueueRequest.GetTaskId())
 
 	groupID := enqueueRequest.GetSchedulingMetadata().GetExecutorGroupId()
@@ -2220,10 +2220,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	log.CtxInfof(ctx, "Enqueueing task reservations, pool_key=%+v", key)
 
+	var successfulReservations []string
 	nodeBalancer := s.getOrCreatePool(key)
 	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
 	if err != nil {
-		return err
+		return len(successfulReservations), err
 	}
 
 	// We only want to add the unclaimed task once on the "master" scheduler.
@@ -2239,7 +2240,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	scheduledOnPreferredNode := false
 
 	startTime := time.Now()
-	var successfulReservations []string
 	defer func() {
 		log.CtxInfof(ctx, "Enqueue task reservations took %s. Reservations: [%s]",
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
@@ -2254,7 +2254,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	if preferredNode != nil {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return len(successfulReservations), ctx.Err()
 		default:
 			break
 		}
@@ -2278,11 +2278,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		if len(rankedNodes) == 0 {
 			allNodes := nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
 			if len(allNodes) == 0 {
-				return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+				return len(successfulReservations), status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 			}
 			candidateNodes := nodesThatFit(allNodes, enqueueRequest.GetTaskSize())
 			if len(candidateNodes) == 0 {
-				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
+				return len(successfulReservations), errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
 			// NOTE: if adding more filtering here, also update the filtering in
 			// sampleUnclaimedTasks, to ensure that executors not matching the
@@ -2290,17 +2290,17 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
-				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
+				return len(successfulReservations), status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
 			candidateNodes = filterToHostnamePattern(ctx, candidateNodes, hostnamePattern)
 			if len(candidateNodes) == 0 {
 				log.CtxWarningf(ctx, "No executors found matching hostname pattern %q in pool %q with os %q with arch %q", hostnamePattern, pool, os, arch)
-				return status.UnavailableErrorf("no executors found matching hostname pattern")
+				return len(successfulReservations), status.UnavailableErrorf("no executors found matching hostname pattern")
 			}
 			candidateNodes = filterToRoutingConfig(ctx, candidateNodes, routingConfig)
 			if len(candidateNodes) == 0 {
 				log.CtxWarningf(ctx, "No executors found matching routing config %q in pool %q with os %q with arch %q", routingConfig, pool, os, arch)
-				return status.UnavailableErrorf("no executors found matching routing config")
+				return len(successfulReservations), status.UnavailableErrorf("no executors found matching routing config")
 			}
 			candidateNodes = filterToDebugExecutorLabels(ctx, candidateNodes, task)
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
@@ -2308,7 +2308,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return len(successfulReservations), ctx.Err()
 		default:
 			// continue with for loop
 		}
@@ -2317,7 +2317,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		rankedNodes = rankedNodes[1:]
 		attempts++
 		if opts.maxAttempts > 0 && attempts > opts.maxAttempts {
-			return status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")
+			return len(successfulReservations), status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")
 		}
 		if attempts > maxAttemptedEnqueueCount {
 			log.CtxWarningf(ctx, "Attempted to send probe %d times for task %q with pool key %+v. This should not happen.", attempts, enqueueRequest.GetTaskId(), key)
@@ -2343,7 +2343,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			successfulReservations = append(successfulReservations, successfulReservation(rankedNode.GetExecutionNode().(*executionNode), enqueueStart))
 		}
 	}
-	return nil
+	return len(successfulReservations), nil
 }
 
 // Returns the delay that should be applied to executions scheduled on
@@ -2417,6 +2417,23 @@ func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *exe
 	return true, nil
 }
 
+func (s *SchedulerServer) cleanupUnscheduledTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata) {
+	if _, err := s.deleteTask(ctx, taskID); err != nil {
+		log.CtxWarningf(ctx, "Could not delete unscheduled task %q: %s", taskID, err)
+	}
+	key := nodePoolKey{
+		os:      metadata.GetOs(),
+		arch:    metadata.GetArch(),
+		pool:    metadata.GetPool(),
+		groupID: metadata.GetExecutorGroupId(),
+	}
+	if nodePool, ok := s.getPool(key); ok {
+		if err := nodePool.RemoveUnclaimedTask(ctx, taskID); err != nil {
+			log.CtxWarningf(ctx, "Could not remove unscheduled task %q from unclaimed tasks: %s", taskID, err)
+		}
+	}
+}
+
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
@@ -2432,6 +2449,10 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	}
 	taskID := req.GetTaskId()
 	metadata := req.GetMetadata()
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
+		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
+	}
 	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask()); err != nil {
 		return nil, err
 	}
@@ -2445,14 +2466,14 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		numReplicas:                  probesPerTask,
 		scheduleOnConnectedExecutors: false,
 	}
-	task := &repb.ExecutionTask{}
-	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
-		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
-	}
 	if ci_runner_util.IsRemoteRunnerTask(task) {
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
+	successfulReservations, err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts)
+	if err != nil {
+		if successfulReservations == 0 {
+			s.cleanupUnscheduledTask(ctx, taskID, metadata)
+		}
 		return nil, err
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
@@ -2486,7 +2507,7 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		maxAttempts:                  10,
 		scheduleOnConnectedExecutors: true,
 	}
-	if err := s.enqueueTaskReservations(ctx, req, nil /*=serializedTask*/, opts); err != nil {
+	if _, err := s.enqueueTaskReservations(ctx, req, nil /*=serializedTask*/, opts); err != nil {
 		return nil, err
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
@@ -2559,11 +2580,15 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		numReplicas:                  numReplicas,
 		scheduleOnConnectedExecutors: false,
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
+	successfulReservations, err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts)
+	if err != nil {
 		// Unavailable indicates that it's impossible to schedule the task (no executors in pool).
 		if status.IsUnavailableError(err) {
 			if markErr := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, err); markErr != nil {
 				log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, markErr)
+			}
+			if successfulReservations == 0 {
+				s.cleanupUnscheduledTask(ctx, taskID, scheduledTask.metadata)
 			}
 		}
 		return err

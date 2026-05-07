@@ -1018,6 +1018,18 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	require.False(t, resp.GetExists())
 }
 
+func TestScheduleTask_CleansUpTaskWhenNoExecutors(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.Error(t, err)
+
+	exists, err := env.GetSchedulerService().ExistsTask(ctx, req.GetTaskId())
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
 func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -1074,6 +1086,9 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
 			if tc.expectSchedulingError {
 				require.Error(t, err)
+				exists, err := env.GetSchedulerService().ExistsTask(ctx, req.GetTaskId())
+				require.NoError(t, err)
+				require.False(t, exists)
 				return
 			}
 			require.NoError(t, err)
