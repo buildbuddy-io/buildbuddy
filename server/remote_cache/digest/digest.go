@@ -253,16 +253,21 @@ func (r *CASResourceName) DownloadString() string {
 	return casDownloadString(r.rn)
 }
 
+// UploadString returns the upload-form resource name using the supplied upload
+// UUID.
+func (r *CASResourceName) UploadString(uploadID string) string {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.rn.DigestFunction) {
+		return instanceName + "/uploads/" + uploadID + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	}
+	return instanceName + "/uploads/" + uploadID + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.rn.DigestFunction) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+}
+
 // NewUploadString returns a new string representing the resource name for
 // upload purposes each time it is called.
 func (r *CASResourceName) NewUploadString() string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	u := guuid.New().String()
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/uploads/" + u + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
-	}
-	return instanceName + "/uploads/" + u + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.rn.DigestFunction) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return r.UploadString(guuid.New().String())
 }
 
 type ACResourceName struct {
@@ -668,6 +673,34 @@ func CompressorSegment(c repb.Compressor_Value) string {
 		return "zstd"
 	default:
 		return ""
+	}
+}
+
+// DigestFunctionFromSegment is the inverse of DigestFunctionSegment. When
+// segment is empty, it falls back to InferOldStyleDigestFunctionInDesperation
+// against d. Returns InvalidArgumentError if neither path produces a known
+// function.
+func DigestFunctionFromSegment(segment string, d *repb.Digest) (repb.DigestFunction_Value, error) {
+	if segment == "" {
+		df := InferOldStyleDigestFunctionInDesperation(d)
+		if df == repb.DigestFunction_UNKNOWN {
+			return 0, status.InvalidArgumentErrorf("infer digest function for hash %q", d.GetHash())
+		}
+		return df, nil
+	}
+	return ParseFunction(segment)
+}
+
+// CompressorFromSegment is the inverse of CompressorSegment. "" → IDENTITY,
+// "zstd" → ZSTD, anything else → InvalidArgumentError.
+func CompressorFromSegment(segment string) (repb.Compressor_Value, error) {
+	switch segment {
+	case "":
+		return repb.Compressor_IDENTITY, nil
+	case "zstd":
+		return repb.Compressor_ZSTD, nil
+	default:
+		return 0, status.InvalidArgumentErrorf("unknown compressor %q", segment)
 	}
 }
 

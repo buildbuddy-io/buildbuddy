@@ -75,7 +75,6 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			},
 			executions: []*olaptables.Execution{
 				{
-					ExecutionID:    exid1,
 					InvocationUUID: strings.ReplaceAll(iid1, "-", ""),
 					CreatedAtUsec:  testTimestampUsec,
 					UpdatedAtUsec:  testTimestampUsec,
@@ -104,7 +103,6 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			},
 			executions: []*olaptables.Execution{
 				{
-					ExecutionID:    exid1,
 					GroupID:        "GR1",
 					InvocationUUID: strings.ReplaceAll(iid1, "-", ""),
 					CreatedAtUsec:  testTimestampUsec,
@@ -135,7 +133,6 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			},
 			executions: []*olaptables.Execution{
 				{
-					ExecutionID:    exid1,
 					GroupID:        "GR1",
 					InvocationUUID: strings.ReplaceAll(iid1, "-", ""),
 					CreatedAtUsec:  testTimestampUsec,
@@ -173,7 +170,7 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			for _, execution := range test.executions {
 				execution.CreatedAtUsec = testTimestampUsec
 				execution.UpdatedAtUsec = testTimestampUsec
-				require.NoError(t, clickhouse.FillExecutionResourceFields(execution))
+				require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, exid1))
 				err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 				require.NoError(t, err)
 			}
@@ -435,4 +432,206 @@ func TestGetExecutionDownloads(t *testing.T) {
 			require.Empty(t, rsp.GetNextPageToken())
 		})
 	}
+}
+
+func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
+	flags.Set(t, "remote_execution.olap_reads_enabled", true)
+
+	env := testenv.GetTestEnv(t)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	es := execution_service.NewExecutionService(env)
+
+	ctx := context.Background()
+	iid := uuid.New()
+	nowUsec := time.Now().UnixMicro()
+	invocation := &tables.Invocation{
+		InvocationID:     iid,
+		GroupID:          "GR1",
+		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+		Perms:            perms.GROUP_READ,
+		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+	}
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
+
+	ad1 := &repb.Digest{Hash: strings.Repeat("1", 64), SizeBytes: 10}
+	ad2 := &repb.Digest{Hash: strings.Repeat("2", 64), SizeBytes: 20}
+	exid1 := digest.NewCASResourceName(ad1, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	exid2 := digest.NewCASResourceName(ad2, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	for _, executionID := range []string{exid1, exid2} {
+		execution := &olaptables.Execution{
+			GroupID:        "GR1",
+			InvocationUUID: strings.ReplaceAll(iid, "-", ""),
+			CreatedAtUsec:  nowUsec,
+			UpdatedAtUsec:  nowUsec,
+		}
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionID))
+		require.NoError(t, env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error)
+	}
+
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	rsp, err := es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId: iid,
+			ExecutionId:  exid2,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecution(), 1)
+	require.Equal(t, exid2, rsp.GetExecution()[0].GetExecutionId())
+
+	rsp, err = es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId:     iid,
+			ActionDigestHash: ad1.GetHash(),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecution(), 1)
+	require.Equal(t, exid1, rsp.GetExecution()[0].GetExecutionId())
+
+	// Malformed action digest hash → InvalidArgument.
+	_, err = es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId:     iid,
+			ActionDigestHash: "not-hex",
+		},
+	})
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+
+	// Malformed execution ID → InvalidArgument.
+	_, err = es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId: iid,
+			ExecutionId:  "not-a-resource-name",
+		},
+	})
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+}
+
+func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
+	flags.Set(t, "remote_execution.olap_reads_enabled", true)
+
+	env := testenv.GetTestEnv(t)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	es := execution_service.NewExecutionService(env)
+
+	ctx := context.Background()
+	iid := uuid.New()
+	nowUsec := time.Now().UnixMicro()
+	invocation := &tables.Invocation{
+		InvocationID:     iid,
+		GroupID:          "GR1",
+		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+		Perms:            perms.GROUP_READ,
+		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+	}
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
+
+	ad1 := &repb.Digest{Hash: strings.Repeat("1", 64), SizeBytes: 10}
+	ad2 := &repb.Digest{Hash: strings.Repeat("2", 64), SizeBytes: 20}
+	exid1 := digest.NewCASResourceName(ad1, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	exid2 := digest.NewCASResourceName(ad2, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	for i, executionID := range []string{exid1, exid2} {
+		execution := &olaptables.Execution{
+			GroupID:             "GR1",
+			InvocationUUID:      strings.ReplaceAll(iid, "-", ""),
+			CreatedAtUsec:       nowUsec,
+			UpdatedAtUsec:       nowUsec,
+			QueuedTimestampUsec: nowUsec + int64(i),
+		}
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionID))
+		require.NoError(t, env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error)
+	}
+
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	rsp, err := es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{InvocationId: iid},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecution(), 2)
+	require.ElementsMatch(t, []string{exid1, exid2}, []string{
+		rsp.GetExecution()[0].GetExecutionId(),
+		rsp.GetExecution()[1].GetExecutionId(),
+	})
+}
+
+func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "remote_execution.primary_db_reads_enabled", true)
+	flags.Set(t, "remote_execution.olap_reads_enabled", true)
+
+	env := testenv.GetTestEnv(t)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	es := execution_service.NewExecutionService(env)
+
+	ctx := context.Background()
+	iid := uuid.New()
+	nowUsec := time.Now().UnixMicro()
+	invocation := &tables.Invocation{
+		InvocationID:     iid,
+		GroupID:          "GR1",
+		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+		Perms:            perms.GROUP_READ,
+		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+	}
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
+
+	ad := &repb.Digest{Hash: strings.Repeat("3", 64), SizeBytes: 30}
+	executionID := digest.NewCASResourceName(ad, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_execution").Create(&tables.Execution{
+		ExecutionID:         executionID,
+		InvocationID:        iid,
+		GroupID:             "GR1",
+		Perms:               perms.GROUP_READ,
+		Model:               tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		QueuedTimestampUsec: nowUsec,
+	}).Error)
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation_execution").Create(&tables.InvocationExecution{
+		InvocationID: iid,
+		ExecutionID:  executionID,
+		Type:         1,
+	}).Error)
+
+	olapExecution := &olaptables.Execution{
+		GroupID:             "GR1",
+		InvocationUUID:      strings.ReplaceAll(iid, "-", ""),
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
+		QueuedTimestampUsec: nowUsec,
+	}
+	require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(olapExecution, executionID))
+	require.NoError(t, env.GetOLAPDBHandle().GORM(ctx, "test_create_olap_execution").Create(olapExecution).Error)
+
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	rsp, err := es.GetExecution(ctx, &espb.GetExecutionRequest{
+		ExecutionLookup: &espb.ExecutionLookup{InvocationId: iid},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecution(), 1)
+	require.Equal(t, executionID, rsp.GetExecution()[0].GetExecutionId())
 }

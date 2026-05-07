@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -17,6 +18,32 @@ import (
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
+
+func actionDigestFromOLAPExec(in *olaptables.Execution) (*repb.Digest, repb.DigestFunction_Value, error) {
+	d := &repb.Digest{
+		Hash:      hex.EncodeToString([]byte(in.ActionDigestHash)),
+		SizeBytes: int64(in.ActionDigestSize),
+	}
+	df, err := digest.DigestFunctionFromSegment(in.DigestFunction, d)
+	if err != nil {
+		return nil, 0, err
+	}
+	return d, df, nil
+}
+
+func resourceNameFromOLAPExec(in *olaptables.Execution) (*digest.CASResourceName, error) {
+	d, df, err := actionDigestFromOLAPExec(in)
+	if err != nil {
+		return nil, err
+	}
+	rn := digest.NewCASResourceName(d, in.InstanceName, df)
+	compressor, err := digest.CompressorFromSegment(in.Compressor)
+	if err != nil {
+		return nil, err
+	}
+	rn.SetCompressor(compressor)
+	return rn, nil
+}
 
 func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) *repb.StoredExecution {
 	ex := &repb.StoredExecution{
@@ -116,20 +143,21 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 }
 
 func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
-	r, err := digest.ParseUploadResourceName(in.ExecutionID)
+	rn, err := resourceNameFromOLAPExec(in)
 	if err != nil {
 		return nil, err
 	}
+	executionID := rn.UploadString(in.ExecutionUUID)
 
-	executeResponseDigest, err := digest.Compute(strings.NewReader(in.ExecutionID), r.GetDigestFunction())
+	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
 	if err != nil {
 		return nil, status.WrapError(err, "compute execute response digest")
 	}
 
 	// NOTE: keep in sync with ExecutionListingColumns
 	out := &espb.Execution{
-		ExecutionId:           in.ExecutionID,
-		ActionDigest:          r.GetDigest(),
+		ExecutionId:           executionID,
+		ActionDigest:          rn.GetDigest(),
 		ExecuteResponseDigest: executeResponseDigest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,
@@ -183,7 +211,12 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 func ExecutionListingColumns() []string {
 	// NOTE: keep in sync with OLAPExecToClientProto
 	return []string{
-		"execution_id",
+		"instance_name",
+		"execution_uuid",
+		"compressor",
+		"digest_function",
+		"action_digest_hash",
+		"action_digest_size",
 		"status_code",
 		"status_message",
 		"exit_code",

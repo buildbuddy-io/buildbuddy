@@ -3,6 +3,7 @@ package execution_service
 import (
 	"cmp"
 	"context"
+	"encoding/hex"
 	"flag"
 	"io"
 	"path"
@@ -258,10 +259,18 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		q.AddWhereClause(`group_id = ?`, inv.GroupID)
 		q.AddWhereClause(`invocation_uuid = ?`, strings.ReplaceAll(invocationID, "-", ""))
 		if actionDigestHash != "" {
-			q.AddWhereClause(`execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
+			hashBytes, err := hex.DecodeString(actionDigestHash)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid action digest hash %q: %s", actionDigestHash, err)
+			}
+			q.AddWhereClause(`action_digest_hash = ?`, string(hashBytes))
 		}
 		if executionID != "" {
-			q.AddWhereClause(`execution_id = ?`, executionID)
+			_, executionUUID, err := digest.ParseUploadResourceNameWithUUID(executionID)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid execution ID %q: %s", executionID, err)
+			}
+			q.AddWhereClause(`execution_uuid = ?`, executionUUID)
 		}
 		if targetLabel != "" {
 			q.AddWhereClause(`target_label = ?`, targetLabel)
@@ -288,10 +297,11 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 	executionIDs := make(map[string]bool)
 	dedupedExecutions := make([]*olaptables.Execution, 0, len(executions))
 	for _, e := range executions {
-		if _, ok := executionIDs[e.ExecutionID]; !ok {
-			executionIDs[e.ExecutionID] = true
-			dedupedExecutions = append(dedupedExecutions, e)
+		if executionIDs[e.ExecutionUUID] {
+			continue
 		}
+		executionIDs[e.ExecutionUUID] = true
+		dedupedExecutions = append(dedupedExecutions, e)
 	}
 
 	return dedupedExecutions, nil
@@ -386,7 +396,7 @@ func (es *ExecutionService) lookupExecutions(ctx context.Context, lookup *espb.E
 			return nil, status.WrapError(err, "convert OLAP execution to client proto")
 		}
 		executions = append(executions, proto)
-		olapExecutionIDs[e.ExecutionID] = true
+		olapExecutionIDs[proto.GetExecutionId()] = true
 	}
 	for _, e := range primaryDBExecutions {
 		if olapExecutionIDs[e.ExecutionID] {

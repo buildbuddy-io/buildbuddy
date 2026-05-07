@@ -3,7 +3,6 @@ package clickhouse_test
 import (
 	"context"
 	"encoding/hex"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -55,26 +54,23 @@ func TestExecutionIDRoundTripThroughClickHouseSchema(t *testing.T) {
 			execution, err := clickhouse.ExecutionFromProto(&repb.StoredExecution{ExecutionId: executionID}, nil)
 			require.NoError(t, err)
 
-			require.Equal(t, executionID, reconstructExecutionID(execution))
+			require.Equal(t, executionID, reconstructExecutionID(t, execution))
 		})
 	}
 }
 
-// reconstructExecutionID rebuilds the execution ID from the split columns
-// populated on schema.Execution. Intended to match the exact string produced
-// by (*digest.CASResourceName).NewUploadString.
-func reconstructExecutionID(e *schema.Execution) string {
-	blobType := "blobs"
-	if e.Compressor != "" {
-		blobType = "compressed-blobs/" + e.Compressor
+func reconstructExecutionID(t *testing.T, e *schema.Execution) string {
+	d := &repb.Digest{
+		Hash:      hex.EncodeToString([]byte(e.ActionDigestHash)),
+		SizeBytes: int64(e.ActionDigestSize),
 	}
-	id := strings.Join([]string{e.InstanceName, "uploads", e.ExecutionUUID, blobType}, "/")
-	if e.DigestFunction != "" {
-		id += "/" + e.DigestFunction
-	}
-	id += "/" + hex.EncodeToString([]byte(e.ActionDigestHash))
-	id += "/" + strconv.FormatUint(uint64(e.ActionDigestSize), 10)
-	return id
+	df, err := digest.DigestFunctionFromSegment(e.DigestFunction, d)
+	require.NoError(t, err)
+	compressor, err := digest.CompressorFromSegment(e.Compressor)
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(d, e.InstanceName, df)
+	rn.SetCompressor(compressor)
+	return rn.UploadString(e.ExecutionUUID)
 }
 
 func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
@@ -127,7 +123,7 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 	).Find(&rows).Error
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	require.Equal(t, validExecutionID, reconstructExecutionID(&rows[0]))
+	require.Equal(t, validExecutionID, reconstructExecutionID(t, &rows[0]))
 }
 
 func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {

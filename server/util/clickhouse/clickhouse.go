@@ -330,31 +330,31 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-// FillExecutionResourceFields populates the split columns (InstanceName,
-// ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
-// ActionDigestSize) on out by parsing out.ExecutionID. Returns
-// InvalidArgumentError when ExecutionID is empty or unparseable.
-func FillExecutionResourceFields(out *schema.Execution) error {
-	if out.ExecutionID == "" {
+// FillExecutionResourceFieldsFromExecutionID populates the split columns
+// (InstanceName, ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
+// ActionDigestSize) on out by parsing executionID. Returns
+// InvalidArgumentError when executionID is empty or unparseable.
+func FillExecutionResourceFieldsFromExecutionID(out *schema.Execution, executionID string) error {
+	if executionID == "" {
 		return status.InvalidArgumentError("execution ID is empty")
 	}
 
-	rn, uploadID, err := digest.ParseUploadResourceNameWithUUID(out.ExecutionID)
+	rn, executionUUID, err := digest.ParseUploadResourceNameWithUUID(executionID)
 	if err != nil {
-		return status.InvalidArgumentErrorf("parse execution ID %q: %s", out.ExecutionID, err)
+		return status.InvalidArgumentErrorf("parse execution ID %q: %s", executionID, err)
 	}
 	d := rn.GetDigest()
 	digestBytes, err := hex.DecodeString(d.GetHash())
 	if err != nil {
-		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", out.ExecutionID, err)
+		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", executionID, err)
 	}
 	sizeBytes := d.GetSizeBytes()
 	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
-		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", out.ExecutionID, sizeBytes)
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", executionID, sizeBytes)
 	}
 
 	out.InstanceName = rn.GetInstanceName()
-	out.ExecutionUUID = uploadID
+	out.ExecutionUUID = executionUUID
 	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
 	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
 	out.ActionDigestHash = string(digestBytes)
@@ -368,8 +368,11 @@ func FillExecutionResourceFields(out *schema.Execution) error {
 // logic.
 func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
 	out := &schema.Execution{
-		GroupID:                            in.GetGroupId(),
-		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
+		GroupID:       in.GetGroupId(),
+		UpdatedAtUsec: in.GetUpdatedAtUsec(),
+		// ExecutionID is no longer read on the OLAP path, but we keep
+		// dual-writing it so the column stays populated in case we need
+		// to roll back the read migration.
 		ExecutionID:                        in.GetExecutionId(),
 		InvocationUUID:                     in.GetInvocationUuid(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
@@ -459,7 +462,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		EffectivePool:                      in.GetEffectivePool(),
 	}
 
-	if err := FillExecutionResourceFields(out); err != nil {
+	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
 		return out, err
 	}
 	return out, nil
