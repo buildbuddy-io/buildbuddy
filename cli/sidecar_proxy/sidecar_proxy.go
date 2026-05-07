@@ -1,3 +1,11 @@
+// Package sidecar_proxy implements the gRPC services the sidecar exposes to
+// bazel: ByteStream, ContentAddressableStorage, ActionCache, and Capabilities.
+// Most RPCs are forwarded directly to the configured remote cache. ByteStream
+// blob traffic is additionally proxied through a local on-disk cache:
+// read-through (local hits short-circuit the remote; misses are streamed from
+// the remote and populated locally) and write-through (writes complete against
+// the local cache and are forwarded to the remote either asynchronously via a
+// background queue or synchronously when configured).
 package sidecar_proxy
 
 import (
@@ -43,14 +51,20 @@ const (
 	queueBufferSize = 10_000
 )
 
-// CacheProxy implements a local GRPC cache that proxies a remote GRPC cache.
-// It implements both read-through and write-through functionality by:
-//   - Checking existence first against the local cache, then, if any keys are
-//     still not found, consulting the remote cache.
-//   - Reading first from the local cache, then, if a key is not found, reading
-//     from the remote cache and writing the fetched object to the local cache.
-//   - Writing to the local cache and returning success immediately to the
-//     client, then enqueueing a job to upload this key to the remote cache.
+// CacheProxy serves a sidecar-local REAPI surface that proxies a remote cache.
+// ByteStream blob traffic is read-through and write-through against a local
+// on-disk cache:
+//   - Reads check the local cache first; on a miss, the blob is streamed from
+//     the remote and written to the local cache as it is served.
+//   - Writes complete against the local cache and return success to the
+//     client; the local blob is then forwarded to the remote cache, either
+//     asynchronously via a background queue or synchronously when
+//     --local_cache_proxy.synchronous_write is set.
+//
+// All other RPCs (FindMissingBlobs, GetTree, BatchUpdateBlobs, BatchReadBlobs,
+// the ActionCache, and Capabilities) are forwarded directly to the remote.
+// Capabilities additionally falls back to a hardcoded default if the remote
+// errors, so the build can proceed.
 type CacheProxy struct {
 	acClient  repb.ActionCacheClient
 	bsClient  bspb.ByteStreamClient
