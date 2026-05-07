@@ -51,6 +51,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/xds"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
@@ -331,7 +332,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := grpc_client.BootstrapXDS(rootContext, nil /*=client*/); err != nil {
+	if err := xds.Bootstrap(rootContext, nil /*=client*/); err != nil {
 		log.Fatalf("Error bootstrapping xDS config: %s", err)
 	}
 

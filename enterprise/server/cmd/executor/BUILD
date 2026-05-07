@@ -61,6 +61,7 @@ go_library(
         "//server/util/statusz",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/xds",
         "//server/version",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
