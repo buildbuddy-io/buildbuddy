@@ -61,15 +61,15 @@ var xdsBootstrapTmpl = template.Must(template.New("xds-bootstrap").Parse(`{
 // fieldRef:
 //   - name: MY_NODE_NAME
 //     valueFrom:
-//       fieldRef:
-//         fieldPath: spec.nodeName
+//     fieldRef:
+//     fieldPath: spec.nodeName
 //
 // MY_POD_NAME is used to identify the client to the xDS control plane. It
 // should be set using a fieldRef:
 //   - name: MY_POD_NAME
 //     valueFrom:
-//       fieldRef:
-//         fieldPath: metadata.name
+//     fieldRef:
+//     fieldPath: metadata.name
 //
 // The locality information for the xDS bootstrap config is obtained by querying
 // the node information using the in-cluster kubernetes API.
