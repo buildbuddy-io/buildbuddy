@@ -61,7 +61,7 @@ var (
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
-	debugExecutorLabelsSecret    = flag.String("remote_execution.debug_executor_labels_secret", "", "Shared secret gating use of the 'debug-executor-labels' platform property. Requests must include a 'secret=<value>' entry matching this flag, otherwise the labels are ignored. If empty, the feature is disabled.", flag.Secret)
+	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
 )
 
 const (
@@ -712,13 +712,20 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 // platform property. The value is a comma-separated list of "key=value" pairs;
 // entries without an "=" are treated as a key with an empty value.
 //
-// The request must include a "secret=<value>" entry matching the
-// remote_execution.debug_executor_labels_secret flag, or the labels are
-// ignored (returns nil). If the flag is unset, the feature is disabled.
+// If the remote_execution.debug_executor_labels_key flag is set, the request
+// must also set the "debug-executor-labels-key" platform property to the
+// configured value, otherwise the labels are ignored (returns nil). If the
+// flag is unset, anyone may use the feature.
 func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map[string]string {
 	raw := platform.FindEffectiveValue(task, "debug-executor-labels")
 	if raw == "" {
 		return nil
+	}
+	if expected := *debugExecutorLabelsKey; expected != "" {
+		if platform.FindEffectiveValue(task, "debug-executor-labels-key") != expected {
+			alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+			return nil
+		}
 	}
 	out := make(map[string]string)
 	for entry := range strings.SplitSeq(raw, ",") {
@@ -728,12 +735,6 @@ func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map
 		}
 		k, v, _ := strings.Cut(entry, "=")
 		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
-	}
-	providedSecret, ok := out["secret"]
-	delete(out, "secret")
-	if *debugExecutorLabelsSecret == "" || !ok || providedSecret != *debugExecutorLabelsSecret {
-		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching secret; ignoring")
-		return nil
 	}
 	return out
 }

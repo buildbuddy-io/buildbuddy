@@ -1189,36 +1189,30 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
-func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
-	flags.Set(t, "remote_execution.debug_executor_labels_secret", "shh")
-
-	// Register two nodes with distinct labels.
-	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+// registerLabeledExecutorPair registers two executors whose labels differ.
+// executor1 has foo=1,bar=2; executor2 has foo=a,bar=2. Used by tests that
+// want a "matching" executor and a "non-matching" executor for tasks that
+// request labels foo=1,bar=2.
+func registerLabeledExecutorPair(ctx context.Context, t *testing.T, env environment.Env) (executor1, executor2 *fakeExecutor) {
+	executor1 = newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
 	executor1.node.AssignableMilliCpu = 1000
 	executor1.node.Labels = map[string]string{"foo": "1", "bar": "2"}
 	executor1.Register()
 
-	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2 = newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
 	executor2.node.AssignableMilliCpu = 1000
 	executor2.node.Labels = map[string]string{"foo": "a", "bar": "2"}
 	executor2.Register()
+	return executor1, executor2
+}
 
-	var rsp *scpb.RegisterAndStreamWorkResponse
-
-	// Schedule a task that requires labels matching only executor1.
-	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "secret=shh,foo=1,bar=2"})
-	// Ensure the task was enqueued on executor1, but don't have executor1
-	// claim the task, so that it's eligible to be enqueued as part of
-	// AskForMoreWork.
-	rsp = <-executor1.schedulerMessages
+// assertLabelsHonored asserts that a task with debug-executor-labels matching
+// only executor1 was enqueued on executor1 and that executor2's AskForMoreWork
+// gets only a backoff response (no task), proving the labels filtered.
+func assertLabelsHonored(t *testing.T, taskID string, executor1, executor2 *fakeExecutor) {
+	rsp := <-executor1.schedulerMessages
 	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
 
-	// Have executor2 ask for more work now. The scheduler should not schedule
-	// any work on executor2 because the task's requested labels don't match
-	// executor2's labels. It should only reply with an AskForMoreWorkResponse
-	// to increase the client backoff.
 	executor2.Send(&scpb.RegisterAndStreamWorkRequest{
 		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
 	})
@@ -1226,30 +1220,69 @@ func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
-func TestAskForMoreWork_DebugExecutorLabels_WrongSecretIgnoresLabels(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
-	flags.Set(t, "remote_execution.debug_executor_labels_secret", "shh")
-
-	// Register two nodes with distinct labels.
-	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
-	executor1.node.AssignableMilliCpu = 1000
-	executor1.node.Labels = map[string]string{"foo": "1", "bar": "2"}
-	executor1.Register()
-
-	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
-	executor2.node.AssignableMilliCpu = 1000
-	executor2.node.Labels = map[string]string{"foo": "a", "bar": "2"}
-	executor2.Register()
-
-	// Schedule a task with a WRONG secret. The labels should be ignored, so
-	// executor2 (whose labels don't match the requested ones) should still
-	// be eligible to receive the task. With probesPerTask > number of
-	// executors, both executors should receive an enqueue reservation.
-	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "secret=wrong,foo=1,bar=2"})
-
+// assertLabelsIgnored asserts that a task with debug-executor-labels was
+// scheduled without filtering, so both executors received an enqueue
+// reservation (probesPerTask=3 > 2 executors).
+func assertLabelsIgnored(taskID string, executor1, executor2 *fakeExecutor) {
 	executor1.WaitForTask(taskID)
 	executor2.WaitForTask(taskID)
+}
+
+// When the debug_executor_labels_key flag is unset, anyone can use
+// debug-executor-labels without supplying a key.
+func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+
+	executor1, executor2 := registerLabeledExecutorPair(ctx, t, env)
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "foo=1,bar=2"})
+	assertLabelsHonored(t, taskID, executor1, executor2)
+}
+
+// When the flag is set and the request supplies a matching key, labels are
+// honored.
+func TestAskForMoreWork_DebugExecutorLabels_ValidKey(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	flags.Set(t, "remote_execution.debug_executor_labels_key", "shh")
+
+	executor1, executor2 := registerLabeledExecutorPair(ctx, t, env)
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{
+		"debug-executor-labels":     "foo=1,bar=2",
+		"debug-executor-labels-key": "shh",
+	})
+	assertLabelsHonored(t, taskID, executor1, executor2)
+}
+
+// When the flag is set and the request supplies the wrong key, the labels are
+// ignored entirely.
+func TestAskForMoreWork_DebugExecutorLabels_WrongKey(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	flags.Set(t, "remote_execution.debug_executor_labels_key", "shh")
+
+	executor1, executor2 := registerLabeledExecutorPair(ctx, t, env)
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{
+		"debug-executor-labels":     "foo=1,bar=2",
+		"debug-executor-labels-key": "wrong",
+	})
+	assertLabelsIgnored(taskID, executor1, executor2)
+}
+
+// When the flag is set and the request omits the key, the labels are ignored
+// entirely.
+func TestAskForMoreWork_DebugExecutorLabels_MissingKey(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	flags.Set(t, "remote_execution.debug_executor_labels_key", "shh")
+
+	executor1, executor2 := registerLabeledExecutorPair(ctx, t, env)
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "foo=1,bar=2"})
+	assertLabelsIgnored(taskID, executor1, executor2)
 }
 
 func TestGetExecutionNodes(t *testing.T) {
