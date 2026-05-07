@@ -291,7 +291,7 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 	}
 
 	// Combine the in-progress, buffered and flushed executions. Dedupe by
-	// execution ID, since an execution's transitions between these lists are
+	// execution UUID, since an execution's transitions between these lists are
 	// not atomic. Prefer flushed executions, then buffered, then in-progress.
 	executions := slices.Concat(flushedExecutions, bufferedExecutions, inProgressExecutions)
 	executionIDs := make(map[string]bool)
