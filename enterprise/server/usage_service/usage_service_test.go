@@ -128,6 +128,47 @@ func TestGetUsage(t *testing.T) {
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
 }
 
+func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {
+	usageFieldNames := map[string]struct{}{}
+	fields := (&usagepb.Usage{}).ProtoReflect().Descriptor().Fields()
+	for i := range fields.Len() {
+		fieldName := string(fields.Get(i).Name())
+		if fieldName == "period" {
+			continue
+		}
+		usageFieldNames[fieldName] = struct{}{}
+	}
+
+	alertingMetrics := map[usagepb.UsageAlertingMetric_Value]struct{}{}
+	for value := range usagepb.UsageAlertingMetric_Value_name {
+		metric := usagepb.UsageAlertingMetric_Value(value)
+		if metric == usagepb.UsageAlertingMetric_UNKNOWN {
+			continue
+		}
+		alertingMetrics[metric] = struct{}{}
+	}
+
+	seenUsageFields := map[string]struct{}{}
+	seenAlertingMetrics := map[usagepb.UsageAlertingMetric_Value]struct{}{}
+	for _, field := range usage_service.UsageFields {
+		require.NotEmpty(t, field.PrimaryDBExpression)
+		require.NotEmpty(t, field.Name)
+
+		usageFieldName := field.Name
+		assert.Contains(t, usageFieldNames, usageFieldName)
+		assert.NotContains(t, seenUsageFields, usageFieldName)
+		seenUsageFields[usageFieldName] = struct{}{}
+
+		assert.NotEqual(t, usagepb.UsageAlertingMetric_UNKNOWN, field.AlertingMetric)
+		assert.Contains(t, alertingMetrics, field.AlertingMetric)
+		assert.NotContains(t, seenAlertingMetrics, field.AlertingMetric)
+		seenAlertingMetrics[field.AlertingMetric] = struct{}{}
+	}
+
+	assert.Equal(t, usageFieldNames, seenUsageFields)
+	assert.Equal(t, alertingMetrics, seenAlertingMetrics)
+}
+
 func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
