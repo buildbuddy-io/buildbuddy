@@ -2,7 +2,6 @@ package scheduler_server
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -27,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -61,6 +61,7 @@ var (
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	debugExecutorLabelsSecret    = flag.String("remote_execution.debug_executor_labels_secret", "", "Shared secret gating use of the 'debug-executor-labels' platform property. Requests must include a 'secret=<value>' entry matching this flag, otherwise the labels are ignored. If empty, the feature is disabled.", flag.Secret)
 )
 
 const (
@@ -710,7 +711,11 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 // Parses the requested executor labels from the "debug-executor-labels"
 // platform property. The value is a comma-separated list of "key=value" pairs;
 // entries without an "=" are treated as a key with an empty value.
-func parseDebugExecutorLabels(task *repb.ExecutionTask) map[string]string {
+//
+// The request must include a "secret=<value>" entry matching the
+// remote_execution.debug_executor_labels_secret flag, or the labels are
+// ignored (returns nil). If the flag is unset, the feature is disabled.
+func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map[string]string {
 	raw := platform.FindEffectiveValue(task, "debug-executor-labels")
 	if raw == "" {
 		return nil
@@ -723,6 +728,12 @@ func parseDebugExecutorLabels(task *repb.ExecutionTask) map[string]string {
 		}
 		k, v, _ := strings.Cut(entry, "=")
 		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	providedSecret, ok := out["secret"]
+	delete(out, "secret")
+	if *debugExecutorLabelsSecret == "" || !ok || providedSecret != *debugExecutorLabelsSecret {
+		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching secret; ignoring")
+		return nil
 	}
 	return out
 }
@@ -743,7 +754,7 @@ func executorHasAllLabels(executorLabels, requested map[string]string) bool {
 // nodes match, fires an internal alert and returns an unfiltered list so
 // scheduling can proceed, making the debug-executor-labels best effort.
 func filterToDebugExecutorLabels(ctx context.Context, nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
-	requested := parseDebugExecutorLabels(task)
+	requested := parseDebugExecutorLabels(ctx, task)
 	if len(requested) == 0 {
 		return nodes
 	}
@@ -1798,7 +1809,7 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
 			continue
 		}
-		if requested := parseDebugExecutorLabels(fullTask); len(requested) > 0 && !executorHasAllLabels(node.GetLabels(), requested) {
+		if requested := parseDebugExecutorLabels(ctx, fullTask); len(requested) > 0 && !executorHasAllLabels(node.GetLabels(), requested) {
 			continue
 		}
 

@@ -1192,6 +1192,7 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	flags.Set(t, "remote_execution.debug_executor_labels_secret", "shh")
 
 	// Register two nodes with distinct labels.
 	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
@@ -1207,7 +1208,7 @@ func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
 	var rsp *scpb.RegisterAndStreamWorkResponse
 
 	// Schedule a task that requires labels matching only executor1.
-	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "foo=1,bar=2"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "secret=shh,foo=1,bar=2"})
 	// Ensure the task was enqueued on executor1, but don't have executor1
 	// claim the task, so that it's eligible to be enqueued as part of
 	// AskForMoreWork.
@@ -1223,6 +1224,32 @@ func TestAskForMoreWork_RespectDebugExecutorLabels(t *testing.T) {
 	})
 	rsp = <-executor2.schedulerMessages
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
+func TestAskForMoreWork_DebugExecutorLabels_WrongSecretIgnoresLabels(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	flags.Set(t, "remote_execution.debug_executor_labels_secret", "shh")
+
+	// Register two nodes with distinct labels.
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.node.AssignableMilliCpu = 1000
+	executor1.node.Labels = map[string]string{"foo": "1", "bar": "2"}
+	executor1.Register()
+
+	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2.node.AssignableMilliCpu = 1000
+	executor2.node.Labels = map[string]string{"foo": "a", "bar": "2"}
+	executor2.Register()
+
+	// Schedule a task with a WRONG secret. The labels should be ignored, so
+	// executor2 (whose labels don't match the requested ones) should still
+	// be eligible to receive the task. With probesPerTask > number of
+	// executors, both executors should receive an enqueue reservation.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "secret=wrong,foo=1,bar=2"})
+
+	executor1.WaitForTask(taskID)
+	executor2.WaitForTask(taskID)
 }
 
 func TestGetExecutionNodes(t *testing.T) {
