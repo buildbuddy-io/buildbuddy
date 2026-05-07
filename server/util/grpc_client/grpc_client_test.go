@@ -2,19 +2,19 @@ package grpc_client_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync/atomic"
 	"testing"
 
-	"fmt"
-
-	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/stretchr/testify/require"
+
+	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 )
 
 type TestService struct {
