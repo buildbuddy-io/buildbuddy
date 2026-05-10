@@ -46,9 +46,10 @@ Adds the given dependency to your WORKSPACE file.
 	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
 )
 
-const (
-	registryEndpoint = "https://registry.build/%s/data.json"
-)
+// registryEndpoint is a printf format string used to look up module
+// metadata. It is a var (not const) so tests can point it at an
+// httptest.Server.
+var registryEndpoint = "https://registry.build/%s/data.json"
 
 func HandleAdd(args []string) (int, error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
@@ -171,16 +172,25 @@ func addToModule(f *os.File, module, version string, resp *RegistryResponse) err
 	return nil
 }
 
-func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
+// parseModuleInput normalizes the user-provided module spec into a
+// (module, version) pair. It accepts shorthand ("rules_go"),
+// "<module>@<version>", or a GitHub URL like
+// "https://github.com/owner/repo[@version]".
+func parseModuleInput(moduleInput string) (string, string) {
 	moduleAndVersion := strings.Replace(moduleInput, "https://", "", 1)
 	moduleAndVersion = strings.Replace(moduleAndVersion, "github.com/", "github/", 1)
 	moduleAndVersion = strings.TrimRight(moduleAndVersion, "/")
-	moduleParts := strings.Split(moduleAndVersion, "@")
+	moduleParts := strings.SplitN(moduleAndVersion, "@", 2)
 	moduleName := moduleParts[0]
 	moduleVersion := ""
 	if len(moduleParts) > 1 {
 		moduleVersion = moduleParts[1]
 	}
+	return moduleName, moduleVersion
+}
+
+func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
+	moduleName, moduleVersion := parseModuleInput(moduleInput)
 	res, err := fetch(moduleName)
 	if err != nil {
 		return "", "", nil, err
@@ -288,8 +298,14 @@ func showPicker(modules []Disambiguation) (string, error) {
 	return modules[index].Path, nil
 }
 
+// findWorkspaceFile resolves the workspace/module file to write to.
+// It is a var so tests can substitute their own resolver.
+var findWorkspaceFile = func() (string, string, error) {
+	return workspace.CreateModuleIfNotExists()
+}
+
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := workspace.CreateModuleIfNotExists()
+	workspacePath, basename, err := findWorkspaceFile()
 	if err != nil {
 		return nil, err
 	}
