@@ -1,3 +1,16 @@
+// Package add implements the `bb add` command, which adds a Bazel
+// dependency to the current workspace by looking it up on registry.build.
+//
+// Given a module shorthand (e.g. "rules_go"), a GitHub URL, or a
+// "<module>@<version>" spec, it fetches metadata from
+// https://registry.build/<module>/data.json, prompts to disambiguate if
+// needed, and appends the appropriate snippet to the repo's MODULE.bazel
+// (a `bazel_dep(...)` line) or legacy WORKSPACE file (the registry's
+// workspace snippet, wrapped in auto-generated section markers).
+//
+// Existing entries for the same module are detected and left untouched.
+// A leading "~" on the input marks the dep as transitive and is a no-op
+// under bzlmod.
 package add
 
 import (
