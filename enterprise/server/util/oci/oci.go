@@ -528,7 +528,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		)
 	}
 
-	return newImageFromRawManifest(
+	return NewImageFromRawManifestForTesting(
 		ctx,
 		repo,
 		desc,
@@ -594,7 +594,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
+func NewImageFromRawManifestForTesting(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:             repo,
 		desc:             desc,
@@ -621,7 +621,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 			manifest.Config.Digest,
 			i,
 			i.puller,
-			nil,
+			&manifest.Config,
 		)
 
 		rc, err := layer.Uncompressed()
@@ -848,11 +848,16 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
-		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		req := &ofpb.FetchBlobRequest{
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
-		})
+		}
+		if l.desc != nil {
+			req.Size = l.desc.Size
+			req.MediaType = string(l.desc.MediaType)
+		}
+		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, req)
 		if err != nil {
 			cancel()
 			return nil, err

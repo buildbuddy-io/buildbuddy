@@ -175,7 +175,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), req.GetSize(), req.GetMediaType(), stream)
 		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 
@@ -454,7 +454,7 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, size int64, mediaType string, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -464,23 +464,26 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	// They are best-effort: failures are logged but don't prevent
 	// streaming the blob data. Caching is skipped when metadata is
 	// unavailable.
-	var mediaType string
-	var size int64
 	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
 		}
-		// Best-effort metadata for read-through caching.
-		if mt, err := layer.MediaType(); err != nil {
-			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
-		} else {
-			mediaType = string(mt)
-		}
-		if sz, err := layer.Size(); err != nil {
+		// Best-effort metadata for read-through caching. Use caller-provided
+		// metadata when available; otherwise ask the registry.
+		if size > 0 {
+			// Use caller-provided size.
+		} else if sz, err := layer.Size(); err != nil {
 			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
 		} else {
 			size = sz
+		}
+		if mediaType != "" {
+			// Use caller-provided media type.
+		} else if mt, err := layer.MediaType(); err != nil {
+			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
+		} else {
+			mediaType = string(mt)
 		}
 		return layer.Compressed()
 	})

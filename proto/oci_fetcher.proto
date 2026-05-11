@@ -71,6 +71,11 @@ message FetchBlobRequest {
   string ref = 1;
   registry.Credentials credentials = 2;
   bool bypass_registry = 3;
+
+  // Optional blob metadata, when already known by the caller.
+  // This lets implementations avoid a separate metadata lookup before fetching.
+  int64 size = 4;
+  string media_type = 5;
 }
 
 message FetchBlobResponse {

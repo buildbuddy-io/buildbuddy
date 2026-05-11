@@ -35,15 +35,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestCredentialsFromProto(t *testing.T) {
@@ -870,10 +873,9 @@ func TestResolve_Concurrency(t *testing.T) {
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":              1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
@@ -1520,11 +1522,11 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				require.NoError(t, err)
 				// With OCIFetcher, fetching the config blob uses FetchBlob which:
 				// - Reuses the puller from Resolve() (no additional GET /v2/)
-				// - Makes a HEAD request for the config blob to get size for caching
-				// - Makes a GET request for the config blob data
+				// - Passes the config blob size and media type from the manifest,
+				//   avoiding a HEAD request for metadata.
+				// - Makes a GET request for the config blob data.
 				expected = map[string]int{
-					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 				}
 
 				// To make the DiffID() request counts always be zero,
@@ -1588,18 +1590,16 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
 	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
 	// - 1 GET manifest
-	// - 1 HEAD + 1 GET for config blob
-	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	// - 1 GET for config blob (size and media type are passed from the manifest)
+	// - 1 GET for each layer blob (size and media type are passed from the manifest)
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":              1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
-		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}
@@ -1663,6 +1663,96 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 		require.Equal(t, pushedDiffID, result.diffID)
 	}
 }
+
+func TestFetchBlobRequestIncludesConfigFileMetadata(t *testing.T) {
+	baseImage := mutate.ConfigMediaType(empty.Image, types.OCIConfigJSON)
+	image, err := mutate.ConfigFile(baseImage, &v1.ConfigFile{
+		Architecture: runtime.GOARCH,
+		OS:           runtime.GOOS,
+		RootFS: v1.RootFS{
+			Type: "layers",
+		},
+	})
+	require.NoError(t, err)
+	manifest, err := image.Manifest()
+	require.NoError(t, err)
+	rawManifest, err := image.RawManifest()
+	require.NoError(t, err)
+	rawConfigFile, err := image.RawConfigFile()
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	var gotReq *ofpb.FetchBlobRequest
+	te.SetOCIFetcherClient(&capturingOCIFetcherClient{
+		fetchBlob: func(_ context.Context, req *ofpb.FetchBlobRequest) (ofpb.OCIFetcher_FetchBlobClient, error) {
+			gotReq = req
+			return &singleResponseFetchBlobClient{resp: &ofpb.FetchBlobResponse{Data: rawConfigFile}}, nil
+		},
+	})
+
+	ref, err := name.ParseReference("example.com/repo@" + manifest.Config.Digest.String())
+	require.NoError(t, err)
+	img := oci.NewImageFromRawManifestForTesting(
+		context.Background(),
+		ref.Context(),
+		v1.Descriptor{},
+		rawManifest,
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
+		nil, /*=puller*/
+		te.GetOCIFetcherClient(),
+		oci.Credentials{},
+		false, /*=useCache*/
+		true,  /*=useOCIFetcher*/
+	)
+
+	_, err = img.ConfigFile()
+	require.NoError(t, err)
+	require.NotNil(t, gotReq)
+	require.Equal(t, manifest.Config.Size, gotReq.GetSize())
+	require.Equal(t, string(manifest.Config.MediaType), gotReq.GetMediaType())
+}
+
+type capturingOCIFetcherClient struct {
+	fetchBlob func(context.Context, *ofpb.FetchBlobRequest) (ofpb.OCIFetcher_FetchBlobClient, error)
+}
+
+func (c *capturingOCIFetcherClient) FetchManifest(context.Context, *ofpb.FetchManifestRequest, ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *capturingOCIFetcherClient) FetchManifestMetadata(context.Context, *ofpb.FetchManifestMetadataRequest, ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *capturingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, _ ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	return c.fetchBlob(ctx, req)
+}
+
+func (c *capturingOCIFetcherClient) FetchBlobMetadata(context.Context, *ofpb.FetchBlobMetadataRequest, ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+type singleResponseFetchBlobClient struct {
+	grpc.ClientStream
+	resp *ofpb.FetchBlobResponse
+	sent bool
+}
+
+func (c *singleResponseFetchBlobClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	if c.sent {
+		return nil, io.EOF
+	}
+	c.sent = true
+	return c.resp, nil
+}
+
+func (c *singleResponseFetchBlobClient) Header() (metadata.MD, error) { return nil, nil }
+func (c *singleResponseFetchBlobClient) Trailer() metadata.MD         { return nil }
+func (c *singleResponseFetchBlobClient) CloseSend() error             { return nil }
+func (c *singleResponseFetchBlobClient) Context() context.Context     { return context.Background() }
+func (c *singleResponseFetchBlobClient) SendMsg(any) error            { return nil }
+func (c *singleResponseFetchBlobClient) RecvMsg(any) error            { return nil }
 
 func TestRegistryETLDPlusOne(t *testing.T) {
 	tests := []struct {
