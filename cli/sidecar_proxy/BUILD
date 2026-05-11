@@ -34,7 +34,7 @@ go_test(
     size = "small",
     srcs = ["sidecar_proxy_test.go"],
     deps = [
-        "//cli/sidecar_proxy",
+	":sidecar_proxy",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -50,7 +50,6 @@ go_test(
         "//server/util/grpc_server",
         "//server/util/proto",
         "//server/util/testing/flags",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
