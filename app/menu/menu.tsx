@@ -44,6 +44,15 @@ export default class MenuComponent extends React.Component<Props, State> {
   }
 
   handleLoginClicked() {
+    if (!capabilities.config.configuredIssuers.length) {
+      // SAML/GitHub-only installs render their login options from the SPA root,
+      // since authService.login() builds an OIDC /login/ URL.
+      window.location.href = `/?${new URLSearchParams({
+        redirect_url: window.location.href,
+      })}`;
+      this.dismissMenu();
+      return;
+    }
     authService.login();
     this.dismissMenu();
   }

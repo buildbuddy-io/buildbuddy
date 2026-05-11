@@ -42,6 +42,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/cookie",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_oauth2//:oauth2",
     ],

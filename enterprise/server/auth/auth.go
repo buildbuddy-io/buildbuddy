@@ -25,6 +25,12 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	httpAuthenticators := []interfaces.HTTPAuthenticator{}
 	userAuthenticators := []interfaces.UserAuthenticator{}
 
+	samlEnabled := saml.IsEnabled(env)
+	githubEnabled := github.AuthEnabled(env)
+	if !oidc.Enabled() && !samlEnabled && !githubEnabled {
+		return status.FailedPreconditionErrorf("No auth providers specified in config!")
+	}
+
 	oidc, err := oidc.NewOpenIDAuthenticator(ctx, env)
 	if err != nil {
 		return status.InternalErrorf("OIDC authenticator failed to configure: %v", err)
@@ -32,7 +38,7 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	httpAuthenticators = append(httpAuthenticators, oidc)
 	userAuthenticators = append(userAuthenticators, oidc)
 
-	if saml.IsEnabled(env) {
+	if samlEnabled {
 		samlAuthenticator, err := saml.NewSAMLAuthenticator(env)
 		if err != nil {
 			return status.InternalErrorf("create SAML authenticator: %s", err)
@@ -41,7 +47,7 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
 	}
 
-	if github.AuthEnabled(env) {
+	if githubEnabled {
 		ga := githubauth.NewGithubAuthenticator(env)
 		httpAuthenticators = append(httpAuthenticators, ga)
 		userAuthenticators = append(userAuthenticators, ga)
