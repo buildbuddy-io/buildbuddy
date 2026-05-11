@@ -12,15 +12,18 @@ go_library(
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

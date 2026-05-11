@@ -48,6 +48,7 @@ go_test(
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//server/interfaces",
+        "//server/rpc/interceptors",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -634,6 +635,140 @@ func TestFetchBlob_NegativeSizeRejected(t *testing.T) {
 	require.True(t, status.IsInvalidArgumentError(recvErr), "expected InvalidArgument, got: %v", recvErr)
 }
 
+// TestFetchBlob_UntrustedClientHintsStripped verifies that when the
+// proxy is configured with a ClientIdentityService and the calling
+// client is not a trusted internal service, size/media_type hints
+// in the request are stripped before being forwarded upstream and
+// before being used for the local BS cache key. This ensures buggy
+// or malicious external clients cannot break local caching or
+// influence the upstream's metadata cache via wrong hints.
+func TestFetchBlob_UntrustedClientHintsStripped(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-untrusted", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	size, err := layer.Size()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+
+	proxyClient := runOCIFetcherProxyWithIdentity(ctx, t, counter,
+		&fakeClientIdentityService{client: "some-random-client"})
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:       imageName + "@" + digest.String(),
+		Size:      size + 99999, // would otherwise corrupt cache key
+		MediaType: "application/vnd.malicious.injected+oops",
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	forwarded := counter.lastFetchBlobRequest.Load()
+	require.NotNil(t, forwarded)
+	require.Equal(t, int64(0), forwarded.GetSize(), "size hint must be stripped before forwarding")
+	require.Equal(t, "", forwarded.GetMediaType(), "media_type hint must be stripped before forwarding")
+	// Since the hint was stripped, the proxy had to fall back to a
+	// FetchBlobMetadata RPC to learn the size.
+	require.Equal(t, int32(1), counter.fetchBlobMetadataCount.Load())
+}
+
+// TestFetchBlob_TrustedClientHintsForwarded verifies that the proxy
+// forwards hints unchanged for an executor identity, which is the
+// production path.
+func TestFetchBlob_TrustedClientHintsForwarded(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-trusted", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	size, err := layer.Size()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+
+	proxyClient := runOCIFetcherProxyWithIdentity(ctx, t, counter,
+		&fakeClientIdentityService{client: interfaces.ClientIdentityExecutor})
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:       imageName + "@" + digest.String(),
+		Size:      size,
+		MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	forwarded := counter.lastFetchBlobRequest.Load()
+	require.NotNil(t, forwarded)
+	require.Equal(t, size, forwarded.GetSize(), "size hint must be forwarded for trusted client")
+	require.Equal(t, "application/vnd.docker.image.rootfs.diff.tar.gzip", forwarded.GetMediaType())
+	require.Equal(t, int32(0), counter.fetchBlobMetadataCount.Load(), "no FetchBlobMetadata when trusted size hint provided")
+}
+
+// TestFetchBlob_RequireTrustedClient verifies that when
+// --ocifetcher_server_proxy.require_trusted_client is set, requests
+// from untrusted clients are rejected with PermissionDenied.
+func TestFetchBlob_RequireTrustedClient(t *testing.T) {
+	flags.Set(t, "ocifetcher_server_proxy.require_trusted_client", true)
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-require-trusted", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+
+	untrustedClient := runOCIFetcherProxyWithIdentity(ctx, t, ociFetcherClient,
+		&fakeClientIdentityService{client: "some-random-client"})
+
+	stream, err := untrustedClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	})
+	var recvErr error
+	if err == nil {
+		_, recvErr = stream.Recv()
+	} else {
+		recvErr = err
+	}
+	require.Error(t, recvErr)
+	require.True(t, status.IsPermissionDeniedError(recvErr), "expected PermissionDenied, got: %v", recvErr)
+}
+
+// TestNew_RequireTrustedClientNoIdentityServiceFails verifies that the
+// proxy refuses to start with the locked-down flag if no
+// ClientIdentityService is configured.
+func TestNew_RequireTrustedClientNoIdentityServiceFails(t *testing.T) {
+	flags.Set(t, "ocifetcher_server_proxy.require_trusted_client", true)
+	ctx := context.Background()
+
+	env := testenv.GetTestEnv(t)
+	_, bsClient, acClient := setupCacheEnv(t)
+	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
+	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+
+	_, err := New(env)
+	require.Error(t, err)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+}
+
 // TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
@@ -744,7 +879,7 @@ func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewServer(bsClient, acClient, nil)
 	require.NoError(t, err)
 
 	env := testenv.GetTestEnv(t)
@@ -765,9 +900,18 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 // runOCIFetcherProxy sets up the proxy server connecting to the remote client
 // and returns a client connected to the proxy.
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
+	return runOCIFetcherProxyWithIdentity(ctx, t, remoteClient, nil)
+}
+
+// runOCIFetcherProxyWithIdentity sets up the proxy with an injected
+// ClientIdentityService, used to simulate trusted/untrusted callers.
+func runOCIFetcherProxyWithIdentity(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, cis interfaces.ClientIdentityService) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+	if cis != nil {
+		env.SetClientIdentityService(cis)
+	}
 
 	proxy, err := New(env)
 	require.NoError(t, err)
@@ -841,4 +985,23 @@ func collectBlobData(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byt
 		data = append(data, resp.GetData()...)
 	}
 	return data
+}
+
+// fakeClientIdentityService returns a fixed ClientIdentity from
+// IdentityFromContext.
+type fakeClientIdentityService struct {
+	client string
+}
+
+func (f *fakeClientIdentityService) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+func (f *fakeClientIdentityService) IdentityHeader(si *interfaces.ClientIdentity, _ time.Duration) (string, error) {
+	return "", nil
+}
+func (f *fakeClientIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+func (f *fakeClientIdentityService) IdentityFromContext(_ context.Context) (*interfaces.ClientIdentity, error) {
+	return &interfaces.ClientIdentity{Client: f.client}, nil
 }

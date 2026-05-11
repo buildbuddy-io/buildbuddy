@@ -75,8 +75,12 @@ func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
 }
 
 func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {
+	return newTestServerWithIdentity(t, bsClient, acClient, nil)
+}
+
+func newTestServerWithIdentity(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, cis interfaces.ClientIdentityService) ofpb.OCIFetcherServer {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewServer(bsClient, acClient, cis)
 	require.NoError(t, err)
 	return server
 }
@@ -886,6 +890,197 @@ func TestFetchBlobWrongSizeFailsCachingButStreams(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, layerSize, metaResp.GetSize())
 	require.Equal(t, layerMT, metaResp.GetMediaType())
+}
+
+// TestFetchBlobZeroSizeHintBehavesAsNoHint verifies that an explicit
+// size=0 hint is treated the same as no hint at all: the server
+// rediscovers metadata from the upstream registry. We don't want a
+// well-meaning caller that doesn't know the size yet to be able to
+// disable the metadata HEAD and end up with no caching.
+func TestFetchBlobZeroSizeHintBehavesAsNoHint(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-zero-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	blobPath := "/v2/test-zero-size/blobs/" + layerDigest.String()
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:  blobRef,
+		Size: 0, // explicit zero == "no hint"
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+
+	// We expect the HEAD against the blob path because size was missing.
+	require.Equal(t, 1, counter.Snapshot()[http.MethodHead+" "+blobPath],
+		"expected a HEAD to rediscover size when no hint provided")
+}
+
+// TestFetchBlobIgnoresHintsFromUntrustedClient verifies that when a
+// ClientIdentityService is configured and the calling client is NOT one
+// of the trusted internal services, size/media_type hints in the request
+// are silently dropped: the server falls back to discovering metadata
+// from the upstream registry. This protects the OCIBlobMetadata cache
+// from being poisoned by an untrusted caller that has somehow reached
+// the OCIFetcher service.
+func TestFetchBlobIgnoresHintsFromUntrustedClient(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-untrusted-hints", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	layerSize, layerMT := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	te, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithIdentity(t, bsClient, acClient,
+		&fakeClientIdentityService{client: "some-random-client"})
+	_ = te
+	blobRef := imageName + "@" + layerDigest.String()
+	blobPath := "/v2/test-untrusted-hints/blobs/" + layerDigest.String()
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	// An untrusted client supplies a (correct) hint. The server should
+	// still HEAD upstream to verify metadata before caching, since it
+	// cannot trust the hint.
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      layerSize,
+		MediaType: layerMT,
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+	require.Equal(t, 1, counter.Snapshot()[http.MethodHead+" "+blobPath],
+		"expected a HEAD even though a hint was provided, since the client is untrusted")
+
+	// The cached metadata should reflect the upstream value. Use a
+	// trusted server instance against the same cache so the metadata
+	// FetchBlobMetadata call is permitted.
+	lookupSrv := newTestServerWithCache(t, bsClient, acClient)
+	metaResp, err := lookupSrv.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+	require.Equal(t, layerSize, metaResp.GetSize())
+	require.Equal(t, layerMT, metaResp.GetMediaType())
+}
+
+// TestFetchBlobIgnoresLyingHintsFromUntrustedClient verifies that a
+// wrong size + wrong media_type from an untrusted client cannot poison
+// the cache: the hints are dropped, the server rediscovers true
+// metadata from upstream, and the cached blob/metadata reflect reality.
+func TestFetchBlobIgnoresLyingHintsFromUntrustedClient(t *testing.T) {
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-lying-hints", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	layerSize, layerMT := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithIdentity(t, bsClient, acClient,
+		&fakeClientIdentityService{client: "untrusted-bazel-client"})
+	blobRef := imageName + "@" + layerDigest.String()
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      layerSize + 12345, // lie
+		MediaType: "application/vnd.malicious.injected+oops",
+	}, stream)
+	// The lies should have been stripped before they could cause the
+	// CAS write to fail or the metadata cache to be poisoned.
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+
+	lookupSrv := newTestServerWithCache(t, bsClient, acClient)
+	metaResp, err := lookupSrv.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+	require.Equal(t, layerSize, metaResp.GetSize())
+	require.Equal(t, layerMT, metaResp.GetMediaType())
+}
+
+// TestFetchBlobRequireTrustedClient verifies that when
+// --ocifetcher.require_trusted_client is set, requests from untrusted
+// clients are rejected with PermissionDenied. This is the lock-down
+// path for deployments where only first-party services should be
+// allowed to call OCIFetcher.
+func TestFetchBlobRequireTrustedClient(t *testing.T) {
+	flags.Set(t, "ocifetcher.require_trusted_client", true)
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-require-trusted", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+	blobRef := imageName + "@" + layerDigest.String()
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	untrusted := newTestServerWithIdentity(t, bsClient, acClient,
+		&fakeClientIdentityService{client: "some-random-client"})
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = untrusted.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// Repeat with a trusted (executor) identity: must succeed.
+	trusted := newTestServerWithIdentity(t, bsClient, acClient,
+		&fakeClientIdentityService{client: interfaces.ClientIdentityExecutor})
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	err = trusted.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.NotEmpty(t, stream.collectData())
+}
+
+// TestNewServerRequireTrustedClientWithoutIdentityServiceFails verifies
+// that we refuse to start in the locked-down configuration if no
+// ClientIdentityService is configured, since otherwise the flag would
+// be silently no-op.
+func TestNewServerRequireTrustedClientWithoutIdentityServiceFails(t *testing.T) {
+	flags.Set(t, "ocifetcher.require_trusted_client", true)
+	_, bsClient, acClient := setupCacheEnv(t)
+	_, err := ocifetcher.NewServer(bsClient, acClient, nil)
+	require.Error(t, err)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+}
+
+// fakeClientIdentityService returns a fixed ClientIdentity from
+// IdentityFromContext. Used to simulate trusted/untrusted callers
+// without setting up the full clientidentity Service + JWT machinery.
+type fakeClientIdentityService struct {
+	client string
+}
+
+func (f *fakeClientIdentityService) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+func (f *fakeClientIdentityService) IdentityHeader(si *interfaces.ClientIdentity, _ time.Duration) (string, error) {
+	return "", nil
+}
+func (f *fakeClientIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+func (f *fakeClientIdentityService) IdentityFromContext(_ context.Context) (*interfaces.ClientIdentity, error) {
+	return &interfaces.ClientIdentity{Client: f.client}, nil
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {

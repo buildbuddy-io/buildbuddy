@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -967,14 +968,20 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	testcache.Setup(t, te, localGRPClis)
 
 	// Set up OCI fetcher server and client
-	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient(), te.GetClientIdentityService())
 	require.NoError(t, err)
 	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
 
 	go runServer()
 
-	// Create OCI fetcher client and set it on the env
-	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis)
+	// Create OCI fetcher client and set it on the env. We include the
+	// client-identity interceptors so the OCIFetcher server can
+	// recognize this test process as a trusted ("app") client and
+	// honor size/media_type hints in FetchBlobRequest.
+	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis,
+		interceptors.GetUnaryClientIdentityInterceptor(te),
+		interceptors.GetStreamClientIdentityInterceptor(te),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	te.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))

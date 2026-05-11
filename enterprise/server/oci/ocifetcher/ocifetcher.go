@@ -87,9 +87,10 @@ func isValidClientMediaType(mt string) bool {
 }
 
 var (
-	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
-	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
-	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	enabled              = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
+	requireTrustedClient = flag.Bool("ocifetcher.require_trusted_client", false, "If true, the OCIFetcher service rejects requests from clients that do not present a trusted client identity (executor, cache-proxy, app, workflow). Requires a ClientIdentityService to be configured.")
+	mirrors              = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
+	allowedPrivateIPs    = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
 )
@@ -100,6 +101,12 @@ type ociFetcherServer struct {
 
 	bsClient bspb.ByteStreamClient
 	acClient repb.ActionCacheClient
+
+	// clientIdentityService is optional. When present, it is used to
+	// gate trust of client-supplied size/media_type hints in
+	// FetchBlobRequest, and (when --ocifetcher.require_trusted_client
+	// is set) to reject requests from untrusted clients altogether.
+	clientIdentityService interfaces.ClientIdentityService
 
 	mu        sync.Mutex
 	pullerLRU lru.LRU[*pullerLRUEntry]
@@ -124,12 +131,15 @@ type blobFetchResult struct {
 //
 // It is preferred to construct only one server, so that there is only
 // one Puller cache per process.
-func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) (ofpb.OCIFetcherServer, error) {
+func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, clientIdentityService interfaces.ClientIdentityService) (ofpb.OCIFetcherServer, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil byte stream client")
 	}
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil action cache client")
+	}
+	if *requireTrustedClient && clientIdentityService == nil {
+		return nil, status.FailedPreconditionError("OCIFetcherServer requires a ClientIdentityService when --ocifetcher.require_trusted_client is set")
 	}
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
@@ -143,19 +153,59 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
 	return &ociFetcherServer{
-		allowedPrivateIPs: allowedPrivateIPs,
-		mirrors:           Mirrors(),
-		bsClient:          bsClient,
-		acClient:          acClient,
-		pullerLRU:         pullerLRU,
+		allowedPrivateIPs:     allowedPrivateIPs,
+		mirrors:               Mirrors(),
+		bsClient:              bsClient,
+		acClient:              acClient,
+		pullerLRU:             pullerLRU,
+		clientIdentityService: clientIdentityService,
 	}, nil
+}
+
+// trustedClientIdentities are the client identities whose size/media_type
+// hints in FetchBlobRequest can be trusted. These are first-party services
+// (executors, the apps, cache proxies, workflows) and are not exposed to
+// external users.
+var trustedClientIdentities = map[string]bool{
+	interfaces.ClientIdentityExecutor:   true,
+	interfaces.ClientIdentityApp:        true,
+	interfaces.ClientIdentityCacheProxy: true,
+	interfaces.ClientIdentityWorkflow:   true,
+}
+
+// isTrustedClient reports whether the calling client's identity is one we
+// will trust to provide accurate size/media_type hints in FetchBlobRequest.
+// When no ClientIdentityService is configured, all callers are considered
+// trusted (the service is presumed to be inside a private network).
+func (s *ociFetcherServer) isTrustedClient(ctx context.Context) bool {
+	if s.clientIdentityService == nil {
+		return true
+	}
+	id, err := s.clientIdentityService.IdentityFromContext(ctx)
+	if err != nil || id == nil {
+		return false
+	}
+	return trustedClientIdentities[id.Client]
+}
+
+// authorizeTrustedClient enforces --ocifetcher.require_trusted_client.
+// It returns PermissionDenied if the flag is set and the caller is not
+// one of the trusted first-party services.
+func (s *ociFetcherServer) authorizeTrustedClient(ctx context.Context) error {
+	if !*requireTrustedClient {
+		return nil
+	}
+	if !s.isTrustedClient(ctx) {
+		return status.PermissionDeniedError("OCIFetcher is restricted to trusted internal clients")
+	}
+	return nil
 }
 
 func RegisterServer(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient())
+	server, err := NewServer(env.GetByteStreamClient(), env.GetActionCacheClient(), env.GetClientIdentityService())
 	if err != nil {
 		return err
 	}
@@ -178,6 +228,9 @@ func RegisterServer(env *real_environment.RealEnv) error {
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
+	if err := s.authorizeTrustedClient(ctx); err != nil {
+		return err
+	}
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return err
 	}
@@ -198,20 +251,42 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	// Validate client-supplied size/media_type hints. We don't have to
-	// trust them: a wrong size will make the CAS write fail (the bytestream
-	// server verifies declared size matches the bytes streamed), but a
-	// wrong media_type would be silently stored in the OCIBlobMetadata
-	// AC entry and served as the Content-Type header out of ociregistry.
-	// We sanity-check both and fall back to discovering them from the
-	// upstream registry when validation fails.
+	// Negative size never makes sense and is rejected for all callers:
+	// it would always cause a downstream CAS write failure anyway, so
+	// failing fast yields a better error.
 	if req.GetSize() < 0 {
 		return status.InvalidArgumentErrorf("invalid size %d in FetchBlobRequest", req.GetSize())
 	}
-	mediaTypeHint := req.GetMediaType()
-	if mediaTypeHint != "" && !isValidClientMediaType(mediaTypeHint) {
-		log.CtxWarningf(ctx, "Ignoring invalid media_type %q in FetchBlobRequest for %s", mediaTypeHint, digestRef)
-		mediaTypeHint = ""
+
+	// Client-supplied size/media_type are hints used to skip HEAD
+	// requests against the upstream registry. We only trust them when
+	// the caller is one of our first-party services (executor,
+	// cache-proxy, app, workflow); for any other caller we discard the
+	// hints and rediscover size/media_type from the upstream registry.
+	//
+	// Two attack shapes motivate this:
+	//   - A wrong size would force the CAS upload to fail (the bytestream
+	//     server validates digest+length match the bytes streamed), so a
+	//     buggy/malicious client could turn cache writes into errors. The
+	//     blob would still stream back to the caller, but caching would
+	//     be perpetually broken for that {repo, hash}.
+	//   - A wrong media_type would be silently stored in the
+	//     OCIBlobMetadata AC entry (keyed by {repo, hash}) and later
+	//     served as the Content-Type header out of ociregistry.
+	hintSize := req.GetSize()
+	hintMediaType := req.GetMediaType()
+	if !s.isTrustedClient(ctx) {
+		if hintSize != 0 || hintMediaType != "" {
+			log.CtxWarningf(ctx, "Ignoring size/media_type hints from untrusted client for %s", digestRef)
+		}
+		hintSize = 0
+		hintMediaType = ""
+	}
+	if hintMediaType != "" && !isValidClientMediaType(hintMediaType) {
+		// Defense-in-depth even for trusted clients: a buggy first-party
+		// client should not get to write garbage into the metadata cache.
+		log.CtxWarningf(ctx, "Ignoring invalid media_type %q in FetchBlobRequest for %s", hintMediaType, digestRef)
+		hintMediaType = ""
 	}
 
 	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
@@ -235,7 +310,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), req.GetSize(), mediaTypeHint, stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), hintSize, hintMediaType, stream)
 		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 
@@ -278,6 +353,9 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // Server admins can bypass the registry: the metadata will be served from the action cache
 // if present. If not present, FetchBlobMetadata will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	if err := s.authorizeTrustedClient(ctx); err != nil {
+		return nil, err
+	}
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
@@ -350,6 +428,9 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 // Server admins can bypass the registry: the manifest will be served from the action cache
 // if present. If not present, FetchManifest will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	if err := s.authorizeTrustedClient(ctx); err != nil {
+		return nil, err
+	}
 	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
@@ -428,6 +509,9 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 // Bypassing the registry is not possible. Requests that set the bypass_registry flag
 // will fail with an error.
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	if err := s.authorizeTrustedClient(ctx); err != nil {
+		return nil, err
+	}
 	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
