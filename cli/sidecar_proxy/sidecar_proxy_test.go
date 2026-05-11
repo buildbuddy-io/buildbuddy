@@ -64,7 +64,7 @@ func newHarnessWithOpts(t *testing.T, opts harnessOpts) *harness {
 	t.Cleanup(cancel)
 
 	remoteEnv := testenv.GetTestEnv(t)
-	remote := &recordingRemote{counts: map[string]int64{}}
+	remote := &recordingRemote{mds: map[string][]metadata.MD{}}
 	remoteSrv, remoteLis := newRemoteServer(t, remoteEnv, remote)
 	bsServer, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -109,30 +109,24 @@ func newHarnessWithOpts(t *testing.T, opts harnessOpts) *harness {
 	}
 }
 
-// recordingRemote records each inbound RPC at the remote: method name,
-// observed inbound metadata, and a per-method counter.
+// recordingRemote records each inbound RPC at the remote: per-method, the
+// ordered list of observed inbound metadata. Counts are derived from slice
+// lengths.
 type recordingRemote struct {
-	mu     sync.Mutex
-	counts map[string]int64
-	mds    []recordedMD
-}
-
-type recordedMD struct {
-	method string
-	md     metadata.MD
+	mu  sync.Mutex
+	mds map[string][]metadata.MD // full method name -> mds in arrival order
 }
 
 func (r *recordingRemote) record(method string, md metadata.MD) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counts[method]++
-	r.mds = append(r.mds, recordedMD{method: method, md: md.Copy()})
+	r.mds[method] = append(r.mds[method], md.Copy())
 }
 
 func (r *recordingRemote) count(method string) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.counts[method]
+	return int64(len(r.mds[method]))
 }
 
 // metadataForMethod returns all observed inbound metadata for RPCs whose full
@@ -142,9 +136,9 @@ func (r *recordingRemote) metadataForMethod(methodSuffix string) []metadata.MD {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []metadata.MD
-	for _, e := range r.mds {
-		if strings.HasSuffix(e.method, methodSuffix) {
-			out = append(out, e.md)
+	for method, mds := range r.mds {
+		if strings.HasSuffix(method, methodSuffix) {
+			out = append(out, mds...)
 		}
 	}
 	return out
@@ -242,106 +236,87 @@ func TestRead_HitsRemoteOnceThenLocal(t *testing.T) {
 		"second read should be served locally and not hit the remote")
 }
 
-// TestWrite_AsyncPropagatesToRemote verifies that with the default
-// configuration, a write through the sidecar proxy returns success
-// immediately and the blob eventually appears on the remote.
-func TestWrite_AsyncPropagatesToRemote(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-
-	d, reader := testdigest.NewReader(t, 1024)
-	rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
-
-	sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
-	_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
-	require.NoError(t, err)
-
-	// The blob may not be on the remote yet — the upload is queued. Poll the
-	// remote directly until it shows up.
-	remoteBS := bspb.NewByteStreamClient(h.remoteConn)
-	require.Eventually(t, func() bool {
-		var buf bytes.Buffer
-		err := cachetools.GetBlob(ctx, remoteBS, rn, &buf)
-		return err == nil && int64(buf.Len()) == d.GetSizeBytes()
-	}, 5*time.Second, 10*time.Millisecond, "blob did not propagate to remote")
-}
-
-// TestWrite_SyncBlocksUntilRemoteHasBlob verifies that with
-// --local_cache_proxy.synchronous_write set, a write through the sidecar
-// proxy does not return until the remote has the blob.
-func TestWrite_SyncBlocksUntilRemoteHasBlob(t *testing.T) {
-	flags.Set(t, "local_cache_proxy.synchronous_write", true)
-
-	h := newHarness(t)
-	ctx := context.Background()
-
-	d, reader := testdigest.NewReader(t, 1024)
-	rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
-
-	sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
-	_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
-	require.NoError(t, err)
-
-	// Synchronous write means the remote must already have the blob by the
-	// time the client write returns. No polling.
-	remoteBS := bspb.NewByteStreamClient(h.remoteConn)
-	var buf bytes.Buffer
-	require.NoError(t, cachetools.GetBlob(ctx, remoteBS, rn, &buf))
-	require.Equal(t, d.GetSizeBytes(), int64(buf.Len()))
-}
-
-// TestWrite_PropagatesMetadataAsync verifies that the API key header and the
-// bazel RequestMetadata reach the remote on the asynchronous write path. The
-// async path is the trickier one because metadata is captured at Write time
-// and replayed by a background worker — easy to break.
-func TestWrite_PropagatesMetadataAsync(t *testing.T) {
-	h := newHarness(t)
-	ctx := newCtxWithMetadata(t, "test-api-key", "inv-async")
-
-	d, reader := testdigest.NewReader(t, 1024)
-	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
-
-	sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
-	_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
-	require.NoError(t, err)
-
-	// Wait for the queued upload to reach the remote, then check the metadata
-	// it arrived with.
-	require.Eventually(t, func() bool {
-		for _, md := range h.remote.metadataForMethod("/Write") {
-			if mdHasAPIKey(md, "test-api-key") && mdHasInvocationID(md, "inv-async") {
-				return true
+// TestWrite_PropagatesToRemote verifies that a write through the sidecar
+// proxy eventually reaches the remote, on both the async (default) and sync
+// (--local_cache_proxy.synchronous_write) paths. On the async path the
+// upload is queued and returns immediately; on the sync path it must already
+// be on the remote by the time the client write returns.
+func TestWrite_PropagatesToRemote(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		sync bool
+	}{
+		{name: "async"},
+		{name: "sync", sync: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.sync {
+				flags.Set(t, "local_cache_proxy.synchronous_write", true)
 			}
-		}
-		return false
-	}, 5*time.Second, 10*time.Millisecond, "remote never saw the expected metadata on a Write")
+			h := newHarness(t)
+			ctx := context.Background()
+
+			d, reader := testdigest.NewReader(t, 1024)
+			rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
+
+			sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
+			_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
+			require.NoError(t, err)
+
+			// Poll the remote directly until the blob shows up. On the sync
+			// path this should succeed on the first tick; on the async path
+			// the upload is queued in the background.
+			remoteBS := bspb.NewByteStreamClient(h.remoteConn)
+			require.Eventually(t, func() bool {
+				var buf bytes.Buffer
+				err := cachetools.GetBlob(ctx, remoteBS, rn, &buf)
+				return err == nil && int64(buf.Len()) == d.GetSizeBytes()
+			}, 5*time.Second, 10*time.Millisecond, "blob did not propagate to remote")
+		})
+	}
 }
 
-// TestWrite_PropagatesMetadataSync verifies API key + RequestMetadata reach
-// the remote on the synchronous write path.
-func TestWrite_PropagatesMetadataSync(t *testing.T) {
-	flags.Set(t, "local_cache_proxy.synchronous_write", true)
+// TestWrite_PropagatesMetadata verifies that the API key header and the
+// bazel RequestMetadata reach the remote on both the asynchronous and
+// synchronous write paths. The async path is the trickier one because
+// metadata is captured at Write time and replayed by a background worker —
+// easy to break.
+func TestWrite_PropagatesMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		sync         bool
+		invocationID string
+	}{
+		{name: "async", invocationID: "inv-async"},
+		{name: "sync", sync: true, invocationID: "inv-sync"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.sync {
+				flags.Set(t, "local_cache_proxy.synchronous_write", true)
+			}
+			h := newHarness(t)
+			ctx := newCtxWithMetadata(t, "test-api-key", tc.invocationID)
 
-	h := newHarness(t)
-	ctx := newCtxWithMetadata(t, "test-api-key", "inv-sync")
+			d, reader := testdigest.NewReader(t, 1024)
+			rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 
-	d, reader := testdigest.NewReader(t, 1024)
-	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+			sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
+			_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
+			require.NoError(t, err)
 
-	sidecarBS := bspb.NewByteStreamClient(h.sidecarConn)
-	_, _, err := cachetools.UploadFromReader(ctx, sidecarBS, rn, reader)
-	require.NoError(t, err)
-
-	// On the sync path the upload must have reached the remote already; check
-	// metadata without polling.
-	var saw bool
-	for _, md := range h.remote.metadataForMethod("/Write") {
-		if mdHasAPIKey(md, "test-api-key") && mdHasInvocationID(md, "inv-sync") {
-			saw = true
-			break
-		}
+			// Wait for the upload to reach the remote and check the metadata
+			// it arrived with. On the sync path this is satisfied on the
+			// first tick.
+			require.Eventually(t, func() bool {
+				for _, md := range h.remote.metadataForMethod("/Write") {
+					if mdHasAPIKey(md, "test-api-key") && mdHasInvocationID(md, tc.invocationID) {
+						return true
+					}
+				}
+				return false
+			}, 5*time.Second, 10*time.Millisecond, "remote never saw the expected metadata on a Write")
+		})
 	}
-	require.True(t, saw, "remote never saw the expected metadata on the sync Write path")
 }
 
 // TestFindMissingBlobs_ForwardedToRemote verifies the proxy forwards
@@ -378,11 +353,16 @@ func TestFindMissingBlobs_ForwardedToRemote(t *testing.T) {
 	require.Equal(t, absentRN.GetDigest().GetHash(), rsp.GetMissingBlobDigests()[0].GetHash())
 }
 
-// TestGetCapabilities_FallsBackOnRemoteError verifies that when the remote
-// fails to serve GetCapabilities (here: the service isn't registered, so the
-// remote returns Unimplemented), the proxy still returns a valid
-// ServerCapabilities response so the build can proceed.
-func TestGetCapabilities_FallsBackOnRemoteError(t *testing.T) {
+// TestGetCapabilities_FallbackBehavior documents (rather than endorses) the
+// proxy's current behavior when the remote fails to serve GetCapabilities
+// (here: the service isn't registered, so the remote returns Unimplemented):
+// the proxy still returns a ServerCapabilities response advertising cache
+// support + SHA256, so the build proceeds.
+//
+// TODO(dan): revisit whether masking remote Capabilities failures like this
+// is actually the right contract — if the remote genuinely cannot serve CAS,
+// advertising it to bazel will produce confusing downstream failures.
+func TestGetCapabilities_FallbackBehavior(t *testing.T) {
 	h := newHarnessWithOpts(t, harnessOpts{skipRemoteCapabilities: true})
 	ctx := context.Background()
 

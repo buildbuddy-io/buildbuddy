@@ -1,3 +1,15 @@
+// Package sidecar is the entrypoint for the bb CLI's sidecar binary: the
+// long-lived helper process that bazel talks to in place of the configured
+// BES and remote cache backends. It wires up the gRPC services and listens on
+// a unix socket; the CLI side that starts and manages this process lives in
+// cli/sidecar.
+//
+// Related packages:
+//   - cli/sidecar — CLI-side lifecycle management (start, reuse, argv rewrite)
+//     for the sidecar process built from this package.
+//   - cli/sidecar_proxy — the gRPC services (ByteStream/CAS/AC/Capabilities)
+//     this binary exposes to bazel.
+//
 // TODO: Move this out of `cmd` since it is no longer a cmd.
 package sidecar
 

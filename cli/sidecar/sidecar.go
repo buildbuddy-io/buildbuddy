@@ -8,6 +8,12 @@
 // one is not already running. If the sidecar cannot be started or reached, the
 // original argv is returned and the build proceeds directly against the
 // configured backends.
+//
+// Related packages:
+//   - cli/cmd/sidecar — the sidecar binary's main entrypoint; runs the
+//     long-lived process that this package starts and reuses.
+//   - cli/sidecar_proxy — the gRPC services (ByteStream/CAS/AC/Capabilities)
+//     that the sidecar process exposes to bazel.
 package sidecar
 
 import (

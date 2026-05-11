@@ -6,6 +6,12 @@
 // the remote and populated locally) and write-through (writes complete against
 // the local cache and are forwarded to the remote either asynchronously via a
 // background queue or synchronously when configured).
+//
+// Related packages:
+//   - cli/cmd/sidecar — the sidecar binary's main entrypoint; instantiates
+//     and serves the services defined in this package.
+//   - cli/sidecar — CLI-side lifecycle management for the sidecar process that
+//     hosts these services.
 package sidecar_proxy
 
 import (
