@@ -616,12 +616,16 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
+		// Pass the config descriptor so size and media type are known
+		// up front, avoiding extra HEAD requests to the upstream registry
+		// (both client-side and, when using OCIFetcher, server-side).
+		configDesc := manifest.Config
 		layer := newLayerFromDigest(
 			i.repo,
 			manifest.Config.Digest,
 			i,
 			i.puller,
-			nil,
+			&configDesc,
 		)
 
 		rc, err := layer.Uncompressed()
@@ -848,10 +852,22 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
+		// If we already know the size and media type from the referencing
+		// manifest's descriptor, pass them along so the server doesn't have
+		// to issue extra HEAD requests against the upstream registry to
+		// rediscover them.
+		var hintSize int64
+		var hintMediaType string
+		if l.desc != nil {
+			hintSize = l.desc.Size
+			hintMediaType = string(l.desc.MediaType)
+		}
 		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
+			Size:           hintSize,
+			MediaType:      hintMediaType,
 		})
 		if err != nil {
 			cancel()
@@ -889,6 +905,9 @@ func (l *layerFromDigest) Size() (int64, error) {
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+	if l.desc != nil && l.desc.MediaType != "" {
+		return l.desc.MediaType, nil
+	}
 	return types.DockerLayer, nil
 }
 

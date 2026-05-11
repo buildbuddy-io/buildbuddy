@@ -71,6 +71,19 @@ message FetchBlobRequest {
   string ref = 1;
   registry.Credentials credentials = 2;
   bool bypass_registry = 3;
+
+  // Optional: the size of the blob in bytes, as advertised by the
+  // referencing manifest's descriptor. When provided (non-zero), the
+  // server uses this directly instead of issuing a HEAD request to the
+  // upstream registry to discover it. This avoids spurious upstream
+  // HEAD calls (and the auth failures they can trigger) when the caller
+  // already knows the blob size from the manifest.
+  int64 size = 4;
+
+  // Optional: the media type of the blob, as advertised by the
+  // referencing manifest's descriptor. When provided (non-empty), the
+  // server uses this directly instead of querying the upstream registry.
+  string media_type = 5;
 }
 
 message FetchBlobResponse {

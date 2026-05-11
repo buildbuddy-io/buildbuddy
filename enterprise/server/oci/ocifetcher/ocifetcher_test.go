@@ -620,10 +620,10 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 		// Two blob GETs: first fails with 401 (simulating expired token),
 		// second succeeds after puller eviction and retry.
 		http.MethodGet + " " + blobPath: 2,
-		// Two blob HEADs for layer.Size(): one per attempt (Size is
-		// fetched before Compressed to avoid leaking the reader on
-		// retry).
-		http.MethodHead + " " + blobPath: 2,
+		// One blob HEAD for layer.Size(): the first attempt's HEAD
+		// runs before Compressed() fails; the retry reuses the size
+		// captured on the first attempt and does not re-issue HEAD.
+		http.MethodHead + " " + blobPath: 1,
 	})
 }
 
@@ -678,6 +678,104 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 		http.MethodGet + " " + blobPath:  1,
 		http.MethodHead + " " + blobPath: 3,
 	})
+}
+
+// TestFetchBlobSkipsHeadWhenSizeAndMediaTypeProvided verifies that when the
+// client supplies size and media_type in FetchBlobRequest (typically derived
+// from the referencing manifest's descriptor), the server does NOT issue a
+// HEAD request to the upstream registry to rediscover that metadata. This
+// is important when the upstream registry returns 401 to HEAD /blobs/<d>
+// for layer blobs (as seen with ECR using IAM credentials).
+func TestFetchBlobSkipsHeadWhenSizeAndMediaTypeProvided(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-skip-head", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedSize, expectedMediaType := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	blobPath := "/v2/test-skip-head/blobs/" + layerDigest.String()
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      expectedSize,
+		MediaType: expectedMediaType,
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+
+	// We should see only a /v2/ ping and the blob GET — no HEAD to
+	// rediscover size or media type.
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/":        1,
+		http.MethodGet + " " + blobPath: 1,
+	})
+
+	// Subsequent fetch (no hints) should be served from cache, proving
+	// read-through caching actually happened on the first request.
+	counter.Reset()
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+	assertRequests(t, counter, map[string]int{})
+}
+
+// TestFetchBlobUsesProvidedSizeWhenHeadFails verifies that when size and
+// media_type are supplied in the request, FetchBlob succeeds and caches
+// the blob even though the upstream registry returns 401 to HEAD requests.
+// This is the scenario observed against public ECR with the OCI fetcher.
+func TestFetchBlobUsesProvidedMetadataWhenHeadFails(t *testing.T) {
+	var fail401OnBlobHead atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if fail401OnBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-head-401", nil)
+	fail401OnBlobHead.Store(true)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedSize, expectedMediaType := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+	blobPath := "/v2/test-head-401/blobs/" + layerDigest.String()
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      expectedSize,
+		MediaType: expectedMediaType,
+	}, stream)
+	require.NoError(t, err, "FetchBlob should succeed without issuing a HEAD when metadata is supplied")
+	require.Equal(t, expectedData, stream.collectData())
+	require.Equal(t, 0, counter.Snapshot()[http.MethodHead+" "+blobPath], "no HEAD should be issued for the blob")
+
+	// Second fetch is served from cache: caching path must have used
+	// the supplied metadata.
+	counter.Reset()
+	stream = &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+	assertRequests(t, counter, map[string]int{})
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {
