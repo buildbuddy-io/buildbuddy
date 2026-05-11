@@ -50,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/xds"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
@@ -95,6 +96,10 @@ func main() {
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
+	}
+
+	if err := xds.Bootstrap(context.Background(), nil /*=client*/); err != nil {
+		log.Fatalf("Error bootstrapping xDS config: %s", err)
 	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
