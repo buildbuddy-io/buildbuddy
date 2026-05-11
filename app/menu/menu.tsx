@@ -44,6 +44,13 @@ export default class MenuComponent extends React.Component<Props, State> {
   }
 
   handleLoginClicked() {
+    if (!capabilities.config.configuredIssuers.length) {
+      window.location.href = `/?${new URLSearchParams({
+        redirect_url: window.location.href,
+      })}`;
+      this.dismissMenu();
+      return;
+    }
     authService.login();
     this.dismissMenu();
   }

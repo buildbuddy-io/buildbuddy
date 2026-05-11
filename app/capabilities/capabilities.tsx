@@ -28,7 +28,7 @@ export class Capabilities {
 
   version: string = "";
   github: boolean = false;
-  auth: string = "";
+  auth: boolean = false;
   anonymous: boolean = false;
   test: boolean = false;
   createOrg: boolean = false;
@@ -60,7 +60,7 @@ export class Capabilities {
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
     this.version = this.config.version || "";
-    this.auth = this.config.configuredIssuers?.[0] || "";
+    this.auth = this.config.authEnabled;
     this.github = this.config.githubEnabled;
     this.anonymous = this.config.anonymousUsageEnabled;
     this.test = this.config.testDashboardEnabled;

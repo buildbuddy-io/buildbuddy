@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -174,6 +175,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 	if authDB := env.GetAuthDB(); authDB != nil {
 		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
 	}
+	_, isNullAuth := env.GetAuthenticator().(*nullauth.NullAuthenticator)
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		AppBundleHash:                          appBundleHash,
@@ -227,6 +229,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
 		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
 		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
+		AuthEnabled:                            !isNullAuth,
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,

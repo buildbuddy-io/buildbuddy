@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
@@ -36,6 +37,31 @@ var (
 		Name:   userName,
 	}
 )
+
+func TestNewOpenIDAuthenticatorWithNoOIDCProviders(t *testing.T) {
+	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+	flags.Set(t, "auth.enable_self_auth", false)
+	flags.Set(t, "auth.oauth_providers", []OauthProvider{})
+
+	auth, err := NewOpenIDAuthenticator(context.Background(), env)
+
+	require.NoError(t, err)
+	require.Empty(t, auth.PublicIssuers())
+}
+
+func TestPublicIssuersIgnoresSluggedProviders(t *testing.T) {
+	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+	flags.Set(t, "auth.enable_self_auth", false)
+	flags.Set(t, "auth.oauth_providers", []OauthProvider{
+		{IssuerURL: "https://login.example.test"},
+		{IssuerURL: "https://sso.example.test", Slug: "team-slug"},
+	})
+
+	auth, err := NewOpenIDAuthenticator(context.Background(), env)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://login.example.test"}, auth.PublicIssuers())
+}
 
 type fakeOidcAuthenticator struct {
 }
