@@ -1075,7 +1075,7 @@ func TestReadChunked(t *testing.T) {
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 
@@ -1289,7 +1289,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write test data directly to the remote cache.
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 
@@ -1451,7 +1451,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
 	require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 
@@ -1608,7 +1608,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	remoteCtx, err := prefix.AttachUserPrefixToContext(ctx, remoteEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
@@ -1741,7 +1741,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	readCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	compressedData := compression.CompressZstd(nil, originalData)
@@ -1938,7 +1938,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write the blob as CDC chunks and publish the manifest remotely.
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 
@@ -2119,7 +2119,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
@@ -2194,7 +2194,7 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write the blob as CDC chunks and publish the manifest remotely.
-	_, originalData := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 
@@ -2878,7 +2878,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
-	// Create a blob smaller than the threshold (1MB vs 2MB default max)
+	// Create a blob smaller than the threshold.
 	_, originalData := testdigest.RandomCASResourceBuf(t, 1*1024*1024)
 	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)

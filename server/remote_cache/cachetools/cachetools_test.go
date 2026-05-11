@@ -1470,7 +1470,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	go runServer()
 
 	ctx := context.Background()
-	blobSize := int64(3 * 1024 * 1024)
+	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
 	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams())
@@ -1506,7 +1506,7 @@ func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 	go runServer()
 
 	ctx := context.Background()
-	blobSize := int64(3 * 1024 * 1024)
+	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
 	chunkingParams := chunking.FastCDCParams()

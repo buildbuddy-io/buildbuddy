@@ -113,6 +113,30 @@ func TestShouldUploadChunkedWithMax(t *testing.T) {
 	}
 }
 
+func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	assert.False(t, chunking.ShouldUploadChunked(ctx, nil, &repb.Digest{
+		Hash:      "hash",
+		SizeBytes: 3 * 1024 * 1024,
+	}))
+	assert.True(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 2*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 1024))
+}
+
+func TestValidateConfigRejectsReadFallbackThresholdAboveMaxChunkSize(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
+
+	err := chunking.ValidateConfig()
+	require.ErrorContains(t, err, "cache.min_chunked_read_fallback_size_bytes")
+}
+
 func TestChunker_DeterministicChunking(t *testing.T) {
 	ctx := context.Background()
 

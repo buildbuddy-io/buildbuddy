@@ -128,7 +128,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+			if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes() {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
@@ -393,7 +393,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes() && chunkingEnabled {
+		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MinChunkedReadFallbackSizeBytes() && chunkingEnabled {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true

@@ -31,8 +31,9 @@ import (
 )
 
 var (
-	chunkedManifestSalt = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes   = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
+	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 1024*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 1MB).")
+	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
 const (
@@ -72,6 +73,13 @@ func MaxChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes * 4
 }
 
+// MinChunkedReadFallbackSizeBytes is intentionally independent from the write
+// threshold so server-side miss fallback paths can still read older chunked
+// blobs that were written with a smaller chunk size.
+func MinChunkedReadFallbackSizeBytes() int64 {
+	return *minChunkedReadFallbackSizeBytes
+}
+
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
 	if efp == nil {
 		return defaultMaxChunkedWriteSizeBytes
@@ -97,6 +105,12 @@ func ValidateConfig() error {
 	if v < 1024 || v > 1024*1024 {
 		return fmt.Errorf("cache.avg_chunk_size_bytes must be between 1024 and 1048576, got %d", v)
 	}
+	if *minChunkedReadFallbackSizeBytes < 0 {
+		return fmt.Errorf("cache.min_chunked_read_fallback_size_bytes must be >= 0, got %d", *minChunkedReadFallbackSizeBytes)
+	}
+	if *minChunkedReadFallbackSizeBytes > v*4 {
+		return fmt.Errorf("cache.min_chunked_read_fallback_size_bytes must be <= cache.avg_chunk_size_bytes*4 (%d), got %d", v*4, *minChunkedReadFallbackSizeBytes)
+	}
 	return nil
 }
 
@@ -110,7 +124,7 @@ func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
 	// Check digest first since it's faster than reading efp flag
 	// and very likely to be false.
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() &&
 		limit == 0 &&
 		Enabled(ctx, efp)
 }
