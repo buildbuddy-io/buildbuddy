@@ -17,6 +17,7 @@ go_web_test_suite(
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/util/mocksaml",
+        "//server/tables",
         "//server/testutil/app",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
