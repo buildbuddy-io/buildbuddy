@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -40,7 +42,49 @@ import (
 const (
 	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
+
+	// maxClientMediaTypeLen bounds the length of a client-supplied
+	// media_type hint in FetchBlobRequest. The longest real OCI media
+	// types are under 100 bytes; this is a generous cap intended only
+	// to prevent abuse.
+	maxClientMediaTypeLen = 256
 )
+
+// isValidClientMediaType returns true if mt looks like a plausible OCI
+// media type that a client could supply in a FetchBlobRequest. Used to
+// guard the OCIBlobMetadata cache (which is keyed by {repo, hash} only,
+// not by media type) from being poisoned by a buggy or malicious client.
+// Valid media types include "application/vnd.oci.image.layer.v1.tar+gzip",
+// "application/vnd.docker.image.rootfs.diff.tar.gzip",
+// "application/vnd.docker.container.image.v1+json", etc.
+func isValidClientMediaType(mt string) bool {
+	if mt == "" || len(mt) > maxClientMediaTypeLen {
+		return false
+	}
+	if !utf8.ValidString(mt) {
+		return false
+	}
+	slash := false
+	for _, r := range mt {
+		if r > unicode.MaxASCII {
+			return false
+		}
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '.' || r == '+' || r == '-' || r == '_':
+		case r == '/':
+			if slash {
+				return false
+			}
+			slash = true
+		default:
+			return false
+		}
+	}
+	return slash
+}
 
 var (
 	enabled           = flag.Bool("ocifetcher.enabled", false, "Whether to enable the OCI fetcher service.")
@@ -154,6 +198,22 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
+	// Validate client-supplied size/media_type hints. We don't have to
+	// trust them: a wrong size will make the CAS write fail (the bytestream
+	// server verifies declared size matches the bytes streamed), but a
+	// wrong media_type would be silently stored in the OCIBlobMetadata
+	// AC entry and served as the Content-Type header out of ociregistry.
+	// We sanity-check both and fall back to discovering them from the
+	// upstream registry when validation fails.
+	if req.GetSize() < 0 {
+		return status.InvalidArgumentErrorf("invalid size %d in FetchBlobRequest", req.GetSize())
+	}
+	mediaTypeHint := req.GetMediaType()
+	if mediaTypeHint != "" && !isValidClientMediaType(mediaTypeHint) {
+		log.CtxWarningf(ctx, "Ignoring invalid media_type %q in FetchBlobRequest for %s", mediaTypeHint, digestRef)
+		mediaTypeHint = ""
+	}
+
 	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
 	if err == nil {
 		return nil
@@ -175,7 +235,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), req.GetSize(), req.GetMediaType(), stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), req.GetSize(), mediaTypeHint, stream)
 		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 

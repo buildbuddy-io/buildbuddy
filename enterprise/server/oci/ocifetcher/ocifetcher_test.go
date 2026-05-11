@@ -778,6 +778,116 @@ func TestFetchBlobUsesProvidedMetadataWhenHeadFails(t *testing.T) {
 	assertRequests(t, counter, map[string]int{})
 }
 
+// TestFetchBlobRejectsNegativeSize verifies the server rejects a
+// FetchBlobRequest with a negative size hint up front with
+// InvalidArgument, rather than silently ignoring it.
+func TestFetchBlobRejectsNegativeSize(t *testing.T) {
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-neg-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	server := newTestServer(t)
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:  imageName + "@" + layerDigest.String(),
+		Size: -1,
+	}, stream)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+}
+
+// TestFetchBlobIgnoresInvalidMediaType verifies that an invalid
+// media_type hint (e.g. wrong shape, control characters, or
+// suspiciously long) is ignored: the server falls back to discovering
+// the media type from the upstream registry, and the cached blob
+// metadata reflects the upstream value rather than the client's input.
+//
+// This guards the OCIBlobMetadata AC entry (keyed by {repo, hash}) from
+// being poisoned by a buggy or malicious client and ending up as a
+// bogus Content-Type header out of ociregistry.
+func TestFetchBlobIgnoresInvalidMediaType(t *testing.T) {
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-bad-mt", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	layerSize, expectedMediaType := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      layerSize,
+		MediaType: "not a media type with spaces and \x00 nulls",
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedData, stream.collectData())
+
+	// The cached metadata should reflect the upstream value, not the
+	// bogus client-supplied media type.
+	metaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+	require.Equal(t, layerSize, metaResp.GetSize())
+	require.Equal(t, expectedMediaType, metaResp.GetMediaType())
+}
+
+// TestFetchBlobRejectsWrongSize verifies that when the client supplies
+// a size that does not match the actual blob, the CAS upload fails
+// (because the bytestream server enforces digest+size). This means a
+// buggy or malicious client cannot poison the CAS by claiming the wrong
+// size: the upload's Commit fails and no OCIBlobMetadata entry is
+// written. The blob still streams successfully back to the caller.
+func TestFetchBlobWrongSizeFailsCachingButStreams(t *testing.T) {
+	reg, _ := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-wrong-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	layerSize, layerMT := layerMetadata(t, layer)
+	expectedData := layerData(t, layer)
+
+	server := newTestServer(t)
+	blobRef := imageName + "@" + layerDigest.String()
+
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:       blobRef,
+		Size:      layerSize + 999, // lie about the size
+		MediaType: layerMT,
+	}, stream)
+	// Streaming may succeed (bytes flow through), or may surface the
+	// CAS rejection; both outcomes are acceptable so long as no
+	// poisoned metadata is committed.
+	if err == nil {
+		require.Equal(t, expectedData, stream.collectData())
+	}
+
+	// No OCIBlobMetadata should have been written: a follow-up
+	// FetchBlobMetadata call should re-derive metadata from the
+	// upstream and return the real size, not the lie.
+	metaResp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+		Ref: blobRef,
+	})
+	require.NoError(t, err)
+	require.Equal(t, layerSize, metaResp.GetSize())
+	require.Equal(t, layerMT, metaResp.GetMediaType())
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool

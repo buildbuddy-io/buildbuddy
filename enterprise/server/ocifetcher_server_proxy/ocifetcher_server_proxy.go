@@ -89,15 +89,26 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
 	}
 
-	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
-		Ref:            req.GetRef(),
-		Credentials:    req.GetCredentials(),
-		BypassRegistry: req.GetBypassRegistry(),
-	})
-	if err != nil {
-		return err
+	if req.GetSize() < 0 {
+		return status.InvalidArgumentErrorf("invalid size %d in FetchBlobRequest", req.GetSize())
 	}
-	size := metaResp.GetSize()
+
+	// The local byte stream cache is keyed by {hash, size}; we need a size
+	// to read or write it. Prefer the size supplied by the client (from
+	// the referencing manifest's descriptor) and fall back to asking the
+	// upstream OCIFetcher only when no hint was provided.
+	size := req.GetSize()
+	if size == 0 {
+		metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+			Ref:            req.GetRef(),
+			Credentials:    req.GetCredentials(),
+			BypassRegistry: req.GetBypassRegistry(),
+		})
+		if err != nil {
+			return err
+		}
+		size = metaResp.GetSize()
+	}
 
 	// Fast path: serve from local BS cache.
 	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})

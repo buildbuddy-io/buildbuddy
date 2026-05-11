@@ -561,6 +561,79 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 	}
 }
 
+// TestFetchBlob_SizeHintSkipsMetadataRPC verifies that when the client
+// supplies a size in FetchBlobRequest, the proxy uses it directly for
+// the local byte stream cache key and does NOT issue a FetchBlobMetadata
+// RPC to the upstream. The size and media_type are also forwarded to
+// the upstream FetchBlob call so the apps can skip its own HEAD.
+func TestFetchBlob_SizeHintSkipsMetadataRPC(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-skip-meta", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	size, err := layer.Size()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:       imageName + "@" + digest.String(),
+		Size:      size,
+		MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	require.Equal(t, int32(0), counter.fetchBlobMetadataCount.Load(), "proxy should not issue FetchBlobMetadata when client supplied size")
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load())
+
+	// Verify size and media_type were forwarded to the upstream FetchBlob.
+	forwarded := counter.lastFetchBlobRequest.Load()
+	require.NotNil(t, forwarded)
+	require.Equal(t, size, forwarded.GetSize())
+	require.Equal(t, "application/vnd.docker.image.rootfs.diff.tar.gzip", forwarded.GetMediaType())
+}
+
+// TestFetchBlob_NegativeSizeRejected verifies that the proxy rejects a
+// negative size in FetchBlobRequest with InvalidArgument.
+func TestFetchBlob_NegativeSizeRejected(t *testing.T) {
+	ctx := context.Background()
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-neg-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:  imageName + "@" + digest.String(),
+		Size: -1,
+	})
+	var recvErr error
+	if err == nil {
+		_, recvErr = stream.Recv()
+	} else {
+		recvErr = err
+	}
+	require.Error(t, recvErr)
+	require.True(t, status.IsInvalidArgumentError(recvErr), "expected InvalidArgument, got: %v", recvErr)
+}
+
 // TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
@@ -731,8 +804,10 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 
 // countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
 type countingOCIFetcherClient struct {
-	inner          ofpb.OCIFetcherClient
-	fetchBlobCount atomic.Int32
+	inner                  ofpb.OCIFetcherClient
+	fetchBlobCount         atomic.Int32
+	fetchBlobMetadataCount atomic.Int32
+	lastFetchBlobRequest   atomic.Pointer[ofpb.FetchBlobRequest]
 }
 
 func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
@@ -745,10 +820,12 @@ func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, re
 
 func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
 	c.fetchBlobCount.Add(1)
+	c.lastFetchBlobRequest.Store(req)
 	return c.inner.FetchBlob(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.fetchBlobMetadataCount.Add(1)
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 
