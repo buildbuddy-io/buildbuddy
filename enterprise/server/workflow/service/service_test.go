@@ -1107,10 +1107,29 @@ func TestScheduledWorkflow(t *testing.T) {
 actions:
   - name: "Should Run"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Should Run 2"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["55 * * * *"]
+  - name: "Not Time Yet"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 19 * * *"]
+  - name: "Already Leased"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Expired Lease"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 
@@ -1261,8 +1280,14 @@ func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 actions:
   - name: "Test"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Test 2"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 
@@ -1807,6 +1832,9 @@ func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 actions:
   - name: "Test"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 

@@ -1898,8 +1898,8 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		if scheduled == nil {
 			break
 		}
-		if err := ws.dispatchScheduledWorkflow(ctx, scheduled); err != nil {
-			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, err); err != nil {
+		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
+			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
 				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
 			}
 			continue
@@ -2059,22 +2059,27 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	var allActions []*config.Action
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
-	} else if cfg != nil {
-		allActions = cfg.Actions
+	} else if cfg == nil {
+		return fmt.Errorf("workflow config not found")
 	}
 
-	actions, err := ws.filterActions(ctx, wf, wd, allActions, []string{scheduled.ActionName})
+	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
 	if err != nil {
 		return err
 	}
+
 	if len(actions) != 1 {
-		return status.InvalidArgumentErrorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
+		return fmt.Errorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
 	}
 	action := actions[0]
+
+	if !isScheduleStillValid(action, scheduled) {
+		return fmt.Errorf("cron %q for action %q no longer matches workflow config", scheduled.CronExpr, scheduled.ActionName)
+	}
+
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
 		return err
@@ -2092,6 +2097,19 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		return err
 	}
 	return nil
+}
+
+// Validate that the schedule configured in the fetched workflow config matches what we have in the database.
+func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.ScheduledRun) bool {
+	if fetchedAction.Triggers == nil || fetchedAction.Triggers.Schedule == nil {
+		return false
+	}
+	for _, c := range fetchedAction.Triggers.Schedule.Crons {
+		if c == storedSchedule.CronExpr {
+			return true
+		}
+	}
+	return false
 }
 
 // calculateNextRunTimeUsec uses the given cron expression to return the next
