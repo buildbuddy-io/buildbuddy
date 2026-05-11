@@ -528,7 +528,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		)
 	}
 
-	return NewImageFromRawManifestForTesting(
+	return newImageFromRawManifest(
 		ctx,
 		repo,
 		desc,
@@ -594,7 +594,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func NewImageFromRawManifestForTesting(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:             repo,
 		desc:             desc,
@@ -894,6 +894,9 @@ func (l *layerFromDigest) Size() (int64, error) {
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+	if l.desc != nil {
+		return l.desc.MediaType, nil
+	}
 	return types.DockerLayer, nil
 }
 

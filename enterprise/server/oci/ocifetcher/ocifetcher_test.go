@@ -3,6 +3,7 @@ package ocifetcher_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -677,6 +678,43 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 		http.MethodGet + " " + blobPath:  1,
 		http.MethodHead + " " + blobPath: 3,
 	})
+}
+
+func TestFetchBlobIgnoresNonPositiveRequestSize(t *testing.T) {
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-non-positive-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedLayerData := layerData(t, layer)
+
+	blobRef := imageName + "@" + layerDigest.String()
+	blobPath := "/v2/test-non-positive-size/blobs/" + layerDigest.String()
+
+	for _, size := range []int64{0, -1} {
+		t.Run(fmt.Sprintf("size_%d", size), func(t *testing.T) {
+			server := newTestServer(t)
+			counter.Reset()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			err = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:       blobRef,
+				Size:      size,
+				MediaType: "application/octet-stream",
+			}, stream)
+			require.NoError(t, err)
+			require.Equal(t, expectedLayerData, stream.collectData())
+			assertRequests(t, counter, map[string]int{
+				// Non-positive request sizes are treated as unknown; fetch the size
+				// from the registry instead of using an invalid CAS digest size.
+				http.MethodGet + " /v2/":         1,
+				http.MethodHead + " " + blobPath: 1,
+				http.MethodGet + " " + blobPath:  1,
+			})
+		})
+	}
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {

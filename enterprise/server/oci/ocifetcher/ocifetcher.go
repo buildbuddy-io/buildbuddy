@@ -470,13 +470,15 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 			return nil, err
 		}
 		// Best-effort metadata for read-through caching. Use caller-provided
-		// metadata when available; otherwise ask the registry.
-		if size > 0 {
-			// Use caller-provided size.
-		} else if sz, err := layer.Size(); err != nil {
-			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
-		} else {
-			size = sz
+		// metadata when available; otherwise ask the registry. Size must be
+		// positive to be useful as a CAS digest size; go-containerregistry uses
+		// -1 for unknown sizes, and 0 indicates it was not supplied.
+		if size <= 0 {
+			if sz, err := layer.Size(); err != nil {
+				log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
+			} else {
+				size = sz
+			}
 		}
 		if mediaType != "" {
 			// Use caller-provided media type.
@@ -498,7 +500,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	}
 
 	// Skip caching when metadata is unavailable.
-	if mediaType == "" || size == 0 {
+	if mediaType == "" || size <= 0 {
 		return 0, streamAndClose(rc)
 	}
 
