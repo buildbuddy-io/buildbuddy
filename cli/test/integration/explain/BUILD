@@ -5,7 +5,14 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_test(
     name = "explain_test",
     srcs = ["explain_test.go"],
-    data = ["//cli/test/integration/compact:testdata"],
+    data = [
+        "//cli/test/integration/compact:testdata/1.binpb.zst",
+        "//cli/test/integration/compact:testdata/2.binpb.zst",
+    ],
+    x_defs = {
+        "oldCompactLogRunfilePath": "$(rlocationpath //cli/test/integration/compact:testdata/1.binpb.zst)",
+        "newCompactLogRunfilePath": "$(rlocationpath //cli/test/integration/compact:testdata/2.binpb.zst)",
+    },
     deps = [
         "//cli/testutil/testcli",
         "//proto:spawn_diff_go_proto",

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -13,12 +12,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const testdataDir = "com_github_buildbuddy_io_buildbuddy/cli/test/integration/compact/testdata"
+// Set via x_defs in the BUILD file.
+var (
+	oldCompactLogRunfilePath string
+	newCompactLogRunfilePath string
+)
 
-func testdataPath(t *testing.T, name string) string {
+func runfilePath(t *testing.T, rlocationPath string) string {
 	t.Helper()
-	p, err := runfiles.Rlocation(path.Join(testdataDir, name))
-	require.NoError(t, err)
+	p, err := runfiles.Rlocation(rlocationPath)
+	require.NoError(t, err, "resolve runfile %q", rlocationPath)
 	return p
 }
 
@@ -26,7 +29,6 @@ func testdataPath(t *testing.T, name string) string {
 // targets but with different output contents, so we expect bb explain to
 // report both spawns as modified.
 func assertExpectedDiff(t *testing.T, result *spawn_diff.DiffResult) {
-	t.Helper()
 	require.Len(t, result.GetSpawnDiffs(), 2)
 	var labels []string
 	for _, sd := range result.GetSpawnDiffs() {
@@ -43,8 +45,8 @@ func assertExpectedDiff(t *testing.T, result *spawn_diff.DiffResult) {
 
 func TestExplainJsonOutputIsClean(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
-	old := testdataPath(t, "1.binpb.zst")
-	new := testdataPath(t, "2.binpb.zst")
+	old := runfilePath(t, oldCompactLogRunfilePath)
+	new := runfilePath(t, newCompactLogRunfilePath)
 
 	stdout, stderr, err := testcli.SplitOutput(
 		testcli.Command(t, ws, "explain",
@@ -63,8 +65,8 @@ func TestExplainJsonOutputIsClean(t *testing.T) {
 
 func TestExplainProtoOutputIsClean(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
-	old := testdataPath(t, "1.binpb.zst")
-	new := testdataPath(t, "2.binpb.zst")
+	old := runfilePath(t, oldCompactLogRunfilePath)
+	new := runfilePath(t, newCompactLogRunfilePath)
 
 	stdout, stderr, err := testcli.SplitOutput(
 		testcli.Command(t, ws, "explain",
