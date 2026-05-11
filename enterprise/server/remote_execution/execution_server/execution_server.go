@@ -990,6 +990,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if opts.recordActionMergingState {
 			_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
 		}
+		if s.enableRedisAvailabilityMonitoring {
+			if err := s.streamPubSub.DeleteMonitoredChannel(ctx, redisKeyForMonitoredTaskStatusStream(executionID)); err != nil {
+				log.CtxWarningf(ctx, "Failed to delete pubsub channel: %s", err)
+			}
+		}
 		return nil, status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
 

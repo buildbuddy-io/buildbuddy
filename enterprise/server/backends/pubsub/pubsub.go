@@ -117,6 +117,10 @@ func (p *StreamPubSub) CreateMonitoredChannel(ctx context.Context, name string) 
 	return nil
 }
 
+func (p *StreamPubSub) DeleteMonitoredChannel(ctx context.Context, name string) error {
+	return p.rdb.Del(ctx, monitoredKeyPrefix+name).Err()
+}
+
 func (p *StreamPubSub) MonitoredChannel(name string) *Channel {
 	return &Channel{name: monitoredKeyPrefix + name}
 }

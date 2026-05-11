@@ -69,6 +69,7 @@ type schedulerServerMock struct {
 
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
+	scheduleErr   error
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
@@ -93,6 +94,9 @@ func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	s.scheduleReqs = append(s.scheduleReqs, req)
+	if s.scheduleErr != nil {
+		return nil, s.scheduleErr
+	}
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
@@ -1195,6 +1199,39 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
 	require.NoError(t, err)
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
+	env, _, redisHandle := setupEnv(t)
+	scheduler := env.GetSchedulerService().(*schedulerServerMock)
+	scheduler.scheduleErr = status.UnavailableError("scheduler unavailable")
+
+	ctx := context.Background()
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+
+	s := env.GetRemoteExecutionService()
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.Error(t, err, "Dispatch should propagate the scheduler error")
+	require.True(t, status.IsUnavailableError(err), "expected UNAVAILABLE error, got %s", err)
+
+	// The monitored channel should be deleted on error.
+	require.Equal(t, 0, redisHandle.KeyCount("monitoredPubSub/*"),
+		"monitored pubsub channel should be deleted after scheduling failure")
 }
 
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {

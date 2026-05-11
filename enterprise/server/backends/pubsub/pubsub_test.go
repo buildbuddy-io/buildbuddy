@@ -108,6 +108,35 @@ func TestMonitoredPubSub(t *testing.T) {
 	require.Contains(t, err.Error(), "disappeared")
 }
 
+func TestDeleteMonitoredChannel(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	pubSub := NewStreamPubSub(redis.NewClient(redisutil.TargetToOptions(redisHandle.Target)))
+
+	ctx := context.Background()
+
+	err := pubSub.CreateMonitoredChannel(ctx, channel1Name)
+	require.NoError(t, err)
+	channel1 := pubSub.MonitoredChannel(channel1Name)
+
+	subscriber := pubSub.SubscribeHead(ctx, channel1)
+	defer subscriber.Close()
+
+	err = pubSub.Publish(ctx, channel1, message1)
+	require.NoError(t, err)
+	requireMessages(t, subscriber, message1)
+
+	err = pubSub.DeleteMonitoredChannel(ctx, channel1Name)
+	require.NoError(t, err)
+
+	err = requireError(t, subscriber)
+	require.True(t, status.IsUnavailableError(err), "expected UNAVAILABLE error but got %s", err)
+	require.Contains(t, err.Error(), "disappeared")
+
+	// Deleting a non-existent channel should be a no-op.
+	err = pubSub.DeleteMonitoredChannel(ctx, channel1Name)
+	require.NoError(t, err)
+}
+
 func requireNoMessages(t *testing.T, subscriber *StreamSubscription) {
 	select {
 	case msg, ok := <-subscriber.Chan():
