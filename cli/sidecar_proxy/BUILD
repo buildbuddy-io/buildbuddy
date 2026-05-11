@@ -34,7 +34,7 @@ go_test(
     size = "small",
     srcs = ["sidecar_proxy_test.go"],
     deps = [
-	":sidecar_proxy",
+        ":sidecar_proxy",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
