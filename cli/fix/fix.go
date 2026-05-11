@@ -1,8 +1,10 @@
-// Package fix implements the `bb fix` command, which tidies up a repo so it
-// builds with Bazel.
+// Package fix implements the `bb fix` command, which tidies up a Bazel
+// workspace so it builds. It extends gazelle and buildifier with extra
+// fix-ups, and will synthesize a minimal Bazel workspace (an empty
+// MODULE.bazel) when run in a repo that doesn't have one yet, so the same
+// command can bootstrap a new project or maintain an existing one.
 //
-// It creates a MODULE.bazel if neither MODULE.bazel nor WORKSPACE exists, then
-// walks the repo to:
+// Concretely, it walks the repo to:
 //   - run buildifier on BUILD, WORKSPACE, MODULE.bazel, and .bzl files
 //     (translating non-Bazel build files first when possible);
 //   - detect languages in use (e.g. Go, TypeScript) from source and dep files
