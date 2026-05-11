@@ -83,7 +83,7 @@ func TestFix_BootstrapsModuleBazel(t *testing.T) {
 }
 
 func TestFix_PreservesExistingWorkspace(t *testing.T) {
-	const wsContents = "# pre-existing WORKSPACE\n"
+	wsContents := "# pre-existing WORKSPACE\n"
 	ws := fixWorkspace(t, map[string]string{"WORKSPACE": wsContents})
 
 	out, err := runFix(t, ws)
@@ -98,7 +98,7 @@ func TestFix_PreservesExistingWorkspace(t *testing.T) {
 }
 
 func TestFix_PreservesExistingModule(t *testing.T) {
-	const modContents = "module(name = \"already_here\")\n"
+	modContents := "module(name = \"already_here\")\n"
 	ws := fixWorkspace(t, map[string]string{"MODULE.bazel": modContents})
 
 	out, err := runFix(t, ws)
@@ -129,7 +129,7 @@ func TestFix_FormatsBuildFile(t *testing.T) {
 }
 
 func TestFix_FormatsBzlFile(t *testing.T) {
-	const poorlyFormattedBzl = "def  foo( x,y ):\n  return x+y\n"
+	poorlyFormattedBzl := "def  foo( x,y ):\n  return x+y\n"
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel": "module(name = \"x\")\n",
 		"defs.bzl":     poorlyFormattedBzl,
@@ -164,11 +164,10 @@ func TestFix_SkipsHiddenDirectories(t *testing.T) {
 }
 
 func TestFix_IgnoresNonBuildFiles(t *testing.T) {
-	const notes = poorlyFormatted // looks like Starlark, but not a build file
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel":  "module(name = \"x\")\n",
-		"BUILD.txt":     notes,
-		"notes.bzl.bak": notes,
+		"BUILD.txt":     poorlyFormatted, // looks like Starlark, but not a build file
+		"notes.bzl.bak": poorlyFormatted,
 		"README.md":     "# hello\n",
 	})
 
@@ -178,7 +177,7 @@ func TestFix_IgnoresNonBuildFiles(t *testing.T) {
 	for _, p := range []string{"BUILD.txt", "notes.bzl.bak"} {
 		b, err := os.ReadFile(filepath.Join(ws, p))
 		require.NoError(t, err)
-		require.Equal(t, notes, string(b),
+		require.Equal(t, poorlyFormatted, string(b),
 			"%s should not be reformatted (not a recognized build file)", p)
 	}
 }

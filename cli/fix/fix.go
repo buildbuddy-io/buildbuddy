@@ -252,14 +252,6 @@ func runBuildifier(path string) {
 	buildifier.Run()
 }
 
-// macroNameForDepFile derives the deps.bzl macro name used by
-// `gazelle update-repos --to_macro=` for a given dep file path. Non-
-// alphanumeric characters are replaced with underscores so that nested paths
-// like "sub/dir/go.mod" produce a valid Starlark identifier.
-func macroNameForDepFile(path string) string {
-	return fmt.Sprintf("install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))
-}
-
 func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 	// Don't run update-repos on MODULE.bazel files.
 	if moduleOrWorkspaceFile == workspace.ModuleFileName {
@@ -270,7 +262,7 @@ func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, "--to_macro=deps.bzl%" + macroNameForDepFile(path)}
+	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, fmt.Sprintf("--to_macro=deps.bzl%%install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
 }

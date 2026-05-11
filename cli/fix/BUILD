@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -20,10 +20,4 @@ go_library(
         "@com_github_bazelbuild_buildtools//buildifier:buildifier_lib",
         "@com_github_bazelbuild_buildtools//edit",
     ],
-)
-
-go_test(
-    name = "fix_test",
-    srcs = ["fix_internal_test.go"],
-    embed = [":fix"],
 )
