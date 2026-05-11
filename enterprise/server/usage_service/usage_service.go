@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -38,6 +39,8 @@ type UsageField struct {
 	Name string
 	// PrimaryDBExpression is the SQL aggregation expression for the primary DB.
 	PrimaryDBExpression string
+	// OLAPExpression is the ClickHouse RawUsage aggregation expression.
+	OLAPExpression string
 	// AlertingMetric is the usage alerting enum corresponding to this field.
 	AlertingMetric usagepb.UsageAlertingMetric_Value
 }
@@ -47,93 +50,208 @@ var UsageFields = []UsageField{
 	{
 		Name:                "invocations",
 		PrimaryDBExpression: "SUM(invocations)",
+		OLAPExpression:      rawUsageSum(sku.BuildEventsBESCount),
 		AlertingMetric:      usagepb.UsageAlertingMetric_INVOCATIONS,
 	},
 	{
 		Name:                "action_cache_hits",
 		PrimaryDBExpression: "SUM(action_cache_hits)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheACHits),
 		AlertingMetric:      usagepb.UsageAlertingMetric_ACTION_CACHE_HITS,
 	},
 	{
 		Name:                "total_cached_action_exec_usec",
 		PrimaryDBExpression: "SUM(total_cached_action_exec_usec)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheACCachedExecDurationNanos),
 		AlertingMetric:      usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
 	},
 	{
 		Name:                "cas_cache_hits",
 		PrimaryDBExpression: "SUM(cas_cache_hits)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASHits),
 		AlertingMetric:      usagepb.UsageAlertingMetric_CAS_CACHE_HITS,
 	},
 	{
 		Name:                "total_download_size_bytes",
 		PrimaryDBExpression: "SUM(total_download_size_bytes)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASDownloadedBytes),
 		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_external_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_EXTERNAL_DOWNLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_EXTERNAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_internal_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_INTERNAL_DOWNLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_INTERNAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_workflow_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_upload_size_bytes",
 		PrimaryDBExpression: "SUM(total_upload_size_bytes)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASUploadedBytes),
 		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_external_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_EXTERNAL_UPLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_EXTERNAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_internal_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_INTERNAL_UPLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_INTERNAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_workflow_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_WORKFLOW_UPLOAD_SIZE_BYTES,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_WORKFLOW_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(linux_execution_duration_usec)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION,
 	},
 	{
 		Name:                "cloud_rbe_linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION,
 	},
 	{
 		Name:                "cloud_workflow_linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION,
 	},
 	{
 		Name:                "cloud_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN origin = 'internal' THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_LINUX_CPU_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_LINUX_CPU_DURATION,
 	},
 	{
 		Name:                "cloud_rbe_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
 	},
 	{
 		Name:                "cloud_workflow_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_CPU_DURATION,
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_CPU_DURATION,
 	},
+}
+
+// UsageFieldForAlertingMetric returns the Usage field mapped to an alerting metric.
+func UsageFieldForAlertingMetric(metric usagepb.UsageAlertingMetric_Value) (*UsageField, bool) {
+	for i := range UsageFields {
+		if UsageFields[i].AlertingMetric == metric {
+			return &UsageFields[i], true
+		}
+	}
+	return nil, false
+}
+
+func rawUsageSum(usageSKU sku.SKU, conditions ...string) string {
+	expression := "SUM(CASE WHEN sku = '" + string(usageSKU) + "'"
+	if len(conditions) > 0 {
+		expression += " AND " + strings.Join(conditions, " AND ")
+	}
+	return expression + " THEN count ELSE 0 END)"
+}
+
+func rawUsageLabelEquals(name sku.LabelName, value sku.LabelValue) string {
+	return "labels['" + string(name) + "'] = '" + string(value) + "'"
+}
+
+func rawUsageLabelNotEquals(name sku.LabelName, value sku.LabelValue) string {
+	return "labels['" + string(name) + "'] != '" + string(value) + "'"
+}
+
+func rawUsageLabelIn(name sku.LabelName, values ...sku.LabelValue) string {
+	return "labels['" + string(name) + "'] IN (" + quotedRawUsageLabelValues(values...) + ")"
+}
+
+func rawUsageLabelNotIn(name sku.LabelName, values ...sku.LabelValue) string {
+	return "labels['" + string(name) + "'] NOT IN (" + quotedRawUsageLabelValues(values...) + ")"
+}
+
+func quotedRawUsageLabelValues(values ...sku.LabelValue) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, "'"+string(value)+"'")
+	}
+	return strings.Join(quoted, ", ")
 }
 
 type usageService struct {
@@ -430,8 +548,7 @@ func (s *usageService) usageAlertingRuleToProto(ctx context.Context, row *tables
 			Window:            row.Window,
 		},
 		Status: &usagepb.UsageAlertingRuleStatus{
-			LastEvaluationTimestamp: timestampFromUsec(row.LastEvaluationUsec),
-			LastFiredTimestamp:      timestampFromUsec(row.LastFiredUsec),
+			LastFiredTimestamp: timestampFromUsec(row.LastFiredUsec),
 		},
 	}, nil
 }
