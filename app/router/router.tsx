@@ -433,6 +433,14 @@ class Router {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
+  canAccessUsageAlertingPage(user?: User) {
+    return (
+      this.canAccessUsagePage(user) &&
+      capabilities.config.usageAlertsEnabled &&
+      Boolean(user?.canCall("getUsageAlertingRules"))
+    );
+  }
+
   canAccessWorkflowsPage() {
     return capabilities.config.workflowsEnabled;
   }
@@ -549,7 +557,7 @@ class Router {
     if (path.startsWith(Path.usagePath) && !this.canAccessUsagePage(user)) {
       return new URL(Path.home, window.location.href);
     }
-    if (path.startsWith(Path.usageAlertingPath) && !capabilities.config.usageAlertsEnabled) {
+    if (path.startsWith(Path.usageAlertingPath) && !this.canAccessUsageAlertingPage(user)) {
       return new URL(Path.usagePath, window.location.href);
     }
 

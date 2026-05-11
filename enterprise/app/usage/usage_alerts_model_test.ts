@@ -1,5 +1,5 @@
 import { usage } from "../../../proto/usage_ts_proto";
-import { USAGE_ALERTING_METRICS } from "./usage_alerts_model";
+import { USAGE_ALERTING_METRICS, usageAlertingMetricLabel } from "./usage_alerts_model";
 
 const UsageAlertingMetric = usage.UsageAlertingMetric.Value;
 type UsageAlertingMetric = usage.UsageAlertingMetric.Value;
@@ -31,5 +31,9 @@ describe("USAGE_ALERTING_METRICS", () => {
       expect(metadata.label).toMatch(/\S/);
       expect(["count", "bytes", "duration_nanos"]).toContain(metadata.unit);
     }
+  });
+
+  it("returns a fallback label for unknown metrics", () => {
+    expect(usageAlertingMetricLabel(UsageAlertingMetric.UNKNOWN)).toBe("Unknown");
   });
 });

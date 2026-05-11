@@ -32,6 +32,9 @@ interface UsageAlertsState {
   /** Alert configuration backing the open create-alert modal. Undefined when closed. */
   createAlertConfig?: usage.UsageAlertingRuleConfiguration;
 
+  /** Raw text backing the create-alert threshold input. */
+  createAlertThresholdInput?: string;
+
   /** Whether a create-alert request is in flight. */
   createAlertLoading?: boolean;
 
@@ -55,7 +58,6 @@ const USAGE_ALERTING_WINDOWS: UsageAlertingWindowOption[] = [
 
 const DEFAULT_CREATE_ALERT_METRIC = UsageAlertingMetric.INVOCATIONS;
 const DEFAULT_CREATE_ALERT_WINDOW = UsageAlertingWindow.DAY;
-const DEFAULT_CREATE_ALERT_THRESHOLD = Long.fromNumber(1);
 
 /** UsageAlertsComponent renders and manages usage alerting rules. */
 export default class UsageAlertsComponent extends React.Component<{}, UsageAlertsState> {
@@ -100,23 +102,21 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
     this.setState({
       createAlertConfig: new usage.UsageAlertingRuleConfiguration({
         metric: DEFAULT_CREATE_ALERT_METRIC,
-        absoluteThreshold: usageAlertingAbsoluteThresholdFromInput(
-          DEFAULT_CREATE_ALERT_METRIC,
-          DEFAULT_CREATE_ALERT_THRESHOLD
-        ),
+        absoluteThreshold: Long.ZERO,
         window: DEFAULT_CREATE_ALERT_WINDOW,
       }),
+      createAlertThresholdInput: "",
     });
   }
 
   private onRequestCloseCreateAlertModal() {
-    this.setState({ createAlertConfig: undefined });
+    this.setState({ createAlertConfig: undefined, createAlertThresholdInput: undefined });
   }
 
   private onChangeCreateAlertMetric(e: React.ChangeEvent<HTMLSelectElement>) {
     const metric = Number(e.target.value) as UsageAlertingMetric;
     const config = this.state.createAlertConfig!;
-    const threshold = usageAlertingInputThreshold(config);
+    const threshold = parseUsageAlertingThresholdInput(this.state.createAlertThresholdInput) ?? Long.ZERO;
     this.setState({
       createAlertConfig: new usage.UsageAlertingRuleConfiguration({
         ...config,
@@ -134,11 +134,12 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
   }
 
   private onChangeCreateAlertThreshold(e: React.ChangeEvent<HTMLInputElement>) {
-    const thresholdText = e.target.value.trim();
-    const threshold = thresholdText.match(/^-?[0-9]+$/) ? Long.fromString(thresholdText) : Long.ZERO;
+    const thresholdText = e.target.value;
     const config = this.state.createAlertConfig!;
     const metric = config.metric ?? UsageAlertingMetric.UNKNOWN;
+    const threshold = parseUsageAlertingThresholdInput(thresholdText) ?? Long.ZERO;
     this.setState({
+      createAlertThresholdInput: thresholdText,
       createAlertConfig: new usage.UsageAlertingRuleConfiguration({
         ...config,
         absoluteThreshold: usageAlertingAbsoluteThresholdFromInput(metric, threshold),
@@ -147,16 +148,31 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
   }
 
   private onSubmitCreateAlert() {
-    const createAlertConfig = this.state.createAlertConfig!;
+    const createAlertConfig = this.state.createAlertConfig;
+    if (!createAlertConfig) {
+      alertService.error("Enter alert configuration.");
+      return;
+    }
+    const threshold = parseUsageAlertingThresholdInput(this.state.createAlertThresholdInput);
+    if (!threshold) {
+      alertService.error("Enter a non-negative whole number.");
+      return;
+    }
+    const metric = createAlertConfig.metric ?? UsageAlertingMetric.UNKNOWN;
+    const configuration = new usage.UsageAlertingRuleConfiguration({
+      ...createAlertConfig,
+      absoluteThreshold: usageAlertingAbsoluteThresholdFromInput(metric, threshold),
+    });
 
     this.setState({ createAlertLoading: true });
     this.createAlertRPC = rpcService.service
-      .createUsageAlertingRule({ configuration: createAlertConfig })
+      .createUsageAlertingRule({ configuration })
       .then((response) => {
         const rule = response.usageAlertingRule;
         this.setState((state) => ({
           alertingRules: rule ? [...(state.alertingRules ?? []), rule] : state.alertingRules,
           createAlertConfig: undefined,
+          createAlertThresholdInput: undefined,
         }));
         alertService.success("Alert created.");
       })
@@ -178,8 +194,15 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
   }
 
   private onConfirmDeleteAlert() {
-    const rule = this.state.deleteAlertRule!;
+    const rule = this.state.deleteAlertRule;
+    if (!rule) {
+      return;
+    }
     const usageAlertingRuleId = rule.metadata?.usageAlertingRuleId;
+    if (!usageAlertingRuleId) {
+      alertService.error("Cannot delete alert: missing alert ID.");
+      return;
+    }
 
     this.setState({ deleteAlertRuleId: usageAlertingRuleId });
     this.deleteAlertRPC = rpcService.service
@@ -235,19 +258,25 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
     }
     const metric = createAlertConfig.metric;
     const window = createAlertConfig.window;
-    const threshold = usageAlertingInputThreshold(createAlertConfig);
-    const thresholdInput = threshold.toString();
+    const thresholdInput = this.state.createAlertThresholdInput ?? "";
+    const threshold = parseUsageAlertingThresholdInput(thresholdInput);
+    const thresholdInputEmpty = thresholdInput.trim() === "";
+    const thresholdInputInvalid = !thresholdInputEmpty && threshold === undefined;
     let thresholdPreview: string;
-    switch (usageAlertingMetricUnit(metric)) {
-      case "bytes":
-        thresholdPreview = formatBytes(threshold);
-        break;
-      case "duration_nanos":
-        thresholdPreview = formatUsageAlertingMinutes(threshold, true);
-        break;
-      case "count":
-        thresholdPreview = formatCount(threshold);
-        break;
+    if (threshold === undefined) {
+      thresholdPreview = "";
+    } else {
+      switch (usageAlertingMetricUnit(metric)) {
+        case "bytes":
+          thresholdPreview = formatBytes(threshold);
+          break;
+        case "duration_nanos":
+          thresholdPreview = formatUsageAlertingMinutes(threshold, true);
+          break;
+        case "count":
+          thresholdPreview = formatCount(threshold);
+          break;
+      }
     }
     return (
       <SimpleModalDialog
@@ -257,6 +286,7 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
         onRequestClose={this.onRequestCloseCreateAlertModal.bind(this)}
         submitLabel="Create"
         onSubmit={this.onSubmitCreateAlert.bind(this)}
+        submitDisabled={thresholdInputEmpty || thresholdInputInvalid}
         loading={this.state.createAlertLoading}>
         <div className="usage-alerting-field">
           <div className="usage-alerting-field-heading">
@@ -294,13 +324,20 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
           </div>
           <TextInput
             id="usage-alerting-threshold"
-            type="number"
-            step="1"
+            type="text"
             value={thresholdInput}
+            aria-invalid={thresholdInputInvalid}
+            aria-describedby={thresholdInputInvalid ? "usage-alerting-threshold-error" : undefined}
             onChange={this.onChangeCreateAlertThreshold.bind(this)}
             autoFocus={true}
           />
-          <div className="subtitle usage-alerting-threshold-preview">{thresholdPreview}</div>
+          {thresholdInputInvalid ? (
+            <div id="usage-alerting-threshold-error" className="usage-alerting-field-error">
+              Enter a non-negative whole number.
+            </div>
+          ) : (
+            <div className="subtitle usage-alerting-threshold-preview">{thresholdPreview}</div>
+          )}
         </div>
       </SimpleModalDialog>
     );
@@ -391,7 +428,7 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
 }
 
 function usageAlertingWindowLabel(window?: UsageAlertingWindow): string {
-  return USAGE_ALERTING_WINDOWS.find((option) => option.window === window)!.label;
+  return USAGE_ALERTING_WINDOWS.find((option) => option.window === window)?.label ?? "Unknown";
 }
 
 function formatUsageAlertingThreshold(config?: usage.UsageAlertingRuleConfiguration | null): string {
@@ -406,12 +443,12 @@ function formatUsageAlertingThreshold(config?: usage.UsageAlertingRuleConfigurat
   }
 }
 
-function usageAlertingInputThreshold(config?: usage.UsageAlertingRuleConfiguration | null): Long {
-  const threshold = Long.fromValue(config?.absoluteThreshold ?? 0);
-  if (usageAlertingMetricUnit(config?.metric) === "duration_nanos") {
-    return Long.fromNumber(Math.round(Number(threshold) / 60e9));
+function parseUsageAlertingThresholdInput(value?: string): Long | undefined {
+  const trimmedValue = value?.trim();
+  if (!trimmedValue?.match(/^[0-9]+$/)) {
+    return undefined;
   }
-  return threshold;
+  return Long.fromString(trimmedValue);
 }
 
 function usageAlertingAbsoluteThresholdFromInput(metric: UsageAlertingMetric, threshold: Long): Long {

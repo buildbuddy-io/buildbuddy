@@ -110,7 +110,7 @@ export function usageAlertingMetricMetadata(metric?: UsageAlertingMetric): Usage
 }
 
 export function usageAlertingMetricLabel(metric?: UsageAlertingMetric): string {
-  return usageAlertingMetricMetadata(metric)!.label;
+  return usageAlertingMetricMetadata(metric)?.label ?? "Unknown";
 }
 
 export function usageAlertingMetricUnit(metric?: UsageAlertingMetric): UsageAlertingMetricUnit {

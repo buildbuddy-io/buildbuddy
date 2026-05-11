@@ -177,3 +177,10 @@
   line-height: 18px;
   min-height: 18px;
 }
+
+.usage-alerting-field-error {
+  color: var(--color-status-error);
+  font-size: 14px;
+  line-height: 18px;
+  min-height: 18px;
+}

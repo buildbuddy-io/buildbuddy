@@ -14,7 +14,6 @@ ts_library(
         "//:node_modules/moment",
         "//:node_modules/react",
         "//app/auth:auth_service",
-        "//app/capabilities",
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",

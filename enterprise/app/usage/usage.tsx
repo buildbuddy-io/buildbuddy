@@ -2,7 +2,6 @@ import Long from "long";
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import capabilities from "../../../app/capabilities/capabilities";
 import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
@@ -44,7 +43,7 @@ export default class UsageComponent extends React.Component<UsageProps> {
   }
 
   private usageAlertsEnabled() {
-    return capabilities.config.usageAlertsEnabled;
+    return router.canAccessUsageAlertingPage(this.props.user);
   }
 
   private activeTab(): UsageTab {
