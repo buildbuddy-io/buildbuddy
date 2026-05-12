@@ -1932,3 +1932,130 @@ func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
 	require.Equal(t, int64(0), sr.FailedAttemptCount)
 	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
 }
+
+func TestScheduledWorkflow_StaleCronDeletesSchedule(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		configContents string
+	}{
+		{
+			name: "mismatched cron in config",
+			configContents: `
+actions:
+  - name: "Nightly"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`,
+		},
+		{
+			name: "no schedule trigger in config",
+			configContents: `
+actions:
+  - name: "Nightly"
+    bazel_commands: ["test //..."]
+`,
+		},
+		{
+			name:           "no config at all",
+			configContents: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := newTestEnv(t)
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			_ = runBBServer(ctx, t, te)
+			_, _, gid := authenticate(t, ctx, te)
+			createWorkflow(t, te, repoURL, gid, false)
+
+			if tc.configContents != "" {
+				provider.FileContents = map[string]string{config.FilePath: tc.configContents}
+			}
+
+			now := threePM
+			te.SetClock(clockwork.NewFakeClockAt(now))
+
+			insertScheduledRun(t, te, &tables.ScheduledRun{
+				ScheduleID:  "stale-nightly",
+				GroupID:     gid,
+				RepoURL:     repoURL,
+				ActionName:  "Nightly",
+				CronExpr:    "0 * * * *",
+				NextRunUsec: now.UnixMicro(),
+			})
+
+			err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+			require.NoError(t, err)
+
+			// No execution should have been dispatched.
+			require.Zero(t, len(te.GetRemoteExecutionClient().(*fakeExecutionClient).executeRequests))
+
+			// The stale schedule should have been deleted.
+			runs := listScheduledRuns(t, te, gid, repoURL)
+			require.Empty(t, runs)
+		})
+	}
+}
+
+func TestScheduledWorkflow_GitProviderError_Retries(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	authCtx, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	provider := setupFakeGitProvider(t, te)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false /*useDefaultWorkflowConfig*/)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+	// Simulate a transient GitHub provider error (not a 404).
+	provider.GetFileContentsError = status.InternalError("GitHub API unavailable")
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// Row should not be deleted; retry logic should have applied.
+	sr := getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(1), sr.FailedAttemptCount)
+
+	// Unset the error to simulate the transient error has been resolved.
+	provider.GetFileContentsError = nil
+
+	// Advance clock to the next scheduled time and verify the workflow is scheduled.
+	te.SetClock(clockwork.NewFakeClockAt(now.Add(1 * time.Minute)))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	select {
+	case execReq := <-execClient.executeRequests:
+		actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+		require.Equal(t, "Test", actionName)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scheduled workflow execution")
+	}
+}

@@ -2063,7 +2063,13 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
 	} else if cfg == nil {
-		return fmt.Errorf("workflow config not found")
+		log.CtxInfof(ctx, "Workflow config not found for scheduled run %s; deleting", scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
 	}
 
 	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
@@ -2077,7 +2083,13 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	action := actions[0]
 
 	if !isScheduleStillValid(action, scheduled) {
-		return fmt.Errorf("cron %q for action %q no longer matches workflow config", scheduled.CronExpr, scheduled.ActionName)
+		log.CtxInfof(ctx, "Schedule %q for action %q no longer valid for scheduled run %s; deleting", scheduled.CronExpr, scheduled.ActionName, scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
 	}
 
 	invocationUUID, err := guuid.NewRandom()
@@ -2143,6 +2155,17 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 		return fmt.Errorf("failed to advance scheduled workflow %s", scheduleID)
 	}
 	return nil
+}
+
+// deleteScheduledRun deletes a scheduled run that is no longer valid (e.g. config file deleted or
+// cron expression removed). We filter on lease_expires_usec to avoid race conditions.
+func (ws *workflowService) deleteScheduledRun(ctx context.Context, scheduleID string, leaseExpiresUsec int64) error {
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_scheduled_run").Raw(`
+		DELETE FROM "ScheduledRuns"
+		WHERE schedule_id = ?
+		  AND lease_expires_usec = ?
+	`, scheduleID, leaseExpiresUsec).Exec()
+	return result.Error
 }
 
 // updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,
