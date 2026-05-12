@@ -13,11 +13,11 @@ diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
 diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
 --- a/cmd/gazelle/main.go
 +++ b/cmd/gazelle/main.go
-@@ -56,6 +56,10 @@ func (cmd command) String() string {
+@@ -59,6 +59,10 @@ func (cmd command) String() string {
  }
  
  func main() {
-+        Run()
++	Run()
 +}
 +
 +func Run() {

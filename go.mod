@@ -58,7 +58,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10
 	github.com/aws/smithy-go v1.24.3
-	github.com/bazelbuild/bazel-gazelle v0.47.0
+	github.com/bazelbuild/bazel-gazelle v0.48.0
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
 	github.com/bazelbuild/buildtools v0.0.0-20260211083412-859bfffeef82
 	github.com/bazelbuild/rules_go v0.60.0
