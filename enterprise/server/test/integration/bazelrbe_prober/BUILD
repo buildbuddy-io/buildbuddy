@@ -4,16 +4,16 @@ go_test(
     name = "bazelrbe_prober_test",
     srcs = ["bazelrbe_prober_test.go"],
     data = [
-        "//server/util/bazel:bazel-6.5.0_crossplatform",
+        "//server/util/bazel:bazel-6.6.0_crossplatform",
         "//server/util/bazel:bazel-7.7.1_crossplatform",
-        "//server/util/bazel:bazel-8.5.0_crossplatform",
+        "//server/util/bazel:bazel-8.7.0_crossplatform",
         "//tools/probers/bazelrbe",
     ],
     x_defs = {
         "bazelrbeProberRunfilePath": "$(rlocationpath //tools/probers/bazelrbe)",
-        "bazel6Runfilepath": "$(rlocationpath //server/util/bazel:bazel-6.5.0_crossplatform)",
+        "bazel6Runfilepath": "$(rlocationpath //server/util/bazel:bazel-6.6.0_crossplatform)",
         "bazel7Runfilepath": "$(rlocationpath //server/util/bazel:bazel-7.7.1_crossplatform)",
-        "bazel8Runfilepath": "$(rlocationpath //server/util/bazel:bazel-8.5.0_crossplatform)",
+        "bazel8Runfilepath": "$(rlocationpath //server/util/bazel:bazel-8.7.0_crossplatform)",
     },
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbetest",
