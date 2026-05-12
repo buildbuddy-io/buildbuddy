@@ -155,6 +155,16 @@ proto_library(
 )
 
 proto_library(
+    name = "cache_proxy_proto",
+    srcs = ["cache_proxy.proto"],
+    deps = [
+        ":acl_proto",
+        ":context_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
     name = "capability_proto",
     srcs = [
         "capability.proto",
@@ -655,6 +665,7 @@ proto_library(
         ":auditlog_proto",
         ":bazel_config_proto",
         ":cache_proto",
+        ":cache_proxy_proto",
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
@@ -1476,6 +1487,7 @@ go_proto_library(
         ":auditlog_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
+        ":cache_proxy_go_proto",
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
@@ -1575,6 +1587,17 @@ go_proto_library(
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+go_proto_library(
+    name = "cache_proxy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy",
+    mode = "messages_and_services",
+    proto = ":cache_proxy_proto",
+    deps = [
+        ":acl_go_proto",
+        ":context_go_proto",
     ],
 )
 
@@ -2337,6 +2360,16 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "cache_proxy_ts_proto",
+    proto = ":cache_proxy_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":context_ts_proto",
+        ":timestamp_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "capability_ts_proto",
     proto = ":capability_proto",
 )
@@ -2378,6 +2411,7 @@ ts_proto_library(
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
         ":bazel_config_ts_proto",
+        ":cache_proxy_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
         ":eventlog_ts_proto",

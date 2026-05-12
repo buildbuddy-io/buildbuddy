@@ -57,6 +57,7 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -1626,6 +1627,10 @@ func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetE
 		res, err := ss.GetExecutionNodes(ctx, req)
 		return res, err
 	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }
 

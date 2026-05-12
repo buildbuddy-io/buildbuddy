@@ -195,6 +195,8 @@ var (
 		buildBuddyServicePrefix + "InvalidateAllSnapshotsForRepo",
 		// RBE deployment view
 		buildBuddyServicePrefix + "GetExecutionNodes",
+		// Cache proxy deployment view
+		buildBuddyServicePrefix + "GetCacheProxies",
 		// BuildBuddy usage data
 		buildBuddyServicePrefix + "GetUsage",
 		buildBuddyServicePrefix + "GetUsageAlertingRules",

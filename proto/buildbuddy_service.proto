@@ -4,6 +4,7 @@ import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
+import "proto/cache_proxy.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
@@ -149,6 +150,10 @@ service BuildBuddyService {
       returns (cache.GetExecutionDownloadsResponse);
   rpc GetTreeDirectorySizes(cache.GetTreeDirectorySizesRequest)
       returns (cache.GetTreeDirectorySizesResponse);
+
+  // Cache Proxy API
+  rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
+      returns (cache_proxy.GetCacheProxiesResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
