@@ -3698,6 +3698,26 @@ var (
 		CompressionType,
 		GroupID,
 	})
+	ByteStreamChunkedWriteChunkBytesByGroup = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_group_chunk_bytes_total",
+		Help:      "Total chunk bytes produced during chunked writes by group ID (sum of all chunk sizes).",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		GroupID,
+	})
+	ByteStreamChunkedWriteDedupedChunkBytesByGroup = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_chunked_write_by_group_chunk_bytes_deduped",
+		Help:      "Chunk bytes that were deduplicated (already existed on remote) during chunked writes by group ID.",
+	}, []string{
+		StatusLabel,
+		CompressionType,
+		GroupID,
+	})
 	ByteStreamChunkedWriteChunkBytesByActionMnemonic = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",

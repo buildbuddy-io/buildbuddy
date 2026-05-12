@@ -1093,10 +1093,12 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 		}
 		if bsm.chunkBytesTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesTotal))
+			metrics.ByteStreamChunkedWriteChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesTotal))
 			metrics.ByteStreamChunkedWriteChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesTotal))
 		}
 		if bsm.chunkBytesDeduped > 0 {
 			metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesDeduped))
+			metrics.ByteStreamChunkedWriteDedupedChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesDeduped))
 			metrics.ByteStreamChunkedWriteDedupedChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesDeduped))
 		}
 		totalDuration := bsm.chunkingDuration + bsm.remoteDuration

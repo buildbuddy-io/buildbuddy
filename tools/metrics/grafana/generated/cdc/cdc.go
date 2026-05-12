@@ -22,19 +22,15 @@ const (
 )
 
 const (
-	proxyWriteBytesSavedWindow      = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[` + window + `]))`
-	executorWriteBytesSavedWindow   = `sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[` + window + `]))`
-	writeBytesSavedWindow           = proxyWriteBytesSavedWindow + ` + ` + executorWriteBytesSavedWindow
-	proxyChunkedWriteBytesWindow    = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{` + proxyFilter + `}[` + window + `]))`
-	executorChunkedWriteBytesWindow = `sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_total{` + executorFilter + `}[` + window + `]))`
-	totalChunkedWriteBytesWindow    = proxyChunkedWriteBytesWindow + ` + ` + executorChunkedWriteBytesWindow
+	proxyWriteBytesSavedWindow    = `(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[` + window + `])) or vector(0))`
+	executorWriteBytesSavedWindow = `(sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[` + window + `])) or vector(0))`
+	writeBytesSavedWindow         = proxyWriteBytesSavedWindow + ` + ` + executorWriteBytesSavedWindow
 
-	proxyWriteBytesSaved7d    = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[7d]))`
-	executorWriteBytesSaved7d = `sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[7d]))`
+	proxyWriteBytesSaved7d    = `(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[7d])) or vector(0))`
+	executorWriteBytesSaved7d = `(sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[7d])) or vector(0))`
 	writeBytesSaved7d         = proxyWriteBytesSaved7d + ` + ` + executorWriteBytesSaved7d
-	writeBytesSaved30d        = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[30d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[30d]))`
-	writeBytesSavedPrev7d     = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[7d] offset 7d)) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[7d] offset 7d))`
-	totalChunkedWriteBytes7d  = `sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total{` + proxyFilter + `}[7d])) + sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_total{` + executorFilter + `}[7d]))`
+	writeBytesSaved30d        = `(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[30d])) or vector(0)) + (sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[30d])) or vector(0))`
+	writeBytesSavedPrev7d     = `(sum(increase(buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped{` + proxyFilter + `}[7d] offset 7d)) or vector(0)) + (sum(increase(buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped{` + executorFilter + `}[7d] offset 7d)) or vector(0))`
 )
 
 func q(expr, legend string) *prometheus.DataqueryBuilder {
@@ -47,6 +43,14 @@ func sumRate(metric, filter string) string {
 
 func sumRateBy(labels, metric, filter string) string {
 	return `sum by (` + labels + `) (rate(` + metric + `{` + filter + `}[` + window + `]))`
+}
+
+func sumRateByName(metricNames string) string {
+	return `sum(rate({__name__=~"` + metricNames + `", region=~"` + proxyRegion + `"}[` + window + `]))`
+}
+
+func sumRateByNameAndLabels(labels, metricNames string) string {
+	return `sum by (` + labels + `) (rate({__name__=~"` + metricNames + `", region=~"` + proxyRegion + `"}[` + window + `]))`
 }
 
 func statPanel(title, description, unit, expr, legend string) *stat.PanelBuilder {
@@ -89,10 +93,11 @@ func heatmapPanel(title, description, unit, expr string) *heatmap.PanelBuilder {
 
 func writeBytesSavedPanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Write Bytes Saved Per "+window+" [proxy + executor]", dash.UnitBytes).
-		Description("Bytes saved by deduplication and total chunked write bytes per window interval").
+		Description("Bytes saved by chunk deduplication per window interval.").
 		GridPos(grid(9, 16, 0, 1)).
 		WithTarget(q(writeBytesSavedWindow, "Bytes Saved").RefId("A")).
-		WithTarget(q(totalChunkedWriteBytesWindow, "Total Chunked Write Bytes").RefId("B"))
+		WithTarget(q(proxyWriteBytesSavedWindow, "Proxy Bytes Saved").RefId("B")).
+		WithTarget(q(executorWriteBytesSavedWindow, "Executor Bytes Saved").RefId("C"))
 }
 
 func last7DaysPanel() *stat.PanelBuilder {
@@ -112,7 +117,7 @@ func last30DaysPanel() *stat.PanelBuilder {
 		dash.UnitBytes,
 		writeBytesSaved30d,
 		"Last 30 Days",
-	), "green").GridPos(grid(3, 2, 16, 7))
+	), "green").GridPos(grid(3, 3, 16, 7))
 }
 
 func previousWeekPanel() *stat.PanelBuilder {
@@ -122,7 +127,7 @@ func previousWeekPanel() *stat.PanelBuilder {
 		dash.UnitBytes,
 		writeBytesSavedPrev7d,
 		"Previous Week",
-	), "blue").GridPos(grid(3, 2, 18, 7))
+	), "blue").GridPos(grid(3, 3, 19, 7))
 }
 
 func wowPanel() *stat.PanelBuilder {
@@ -133,7 +138,7 @@ func wowPanel() *stat.PanelBuilder {
 		dash.UnitPercent,
 		`((`+writeBytesSaved7d+`) - (`+writeBytesSavedPrev7d+`)) / (`+writeBytesSavedPrev7d+`) * 100`,
 		"WoW Change",
-	).GridPos(grid(3, 2, 20, 7)).
+	).GridPos(grid(3, 2, 22, 7)).
 		ColorScheme(dashboard.NewFieldColorBuilder().Mode(dashboard.FieldColorModeIdThresholds)).
 		Thresholds(
 			dashboard.NewThresholdsConfigBuilder().
@@ -143,16 +148,6 @@ func wowPanel() *stat.PanelBuilder {
 					{Color: "green", Value: &zero},
 				}),
 		)
-}
-
-func savedTotalPanel() *stat.PanelBuilder {
-	return fixedColorStat(statPanel(
-		"Saved / Total",
-		"Bytes saved as a percentage of total proxy+executor chunked write bytes in the last 7 days",
-		dash.UnitPercentUnit,
-		`(`+writeBytesSaved7d+`) / (`+totalChunkedWriteBytes7d+`)`,
-		"% Saved",
-	), "green").GridPos(grid(3, 2, 22, 7))
 }
 
 func readThroughputPanel() *timeseries.PanelBuilder {
@@ -202,30 +197,25 @@ func spliceBlobDurationPanel() *heatmap.PanelBuilder {
 }
 
 func writeDeduplicationRatioPanel() *timeseries.PanelBuilder {
-	proxyDedupedBytes := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped", proxyFilter)
-	executorDedupedBytes := sumRate("buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped", executorFilter)
-	proxyTotalBytes := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total", proxyFilter)
-	executorTotalBytes := sumRate("buildbuddy_cache_client_chunked_upload_chunk_bytes_total", executorFilter)
-	proxyDedupedChunks := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped", proxyFilter)
-	executorDedupedChunks := sumRate("buildbuddy_cache_client_chunked_upload_chunks_deduped", executorFilter)
-	proxyTotalChunks := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunks_total", proxyFilter)
-	executorTotalChunks := sumRate("buildbuddy_cache_client_chunked_upload_chunks_total", executorFilter)
+	dedupedBytes := sumRateByName("buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped")
+	totalBytes := sumRateByName("buildbuddy_cache_client_chunked_upload_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total")
+	dedupedChunks := sumRateByName("buildbuddy_cache_client_chunked_upload_chunks_deduped|buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped")
+	totalChunks := sumRateByName("buildbuddy_cache_client_chunked_upload_chunks_total|buildbuddy_proxy_byte_stream_chunked_write_chunks_total")
 
 	return dash.Timeseries("Write Deduplication Ratio [proxy + executor]", dash.UnitPercentUnit).
-		Description("Percentage of chunk bytes and chunk count that were deduplicated during writes").
+		Description("Percentage of chunk bytes and chunk count that were deduplicated during writes.").
 		Min(0).
 		Max(1).
 		LineWidth(2).
 		FillOpacity(10).
-		WithTarget(q(`(`+proxyDedupedBytes+` + `+executorDedupedBytes+`) / (`+proxyTotalBytes+` + `+executorTotalBytes+`)`, "bytes dedup ratio").RefId("A")).
-		WithTarget(q(`(`+proxyDedupedChunks+` + `+executorDedupedChunks+`) / (`+proxyTotalChunks+` + `+executorTotalChunks+`)`, "chunk count dedup ratio").RefId("B"))
+		WithTarget(q(dedupedBytes+` / `+totalBytes, "bytes dedup ratio").RefId("A")).
+		WithTarget(q(dedupedChunks+` / `+totalChunks, "chunk count dedup ratio").RefId("B"))
 }
 
 func deduplicationSavingsPanel() *timeseries.PanelBuilder {
 	proxyBytesSaved := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_deduped", proxyFilter)
 	executorBytesSaved := sumRate("buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped", executorFilter)
-	totalChunkBytes := sumRate("buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total", proxyFilter) +
-		` + ` + sumRate("buildbuddy_cache_client_chunked_upload_chunk_bytes_total", executorFilter)
+	totalChunkBytes := sumRateByName("buildbuddy_cache_client_chunked_upload_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_chunk_bytes_total")
 
 	return dash.Timeseries("Deduplication Savings (Bytes/s) [proxy + executor]", dash.UnitBytesPerSec).
 		Description("Bytes saved per second through chunk deduplication").
@@ -234,12 +224,12 @@ func deduplicationSavingsPanel() *timeseries.PanelBuilder {
 		WithTarget(q(totalChunkBytes, "total chunk bytes").RefId("B"))
 }
 
-func executorUploadDedupRatioByGroupPanel() *timeseries.PanelBuilder {
-	dedupedBytes := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped", executorFilter)
-	totalBytes := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_total", executorFilter)
+func writeDedupRatioByGroupPanel() *timeseries.PanelBuilder {
+	dedupedBytes := sumRateByNameAndLabels("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_group_chunk_bytes_deduped")
+	totalBytes := sumRateByNameAndLabels("group_id", "buildbuddy_cache_client_chunked_upload_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_by_group_chunk_bytes_total")
 
-	return dash.Timeseries("Executor Upload Dedup Ratio by Group", dash.UnitPercentUnit).
-		Description("Executor/client-side CDC upload byte deduplication ratio by group ID.").
+	return dash.Timeseries("Write Dedup Ratio by Group [proxy + executor]", dash.UnitPercentUnit).
+		Description("CDC write byte deduplication ratio by group ID, combining proxy-side and executor/client-side chunked uploads.").
 		Min(0).
 		Max(1).
 		LineWidth(2).
@@ -247,20 +237,20 @@ func executorUploadDedupRatioByGroupPanel() *timeseries.PanelBuilder {
 		WithTarget(q(dedupedBytes+` / `+totalBytes, "{{group_id}}").RefId("A"))
 }
 
-func executorUploadUniqueChunksByGroupPanel() *timeseries.PanelBuilder {
-	totalChunks := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunks_total", executorFilter)
-	dedupedChunks := sumRateBy("group_id", "buildbuddy_cache_client_chunked_upload_chunks_deduped", executorFilter)
+func writeUniqueChunksByGroupPanel() *timeseries.PanelBuilder {
+	totalChunks := sumRateByNameAndLabels("group_id", "buildbuddy_cache_client_chunked_upload_chunks_total|buildbuddy_proxy_byte_stream_chunked_write_chunks_total")
+	dedupedChunks := sumRateByNameAndLabels("group_id", "buildbuddy_cache_client_chunked_upload_chunks_deduped|buildbuddy_proxy_byte_stream_chunked_write_chunks_deduped")
 
-	return dash.Timeseries("Executor Upload Unique Chunks by Group", "suffix:c/s").
-		Description("Estimated executor/client-side GCS PUT pressure from unique CDC chunks by group ID.").
+	return dash.Timeseries("Unique Chunks by Group [proxy + executor]", "suffix:c/s").
+		Description("Estimated GCS PUT pressure from unique CDC chunks by group ID, combining proxy-side and executor/client-side chunked uploads.").
 		LineWidth(2).
 		FillOpacity(10).
 		WithTarget(q(`topk(20, (`+totalChunks+`) - (`+dedupedChunks+`))`, "{{group_id}} unique chunks/s").RefId("A"))
 }
 
 func writeDedupRatioByActionPanel() *timeseries.PanelBuilder {
-	dedupedBytes := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_deduped", region=~"` + proxyRegion + `"}[` + window + `]))`
-	totalBytes := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_total", region=~"` + proxyRegion + `"}[` + window + `]))`
+	dedupedBytes := sumRateByNameAndLabels("action_mnemonic", "buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_deduped")
+	totalBytes := sumRateByNameAndLabels("action_mnemonic", "buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunk_bytes_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunk_bytes_total")
 
 	return dash.Timeseries("Write Dedup Ratio by Action [proxy + executor]", dash.UnitPercentUnit).
 		Description("CDC write byte deduplication ratio by action mnemonic, combining proxy-side and executor/client-side chunked uploads.").
@@ -272,8 +262,8 @@ func writeDedupRatioByActionPanel() *timeseries.PanelBuilder {
 }
 
 func writeUniqueChunksByActionPanel() *timeseries.PanelBuilder {
-	totalChunks := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_total", region=~"` + proxyRegion + `"}[` + window + `]))`
-	dedupedChunks := `sum by (action_mnemonic) (rate({__name__=~"buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_deduped", region=~"` + proxyRegion + `"}[` + window + `]))`
+	totalChunks := sumRateByNameAndLabels("action_mnemonic", "buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_total|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_total")
+	dedupedChunks := sumRateByNameAndLabels("action_mnemonic", "buildbuddy_cache_client_chunked_upload_by_action_mnemonic_chunks_deduped|buildbuddy_proxy_byte_stream_chunked_write_by_action_mnemonic_chunks_deduped")
 
 	return dash.Timeseries("Unique Chunks by Action [proxy + executor]", "suffix:c/s").
 		Description("Estimated GCS PUT pressure from unique CDC chunks by action mnemonic, combining proxy-side and executor/client-side chunked uploads.").
@@ -432,7 +422,6 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(last30DaysPanel()).
 		WithPanel(previousWeekPanel()).
 		WithPanel(wowPanel()).
-		WithPanel(savedTotalPanel()).
 		WithPanel(splitBlobAPICallsPanel()).
 		WithPanel(spliceBlobAPICallsPanel()).
 		WithRow(rowAt("Proxy traffic", collapsedRowsStartY).
@@ -446,8 +435,8 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(rowAt("Deduplication", collapsedRowsStartY+2).
 			WithPanel(writeDeduplicationRatioPanel()).
 			WithPanel(deduplicationSavingsPanel()).
-			WithPanel(executorUploadDedupRatioByGroupPanel()).
-			WithPanel(executorUploadUniqueChunksByGroupPanel()).
+			WithPanel(writeDedupRatioByGroupPanel()).
+			WithPanel(writeUniqueChunksByGroupPanel()).
 			WithPanel(writeDedupRatioByActionPanel()).
 			WithPanel(writeUniqueChunksByActionPanel()).
 			WithPanel(chunkReadHitRatiosPanel()).
