@@ -33,7 +33,7 @@ func NewBazelArgs(args []string) (*BazelArgs, error) {
 // Set updates the BazelArgs struct with a new slice of bazel args.
 // It also recomputes the resolved args.
 func (a *BazelArgs) Set(args []string) error {
-	// Normalize args - apply stable sorting and consistent option representation.
+	// Normalize args - apply consistent option representation.
 	normalizedArgs, err := parser.CanonicalizeArgs(args)
 	if err != nil {
 		return err
@@ -46,10 +46,12 @@ func (a *BazelArgs) Set(args []string) error {
 func (a *BazelArgs) Append(arg string) error {
 	// TODO(#7216): Set the Forwarded args field.
 
+	newArgs := Append(a.Resolved, arg)
+
 	if requiresResolve(arg) {
-		return a.Set(append(a.Resolved, arg))
+		return a.Set(newArgs)
 	}
-	a.Resolved = append(a.Resolved, arg)
+	a.Resolved = newArgs
 	return nil
 }
 
