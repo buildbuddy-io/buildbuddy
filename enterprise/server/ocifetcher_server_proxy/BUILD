@@ -48,5 +48,6 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )

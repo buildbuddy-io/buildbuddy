@@ -2,6 +2,8 @@ package ocifetcher_server_proxy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -20,6 +22,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -189,6 +192,34 @@ func TestHappyPath(t *testing.T) {
 			require.Equal(t, expectedData, data)
 		})
 	}
+}
+
+func TestFetchBlob_PassesSizeAndMediaTypeToUpstream(t *testing.T) {
+	ctx := context.Background()
+	data := []byte("test blob content")
+	sum := sha256.Sum256(data)
+	ref := "example.com/test/image@sha256:" + hex.EncodeToString(sum[:])
+	const mediaType = "application/vnd.oci.image.layer.v1.tar+gzip"
+
+	remote := &recordingOCIFetcherClient{
+		blobData:          data,
+		metadataSize:      int64(len(data)),
+		metadataMediaType: mediaType,
+	}
+	proxyClient := runOCIFetcherProxy(ctx, t, remote)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:       ref,
+		Size:      int64(len(data)),
+		MediaType: mediaType,
+	})
+	require.NoError(t, err)
+	require.Equal(t, data, collectBlobData(t, stream))
+
+	require.NotNil(t, remote.fetchBlobReq)
+	require.Equal(t, ref, remote.fetchBlobReq.GetRef())
+	require.Equal(t, int64(len(data)), remote.fetchBlobReq.GetSize())
+	require.Equal(t, mediaType, remote.fetchBlobReq.GetMediaType())
 }
 
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
@@ -750,6 +781,78 @@ func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fetc
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
+}
+
+type recordingOCIFetcherClient struct {
+	ofpb.UnimplementedOCIFetcherServer
+
+	blobData          []byte
+	metadataSize      int64
+	metadataMediaType string
+	fetchBlobReq      *ofpb.FetchBlobRequest
+}
+
+func (c *recordingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return nil, status.UnimplementedError("FetchManifest not implemented")
+}
+
+func (c *recordingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	return nil, status.UnimplementedError("FetchManifestMetadata not implemented")
+}
+
+func (c *recordingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.fetchBlobReq = req
+	return &staticFetchBlobClient{
+		ctx:  ctx,
+		data: c.blobData,
+	}, nil
+}
+
+func (c *recordingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      c.metadataSize,
+		MediaType: c.metadataMediaType,
+	}, nil
+}
+
+type staticFetchBlobClient struct {
+	grpc.ClientStream
+
+	ctx  context.Context
+	data []byte
+	sent bool
+}
+
+func (c *staticFetchBlobClient) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (c *staticFetchBlobClient) Trailer() metadata.MD {
+	return nil
+}
+
+func (c *staticFetchBlobClient) CloseSend() error {
+	return nil
+}
+
+func (c *staticFetchBlobClient) Context() context.Context {
+	return c.ctx
+}
+
+func (c *staticFetchBlobClient) SendMsg(m any) error {
+	return nil
+}
+
+func (c *staticFetchBlobClient) RecvMsg(m any) error {
+	return nil
+}
+
+func (c *staticFetchBlobClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	if c.sent {
+		return nil, io.EOF
+	}
+	c.sent = true
+	return &ofpb.FetchBlobResponse{Data: c.data}, nil
 }
 
 // collectBlobData reads all data from a FetchBlob stream.
