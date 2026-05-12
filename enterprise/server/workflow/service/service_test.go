@@ -38,12 +38,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -187,6 +189,13 @@ func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string,
 
 func insertScheduledRun(t *testing.T, te *testenv.TestEnv, sr *tables.ScheduledRun) {
 	err := te.GetDBHandle().NewQuery(context.Background(), "create_scheduled_run_for_test").Create(sr)
+	require.NoError(t, err)
+}
+
+func updateGroupStatus(t *testing.T, te *testenv.TestEnv, groupID string, groupStatus grpb.Group_GroupStatus) {
+	err := te.GetDBHandle().NewQuery(context.Background(), "update_group_status_for_test").Raw(`
+		UPDATE "Groups" SET status = ? WHERE group_id = ?`,
+		int32(groupStatus), groupID).Exec().Error
 	require.NoError(t, err)
 }
 
@@ -820,7 +829,9 @@ func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
 
 	// Expect a status update with  the failed attempt
 	status := <-provider.Statuses
-	require.Regexp(t, `http://localhost:\d+/invocation/[0-9a-f\-]+\?runnerStartError=.*?no\+executors\+registered`, status.Payload.(*github.RepoStatus).GetTargetURL())
+	targetURL := status.Payload.(*github.RepoStatus).GetTargetURL()
+	require.Regexp(t, `http://localhost:\d+/invocation/[0-9a-f\-]+\?runnerStartError=.*?no\+executors\+registered`, targetURL)
+	require.NotContains(t, targetURL, "rpc+error")
 }
 
 func TestWebhook_UseDefaultWorkflowConfig(t *testing.T) {
@@ -957,6 +968,35 @@ func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {
 			assert.True(t, status.IsPermissionDeniedError(err))
 		})
 	}
+}
+
+func TestExecuteWorkflow_BlockedGroupDoesNotStartWorkflow(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+
+	te := newTestEnv(t)
+	ctx, uid, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	_ = setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
+	updateGroupStatus(t, te, gid, grpb.Group_BLOCKED_GROUP_STATUS)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+	workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
+	rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: testauth.RequestContext(uid, gid),
+		WorkflowId:     workflowID,
+		PushedRepoUrl:  repoURL,
+		PushedBranch:   "main",
+		CommitSha:      "c04d68571cb519e095772c865847007ed3e7fea9",
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetActionStatuses(), 1)
+	require.Equal(t, int32(codes.PermissionDenied), rsp.GetActionStatuses()[0].GetStatus().GetCode())
+	require.Zero(t, len(execClient.executeRequests))
 }
 
 func TestAPIDispatch_ActionFiltering(t *testing.T) {

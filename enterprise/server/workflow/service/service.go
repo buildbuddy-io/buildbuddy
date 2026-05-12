@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -59,6 +60,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -84,6 +86,8 @@ var (
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
+	errBlocked = status.PermissionDeniedError("there was an issue with your request - please contact support at https://buildbuddy.io/contact")
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
 	// run at a commit because it is untrusted. An approving review at the
@@ -1526,7 +1530,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
-func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, action *config.Action, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, action *config.Action, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
 	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
 		return nil
 	}
@@ -1536,11 +1540,10 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		return nil
 	}
 
-	authCtx := ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
 	// but for correctness we could use page_token to make sure we don't miss any.
 	// By default, this query returns up to 15 invocations.
-	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(authCtx, &inpb.SearchInvocationRequest{
+	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(ctx, &inpb.SearchInvocationRequest{
 		Query: &inpb.InvocationQuery{
 			GroupId:    wf.GroupID,
 			RepoUrl:    wf.RepoURL,
@@ -1560,7 +1563,7 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		if inv.GetInvocationId() == newInvocationID {
 			continue
 		}
-		if err := ws.env.GetRemoteExecutionService().Cancel(authCtx, inv.GetInvocationId()); err != nil {
+		if err := ws.env.GetRemoteExecutionService().Cancel(ctx, inv.GetInvocationId()); err != nil {
 			emitCancellationMetric(wf.GroupID, action, "duplicate_cancel_error")
 			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow %s on branch %q: %s", inv.GetInvocationId(), wd.PushedBranch, err)
 			continue
@@ -1609,8 +1612,30 @@ func emitCancellationMetric(groupID string, action *config.Action, stage string)
 	}).Inc()
 }
 
+func (ws *workflowService) checkWorkflowGroupAllowed(ctx context.Context) error {
+	// All workflow dispatch paths call executeWorkflowAction before submitting
+	// work to RBE, so this blocks manual, webhook, and scheduled starts.
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	if c.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
+		return errBlocked
+	}
+	return nil
+}
+
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	if err := ws.checkWorkflowGroupAllowed(ctx); err != nil {
+		errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, status.Message(err))
+		if statusErr := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); statusErr != nil {
+			log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", statusErr)
+		}
+		return "", err
+	}
+
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = *workflowsMaxRetries
 	r := retry.New(ctx, opts)
@@ -1645,7 +1670,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			cancelDuplicates = !*action.AllowConcurrentRuns
 		}
 		if cancelDuplicates {
-			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, key, wf, wd, invocationID); err != nil {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
 				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 			}
 		}
@@ -1656,7 +1681,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	// Publish a status so the user can see why the workflow didn't execute. For
 	// now, encode a small error message in the URL, and link the user to an
 	// page displaying the error directly.
-	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, lastErr)
+	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, status.Message(lastErr))
 	if err := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); err != nil {
 		log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", err)
 	}
@@ -1665,7 +1690,6 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 }
 
 func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
-	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env.GetAuthenticator())
 	if err != nil {
 		return "", err
