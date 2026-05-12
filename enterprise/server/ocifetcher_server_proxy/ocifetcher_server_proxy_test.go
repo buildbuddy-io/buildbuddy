@@ -21,7 +21,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	gproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -29,6 +28,7 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gproto "google.golang.org/protobuf/proto"
 )
 
 func TestNew_MissingOCIFetcherClient(t *testing.T) {
