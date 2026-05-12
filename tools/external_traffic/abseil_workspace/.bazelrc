@@ -1,3 +1,0 @@
-# Remote dev config for building abseil via BuildBuddy RBE.
-# Inherit from parent repo's shared.bazelrc where possible.
-common --enable_bzlmod

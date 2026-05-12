@@ -109,7 +109,7 @@ actions:
         crons:
           - "0 * * * *"
     steps:
-      - run: "bazel run //tools/external_traffic:build_abseil --config=linux-workflows"
+      - run: "BAZEL_CONFIG=workflows bazel run //tools/external_traffic:build_abseil --config=linux-workflows"
 
 plugins:
   - path: cli/plugins/go-deps
