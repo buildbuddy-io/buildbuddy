@@ -1,7 +1,10 @@
 import { Clock } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import capabilities from "../capabilities/capabilities";
 import Button from "../components/button/button";
+import LinkButton from "../components/button/link_button";
+import { TextLink } from "../components/link/link";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
@@ -146,6 +149,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     let profileFile = this.getProfileFile();
     if (!profileFile?.uri) return;
 
+    if (isProfileTooLarge(profileFile)) {
+      this.setState({ loading: false });
+      return;
+    }
+
     let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
     let storedEncoding: FileEncoding = "";
     if (compressionOption === "1" || (profileFile?.name ?? "").endsWith(".gz")) {
@@ -168,19 +176,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
-  }
-
-  downloadProfile() {
-    let profileFile = this.getProfileFile();
-    if (!profileFile?.uri) {
-      return;
-    }
-
-    try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getInvocationId());
-    } catch {
-      console.error("Error downloading bytestream timing profile");
-    }
   }
 
   private buildDerivedProfileState(profile: Profile) {
@@ -338,6 +333,20 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       );
     }
 
+    const profileFile = this.getProfileFile();
+    if (isProfileTooLarge(profileFile)) {
+      const sizeBytes = getProfileSizeBytes(profileFile);
+      const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
+      return (
+        <>
+          Timing profile is too large to display{sizeBytes ? <> ({format.bytes(sizeBytes)})</> : null}.{" "}
+          <TextLink href={downloadHref} target="_blank">
+            Download profile
+          </TextLink>
+        </>
+      );
+    }
+
     return (
       <>
         <p>Profiling isn't enabled for this invocation. To enable profiling you must add gRPC remote caching.</p>
@@ -376,6 +385,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       );
     }
 
+    const profileFile = this.getProfileFile();
+    const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
+
     return (
       <>
         {this.state.localProfileName && (
@@ -399,11 +411,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {Boolean(this.getProfileFile()?.uri) && (
+              {downloadHref && (
                 <div className="button">
-                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                  <LinkButton className="download-gz-file" href={downloadHref} target="_blank">
                     {this.state.localProfileName ? "Download invocation profile" : "Download profile"}
-                  </Button>
+                  </LinkButton>
                 </div>
               )}
             </div>
@@ -584,4 +596,23 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       </>
     );
   }
+}
+
+function getProfileSizeBytes(profileFile?: build_event_stream.File): number | null {
+  if (!profileFile?.uri) return null;
+  const sizeBytesString = profileFile.uri.split("/").pop();
+  if (!sizeBytesString) return null;
+  const sizeBytes = Number(sizeBytesString);
+  return Number.isFinite(sizeBytes) ? sizeBytes : null;
+}
+
+function isProfileTooLarge(profileFile?: build_event_stream.File) {
+  const maxSizeBytes = Number(capabilities.config.timingProfileMaxSizeBytes || 0);
+  const sizeBytes = getProfileSizeBytes(profileFile);
+  return sizeBytes !== null && maxSizeBytes > 0 && sizeBytes > maxSizeBytes;
+}
+
+function getProfileDownloadHref(profileFile: build_event_stream.File | undefined, invocationId: string) {
+  if (!profileFile?.uri) return "";
+  return rpcService.getBytestreamUrl(profileFile.uri, invocationId, { filename: "timing_profile.gz" });
 }

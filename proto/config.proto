@@ -210,6 +210,9 @@ message FrontendConfig {
 
   // Whether usage alerts are enabled.
   bool usage_alerts_enabled = 68;
+
+  // Maximum timing profile size that the UI will load.
+  int64 timing_profile_max_size_bytes = 69;
 }
 
 message Region {

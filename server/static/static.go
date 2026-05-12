@@ -54,6 +54,7 @@ var (
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
+	timingProfileMaxSizeBytes              = flag.Int64("app.timing_profile_max_size_bytes", 175_000_000, "Maximum timing profile size that the UI will load.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "DEPRECATED: If set, show a new trends UI with a bit more organization.")
 	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", true, "If set, let users drag to select time ranges in the trends UI.")
@@ -209,6 +210,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
+		TimingProfileMaxSizeBytes:              *timingProfileMaxSizeBytes,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		TrendsRangeSelectionEnabled:            *trendsRangeSelectionEnabled && env.GetOLAPDBHandle() != nil,
 		SubdomainsEnabled:                      subdomain.Enabled(),
