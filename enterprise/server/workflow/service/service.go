@@ -137,6 +137,9 @@ const (
 	// Max number of times a scheduled workflow can exhaust all its retries.
 	// Afterwards, the scheduled workflow will be paused and requires manual re-enabling.
 	ScheduledWorkflowMaxConsecutiveFailures = 20
+
+	// Minimum interval between cron triggers for scheduled workflows.
+	scheduledWorkflowMinInterval = 15 * time.Minute
 )
 
 var (
@@ -1390,6 +1393,12 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		if err != nil {
 			return nil, err
 		}
+
+		if shouldValidateCronTriggers(webhookData) {
+			if err := ws.validateCronTriggers(c); err != nil {
+				return nil, err
+			}
+		}
 	} else {
 		if status.IsNotFoundError(err) {
 			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
@@ -1482,12 +1491,12 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		return err
 	}
 
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
-	if err != nil {
-		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
+	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	if fetchErr != nil {
+		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd, fetchErr); err != nil {
 			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
 		}
-		return status.WrapError(err, "fetch workflow config")
+		return status.WrapError(fetchErr, "fetch workflow config")
 	}
 
 	if shouldUpdateScheduledWorkflows(wd, wf.GitRepository) {
@@ -1810,13 +1819,17 @@ func isFork(wd *interfaces.WebhookData) bool {
 	return wd.TargetRepoURL != "" && wd.PushedRepoURL != wd.TargetRepoURL
 }
 
-func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
+func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, cfgErr error) error {
+	msg := "Invalid buildbuddy.yaml: " + cfgErr.Error()
+	if len(msg) > 140 {
+		msg = msg[:137] + "..."
+	}
 	// For now just point to docs. Eventually it'd be nice to link to BB code
 	// and highlight the YAML syntax error.
 	status := github.NewGithubStatusPayload(
 		"BuildBuddy Workflows",
 		"https://buildbuddy.io/docs/workflows-config",
-		"Invalid buildbuddy.yaml",
+		msg,
 		github.ErrorState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
@@ -2191,6 +2204,30 @@ func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.S
 	return false
 }
 
+// validateCronTriggers checks that all cron expressions in the config are valid.
+func (ws *workflowService) validateCronTriggers(cfg *config.BuildBuddyConfig) error {
+	now := ws.env.GetClock().Now().UTC()
+	for _, action := range cfg.Actions {
+		if action.Triggers == nil || action.Triggers.Schedule == nil {
+			continue
+		}
+		for _, cronExpr := range action.Triggers.Schedule.Crons {
+			sched, err := cronParser.Parse(cronExpr)
+			if err != nil {
+				return status.InvalidArgumentErrorf("action %q: invalid cron expression %q: %s", action.Name, cronExpr, err)
+			}
+
+			// Check that the cron expression does not fire more frequently than once every 15 minutes.
+			t1 := sched.Next(now)
+			t2 := sched.Next(t1)
+			if t2.Sub(t1) < scheduledWorkflowMinInterval {
+				return status.InvalidArgumentErrorf("cron for action %q fires more than once every 15 minutes", action.Name)
+			}
+		}
+	}
+	return nil
+}
+
 // calculateNextRunTimeUsec uses the given cron expression to return the next
 // scheduled time, using the current time as the minimum.
 func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string) (int64, error) {
@@ -2325,6 +2362,20 @@ func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.Git
 		wd.EventName != webhook_data.EventName.Push ||
 		wd.PushedBranch != wd.TargetRepoDefaultBranch {
 		return false
+	}
+	for _, f := range wd.ChangedFiles {
+		if f == config.FilePath {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldValidateCronTriggers(wd *interfaces.WebhookData) bool {
+	// Only push events include data on changed files.
+	// Out of caution, we should validate cron triggers for all other events.
+	if wd.EventName != webhook_data.EventName.Push {
+		return true
 	}
 	for _, f := range wd.ChangedFiles {
 		if f == config.FilePath {

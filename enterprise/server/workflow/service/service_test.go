@@ -1847,6 +1847,96 @@ actions:
 		return len(listScheduledRuns(t, te, gid, repoURL)) == 0
 	}, 1*time.Second, 100*time.Millisecond)
 }
+func TestScheduledWorkflows_ConfigValidation_InvalidCron(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	// Even if the push is to a PR branch, we should validate the cron expression.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "pr",
+		ChangedFiles:  []string{config.FilePath},
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    bazel_commands: ["test //..."]
+    triggers:
+      schedule:
+        crons: ["not-a-valid-cron"]
+`}
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	select {
+	case st := <-provider.Statuses:
+		payload := st.Payload.(*github.RepoStatus)
+		require.Equal(t, "error", payload.GetState())
+		require.Contains(t, payload.GetDescription(), "not-a-valid-cron")
+		require.LessOrEqual(t, len(payload.GetDescription()), 140)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for GitHub error status")
+	}
+
+	require.Empty(t, execClient.executeRequests, "expected no executions to be triggered for invalid config")
+}
+
+func TestScheduledWorkflows_ConfigValidation_TooFrequentCron(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	// Even if the push is to a PR branch, we should validate the cron expression.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "pr",
+		ChangedFiles:  []string{config.FilePath},
+	}
+
+	// "*/5 * * * *" fires every 5 minutes, which exceeds the 15-minute minimum.
+	provider.FileContents = map[string]string{"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    bazel_commands: ["test //..."]
+    triggers:
+      schedule:
+        crons: ["*/5 * * * *"]
+`}
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	select {
+	case st := <-provider.Statuses:
+		payload := st.Payload.(*github.RepoStatus)
+		require.Equal(t, "error", payload.GetState())
+		require.Contains(t, payload.GetDescription(), "fires more than once every 15 minutes")
+		require.LessOrEqual(t, len(payload.GetDescription()), 140)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for GitHub error status")
+	}
+
+	require.Empty(t, execClient.executeRequests, "expected no executions to be triggered for invalid config")
+}
 
 func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 	ctx := context.Background()
