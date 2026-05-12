@@ -71,6 +71,8 @@ message FetchBlobRequest {
   string ref = 1;
   registry.Credentials credentials = 2;
   bool bypass_registry = 3;
+  optional int64 size = 4;
+  optional string media_type = 5;
 }
 
 message FetchBlobResponse {
