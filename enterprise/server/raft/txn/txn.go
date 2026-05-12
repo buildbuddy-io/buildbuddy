@@ -2,6 +2,7 @@ package txn
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -126,9 +127,22 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	return nil
 }
 
+func txnSessionID(txnID []byte, phase string) []byte {
+	return []byte(fmt.Sprintf("txn/%x/%s", txnID, phase))
+}
+
+func (tc *Coordinator) txnRequestSession(txnID []byte, phase string) *rfpb.Session {
+	return &rfpb.Session{
+		Id:            txnSessionID(txnID, phase),
+		Index:         1,
+		CreatedAtUsec: tc.clock.Now().UnixMicro(),
+	}
+}
+
 func (tc *Coordinator) PrepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
 	batch := statement.GetRawBatch()
 	batch.TransactionId = txnID
+	batch.Session = tc.txnRequestSession(txnID, "prepare")
 	for _, hook := range statement.GetHooks() {
 		if hook.GetPhase() == rfpb.TransactionHook_PREPARE {
 			batch.PostCommitHooks = append(batch.PostCommitHooks, hook.GetHook())
@@ -221,6 +235,7 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 	if err != nil {
 		return err
 	}
+	batchProto.Session = tc.txnRequestSession(txnID, "finalize/"+op.String())
 
 	if op == rfpb.FinalizeOperation_COMMIT {
 		for _, hook := range stmt.GetHooks() {

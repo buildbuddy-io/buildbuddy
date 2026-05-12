@@ -206,11 +206,9 @@ func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
 
 	value, err := s1.Sender().Increment(ctx, key, 1)
 	require.NoError(t, err)
-	// This asserts the current buggy behavior: the retried Increment is applied
-	// twice after the interceptor returns Unavailable post-apply.
-	require.Equal(t, uint64(2), value)
+	require.Equal(t, uint64(1), value)
 
 	buf, err := s1.Sender().DirectRead(ctx, key)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), binary.LittleEndian.Uint64(buf))
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
 }

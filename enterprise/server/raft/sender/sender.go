@@ -2,6 +2,7 @@ package sender
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -37,13 +39,30 @@ type Sender struct {
 
 	// Keeps track of connections to other machines.
 	apiClient *client.APIClient
+
+	mu                     sync.Mutex
+	proposeSessionsByRange map[uint64]*client.Session
+	proposeLocker          lockmap.Locker
 }
 
 func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender {
 	return &Sender{
-		rangeCache: rangeCache,
-		apiClient:  apiClient,
+		rangeCache:             rangeCache,
+		apiClient:              apiClient,
+		proposeSessionsByRange: make(map[uint64]*client.Session),
+		proposeLocker:          lockmap.New(),
 	}
+}
+
+func (s *Sender) sessionForRange(rangeID uint64) *client.Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session, ok := s.proposeSessionsByRange[rangeID]; ok {
+		return session
+	}
+	session := client.NewSession()
+	s.proposeSessionsByRange[rangeID] = session
+	return session
 }
 
 func scanKVs(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.KV, error) {
@@ -476,6 +495,52 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	return status.UnavailableErrorf("sender.run retries exceeded for key: %q err: %s", key, lastError)
 }
 
+func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, fn runFunc) (returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer func() {
+		tracing.RecordErrorToSpan(spn, returnedErr)
+		spn.End()
+	}()
+
+	retrier := retry.DefaultWithContext(ctx)
+	skipRangeCache := false
+	var lastError error
+	var unlockFn func()
+	sessionAssigned := batchCmd.GetSession() != nil
+	defer func() {
+		if unlockFn != nil {
+			unlockFn()
+		}
+	}()
+
+	for retrier.Next() {
+		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
+		if err != nil {
+			log.CtxWarningf(ctx, "sender.runPropose error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
+			continue
+		}
+		if !sessionAssigned {
+			unlockFn = s.proposeLocker.Lock(strconv.FormatUint(rangeDescriptor.GetRangeId(), 10))
+			batchCmd.Session = s.sessionForRange(rangeDescriptor.GetRangeId()).NextRequestSession()
+			sessionAssigned = true
+		}
+		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
+		if err == nil {
+			if i != 0 {
+				replica := rangeDescriptor.GetReplicas()[i]
+				s.rangeCache.SetPreferredReplica(ctx, replica, rangeDescriptor)
+			}
+			return nil
+		}
+		skipRangeCache = true
+		if !status.IsOutOfRangeError(err) && !isConflictKeyError(err) {
+			return err
+		}
+		lastError = err
+	}
+	return status.UnavailableErrorf("sender.runPropose retries exceeded for key: %q err: %s", key, lastError)
+}
+
 // KeyMeta contains a key with arbitrary data attached.
 type KeyMeta struct {
 	Key  []byte
@@ -622,7 +687,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	defer spn.End()
 	var rsp *rfpb.SyncProposeResponse
 	customHeader := batchCmd.Header
-	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.runPropose(ctx, key, batchCmd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		if customHeader == nil {
 			batchCmd.Header = h
 		}

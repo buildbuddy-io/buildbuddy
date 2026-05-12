@@ -305,6 +305,14 @@ func (s *Session) maybeRefresh() {
 	s.refreshAt = now.Add(*sessionLifetime)
 }
 
+func (s *Session) NextRequestSession() *rfpb.Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maybeRefresh()
+	s.index++
+	return s.ToProto()
+}
+
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	_, spn := tracing.StartNamedSpan(ctx, "SyncProposeLocal: locker.Lock") // nolint:SA4006
 	if spn.IsRecording() {
@@ -322,12 +330,9 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}()
 
 	_, spn = tracing.StartNamedSpan(ctx, "SyncProposeLocal: set session") // nolint:SA4006
-	s.mu.Lock()
-	// Refreshes the session if necessary
-	s.maybeRefresh()
-	s.index++
-	batch.Session = s.ToProto()
-	s.mu.Unlock()
+	if batch.GetSession() == nil {
+		batch.Session = s.NextRequestSession()
+	}
 	spn.End()
 
 	sesh := nodehost.GetNoOPSession(rangeID)
