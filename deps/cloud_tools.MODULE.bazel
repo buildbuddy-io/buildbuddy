@@ -1,0 +1,185 @@
+# Cloud tool binaries: gcloud SDK, gke-gcloud-auth-plugin, kubectl, aws CLI.
+# Exposed as Bazel targets under //tools/cloud_tools.
+#
+# To update versions:
+#   gcloud:   https://cloud.google.com/sdk/docs/release-notes
+#             Update GCLOUD_SDK_VERSION and re-fetch sha256 for each platform:
+#             curl -sL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-<VER>-<PLAT>.tar.gz | sha256sum
+#
+#   kubectl:  https://dl.k8s.io/release/stable.txt
+#             sha256 at https://dl.k8s.io/release/<VER>/bin/<os>/<arch>/kubectl.sha256
+#
+#   aws CLI:  https://github.com/aws/aws-cli/tags  (pick latest 2.x)
+#             curl -sL https://awscli.amazonaws.com/awscli-exe-linux-x86_64-<VER>.zip | sha256sum
+
+# http_archive and http_file are declared in the root MODULE.bazel and
+# available in scope here via include().
+
+# ─────────────────────────────────────────────────────────────────────────────
+# gcloud SDK 568.0.0
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The gcloud entry-point is a shell script that bootstraps a bundled Python
+# runtime and sets CLOUDSDK_ROOT_DIR.  We expose ALL files in the archive as a
+# single "sdk" filegroup so the sh_binary runfiles tree contains the full SDK.
+#
+# Only one archive is downloaded per host platform (Bazel selects via the
+# alias in //tools/cloud_tools:gcloud, but the http_archives themselves are
+# always declared -- they are only fetched if a target that uses them is built).
+
+_GCLOUD_BUILD_FILE = """
+package(default_visibility = ["//visibility:public"])
+filegroup(
+    name = "sdk",
+    srcs = glob(["google-cloud-sdk/**"], allow_empty = False),
+)
+"""
+
+http_archive(
+    name = "gcloud_sdk_linux_x86_64",
+    build_file_content = _GCLOUD_BUILD_FILE,
+    sha256 = "ef53b350c5da53b7e92d90ab6f65a85c712686858b839e44e6529d5883fd575c",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-568.0.0-linux-x86_64.tar.gz"],
+)
+
+http_archive(
+    name = "gcloud_sdk_linux_arm",
+    build_file_content = _GCLOUD_BUILD_FILE,
+    sha256 = "119f00184832664b0acfe758395a6b12c57f0f7dd7ec070cdfb193b7b5142b87",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-568.0.0-linux-arm.tar.gz"],
+)
+
+http_archive(
+    name = "gcloud_sdk_darwin_x86_64",
+    build_file_content = _GCLOUD_BUILD_FILE,
+    sha256 = "60396fc644ab277a10f61bd83720f32f9b89ce1dcc2c6653dede132236b5a978",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-568.0.0-darwin-x86_64.tar.gz"],
+)
+
+http_archive(
+    name = "gcloud_sdk_darwin_arm",
+    build_file_content = _GCLOUD_BUILD_FILE,
+    sha256 = "1760391dc09e1a16c62b1b6760bbdebf49385fb9870f240a76545ae95ba1b2ec",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-568.0.0-darwin-arm.tar.gz"],
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# gke-gcloud-auth-plugin 0.5.14  (from gcloud component channel)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Each archive contains a single executable: bin/gke-gcloud-auth-plugin.
+# The build_file exposes it as a "plugin" executable target.
+#
+# sha256 values are the "checksum" field from the gcloud component manifest:
+#   https://dl.google.com/dl/cloudsdk/channels/rapid/components-2.json
+
+_GKE_PLUGIN_BUILD_FILE = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/gke-gcloud-auth-plugin"])
+filegroup(
+    name = "plugin",
+    srcs = ["bin/gke-gcloud-auth-plugin"],
+)
+"""
+
+http_archive(
+    name = "gke_auth_plugin_linux_x86_64",
+    build_file_content = _GKE_PLUGIN_BUILD_FILE,
+    sha256 = "25f88f7acfb9a7266e46e57d20a40110b847e59c7b224bf69bfd8e4cbffda03b",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/components/google-cloud-sdk-gke-gcloud-auth-plugin-linux-x86_64-20260424041539.tar.gz"],
+)
+
+http_archive(
+    name = "gke_auth_plugin_linux_arm",
+    build_file_content = _GKE_PLUGIN_BUILD_FILE,
+    sha256 = "a86d8e832d52a56094d4f79d8124cf99ab7f9ad539931067e4dab5fc7194d25f",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/components/google-cloud-sdk-gke-gcloud-auth-plugin-linux-arm-20260424041539.tar.gz"],
+)
+
+http_archive(
+    name = "gke_auth_plugin_darwin_x86_64",
+    build_file_content = _GKE_PLUGIN_BUILD_FILE,
+    sha256 = "c462da06cd708431e110c51dd6f14157f507cb0cd34df91d1f17abaec3a8c6f7",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/components/google-cloud-sdk-gke-gcloud-auth-plugin-darwin-x86_64-20260424041539.tar.gz"],
+)
+
+http_archive(
+    name = "gke_auth_plugin_darwin_arm",
+    build_file_content = _GKE_PLUGIN_BUILD_FILE,
+    sha256 = "5a748d35f4a1515dc9d814a04e1d9f294fe413b22a2cecfefd8ae4a805a046da",
+    urls = ["https://dl.google.com/dl/cloudsdk/channels/rapid/components/google-cloud-sdk-gke-gcloud-auth-plugin-darwin-arm-20260424041539.tar.gz"],
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# kubectl v1.36.1
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Single static binary per platform.  http_file (not http_archive) because
+# there is no archive to extract -- it IS the binary.
+#
+# sha256 from https://dl.k8s.io/release/v1.36.1/bin/<os>/<arch>/kubectl.sha256
+
+http_file(
+    name = "kubectl_linux_amd64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "629d3f410e09bf49b64ae7079f7f0bda1191efed311f7d37fdbab0ad5b0ec2b7",
+    urls = ["https://dl.k8s.io/release/v1.36.1/bin/linux/amd64/kubectl"],
+)
+
+http_file(
+    name = "kubectl_linux_arm64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "59f7ee8e477fae658447607dc3c8790ac17a1b016c01c622c12070e969e2d4e7",
+    urls = ["https://dl.k8s.io/release/v1.36.1/bin/linux/arm64/kubectl"],
+)
+
+http_file(
+    name = "kubectl_darwin_amd64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "b4973e90ebb00537d735b63d6f8293c1959156e6ff435f6a43c08aeaa1a2e7d7",
+    urls = ["https://dl.k8s.io/release/v1.36.1/bin/darwin/amd64/kubectl"],
+)
+
+http_file(
+    name = "kubectl_darwin_arm64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "9092778abaef3079449da4cd70ded0e4be112480c93efcdeace3155968d1d133",
+    urls = ["https://dl.k8s.io/release/v1.36.1/bin/darwin/arm64/kubectl"],
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AWS CLI v2.34.45
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# AWS distributes CLI v2 as a zip containing aws/ with a bundled CPython.
+# The build_file exposes the whole tree so the sh_binary wrapper can exec
+# aws/dist/aws directly.  No system Python needed.
+#
+# macOS: AWS only ships a .pkg for macOS, so only Linux variants are listed.
+# Add darwin support if macOS dev usage is required.
+
+_AWS_BUILD_FILE = """
+package(default_visibility = ["//visibility:public"])
+filegroup(
+    name = "aws",
+    srcs = glob(["aws/**"], allow_empty = False),
+)
+"""
+
+http_archive(
+    name = "aws_cli_linux_x86_64",
+    build_file_content = _AWS_BUILD_FILE,
+    sha256 = "2b382fd5c1e8d73f6aaca18e5850758fb9f70a20af9c17deb3078df0dd4af095",
+    urls = ["https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.34.45.zip"],
+)
+
+http_archive(
+    name = "aws_cli_linux_aarch64",
+    build_file_content = _AWS_BUILD_FILE,
+    sha256 = "bf29e06a06fb9bac2a3803931e6618a9f7c9f4c6632ec3b587184850b8f03433",
+    urls = ["https://awscli.amazonaws.com/awscli-exe-linux-aarch64-2.34.45.zip"],
+)
