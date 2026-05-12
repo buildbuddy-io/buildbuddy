@@ -17,7 +17,9 @@ fi
 
 BB_GRPC="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 BB_APP="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
-BB_API_KEY="${BB_API_KEY:-}"
+# BB_API_KEY can be set explicitly; fall back to BUILDBUDDY_API_KEY which is
+# injected automatically by the BuildBuddy workflow runner.
+BB_API_KEY="${BB_API_KEY:-${BUILDBUDDY_API_KEY:-}}"
 
 # Use bazel from PATH (workflows supply bazelisk as bazel).
 BAZEL="${BAZEL_BINARY:-bazel}"
