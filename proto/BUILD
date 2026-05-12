@@ -1,5 +1,5 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
-load("@rules_proto//proto:defs.bzl", "proto_library")
 load(":defs.bzl", "go_proto_library", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
