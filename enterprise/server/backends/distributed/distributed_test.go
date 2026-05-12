@@ -2363,6 +2363,180 @@ func TestReadThroughLocalCache(t *testing.T) {
 
 }
 
+func TestOrderReadPeersReadThrough(t *testing.T) {
+	// Zone map: A = zone-a, B = zone-b, "" = unknown.
+	zones := map[string]string{
+		"a1": "A", "a2": "A", "a3": "A",
+		"b1": "B", "b2": "B", "b3": "B",
+	}
+	zoneOf := func(p string) (string, bool) {
+		z, ok := zones[p]
+		return z, ok && z != ""
+	}
+
+	for _, tc := range []struct {
+		name          string
+		primary       []string
+		secondary     []string
+		self          string
+		myZone        string
+		wantPreferred []string
+		wantFallback  []string
+	}{
+		{
+			name:          "self is primary in same zone",
+			primary:       []string{"a1", "a2", "b1"},
+			secondary:     []string{"a3", "b2", "b3"},
+			self:          "a1",
+			myZone:        "A",
+			wantPreferred: []string{"a1", "a2", "a3", "b1"},
+			wantFallback:  []string{"b2", "b3"},
+		},
+		{
+			name:          "self is secondary in same zone (not hoisted)",
+			primary:       []string{"a1", "b1", "b2"},
+			secondary:     []string{"a2", "a3", "b3"},
+			self:          "a2",
+			myZone:        "A",
+			wantPreferred: []string{"a1", "a2", "a3", "b1", "b2"},
+			wantFallback:  []string{"b3"},
+		},
+		{
+			name:          "self not in any set",
+			primary:       []string{"a1", "b1", "b2"},
+			secondary:     []string{"a2", "a3", "b3"},
+			self:          "stranger",
+			myZone:        "A",
+			wantPreferred: []string{"a1", "a2", "a3", "b1", "b2"},
+			wantFallback:  []string{"b3"},
+		},
+		{
+			name:          "self is other-zone primary",
+			primary:       []string{"a1", "b1", "b2"},
+			secondary:     []string{"a2", "a3", "b3"},
+			self:          "b1",
+			myZone:        "B",
+			wantPreferred: []string{"b1", "b2", "b3", "a1"},
+			wantFallback:  []string{"a2", "a3"},
+		},
+		{
+			name:          "all peers unknown zone, self primary",
+			primary:       []string{"x1", "x2", "x3"},
+			secondary:     []string{"x4", "x5", "x6"},
+			self:          "x1",
+			myZone:        "A",
+			wantPreferred: []string{"x1", "x2", "x3"},
+			wantFallback:  []string{"x4", "x5", "x6"},
+		},
+		{
+			name:          "all peers unknown zone, self not primary",
+			primary:       []string{"x1", "x2", "x3"},
+			secondary:     []string{"x4", "x5", "x6"},
+			self:          "x4",
+			myZone:        "A",
+			wantPreferred: []string{"x1", "x2", "x3"},
+			wantFallback:  []string{"x4", "x5", "x6"},
+		},
+		{
+			name:          "empty primary and secondary",
+			primary:       nil,
+			secondary:     nil,
+			self:          "a1",
+			myZone:        "A",
+			wantPreferred: []string{},
+			wantFallback:  nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := orderReadPeersReadThrough(tc.primary, tc.secondary, tc.self, tc.myZone, zoneOf)
+			assert.Equal(t, tc.wantPreferred, ps.PreferredPeers, "PreferredPeers")
+			assert.Equal(t, tc.wantFallback, ps.FallbackPeers, "FallbackPeers")
+		})
+	}
+}
+
+func TestEnsureSameZonePrimary(t *testing.T) {
+	zones := map[string]string{
+		"a1": "A", "a2": "A", "a3": "A",
+		"b1": "B", "b2": "B", "b3": "B",
+	}
+	zoneOf := func(p string) (string, bool) {
+		z, ok := zones[p]
+		return z, ok && z != ""
+	}
+
+	for _, tc := range []struct {
+		name          string
+		peers         []string
+		primaryCount  int
+		self          string
+		myZone        string
+		wantPrimary   []string
+		wantSecondary []string
+	}{
+		{
+			name:          "primary already covers self zone",
+			peers:         []string{"a1", "b1", "b2", "a2", "a3", "b3"},
+			primaryCount:  3,
+			self:          "a3",
+			myZone:        "A",
+			wantPrimary:   []string{"a1", "b1", "b2"},
+			wantSecondary: []string{"a2", "a3", "b3"},
+		},
+		{
+			name:          "no same-zone primary, self not in any set",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2", "a3"},
+			primaryCount:  3,
+			self:          "outsider",
+			myZone:        "A",
+			wantPrimary:   []string{"b1", "b2", "b3", "outsider"},
+			wantSecondary: []string{"a1", "a2", "a3"},
+		},
+		{
+			name:          "no same-zone primary, self in secondary (removed)",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2", "a3"},
+			primaryCount:  3,
+			self:          "a2",
+			myZone:        "A",
+			wantPrimary:   []string{"b1", "b2", "b3", "a2"},
+			wantSecondary: []string{"a1", "a3"},
+		},
+		{
+			name:          "self already a primary (no-op)",
+			peers:         []string{"a1", "b1", "b2", "a2", "b3"},
+			primaryCount:  3,
+			self:          "a1",
+			myZone:        "A",
+			wantPrimary:   []string{"a1", "b1", "b2"},
+			wantSecondary: []string{"a2", "b3"},
+		},
+		{
+			name:          "self zone unknown (no-op)",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2"},
+			primaryCount:  3,
+			self:          "outsider",
+			myZone:        "",
+			wantPrimary:   []string{"b1", "b2", "b3"},
+			wantSecondary: []string{"a1", "a2"},
+		},
+		{
+			name:          "all peer zones unknown, self in named zone",
+			peers:         []string{"x1", "x2", "x3", "x4", "x5"},
+			primaryCount:  3,
+			self:          "self",
+			myZone:        "A",
+			wantPrimary:   []string{"x1", "x2", "x3", "self"},
+			wantSecondary: []string{"x4", "x5"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := ensureSameZonePrimary(tc.peers, tc.primaryCount, tc.self, tc.myZone, zoneOf)
+			assert.Equal(t, tc.wantPrimary, ps.PreferredPeers, "primary")
+			assert.Equal(t, tc.wantSecondary, ps.FallbackPeers, "secondary")
+		})
+	}
+}
+
 func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	// Configure the authenticator and environment with a single user with
 	// encryption enabled: "user"

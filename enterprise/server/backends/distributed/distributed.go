@@ -697,7 +697,54 @@ func (c *Cache) writePeers(d *repb.Digest) (*peerset.PeerSet, error) {
 	if len(allPeers) < c.opts.ReplicationFactor {
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(allPeers), c.opts.ReplicationFactor)
 	}
+	if c.localReadthroughEnabled() {
+		return ensureSameZonePrimary(allPeers, c.opts.ReplicationFactor, c.opts.ListenAddr, c.zone, c.peerZone), nil
+	}
 	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:]), nil
+}
+
+// ensureSameZonePrimary promotes self into the primary peer set if none of the
+// existing primaries are in self's zone (and self isn't already a primary).
+// This is used under read-through caching so that every write places at least
+// one copy in the local zone.
+//
+// The input is the full peer list as returned from the consistent hash; the
+// first primaryCount entries are treated as primaries. The input slice is
+// mutated in place: when self needs to be promoted, peers in
+// [primaryCount, selfIdx) are shifted right by one to make room for self at
+// index primaryCount, and the split shifts to primaryCount+1. The relative
+// order of every other peer is preserved. Callers must not reuse the input
+// slice after this call.
+func ensureSameZonePrimary(
+	peers []string, primaryCount int,
+	self string, myZone string,
+	zoneOf func(string) (string, bool),
+) *peerset.PeerSet {
+	if myZone == "" {
+		return peerset.New(peers[:primaryCount], peers[primaryCount:])
+	}
+	for _, p := range peers[:primaryCount] {
+		if p == self {
+			return peerset.New(peers[:primaryCount], peers[primaryCount:])
+		}
+		if z, ok := zoneOf(p); ok && z == myZone {
+			return peerset.New(peers[:primaryCount], peers[primaryCount:])
+		}
+	}
+	selfIdx := -1
+	for i := primaryCount; i < len(peers); i++ {
+		if peers[i] == self {
+			selfIdx = i
+			break
+		}
+	}
+	if selfIdx == -1 {
+		peers = append(peers, self)
+		selfIdx = len(peers) - 1
+	}
+	copy(peers[primaryCount+1:selfIdx+1], peers[primaryCount:selfIdx])
+	peers[primaryCount] = self
+	return peerset.New(peers[:primaryCount+1], peers[primaryCount+1:])
 }
 
 func dedupe(in []string) []string {
@@ -745,6 +792,10 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 		}
 	}
 
+	if c.localReadthroughEnabled() {
+		return orderReadPeersReadThrough(primaryPeers, secondaryPeers, c.opts.ListenAddr, c.zone, c.peerZone)
+	}
+
 	sortVal := func(peer string) int {
 		if peer == c.opts.ListenAddr {
 			return 0
@@ -758,6 +809,64 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 		return sortVal(primaryPeers[i]) < sortVal(primaryPeers[j])
 	})
 	return peerset.New(primaryPeers, secondaryPeers)
+}
+
+// orderReadPeersReadThrough returns a PeerSet ordered to prefer in-zone peers
+// under read-through caching, where any same-zone peer may hold a cached copy:
+//
+//  1. self, if self is a primary
+//  2. same-zone primaries
+//  3. same-zone non-primaries
+//  4. other-zone primaries
+//  5. other-zone non-primaries (fallback)
+//
+// Self is only hoisted when it is a primary. When self is not a primary,
+// remoteReader's read-through check (c.local.Reader) already runs on every
+// attempt, so a dedicated self slot would be redundant.
+func orderReadPeersReadThrough(
+	primaryPeers, secondaryPeers []string,
+	self string, myZone string,
+	zoneOf func(string) (string, bool),
+) *peerset.PeerSet {
+	var selfPrimary string
+	var szP, szN, ozP, ozN []string
+	classify := func(p string, isPrimary bool) {
+		if p == self && isPrimary {
+			selfPrimary = p
+			return
+		}
+		zone, ok := zoneOf(p)
+		sameZone := ok && zone == myZone
+		switch {
+		case sameZone && isPrimary:
+			szP = append(szP, p)
+		case sameZone:
+			szN = append(szN, p)
+		case isPrimary:
+			ozP = append(ozP, p)
+		default:
+			ozN = append(ozN, p)
+		}
+	}
+	for _, p := range primaryPeers {
+		classify(p, true)
+	}
+	for _, p := range secondaryPeers {
+		classify(p, false)
+	}
+
+	preferredLen := len(szP) + len(szN) + len(ozP)
+	if selfPrimary != "" {
+		preferredLen++
+	}
+	preferred := make([]string, 0, preferredLen)
+	if selfPrimary != "" {
+		preferred = append(preferred, selfPrimary)
+	}
+	preferred = append(preferred, szP...)
+	preferred = append(preferred, szN...)
+	preferred = append(preferred, ozP...)
+	return peerset.New(preferred, ozN)
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
