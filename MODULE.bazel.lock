@@ -313,8 +313,8 @@
     "https://bcr.bazel.build/modules/zlib/1.3.1/MODULE.bazel": "751c9940dcfe869f5f7274e1295422a34623555916eb98c174c1e945594bf198",
     "https://bcr.bazel.build/modules/zlib/1.3.2/MODULE.bazel": "7303cb87d80e438f313194fc640e38475a8d337b8c70ff6a0725f55236566a33",
     "https://bcr.bazel.build/modules/zlib/1.3.2/source.json": "8f35ed65174ee2ad9630baeccd243cadf482b72d2ab32b57f9d84dc30ab076e0",
-    "https://bcr.bazel.build/modules/gazelle/0.48.0/MODULE.bazel": "ed89ed9e7e4f15a63434d553496088c5d02faa3dccc654331f3533d6542a9bb5",
-    "https://bcr.bazel.build/modules/gazelle/0.48.0/source.json": "30de037819207f7443d044c8873bb0b9137dd8ae8826bfb04ffe8a63e95a88dc"
+    "https://bcr.bazel.build/modules/gazelle/0.51.0/MODULE.bazel": "74610189cc04e27cc2cc286eaffb98c9b43fe59fdf2980b086922eea79f4a236",
+    "https://bcr.bazel.build/modules/gazelle/0.51.0/source.json": "d69adfa4f68bbdce6a93a4a4b518cb4ee2fd5051366e4a33d3b7b42d749d0ae1"
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {

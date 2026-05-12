@@ -272,8 +272,8 @@ github.com/aymanbagabas/go-udiff v0.3.1 h1:LV+qyBQ2pqe0u42ZsUEtPiCaUoqgA9gYRDs3v
 github.com/aymanbagabas/go-udiff v0.3.1/go.mod h1:G0fsKmG+P6ylD0r6N/KgQD/nWzgfnl8ZBcNLgcbrw8E=
 github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df h1:GSoSVRLoBaFpOOds6QyY1L8AX7uoY+Ln3BHc22W40X0=
 github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df/go.mod h1:hiVxq5OP2bUGBRNS3Z/bt/reCLFNbdcST6gISi1fiOM=
-github.com/bazelbuild/bazel-gazelle v0.48.0 h1:qhUjDG9xn44rtCj57MuWkbzIW9cP3/O8bthbyJyQeFI=
-github.com/bazelbuild/bazel-gazelle v0.48.0/go.mod h1:9cW4ajsIf/BX+7htIlNnZ+QY+stUCIODmvk0l3Xk0a8=
+github.com/bazelbuild/bazel-gazelle v0.51.0 h1:YbX6BOge2VzaGH75/KGvxzVzfTvdCKLwRkF84FuH8lo=
+github.com/bazelbuild/bazel-gazelle v0.51.0/go.mod h1:qtev3UlNStnHm6TEBM0pkDgOc1wSMBcbD/3wktJL7i8=
 github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d h1:ewduqIuhzpKB6Uw887ecLrnC9abSQHqofklqlfJgs3k=
 github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d/go.mod h1:BRTZZOmH9H1C0/uXKpPbYAyRp2PxdSQJfyuOJ7IKUR4=
 github.com/bazelbuild/buildtools v0.0.0-20260211083412-859bfffeef82 h1:PmoVmwzAnGb0iCjulb7Mgsaqw2Wj36LQJ8VyYaFe/ak=
