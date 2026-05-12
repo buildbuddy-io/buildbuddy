@@ -1,3 +1,6 @@
+// Package option_definitions defines the command-line option schemas for
+// help-related flags. It specifies the structure, aliases, and behavior of
+// flags like --help/-h that control help system functionality across the CLI.
 package option_definitions
 
 import (

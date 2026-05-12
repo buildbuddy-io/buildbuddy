@@ -1,3 +1,8 @@
+// Package terminal provides utilities for terminal-aware output formatting. It
+// handles ANSI escape sequences for colors and styles, detects TTY capabilities,
+// manages terminal width calculation, and provides primitives for building
+// terminal-friendly UI elements. ANSI codes are automatically disabled when
+// output is not a TTY.
 package terminal
 
 import (

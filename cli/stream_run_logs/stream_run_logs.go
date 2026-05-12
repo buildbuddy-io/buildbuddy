@@ -1,3 +1,7 @@
+// Package stream_run_logs captures and streams logs from `bazel run` commands
+// to BuildBuddy. It executes the run script in a PTY, captures stdout/stderr,
+// and sends the logs to BuildBuddy's event log service in real-time, enabling
+// viewing of run command output in the BuildBuddy UI.
 package stream_run_logs
 
 import (

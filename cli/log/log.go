@@ -1,3 +1,7 @@
+// Package log provides logging utilities for the BuildBuddy CLI. It wraps the
+// standard log package with support for verbosity levels, colored output, and
+// debug logging that can be enabled via the --verbose flag or BB_VERBOSE
+// environment variable. It also handles formatting warnings and errors.
 package log
 
 import (

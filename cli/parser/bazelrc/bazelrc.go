@@ -1,3 +1,7 @@
+// Package bazelrc provides parsing and evaluation of Bazel configuration files
+// (.bazelrc). It handles importing, command-specific options, platform-specific
+// configurations, config expansion, and the full semantics of .bazelrc files
+// including try-import, common options, and config inheritance.
 package bazelrc
 
 import (

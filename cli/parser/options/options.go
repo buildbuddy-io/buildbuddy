@@ -1,3 +1,8 @@
+// Package options provides parsing and representation of command-line options
+// (flags). It defines the Definition type for option schemas, handles both
+// native Bazel flags and Starlark flags, supports various flag forms (boolean,
+// required-value, enum), and manages option metadata like short names, negation,
+// and command support.
 package options
 
 import (

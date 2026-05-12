@@ -1,3 +1,7 @@
+// Package arguments defines types for representing parsed command-line
+// arguments. It provides the Argument interface and implementations for
+// positional arguments and the double-dash separator, enabling type-safe
+// handling and formatting of mixed positional and flag arguments.
 package arguments
 
 // Argument represents parsed command-line argument (or arguments, in the case

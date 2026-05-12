@@ -1,3 +1,6 @@
+// Package version provides access to the BuildBuddy CLI version string. The
+// version is embedded at build time from a Bazel flag and is used throughout
+// the CLI for version reporting, tool tagging, and update checking.
 package version
 
 import (

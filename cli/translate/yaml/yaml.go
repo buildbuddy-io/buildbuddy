@@ -1,3 +1,7 @@
+// Package yaml provides translation of YAML-based BUILD files to Bazel's
+// Starlark format. It parses YAML representations of Bazel rules and converts
+// them to valid BUILD file syntax, handling load statements, rule invocations,
+// and YAML-specific idioms.
 package yaml
 
 import (

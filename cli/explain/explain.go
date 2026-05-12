@@ -1,3 +1,8 @@
+// Package explain implements the `bb explain` command, which analyzes and
+// explains Bazel build performance by examining invocation data, execution logs,
+// and action graphs. It can identify slow actions, compare executions, analyze
+// cache misses, and provide actionable insights for improving build times. It
+// supports multiple output formats and can profile its own performance.
 package explain
 
 import (

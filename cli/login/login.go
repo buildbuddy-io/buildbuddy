@@ -1,3 +1,8 @@
+// Package login implements the `bb login` and `bb logout` commands for
+// authenticating with BuildBuddy. It manages API keys and credentials, provides
+// an OAuth flow with browser-based authentication, and stores credentials
+// securely in git config. It also provides utilities for other commands to
+// access stored credentials and API targets.
 package login
 
 import (

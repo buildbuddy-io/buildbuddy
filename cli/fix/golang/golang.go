@@ -1,3 +1,8 @@
+// Package golang provides Go-specific functionality for the `bb fix` command.
+// It implements the language interface for detecting Go source and dependency
+// files (go.mod, go.sum), extracting Bazel dependencies needed for Go support
+// (rules_go, gazelle), and registering Go module dependencies in MODULE.bazel
+// using the go_deps extension.
 package golang
 
 import (

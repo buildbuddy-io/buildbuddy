@@ -1,3 +1,7 @@
+// Package upload implements the `bb upload` command, which uploads files or
+// directory trees to the Content Addressable Storage (CAS). It supports
+// uploading from files or stdin, computes the content digest, performs the
+// bytestream upload, and outputs the resulting digest for later retrieval.
 package upload
 
 import (

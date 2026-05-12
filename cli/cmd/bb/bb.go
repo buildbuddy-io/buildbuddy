@@ -1,3 +1,8 @@
+// Package main provides the entry point for the BuildBuddy CLI (bb). It
+// orchestrates command dispatch, argument parsing, plugin execution, and
+// integration with Bazelisk. It handles special commands (help, setup),
+// delegates to registered CLI commands, and falls back to invoking Bazel via
+// Bazelisk for unrecognized commands.
 package main
 
 import (

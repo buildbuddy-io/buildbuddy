@@ -1,3 +1,7 @@
+// Package markdown provides utilities for rendering markdown with terminal
+// formatting. It applies ANSI color codes to markdown headings and other
+// elements, allowing rich text output in the terminal. It supports customizable
+// color schemes and handles escape sequences for proper terminal display.
 package markdown
 
 import (

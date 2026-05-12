@@ -1,3 +1,7 @@
+// Package register initializes and registers all available CLI commands by
+// importing all command packages and populating the global command registries
+// (Commands, CommandsByName, and Aliases) in the parent cli_command package.
+// It ensures registration happens exactly once via sync.Once.
 package register
 
 import (

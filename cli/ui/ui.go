@@ -1,3 +1,7 @@
+// Package ui implements the `bb ui` command, which provides a terminal-based
+// user interface for browsing BuildBuddy invocations. It displays a list of
+// recent builds with filtering options (by user, repo, branch) and allows
+// interactive navigation through build history using the Bubble Tea framework.
 package ui
 
 import (

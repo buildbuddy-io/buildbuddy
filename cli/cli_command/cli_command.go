@@ -1,3 +1,8 @@
+// Package cli_command defines the structure and registry for BuildBuddy CLI
+// commands. It provides the Command type, which encapsulates a command's name,
+// handler function, help text, aliases, and flags. The package maintains global
+// registries (Commands, CommandsByName, Aliases) that are populated by the
+// register subpackage.
 package cli_command
 
 import "flag"

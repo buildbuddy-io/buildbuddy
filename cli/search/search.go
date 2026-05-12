@@ -1,3 +1,7 @@
+// Package search implements the `bb search` command, which performs code search
+// queries against BuildBuddy's code search service. It sends search requests,
+// formats and displays results with syntax highlighting, and supports pagination
+// through results with offset and limit controls.
 package search
 
 import (

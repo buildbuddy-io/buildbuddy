@@ -1,3 +1,8 @@
+// Package language defines the interface for language-specific handling in the
+// `bb fix` command. Each language implementation can identify its source files,
+// dependency files (like package.json or go.mod), specify required Bazel
+// dependencies, consolidate dependency files, and register dependencies in
+// MODULE.bazel or WORKSPACE.
 package language
 
 type Language interface {

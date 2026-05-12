@@ -1,3 +1,7 @@
+// Package watcher implements file watching functionality for the BuildBuddy CLI.
+// When enabled, it monitors source files for changes and automatically re-runs
+// the previous Bazel command, enabling a continuous development workflow. It uses
+// godemon for efficient file system watching.
 package watcher
 
 import (

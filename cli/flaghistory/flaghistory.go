@@ -1,3 +1,8 @@
+// Package flaghistory tracks and persists Bazel command-line flags across
+// invocations. It saves important flags like invocation_id and bes_results_url
+// to local storage, allowing subsequent commands to reference previous
+// invocations. This enables features like `bb ask` to analyze the most recent
+// build.
 package flaghistory
 
 import (

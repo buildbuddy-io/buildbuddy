@@ -1,3 +1,7 @@
+// Package add implements the `bb add` command, which adds Bazel dependencies
+// to a workspace by fetching module metadata from the Bazel registry and
+// generating appropriate WORKSPACE or MODULE.bazel snippets. It supports
+// interactive disambiguation when multiple modules match a given name.
 package add
 
 import (

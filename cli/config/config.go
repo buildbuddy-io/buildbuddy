@@ -1,3 +1,8 @@
+// Package config handles loading and parsing BuildBuddy CLI configuration files
+// (buildbuddy.yaml). It supports both workspace-level configuration (at the
+// workspace root) and user-level configuration (in the user's home directory),
+// merging them with appropriate precedence. The configuration controls plugin
+// settings, resource limits, and other CLI behaviors.
 package config
 
 import (

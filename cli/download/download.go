@@ -1,3 +1,8 @@
+// Package download implements the `bb download` command, which downloads blobs
+// from the Content Addressable Storage (CAS) using their digest and size. It
+// supports downloading both individual files and directory trees, with optional
+// output to a specific path or stdout, and can print metadata about the
+// downloaded content.
 package download
 
 import (

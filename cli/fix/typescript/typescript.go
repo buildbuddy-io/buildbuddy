@@ -1,3 +1,8 @@
+// Package typescript provides TypeScript-specific functionality for the `bb fix`
+// command. It implements the language interface for detecting TypeScript source
+// and dependency files (package.json, package-lock.json), extracting required
+// Bazel dependencies (rules_js, aspect_rules_js), and registering npm
+// dependencies in MODULE.bazel using the npm extension.
 package typescript
 
 import (

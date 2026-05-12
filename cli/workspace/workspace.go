@@ -1,3 +1,7 @@
+// Package workspace provides utilities for locating and working with Bazel
+// workspaces. It finds the workspace root by searching for WORKSPACE, MODULE.bazel,
+// or other indicator files, supports both legacy WORKSPACE and bzlmod MODULE
+// approaches, and provides helpers for reading and creating workspace files.
 package workspace
 
 import (

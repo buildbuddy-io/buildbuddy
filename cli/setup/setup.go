@@ -1,3 +1,8 @@
+// Package setup orchestrates the initialization and preparation of the CLI
+// environment before running Bazel commands. It loads plugins, handles
+// authentication, configures the sidecar process, parses arguments, and executes
+// pre-command hooks. It returns a Result containing the configured state for
+// command execution.
 package setup
 
 import (

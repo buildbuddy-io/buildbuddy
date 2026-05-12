@@ -1,3 +1,6 @@
+// Package main generates test data for the compactgraph package by building
+// sample projects with different Bazel versions and capturing their execution
+// logs for use in testing and validation.
 package main
 
 import (

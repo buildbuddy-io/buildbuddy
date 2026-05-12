@@ -1,3 +1,7 @@
+// Package view implements the `bb view` command, which fetches and displays
+// build logs from BuildBuddy. It accepts an invocation ID or BuildBuddy URL,
+// retrieves the event log chunks via the BuildBuddy API, and streams the logs
+// to the terminal with optional line limits.
 package view
 
 import (

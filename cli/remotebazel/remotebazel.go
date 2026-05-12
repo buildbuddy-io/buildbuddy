@@ -1,3 +1,8 @@
+// Package remotebazel implements the `bb remote-bazel` command, which runs
+// Bazel commands on remote workers instead of locally. It packages the workspace,
+// uploads it to CAS, executes Bazel via remote execution, streams build events,
+// and downloads results. This enables running builds without local Bazel
+// installation or powerful hardware.
 package remotebazel
 
 import (

@@ -1,3 +1,7 @@
+// Package record implements the `bb record` command, which executes arbitrary
+// commands while capturing their output and streaming it to BuildBuddy as a
+// build event stream. This enables tracking and viewing non-Bazel command
+// executions in the BuildBuddy UI with timing, logs, and exit status.
 package record
 
 import (

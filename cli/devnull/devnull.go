@@ -1,3 +1,7 @@
+// Package devnull provides a no-op implementation of BuildEventChannel and
+// BuildEventHandler. It's used when build event publishing needs to be disabled
+// or mocked out, such as in testing scenarios or when running commands that
+// don't require event streaming.
 package devnull
 
 import (

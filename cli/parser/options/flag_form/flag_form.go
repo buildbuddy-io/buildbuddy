@@ -1,3 +1,7 @@
+// Package flag_form defines the different forms a command-line flag can take,
+// such as standard name, short name, old/experimental name, and their negative
+// variants. It provides utilities for identifying and working with these
+// different flag representations.
 package flag_form
 
 // Form is an enum that describes the form the flag takes. The least-significant

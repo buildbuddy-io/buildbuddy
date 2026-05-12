@@ -1,3 +1,8 @@
+// Package storage provides utilities for persisting CLI configuration and state.
+// It manages user-specific config directories, workspace-specific data storage
+// (via .git/config), and temporary file handling. It provides a consistent
+// interface for reading and writing CLI settings across different storage
+// backends.
 package storage
 
 import (

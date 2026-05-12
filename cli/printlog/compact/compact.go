@@ -1,3 +1,7 @@
+// Package compact provides parsing and pretty-printing of Bazel's compact
+// execution logs. It reads the compressed protobuf format, builds an index of
+// spawns and their dependencies, and outputs a sorted, human-readable
+// representation with configurable detail levels and size limits.
 package compact
 
 import (

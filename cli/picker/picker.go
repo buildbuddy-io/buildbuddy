@@ -1,3 +1,7 @@
+// Package picker provides an interactive target picker for Bazel commands.
+// When a build, test, or query command is invoked without explicit targets, it
+// queries available packages and presents an interactive menu for target
+// selection, making it easier to work with Bazel in large repositories.
 package picker
 
 import (

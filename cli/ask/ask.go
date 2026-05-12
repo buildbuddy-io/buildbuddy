@@ -1,3 +1,7 @@
+// Package ask implements the `bb ask` command, which provides AI-powered
+// suggestions about the previous Bazel invocation. It retrieves the most recent
+// invocation ID and sends it to BuildBuddy's suggestion service to get
+// actionable recommendations for improving build performance or fixing issues.
 package ask
 
 import (

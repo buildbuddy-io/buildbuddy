@@ -1,3 +1,7 @@
+// Package runscript handles the execution of Bazel run scripts. It configures
+// `bazel run` to generate a script via --script_path, then executes that script
+// with proper signal handling and log streaming. This enables splitting the
+// build and run phases for better control over execution.
 package runscript
 
 import (

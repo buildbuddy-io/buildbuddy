@@ -1,3 +1,8 @@
+// Package execute implements the `bb execute` command, which runs arbitrary
+// commands via remote execution. It packages the specified executable and
+// arguments into a remote execution action, uploads inputs to CAS, executes
+// the action on a remote worker, and streams back the results including stdout,
+// stderr, and exit code.
 package execute
 
 import (

@@ -1,3 +1,8 @@
+// Package printlog implements the `bb print` command, which prints
+// human-readable representations of Bazel log files. It supports parsing and
+// displaying gRPC logs (--experimental_remote_grpc_log) and compact execution
+// logs (--experimental_execution_log_compact_file) with options for sorting,
+// raw output, and size limiting.
 package printlog
 
 import (

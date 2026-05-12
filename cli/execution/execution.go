@@ -1,3 +1,7 @@
+// Package execution implements the `bb execution` command, which queries and
+// manages remote execution results. It can fetch cached execution responses by
+// execution ID, display detailed execution metadata, and format output as
+// markdown or JSON for analysis and debugging.
 package execution
 
 import (

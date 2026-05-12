@@ -1,3 +1,6 @@
+// Package tooltag adds the --tool_tag flag to Bazel invocations to identify
+// them as originating from the BuildBuddy CLI. The tag includes the CLI version,
+// enabling analytics and debugging of CLI-initiated builds in BuildBuddy.
 package tooltag
 
 import (

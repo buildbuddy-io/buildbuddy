@@ -1,3 +1,7 @@
+// Package remote_download implements the `bb remote-download` command, which
+// downloads remote assets via the Remote Asset API. It fetches artifacts by URL,
+// caches them in CAS, and returns the resulting digest. This is useful for
+// downloading artifacts as part of remote execution workflows.
 package remote_download
 
 import (

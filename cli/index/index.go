@@ -1,3 +1,8 @@
+// Package index implements the `bb index` command, which indexes a git
+// repository for code search. It uploads repository contents and metadata to
+// BuildBuddy's code search service, enabling fast searching across the
+// codebase. It supports automatic detection of the git repository and handles
+// authentication.
 package index
 
 import (

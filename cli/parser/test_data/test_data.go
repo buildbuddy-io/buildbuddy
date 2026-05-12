@@ -1,3 +1,6 @@
+// Package test_data provides embedded test data for the parser package,
+// including captured Bazel help output in various formats for use in parser
+// tests and validation.
 package test_data
 
 import _ "embed"

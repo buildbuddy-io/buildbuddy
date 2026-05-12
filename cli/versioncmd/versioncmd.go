@@ -1,3 +1,7 @@
+// Package versioncmd implements the `bb version` command, which displays the
+// BuildBuddy CLI version and optionally the Bazel version. With --cli, it
+// prints only the CLI version; otherwise, it prints both the CLI version and
+// delegates to `bazel version` for Bazel version information.
 package versioncmd
 
 import (

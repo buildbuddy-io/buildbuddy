@@ -1,3 +1,6 @@
+// Package builtins provides a comprehensive list of Bazel's built-in rule names.
+// This list is used by translators to identify valid Bazel rules when converting
+// from other build systems or validating BUILD file syntax.
 package builtins
 
 var Rules = []string{

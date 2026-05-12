@@ -1,3 +1,6 @@
+// Package option_definitions defines the command-line option schemas for
+// file watcher flags. It specifies flags like --watch/-w and --watcher_flags
+// that control file watching behavior and configuration.
 package option_definitions
 
 import (

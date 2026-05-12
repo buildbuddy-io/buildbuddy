@@ -1,3 +1,9 @@
+// Package analyze implements the `bb analyze` command, which analyzes Bazel
+// dependency graphs to identify optimization opportunities. It can compute the
+// longest path in the build graph, analyze dependency costs by correlating
+// build graph structure with git history to identify frequently-changed
+// dependencies, and help identify restructuring opportunities to improve build
+// performance.
 package analyze
 
 import (

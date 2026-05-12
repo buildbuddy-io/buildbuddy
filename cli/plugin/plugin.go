@@ -1,3 +1,8 @@
+// Package plugin implements the BuildBuddy CLI plugin system. It discovers,
+// configures, and executes plugins defined in buildbuddy.yaml, handling plugin
+// lifecycle (before_run, after_run hooks), argument parsing, and communication
+// with Bazel via a sidecar process. Plugins can modify Bazel invocations, react
+// to build events, and extend CLI functionality.
 package plugin
 
 import (

@@ -1,3 +1,7 @@
+// Package arg provides utilities for parsing and manipulating command-line
+// arguments, particularly Bazel-style flags. It supports finding, extracting,
+// and modifying flag values in argument lists, handling both single-value and
+// multi-value flags, and parsing flag sets with custom error handling.
 package arg
 
 import (

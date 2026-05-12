@@ -1,3 +1,7 @@
+// Package js provides translation of JavaScript-based BUILD files to Bazel's
+// Starlark format. It uses a JavaScript interpreter to evaluate the JS-based
+// BUILD syntax and transforms it into valid Bazel BUILD files, handling imports,
+// rule calls, and other JS idioms.
 package js
 
 import (

@@ -1,3 +1,7 @@
+// Package bazelisk provides integration with Bazelisk for managing Bazel
+// versions. It wraps the core Bazelisk functionality to automatically download
+// and invoke the correct Bazel version based on .bazelversion files, with
+// support for custom stdout/stderr redirection and version override handling.
 package bazelisk
 
 import (

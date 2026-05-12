@@ -1,3 +1,7 @@
+// Package help implements the help system for the BuildBuddy CLI. It provides
+// command-specific help messages, a directory of all available commands, and
+// integration with Bazel's native help system for Bazel commands. It formats
+// and displays usage information, flag descriptions, and examples.
 package help
 
 import (

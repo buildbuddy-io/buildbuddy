@@ -1,3 +1,7 @@
+// Package update implements the `bb update` command, which updates the
+// BuildBuddy CLI to the latest version. It supports updating the system-wide
+// installation, updating the workspace's .bazelversion file, or running the
+// install script to fetch and install the latest release from GitHub.
 package update
 
 import (

@@ -1,3 +1,7 @@
+// Package translate provides translation of non-Bazel build files to Bazel
+// format. It defines the Translator interface and manages a registry of
+// translators for different file types (like .js, .yaml), enabling `bb fix` to
+// convert existing build configurations to Bazel BUILD files.
 package translate
 
 import (

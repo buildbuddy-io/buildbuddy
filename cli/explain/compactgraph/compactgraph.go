@@ -1,3 +1,8 @@
+// Package compactgraph provides utilities for parsing and analyzing Bazel's
+// compact execution logs. It represents the execution log as a directed acyclic
+// graph of spawns, tracking dependencies between actions through input and
+// output paths. It supports efficient loading, diffing, and querying of large
+// execution logs with zstd compression.
 package compactgraph
 
 import (

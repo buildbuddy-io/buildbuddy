@@ -1,3 +1,7 @@
+// Package metadata collects and appends build metadata to Bazel invocations.
+// It gathers information like git commit SHA, branch, repository URL, and the
+// original command-line arguments, then injects them as --build_metadata flags
+// for tracking and display in BuildBuddy's UI.
 package metadata
 
 import (
