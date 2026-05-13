@@ -108,9 +108,7 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	err = te.GetUserDB().InsertUser(context.Background(), tu)
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
-	ws, err := workflow.NewWorkflowService(te)
-	require.NoError(t, err)
-	te.SetWorkflowService(ws)
+	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
 	require.NoError(t, err)
 	te.SetGitHubAppService(gh)
@@ -227,7 +225,7 @@ func enableScheduledWorkflows(t *testing.T, env *testenv.TestEnv) {
 	t.Helper()
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"enable_scheduled_workflows": {
+		"remote_execution.enable_scheduled_workflows": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "on",
 			Variants: map[string]any{

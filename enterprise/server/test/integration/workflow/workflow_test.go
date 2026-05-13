@@ -188,9 +188,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{gp})
-			var err error
-			workflowService, err = service.NewWorkflowService(e)
-			require.NoError(t, err)
+			workflowService = service.NewWorkflowService(e)
 			e.SetWorkflowService(workflowService)
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)

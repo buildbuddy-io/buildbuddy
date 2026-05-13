@@ -57,9 +57,7 @@ func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	t.Cleanup(func() { clientConn.Close() })
 
 	te.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
-	ws, err := workflow.NewWorkflowService(te)
-	require.NoError(t, err)
-	te.SetWorkflowService(ws)
+	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
 	tu := &tables.User{
 		UserID: "US1",

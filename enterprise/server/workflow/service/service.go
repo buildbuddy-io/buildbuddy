@@ -201,19 +201,15 @@ type workflowService struct {
 	bbUrl *url.URL
 }
 
-func NewWorkflowService(env environment.Env) (*workflowService, error) {
+func NewWorkflowService(env environment.Env) *workflowService {
 	ws := &workflowService{
 		env:   env,
 		tasks: make(chan *startWorkflowTask, webhookWorkerTaskQueueSize),
 		bbUrl: build_buddy_url.WithPath(""),
 	}
 	ws.startBackgroundWorkers()
-
-	if err := ws.startScheduleScanner(); err != nil {
-		return nil, err
-	}
-
-	return ws, nil
+	ws.startScheduleScanner()
+	return ws
 }
 
 func (ws *workflowService) startBackgroundWorkers() {
@@ -1915,36 +1911,43 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }
 
-func (ws *workflowService) startScheduleScanner() error {
-	scheduleScanner := cron.New(cron.WithLocation(time.UTC))
-	ctx := ws.env.GetServerContext()
-
-	if _, err := scheduleScanner.AddFunc(fmt.Sprintf("@every %s", scheduleScanInterval.String()), func() {
-		if err := ws.RunScheduledWorkflows(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to run scheduled workflows: %s", err)
-		}
-	}); err != nil {
-		return status.WrapErrorf(err, "failed to register scheduled workflow scan")
+func (ws *workflowService) startScheduleScanner() {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ws.env.GetServerContext(), "remote_execution.enable_scheduled_workflows", false) {
+		return
 	}
-	scheduleScanner.Start()
 
-	ws.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		if scheduleScanner == nil {
-			return nil
+	ctx, cancel := context.WithCancel(ws.env.GetServerContext())
+	ticker := time.NewTicker(scheduleScanInterval)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ticker.C:
+				if err := ws.RunScheduledWorkflows(ctx); err != nil {
+					log.CtxErrorf(ctx, "Failed to run scheduled workflows: %s", err)
+				}
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
 		}
-		stopCtx := scheduleScanner.Stop()
+	}()
+
+	ws.env.GetHealthChecker().RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		cancel()
 		select {
-		case <-stopCtx.Done():
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-done:
+		case <-shutdownCtx.Done():
+			return shutdownCtx.Err()
 		}
 		return nil
 	})
-	return nil
 }
 
 func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
-	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "enable_scheduled_workflows", false) {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "remote_execution.enable_scheduled_workflows", false) {
 		return nil
 	}
 
