@@ -278,7 +278,9 @@ func newFakeRegistry(t *testing.T, responses map[string]RegistryResponse) *fakeR
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 	fr.server = httptest.NewServer(mux)
 	t.Cleanup(fr.server.Close)
