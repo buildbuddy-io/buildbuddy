@@ -42,14 +42,19 @@ Adds the given dependency to your WORKSPACE file.
 	headerTemplate = "###### Begin auto-generated section for %s ######"
 	footerTemplate = "###### End auto-generated section for %s ######"
 
-	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
-	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
+	HeaderRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
+	ModuleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
 )
 
 // registryEndpoint is a printf format string used to look up module
 // metadata. It is a var (not const) so tests can point it at an
 // httptest.Server.
-var registryEndpoint = "https://registry.build/%s/data.json"
+var RegistryEndpoint = "https://registry.build/%s/data.json"
+
+func ResetFlags() {
+	flags = flag.NewFlagSet("add", flag.ContinueOnError)
+	Flags = flags
+}
 
 func HandleAdd(args []string) (int, error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
@@ -90,11 +95,11 @@ func HandleAdd(args []string) (int, error) {
 		if transitive {
 			return 0, nil
 		}
-		if err := addToModule(f, module, version, resp); err != nil {
+		if err := AddToModule(f, module, version, resp); err != nil {
 			return 1, err
 		}
 	} else {
-		if err := addToWorkspace(f, module, version, resp); err != nil {
+		if err := AddToWorkspace(f, module, version, resp); err != nil {
 			return 1, err
 		}
 	}
@@ -102,13 +107,13 @@ func HandleAdd(args []string) (int, error) {
 	return 0, nil
 }
 
-func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) error {
+func AddToWorkspace(f *os.File, module, version string, resp *RegistryResponse) error {
 	contents, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
 
-	matches := headerRegex.FindAllStringSubmatch(string(contents), -1)
+	matches := HeaderRegex.FindAllStringSubmatch(string(contents), -1)
 	for _, m := range matches {
 		existingModule := m[1]
 		existingVersion := m[2]
@@ -136,21 +141,21 @@ func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) 
 	return nil
 }
 
-func addToModule(f *os.File, module, version string, resp *RegistryResponse) error {
+func AddToModule(f *os.File, module, version string, resp *RegistryResponse) error {
 	contents, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
 
 	moduleSnippet := GenerateModuleSnippet(module, version, resp)
-	registryMatches := moduleRegex.FindStringSubmatch(moduleSnippet)
+	registryMatches := ModuleRegex.FindStringSubmatch(moduleSnippet)
 	if registryMatches == nil {
 		return fmt.Errorf("MODULE %s not found: %s", module, moduleSnippet)
 	}
 	newModule := registryMatches[1]
 	newVersion := registryMatches[2]
 
-	matches := moduleRegex.FindAllStringSubmatch(string(contents), -1)
+	matches := ModuleRegex.FindAllStringSubmatch(string(contents), -1)
 	for _, m := range matches {
 		existingModule := m[1]
 		existingVersion := m[2]
@@ -172,11 +177,11 @@ func addToModule(f *os.File, module, version string, resp *RegistryResponse) err
 	return nil
 }
 
-// parseModuleInput normalizes the user-provided module spec into a
+// ParseModuleInput normalizes the user-provided module spec into a
 // (module, version) pair. It accepts shorthand ("rules_go"),
 // "<module>@<version>", or a GitHub URL like
 // "https://github.com/owner/repo[@version]".
-func parseModuleInput(moduleInput string) (string, string) {
+func ParseModuleInput(moduleInput string) (string, string) {
 	moduleAndVersion := strings.Replace(moduleInput, "https://", "", 1)
 	moduleAndVersion = strings.Replace(moduleAndVersion, "github.com/", "github/", 1)
 	moduleAndVersion = strings.TrimRight(moduleAndVersion, "/")
@@ -190,7 +195,7 @@ func parseModuleInput(moduleInput string) (string, string) {
 }
 
 func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
-	moduleName, moduleVersion := parseModuleInput(moduleInput)
+	moduleName, moduleVersion := ParseModuleInput(moduleInput)
 	res, err := fetch(moduleName)
 	if err != nil {
 		return "", "", nil, err
@@ -239,7 +244,7 @@ func GenerateModuleSnippet(module, version string, resp *RegistryResponse) strin
 }
 
 func fetch(module string) (*RegistryResponse, error) {
-	resp, err := http.Get(fmt.Sprintf(registryEndpoint, module))
+	resp, err := http.Get(fmt.Sprintf(RegistryEndpoint, module))
 	if err != nil {
 		return nil, err
 	}
@@ -300,12 +305,12 @@ func showPicker(modules []Disambiguation) (string, error) {
 
 // findWorkspaceFile resolves the workspace/module file to write to.
 // It is a var so tests can substitute their own resolver.
-var findWorkspaceFile = func() (string, string, error) {
+var FindWorkspaceFile = func() (string, string, error) {
 	return workspace.CreateModuleIfNotExists()
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := findWorkspaceFile()
+	workspacePath, basename, err := FindWorkspaceFile()
 	if err != nil {
 		return nil, err
 	}

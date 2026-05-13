@@ -18,8 +18,8 @@ go_library(
 go_test(
     name = "add_test",
     srcs = ["add_test.go"],
-    embed = [":add"],
     deps = [
+        ":add",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
