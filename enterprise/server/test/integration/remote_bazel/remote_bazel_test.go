@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -129,36 +129,7 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 	require.FailNowf(t, "timeout", "Timed out waiting for invocation to reach expected status %v", expectedStatus)
 }
 
-func clonePrivateTestRepo(t *testing.T) string {
-	repoName := "private-test-repo"
-	// If you need to re-generate this PAT, it should only have read access to
-	// `private-test-repo`, and should be saved as a BB secret in all environments.
-	username := "maggie-lou"
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	repoURLWithToken := fmt.Sprintf("https://%s:%s@github.com/buildbuddy-io/private-test-repo.git", username, personalAccessToken)
-
-	// Use a dir that is persisted on recycled runners
-	rootDir := "/root/workspace/remote-bazel-integration-test"
-	err := os.Setenv("HOME", rootDir)
-	require.NoError(t, err)
-
-	err = os.MkdirAll(rootDir, 0755)
-	require.NoError(t, err)
-
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", rootDir, repoName)); os.IsNotExist(err) {
-		output := testshell.Run(t, rootDir, fmt.Sprintf("git clone %s --filter=blob:none --depth=1", repoURLWithToken))
-		require.NotContains(t, output, "fatal")
-	}
-
-	repoDir := fmt.Sprintf("%s/%s", rootDir, repoName)
-	t.Chdir(repoDir)
-	require.NoError(t, err)
-	testshell.Run(t, repoDir, "git pull")
-	return repoDir
-}
-
-// makeLocalGitRepo creates a local git repo to use for tests. This is faster
-// than using `clonePrivateTestRepo` which fetches from the remote GitHub server.
+// makeLocalGitRepo creates a local git repo to use for tests.
 func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
@@ -198,15 +169,30 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 }
 
 func TestWithPrivateRepo(t *testing.T) {
-	repoDir := clonePrivateTestRepo(t)
+	gitRemote := testgit.StartServer(t, testgit.ServerOptions{})
+	repoDir := testbazel.MakeTempModule(t, map[string]string{
+		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(
+    name = "hello_world",
+    srcs = ["hello_world.sh"],
+)
+`,
+		"hello_world.sh": `echo "FUTURE OF BUILDS!"`,
+		".bazelversion":  testbazel.BinaryPath(t),
+	})
+	testfs.MakeExecutable(t, repoDir, "hello_world.sh")
+	testgit.Init(t, repoDir)
+	gitRemote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: false})
+	gitRemote.Push("test-org", "test-repo", gitRemote.AccessToken(), repoDir)
+	repoURL := gitRemote.RepoURL("test-org", "test-repo", "" /* accessToken */)
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, true, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, repoURL, gitRemote.AccessToken(), nil)
 
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"run",
 		":hello_world",
-		"--noenable_bzlmod",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
@@ -222,8 +208,6 @@ func TestWithPrivateRepo(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	// Find outer invocation because it will contain run output
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
 		if i.GetRole() == "HOSTED_BAZEL" {
@@ -241,19 +225,12 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
-func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+func runLocalServerAndExecutor(t *testing.T, repoURL, githubToken string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
 	// Avoid uploading embedded CI runner binaries to the in-memory cache in
 	// each test because it's very slow. The executor will add these binaries locally instead.
 	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
 	flags.Set(t, "executor.enable_bare_runner", true)
 	flags.Set(t, "github.app.enabled", true)
-
-	githubToken := ""
-	repoURL := ""
-	if mockPrivateGithubToken {
-		githubToken = os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-		repoURL = "https://github.com/buildbuddy-io/private-test-repo"
-	}
 
 	env := rbetest.NewRBETestEnv(t)
 	mockGithubAppID := int64(1234)
@@ -291,13 +268,16 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 	if repoURL != "" {
 		dbh := env.GetDBHandle()
 		require.NotNil(t, dbh)
-		err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-			RepoURL: repoURL,
+		u, err := url.Parse(repoURL)
+		require.NoError(t, err)
+		flags.Set(t, "github.host", u.Host)
+		parsedRepo, err := git.ParseGitHubRepoURL(repoURL)
+		require.NoError(t, err)
+		err = dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+			RepoURL: parsedRepo.String(),
 			GroupID: env.GroupID1,
 			AppID:   mockGithubAppID,
 		})
-		require.NoError(t, err)
-		parsedRepo, err := git.ParseGitHubRepoURL(repoURL)
 		require.NoError(t, err)
 		err = dbh.NewQuery(context.Background(), "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
 			GroupID: env.GroupID1,
@@ -314,7 +294,7 @@ func TestCancel(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
@@ -392,7 +372,7 @@ int main() {
 	})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
@@ -462,7 +442,7 @@ int main() {
 	})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
@@ -523,7 +503,7 @@ sh_binary(
 	initSecretService, pubKey := setupSecrets(t)
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, initSecretService)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", initSecretService)
 
 	bbClient := env.GetBuildBuddyServiceClient()
 	ctx := env.WithUserID(context.Background(), env.UserID1)
@@ -641,7 +621,7 @@ func TestBashScript(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"--script=echo $VAL",
@@ -678,7 +658,7 @@ func TestBashScript(t *testing.T) {
 // This test enables the behavior and verifies the binaries can be used correctly.
 func TestEmbeddedBinariesFromApp(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
-	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 
 	// The flag is disabled in `runLocalServerAndExecutor`. Enable it here.

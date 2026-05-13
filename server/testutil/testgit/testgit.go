@@ -3,9 +3,12 @@ package testgit
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,8 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/mockgitserver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -172,6 +177,86 @@ func configure(t testing.TB, repoPath string) {
 	testshell.Run(t, repoPath, `
 		git config user.name "Test"
 		git config user.email "test@buildbuddy.io"
+	`)
+}
+
+// Server simulates a git forge such as GitHub. It allows creating git projects
+// associated with orgs. Repos can be private, requiring authorization via a
+// statically configured access token (which defaults to "test-access-token").
+//
+// Example usage:
+//
+//	remote := testgit.StartServer(t, testgit.ServerOptions{})
+//	repo := testgit.MakeTempRepo(t, map[string]string{"README": ""})
+//	remote.CreateProject("foo-org", "bar-repo", testgit.ProjectSettings{Public: false})
+//	remote.Push("foo-org", "bar-repo", "test-access-token", repo)
+type Server struct {
+	t              testing.TB
+	gitProjectRoot string
+	accessToken    string
+
+	server *httptest.Server
+}
+
+type ServerOptions = mockgitserver.Options
+
+type ProjectSettings = mockgitserver.ProjectSettings
+
+// StartServer starts a git remote for testing.
+// The server is automatically cleaned up when the test is complete.
+func StartServer(t testing.TB, opts ServerOptions) *Server {
+	if opts.AccessToken == "" {
+		opts.AccessToken = "test-access-token"
+	}
+	gitProjectRoot := testfs.MakeTempDir(t)
+	handler := mockgitserver.NewHandler(gitProjectRoot, opts)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return &Server{
+		t:              t,
+		server:         server,
+		gitProjectRoot: gitProjectRoot,
+		accessToken:    opts.AccessToken,
+	}
+}
+
+// RepoURL returns the URL of the given owner/repo with an optional access token
+// encoded in the URL for basic auth.
+//
+// If the test server is bound to 127.0.0.1, RepoURL rewrites the host to
+// localhost. Remote Bazel preserves plain HTTP for localhost URLs, but coerces
+// HTTP 127.0.0.1 URLs to HTTPS before the remote checkout, which breaks tests
+// that intentionally use this local HTTP git server without TLS.
+func (s *Server) RepoURL(owner, repo, accessToken string) string {
+	u, err := url.Parse(s.server.URL)
+	require.NoError(s.t, err)
+	if u.Scheme == "http" && u.Hostname() == "127.0.0.1" {
+		u.Host = net.JoinHostPort("localhost", u.Port())
+	}
+	u.Path = path.Join(owner, repo)
+	if accessToken != "" {
+		u.User = url.UserPassword("x-testgit-access-token", accessToken)
+	}
+	return u.String()
+}
+
+// AccessToken returns a token that grants access to all test repositories.
+func (s *Server) AccessToken() string {
+	return s.accessToken
+}
+
+// CreateProject initializes a git repository on the server.
+func (s *Server) CreateProject(owner, repo string, settings *ProjectSettings) {
+	err := mockgitserver.CreateProject(s.gitProjectRoot, owner, repo, settings)
+	require.NoError(s.t, err)
+}
+
+// Push pushes the local repo to a project created with CreateProject.
+func (s *Server) Push(owner, repo, accessToken, localPath string) {
+	testshell.Run(s.t, localPath, `
+		git remote add origin `+s.RepoURL(owner, repo, accessToken)+`
+		export GIT_ASKPASS=/usr/bin/true
+		git push --set-upstream origin "$(git branch --show-current)"
 	`)
 }
 
