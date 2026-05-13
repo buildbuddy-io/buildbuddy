@@ -44,9 +44,11 @@ go_test(
     srcs = ["hostedrunner_test.go"],
     embed = [":hostedrunner"],
     deps = [
+        "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/workflow/service",
+        "//server/testutil/testgit",
         "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:remote_execution_go_proto",

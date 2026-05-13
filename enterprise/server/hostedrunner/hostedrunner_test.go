@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -238,4 +240,55 @@ func TestActionFromRunRequest(t *testing.T) {
 			require.Equal(t, tc.expectedBazelWorkspaceDir, action.BazelWorkspaceDir)
 		})
 	}
+}
+
+func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
+	const (
+		mockAppID   = int64(1234)
+		fakeToken   = "fake-github-token"
+		repoURL     = "https://github.com/test-org/test-repo"
+		groupID     = "GR1" // singleUserGroup replaces "US" with "GR" for user "US1"
+	)
+
+	// Enable the read-write GitHub app flag so that IsReadWriteAppEnabled() returns true.
+	flags.Set(t, "github.app.enabled", true)
+
+	te, ctx := getEnv(t)
+
+	// Set up FakeGitHubApp with a known token and mock app ID.
+	fakeApp := &testgit.FakeGitHubApp{Token: fakeToken, MockAppID: mockAppID}
+	gh, err := githubapp.NewAppService(te, fakeApp, nil)
+	require.NoError(t, err)
+	te.SetGitHubAppService(gh)
+
+	// Insert a GitHubAppInstallation row so that GetGitHubAppForAuthenticatedUser
+	// finds the app for groupID "GR1" and routes to fakeApp via its AppID.
+	dbh := te.GetDBHandle()
+	require.NotNil(t, dbh)
+	err = dbh.NewQuery(ctx, "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
+		UserID:         "US1",
+		GroupID:        groupID,
+		AppID:          mockAppID,
+		Owner:          "test-org",
+		InstallationID: 1,
+		Perms:          1,
+	})
+	require.NoError(t, err)
+
+	// Build the runner service.
+	r, err := New(te)
+	require.NoError(t, err)
+
+	// Call credentialEnvOverrides with a RunRequest that has a repo URL but no explicit access token.
+	req := &rnpb.RunRequest{
+		GitRepo: &gitpb.GitRepo{
+			RepoUrl: repoURL,
+		},
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	}
+	envOverrides, err := r.credentialEnvOverrides(ctx, req)
+	require.NoError(t, err)
+
+	// Assert that REPO_TOKEN is set to the fake token.
+	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
 }
