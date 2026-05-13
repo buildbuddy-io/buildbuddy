@@ -73,12 +73,11 @@ func MaxChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes * 4
 }
 
-// MinChunkedReadFallbackSizeBytes can be configured independently from the
-// write threshold so server-side miss fallback paths can still read older
-// chunked blobs that were written with a smaller chunk size, but is clamped to
-// at most MaxChunkSizeBytes().
+// MinChunkedReadFallbackSizeBytes is intentionally independent from the write
+// threshold so server-side miss fallback paths can still read older chunked
+// blobs that were written with a smaller chunk size.
 func MinChunkedReadFallbackSizeBytes() int64 {
-	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes())
+	return *minChunkedReadFallbackSizeBytes
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
@@ -108,6 +107,9 @@ func ValidateConfig() error {
 	}
 	if *minChunkedReadFallbackSizeBytes < 0 {
 		return fmt.Errorf("cache.min_chunked_read_fallback_size_bytes must be >= 0, got %d", *minChunkedReadFallbackSizeBytes)
+	}
+	if *minChunkedReadFallbackSizeBytes > v*4 {
+		return fmt.Errorf("cache.min_chunked_read_fallback_size_bytes must be <= cache.avg_chunk_size_bytes*4 (%d), got %d", v*4, *minChunkedReadFallbackSizeBytes)
 	}
 	return nil
 }
