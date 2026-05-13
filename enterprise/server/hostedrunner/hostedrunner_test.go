@@ -249,11 +249,11 @@ func TestActionFromRunRequest(t *testing.T) {
 // inserted in the DB, mirroring the validation that the real GitHubApp performs.
 type validatingGitHubApp struct {
 	testgit.FakeGitHubApp
-	t            *testing.T
-	wantGroupID  string
-	wantRepoURL  string
-	wantOwner    string
-	dbh          interfaces.DBHandle
+	t           *testing.T
+	wantGroupID string
+	wantRepoURL string
+	wantOwner   string
+	dbh         interfaces.DBHandle
 }
 
 func (a *validatingGitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
@@ -281,14 +281,14 @@ func (a *validatingGitHubApp) GetRepositoryInstallationToken(ctx context.Context
 
 func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 	const (
-		mockAppID       = int64(1234)
-		fakeToken       = "fake-github-token"
+		mockAppID = int64(1234)
+		fakeToken = "fake-github-token"
 		// repoURL is the raw input; normalizedURL is what git.NormalizeRepoURL produces
 		// (they are the same here, but keeping them distinct documents the expectation).
-		repoURL       = "https://github.com/test-org/test-repo"
-		normalizedURL = "https://github.com/test-org/test-repo"
-		repoOwner       = "test-org"
-		installationID  = int64(1)
+		repoURL        = "https://github.com/test-org/test-repo"
+		normalizedURL  = "https://github.com/test-org/test-repo"
+		repoOwner      = "test-org"
+		installationID = int64(1)
 	)
 
 	// Enable the read-write GitHub app flag so that IsReadWriteAppEnabled() returns true.
@@ -331,11 +331,11 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 	// rows required by production are present.
 	vApp := &validatingGitHubApp{
 		FakeGitHubApp: testgit.FakeGitHubApp{Token: fakeToken, MockAppID: mockAppID},
-		t:            t,
-		wantGroupID:  groupID,
-		wantRepoURL:  normalizedURL,
-		wantOwner:    repoOwner,
-		dbh:          dbh,
+		t:             t,
+		wantGroupID:   groupID,
+		wantRepoURL:   normalizedURL,
+		wantOwner:     repoOwner,
+		dbh:           dbh,
 	}
 	gh, err := githubapp.NewAppService(te, vApp, nil)
 	require.NoError(t, err)
