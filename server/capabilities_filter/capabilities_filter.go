@@ -123,8 +123,6 @@ var (
 		buildBuddyServicePrefix + "UpdateInvocation",
 		buildBuddyServicePrefix + "DeleteInvocation",
 		buildBuddyServicePrefix + "CancelExecutions",
-		buildBuddyServicePrefix + "ExecuteWorkflow",
-		apiServicePrefix + "ExecuteWorkflow",
 		buildBuddyServicePrefix + "InvalidateSnapshot",
 		buildBuddyServicePrefix + "WriteEventLog",
 		buildBuddyServicePrefix + "UpdateRunStatus",
@@ -139,9 +137,6 @@ var (
 		apiServicePrefix + "CreateUserApiKey",
 		buildBuddyServicePrefix + "UpdateUserApiKey",
 		buildBuddyServicePrefix + "DeleteUserApiKey",
-		// Remote Bazel
-		buildBuddyServicePrefix + "Run",
-		apiServicePrefix + "Run",
 		// Codesearch and Kythe
 		buildBuddyServicePrefix + "Search",
 		buildBuddyServicePrefix + "KytheProxy",
@@ -152,6 +147,21 @@ var (
 		buildBuddyServicePrefix + "SaveWorkspace",
 		buildBuddyServicePrefix + "GetWorkspaceDirectory",
 		buildBuddyServicePrefix + "GetWorkspaceFile",
+	}
+
+	// cacheWriteRPCs can only be called by group members with a capability that
+	// grants writes to the content-addressable store.
+	//
+	// In particular, any RPC that does a remote execution needs cache write
+	// capabilities, because executions almost always need to produce some CAS
+	// output (stdout, stderr, log files, etc.).
+	cacheWriteRPCs = []string{
+		// Per-invocation actions
+		buildBuddyServicePrefix + "ExecuteWorkflow",
+		apiServicePrefix + "ExecuteWorkflow",
+		// Remote Bazel
+		buildBuddyServicePrefix + "Run",
+		apiServicePrefix + "Run",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
@@ -256,6 +266,9 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 				out = append(out, getGroupAdminOnlyRPCs()...)
 			}
 			out = append(out, groupMemberRPCs...)
+			if hasAnyCapability(userGroupCapabilities, cappb.Capability_CAS_WRITE, cappb.Capability_CACHE_WRITE) {
+				out = append(out, cacheWriteRPCs...)
+			}
 		}
 	}
 
@@ -268,9 +281,19 @@ func AllRPCsForTestOnly() []string {
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
 	out = append(out, groupMemberRPCs...)
+	out = append(out, cacheWriteRPCs...)
 	out = append(out, getGroupAdminOnlyRPCs()...)
 	out = append(out, serverAdminOnlyRPCs...)
 	return out
+}
+
+func hasAnyCapability(userCapabilities []cappb.Capability, requiredCapabilities ...cappb.Capability) bool {
+	for _, requiredCapability := range requiredCapabilities {
+		if slices.Contains(userCapabilities, requiredCapability) {
+			return true
+		}
+	}
+	return false
 }
 
 func getUnfilteredRPCs() []string {

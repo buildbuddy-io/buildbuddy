@@ -9,11 +9,13 @@ import "encoding/json"
 // MCP. This list is kept intentionally small until we have more experience with
 // how MCP is used.
 var allowedRPCs = map[string]struct{}{
-	"GetInvocation": {},
-	"GetLog":        {},
-	"GetTarget":     {},
-	"GetAction":     {},
-	"GetFileRange":  {},
+	"GetInvocation":   {},
+	"GetLog":          {},
+	"GetTarget":       {},
+	"GetAction":       {},
+	"GetFileRange":    {},
+	"ExecuteWorkflow": {},
+	"Run":             {},
 }
 
 // Manifest is the generated inventory of API-backed MCP tools.

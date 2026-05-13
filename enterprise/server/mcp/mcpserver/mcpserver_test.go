@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
@@ -31,7 +33,7 @@ func (f *fakeAPIService) GetInvocation(ctx context.Context, req *apipb.GetInvoca
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func TestMCPToolsList_OnlyGetAPIsAreExposed(t *testing.T) {
+func TestMCPToolsList_OnlyExplicitlyListedAPIsAreExposed(t *testing.T) {
 	server := newTestServer(t, testServerOptions{
 		users: testUsers(
 			testUser("developer-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
@@ -55,20 +57,51 @@ func TestMCPToolsList_OnlyGetAPIsAreExposed(t *testing.T) {
 	rsp := callJSONRPC[toolListResponse](t, server.URL, "developer-key", "tools/list", nil)
 	require.Nil(t, rsp.Error)
 
-	names := make([]string, 0, len(rsp.Result.Tools))
-	for _, tool := range rsp.Result.Tools {
-		names = append(names, tool.Name)
-	}
 	require.Equal(t, []string{
 		"get_invocation",
 		"get_log",
 		"get_target",
 		"get_action",
-	}, names)
+		"execute_workflow",
+		"run",
+	}, toolNames(rsp.Result.Tools))
 
 	// Should not be able to call an RPC that isn't exposed as a tool even if
 	// it's in the allowedRPCs list.
 	errorRsp := callJSONRPC[json.RawMessage](t, server.URL, "developer-key", "tools/call", map[string]any{
+		"name": "delete_file",
+		"arguments": map[string]any{
+			"uri": "bytestream://example/blob/abc/123",
+		},
+	})
+	require.NotNil(t, errorRsp.Error)
+	require.Equal(t, jsonrpc.InvalidParamsCode, errorRsp.Error.Code)
+	require.Equal(t, "unknown tool", errorRsp.Error.Message)
+}
+
+func TestMCPToolsList_RequiresCacheWriteCapabilityForRunAndExecuteWorkflow(t *testing.T) {
+	server := newCapabilitiesFilteredTestServer(t, testUsers(
+		testUser("reader-key", "GROUP1", []cappb.Capability{}),
+		testUser("cache-writer-key", "GROUP1", []cappb.Capability{cappb.Capability_CACHE_WRITE}),
+	))
+
+	// A key without cache-write capabilities can still see read-only tools.
+	readerRsp := callJSONRPC[toolListResponse](t, server.URL, "reader-key", "tools/list", nil)
+	require.Nil(t, readerRsp.Error)
+	readerToolNames := toolNames(readerRsp.Result.Tools)
+	require.Contains(t, readerToolNames, "get_invocation")
+	require.NotContains(t, readerToolNames, "execute_workflow")
+	require.NotContains(t, readerToolNames, "run")
+
+	// The same tools become visible once the key has CACHE_WRITE.
+	cacheWriterRsp := callJSONRPC[toolListResponse](t, server.URL, "cache-writer-key", "tools/list", nil)
+	require.Nil(t, cacheWriterRsp.Error)
+	cacheWriterToolNames := toolNames(cacheWriterRsp.Result.Tools)
+	require.Contains(t, cacheWriterToolNames, "execute_workflow")
+	require.Contains(t, cacheWriterToolNames, "run")
+
+	// A client cannot bypass tools/list by calling the tool directly.
+	callRsp := callJSONRPC[toolCallResponse](t, server.URL, "reader-key", "tools/call", map[string]any{
 		"name": "run",
 		"arguments": map[string]any{
 			"gitRepo": map[string]any{
@@ -76,9 +109,10 @@ func TestMCPToolsList_OnlyGetAPIsAreExposed(t *testing.T) {
 			},
 		},
 	})
-	require.NotNil(t, errorRsp.Error)
-	require.Equal(t, jsonrpc.InvalidParamsCode, errorRsp.Error.Code)
-	require.Equal(t, "unknown tool", errorRsp.Error.Message)
+	require.Nil(t, callRsp.Error)
+	require.True(t, callRsp.Result.IsError)
+	require.NotEmpty(t, callRsp.Result.Content)
+	require.Contains(t, callRsp.Result.Content[0].Text, "permission denied")
 }
 
 func TestMCPToolsList_GeneratesDescriptionsFromProtoComments(t *testing.T) {
@@ -214,6 +248,31 @@ func newTestServer(t *testing.T, opts testServerOptions) *httptest.Server {
 	return server
 }
 
+func newCapabilitiesFilteredTestServer(t *testing.T, users map[string]interfaces.UserInfo) *httptest.Server {
+	authenticator := testauth.NewTestAuthenticator(t, users)
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(authenticator)
+	service := NewService(
+		authenticator,
+		&fakeAPIService{},
+		func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := authenticator.AuthenticatedHTTPContext(w, r)
+				next.ServeHTTP(w, r.WithContext(ctx))
+			})
+		},
+		func(ctx context.Context, groupID string) []string {
+			return capabilities_filter.AllowedRPCs(ctx, env, groupID)
+		},
+	)
+
+	mux := http.NewServeMux()
+	service.RegisterHandlers(mux)
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
 type toolListResponse struct {
 	Tools []struct {
 		Name        string          `json:"name"`
@@ -236,6 +295,18 @@ type rpcResponse[T any] struct {
 	ID      int            `json:"id"`
 	Result  T              `json:"result,omitempty"`
 	Error   *jsonrpc.Error `json:"error,omitempty"`
+}
+
+func toolNames(tools []struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+}) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
 }
 
 func callJSONRPC[T any](t *testing.T, baseURL, apiKey, method string, params any) *rpcResponse[T] {
