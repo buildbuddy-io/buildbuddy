@@ -27,7 +27,7 @@ func resetFlags() {
 
 func TestParseModuleInput(t *testing.T) {
 	for _, tc := range []struct {
-		in              string
+		in               string
 		wantMod, wantVer string
 	}{
 		{"rules_go", "rules_go", ""},
@@ -483,4 +483,3 @@ func TestHandleAdd_DisambiguationLengthOneAutoResolves(t *testing.T) {
 		`bazel_dep(name = "foo", version = "1.0.0")`)
 	assert.Equal(t, []string{"foo", "github/some/foo"}, fr.requests)
 }
-
