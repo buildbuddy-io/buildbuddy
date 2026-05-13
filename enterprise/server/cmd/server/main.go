@@ -134,7 +134,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	workflowService := workflow.NewWorkflowService(env)
+	workflowService, err := workflow.NewWorkflowService(env)
+	if err != nil {
+		log.Fatalf("Error setting up workflow service: %s", err)
+	}
 	env.SetWorkflowService(workflowService)
 	env.SetGitProviders([]interfaces.GitProvider{
 		github.NewProvider(env),

@@ -68,6 +68,7 @@ go_test(
     shard_count = 6,
     deps = [
         ":service",
+        "//enterprise/server/experiments",
         "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
@@ -97,6 +98,8 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_github_v59//github",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",

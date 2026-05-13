@@ -261,7 +261,9 @@ func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envMod
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{testgit.NewFakeProvider()})
-			e.SetWorkflowService(service.NewWorkflowService(e))
+			ws, err := service.NewWorkflowService(e)
+			require.NoError(t, err)
+			e.SetWorkflowService(ws)
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
 			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID}, nil)

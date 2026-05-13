@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -35,6 +36,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v59/github"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -105,7 +108,9 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	err = te.GetUserDB().InsertUser(context.Background(), tu)
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
-	te.SetWorkflowService(workflow.NewWorkflowService(te))
+	ws, err := workflow.NewWorkflowService(te)
+	require.NoError(t, err)
+	te.SetWorkflowService(ws)
 	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
 	require.NoError(t, err)
 	te.SetGitHubAppService(gh)
@@ -216,6 +221,25 @@ func getExecutedActionName(t *testing.T, ctx context.Context, te *testenv.TestEn
 	}
 	t.Fatalf("no action name found in execute request: %+v", executeRequest)
 	return ""
+}
+
+func enableScheduledWorkflows(t *testing.T, env *testenv.TestEnv) {
+	t.Helper()
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"enable_scheduled_workflows": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{
+				"on": true,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
 }
 
 // pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
@@ -1135,6 +1159,7 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 func TestScheduledWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	provider := setupFakeGitProvider(t, te)
@@ -1289,6 +1314,7 @@ func TestScheduledWorkflow_NoEligibleSchedules(t *testing.T) {
 func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	authCtx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
@@ -1802,6 +1828,7 @@ actions:
 func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	authCtx, _, gid := authenticate(t, ctx, te)
 	repoURL := makeTempRepo(t)
 	provider := setupFakeGitProvider(t, te)
@@ -1876,6 +1903,7 @@ actions:
 func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
@@ -1907,6 +1935,7 @@ func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
