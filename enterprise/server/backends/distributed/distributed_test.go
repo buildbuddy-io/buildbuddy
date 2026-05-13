@@ -5,9 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
 	"runtime"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -2377,92 +2375,91 @@ func TestOrderReadPeersReadThrough(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name            string
-		primary         []string
-		secondary       []string
-		self            string
-		myZone          string
-		wantPreferred   []string
-		wantFallback    []string
-		wantBackfillSet []string
+		name               string
+		primary            []string
+		secondary          []string
+		self               string
+		myZone             string
+		wantPreferred      []string
+		wantFallback       []string
+		wantBlockBackfills []string
 	}{
 		{
-			name:            "self is primary in same zone",
-			primary:         []string{"a1", "a2", "b1"},
-			secondary:       []string{"a3", "b2", "b3"},
-			self:            "a1",
-			myZone:          "A",
-			wantPreferred:   []string{"a1", "a2", "a3", "b1"},
-			wantFallback:    []string{"b2", "b3"},
-			wantBackfillSet: []string{"a1", "a2", "b1"},
+			name:               "self is primary in same zone",
+			primary:            []string{"a1", "a2", "b1"},
+			secondary:          []string{"a3", "b2", "b3"},
+			self:               "a1",
+			myZone:             "A",
+			wantPreferred:      []string{"a1", "a2", "a3", "b1"},
+			wantFallback:       []string{"b2", "b3"},
+			wantBlockBackfills: []string{"a3"},
 		},
 		{
-			name:            "self is secondary in same zone (not hoisted)",
-			primary:         []string{"a1", "b1", "b2"},
-			secondary:       []string{"a2", "a3", "b3"},
-			self:            "a2",
-			myZone:          "A",
-			wantPreferred:   []string{"a1", "a2", "a3", "b1", "b2"},
-			wantFallback:    []string{"b3"},
-			wantBackfillSet: []string{"a1", "b1", "b2"},
+			name:               "self is secondary in same zone (not hoisted)",
+			primary:            []string{"a1", "b1", "b2"},
+			secondary:          []string{"a2", "a3", "b3"},
+			self:               "a2",
+			myZone:             "A",
+			wantPreferred:      []string{"a1", "a2", "a3", "b1", "b2"},
+			wantFallback:       []string{"b3"},
+			wantBlockBackfills: []string{"a2", "a3"},
 		},
 		{
-			name:            "self not in any set",
-			primary:         []string{"a1", "b1", "b2"},
-			secondary:       []string{"a2", "a3", "b3"},
-			self:            "stranger",
-			myZone:          "A",
-			wantPreferred:   []string{"a1", "a2", "a3", "b1", "b2"},
-			wantFallback:    []string{"b3"},
-			wantBackfillSet: []string{"a1", "b1", "b2"},
+			name:               "self not in any set",
+			primary:            []string{"a1", "b1", "b2"},
+			secondary:          []string{"a2", "a3", "b3"},
+			self:               "stranger",
+			myZone:             "A",
+			wantPreferred:      []string{"a1", "a2", "a3", "b1", "b2"},
+			wantFallback:       []string{"b3"},
+			wantBlockBackfills: []string{"a2", "a3"},
 		},
 		{
-			name:            "self is other-zone primary",
-			primary:         []string{"a1", "b1", "b2"},
-			secondary:       []string{"a2", "a3", "b3"},
-			self:            "b1",
-			myZone:          "B",
-			wantPreferred:   []string{"b1", "b2", "b3", "a1"},
-			wantFallback:    []string{"a2", "a3"},
-			wantBackfillSet: []string{"a1", "b1", "b2"},
+			name:               "self is other-zone primary",
+			primary:            []string{"a1", "b1", "b2"},
+			secondary:          []string{"a2", "a3", "b3"},
+			self:               "b1",
+			myZone:             "B",
+			wantPreferred:      []string{"b1", "b2", "b3", "a1"},
+			wantFallback:       []string{"a2", "a3"},
+			wantBlockBackfills: []string{"b3"},
 		},
 		{
-			name:            "all peers unknown zone, self primary",
-			primary:         []string{"x1", "x2", "x3"},
-			secondary:       []string{"x4", "x5", "x6"},
-			self:            "x1",
-			myZone:          "A",
-			wantPreferred:   []string{"x1", "x2", "x3"},
-			wantFallback:    []string{"x4", "x5", "x6"},
-			wantBackfillSet: []string{"x1", "x2", "x3"},
+			name:               "all peers unknown zone, self primary",
+			primary:            []string{"x1", "x2", "x3"},
+			secondary:          []string{"x4", "x5", "x6"},
+			self:               "x1",
+			myZone:             "A",
+			wantPreferred:      []string{"x1", "x2", "x3"},
+			wantFallback:       []string{"x4", "x5", "x6"},
+			wantBlockBackfills: nil,
 		},
 		{
-			name:            "all peers unknown zone, self not primary",
-			primary:         []string{"x1", "x2", "x3"},
-			secondary:       []string{"x4", "x5", "x6"},
-			self:            "x4",
-			myZone:          "A",
-			wantPreferred:   []string{"x1", "x2", "x3"},
-			wantFallback:    []string{"x4", "x5", "x6"},
-			wantBackfillSet: []string{"x1", "x2", "x3"},
+			name:               "all peers unknown zone, self not primary",
+			primary:            []string{"x1", "x2", "x3"},
+			secondary:          []string{"x4", "x5", "x6"},
+			self:               "x4",
+			myZone:             "A",
+			wantPreferred:      []string{"x1", "x2", "x3"},
+			wantFallback:       []string{"x4", "x5", "x6"},
+			wantBlockBackfills: nil,
 		},
 		{
-			name:            "empty primary and secondary",
-			primary:         nil,
-			secondary:       nil,
-			self:            "a1",
-			myZone:          "A",
-			wantPreferred:   []string{},
-			wantFallback:    nil,
-			wantBackfillSet: []string{},
+			name:               "empty primary and secondary",
+			primary:            nil,
+			secondary:          nil,
+			self:               "a1",
+			myZone:             "A",
+			wantPreferred:      []string{},
+			wantFallback:       nil,
+			wantBlockBackfills: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := orderReadPeersReadThrough(tc.primary, tc.secondary, tc.self, tc.myZone, zoneOf)
 			assert.Equal(t, tc.wantPreferred, ps.PreferredPeers, "PreferredPeers")
 			assert.Equal(t, tc.wantFallback, ps.FallbackPeers, "FallbackPeers")
-			gotBackfill := slices.Collect(maps.Keys(ps.BackfillSet))
-			assert.ElementsMatch(t, tc.wantBackfillSet, gotBackfill, "BackfillSet")
+			assert.Equal(t, tc.wantBlockBackfills, ps.BlockBackfills, "BlockBackfills")
 		})
 	}
 }

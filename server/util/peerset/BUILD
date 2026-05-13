@@ -5,7 +5,6 @@ go_library(
     srcs = ["peerset.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/peerset",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/lib/set"],
 )
 
 go_test(
@@ -14,7 +13,6 @@ go_test(
     srcs = ["peerset_test.go"],
     deps = [
         ":peerset",
-        "//server/util/lib/set",
         "@com_github_stretchr_testify//assert",
     ],
 )
