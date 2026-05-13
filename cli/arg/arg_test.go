@@ -63,6 +63,23 @@ build:ci --remote_cache=grpc://ci-cache
 // 	require.Equal(t, "a", args.Get("configuration"))
 // }
 
+func TestAppend_ExecutableArgs(t *testing.T) {
+	setupWorkspace(t, ``)
+
+	args, err := NewBazelArgs([]string{"run", ":target", "--", "--flag=value"})
+	require.NoError(t, err)
+
+	err = args.Append("--build_metadata=ROLE=CI")
+	require.NoError(t, err)
+
+	require.Equal(t, "ROLE=CI", args.Get("build_metadata"))
+	require.Equal(t, []string{":target"}, args.GetTargets())
+
+	bazelArgs, execArgs := SplitExecutableArgs(args.Resolved)
+	require.NotContains(t, execArgs, "--build_metadata=ROLE=CI")
+	require.Contains(t, bazelArgs, "--build_metadata=ROLE=CI")
+}
+
 func TestPrepend(t *testing.T) {
 	setupWorkspace(t, `
 build:ci --remote_cache=grpc://ci-cache
