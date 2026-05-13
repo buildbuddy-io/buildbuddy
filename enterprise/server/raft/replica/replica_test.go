@@ -478,6 +478,74 @@ func TestSessionIndexMismatchError(t *testing.T) {
 	require.Contains(t, status.String(), fmt.Sprintf("session (id=\\\"%s\\\") index mismatch", session.Id))
 }
 
+// TestSessionRangeIDNamespace verifies that sessions are namespaced by
+// (id, range_id) on the replica: a write with the same id+lower-index but
+// a different range_id does not collide with a prior write. This is what
+// makes cross-range retries (e.g. after a split) safe — they will miss
+// dedup on the destination range rather than getting stuck behind a
+// stored entry that happens to share the same id.
+func TestSessionRangeIDNamespace(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		err := repl.Close()
+		require.NoError(t, err)
+	})
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	id := []byte(uuid.New())
+
+	// errorMessage returns the encoded gRPC status from a state-machine
+	// entry result, or empty string if the result is not an error.
+	errorMessage := func(r dbsm.Result) string {
+		if int(r.Value) != constants.EntryErrorValue {
+			return ""
+		}
+		st := &statuspb.Status{}
+		require.NoError(t, proto.Unmarshal(r.Data, st))
+		return st.String()
+	}
+
+	// Write with (id, idx=5, range_id=2). Stores dedup record under
+	// `session-<id>-2`.
+	sessionA := &rfpb.Session{Id: id, Index: 5, RangeId: 2}
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(sessionA).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key-a"),
+		Delta: 1,
+	}))
+	rsp, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Empty(t, errorMessage(rsp[0].Result))
+
+	// Write with the same id, lower index, but a different range_id.
+	// Stores under `session-<id>-9` — separate namespace, so this is not
+	// a replay and not stale. Must succeed.
+	sessionB := &rfpb.Session{Id: id, Index: 3, RangeId: 9}
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(sessionB).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key-b"),
+		Delta: 1,
+	}))
+	rsp, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Empty(t, errorMessage(rsp[0].Result))
+
+	// Within range_id=2's namespace, a lower index is still stale.
+	sessionStale := &rfpb.Session{Id: id, Index: 4, RangeId: 2}
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(sessionStale).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key-a"),
+		Delta: 1,
+	}))
+	rsp, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Contains(t, errorMessage(rsp[0].Result), "index mismatch")
+}
+
 func TestReplicaCAS(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)

@@ -248,6 +248,13 @@ message Session {
   // monotonically increasing.
   // Example: 1717100891000000000
   uint64 index = 2;
+  // Optional. The range_id the session is scoped to. When set, the replica
+  // namespaces its dedup record by (id, range_id). This prevents a retry that
+  // crosses ranges (e.g. on a split) from colliding with a destination range's
+  // entries that happen to share the same id. Left unset (0) by callers that
+  // never cross ranges (rangelease, bringup, deleteSessions); set by Sender
+  // in runPropose.
+  uint64 range_id = 3;
   // The timestamp when the session is created.
   int64 created_at_usec = 5;
 
