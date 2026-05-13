@@ -48,7 +48,11 @@ func (a *BazelArgs) Append(arg string) error {
 
 	newArgs := Append(a.Resolved, arg)
 
-	if requiresResolve(arg) {
+	resolve, err := requiresResolve(arg)
+	if err != nil {
+		return err
+	}
+	if resolve {
 		return a.Set(newArgs)
 	}
 	a.Resolved = newArgs
@@ -62,7 +66,11 @@ func (a *BazelArgs) Prepend(arg string) error {
 	// TODO(#7216): Set the Forwarded args field.
 
 	updatedResolvedArgs := prepend(a.Resolved, arg)
-	if requiresResolve(arg) {
+	resolve, err := requiresResolve(arg)
+	if err != nil {
+		return err
+	}
+	if resolve {
 		return a.Set(updatedResolvedArgs)
 	}
 	a.Resolved = updatedResolvedArgs
@@ -82,10 +90,16 @@ func prepend(args []string, arg string) []string {
 }
 
 // requiresResolve returns true if the arg can change rc/config expansion.
-func requiresResolve(arg string) bool {
+func requiresResolve(arg string) (bool, error) {
 	flagName, _ := SplitOptionValue(arg)
 	flagName = strings.TrimPrefix(flagName, "--")
-	return flagName == "config" || flagName == "bazelrc"
+
+	// TODO(#7216): Remove this check once we add the Forwarded args field and can safely resolve --bazelrc.
+	if flagName == "bazelrc" {
+		return false, fmt.Errorf("cannot resolve --bazelrc with BazelArgs")
+	}
+
+	return flagName == "config" || flagName == "bazelrc", nil
 }
 
 // Get returns the value of a flag.
@@ -185,7 +199,11 @@ func (a *BazelArgs) Pop(flagName string) (string, error) {
 		return "", nil
 	}
 
-	if requiresResolve(flagName) {
+	resolve, err := requiresResolve(flagName)
+	if err != nil {
+		return "", err
+	}
+	if resolve {
 		if err := a.Set(newArgs); err != nil {
 			return "", err
 		}
