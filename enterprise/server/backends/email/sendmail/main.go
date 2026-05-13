@@ -72,9 +72,9 @@ func run() error {
 	client := email.NewClient(email.ClientConfig{})
 
 	msg := &email.Message{
-		To:      recipient,
-		Subject: *subject,
-		Body:    *body,
+		ToAddresses: []email.Address{recipient},
+		Subject:     *subject,
+		Body:        *body,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)

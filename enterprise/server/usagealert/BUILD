@@ -48,7 +48,9 @@ go_test(
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse25.3",
+        "test.EstimatedComputeUnits": "4",
     },
+    shard_count = 4,
     tags = ["docker"],
     deps = [
         "//enterprise/server/backends/email",
@@ -63,6 +65,7 @@ go_test(
         "//server/util/role",
         "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -16,7 +16,7 @@
 //	  --notifications.email.default_from_address='{"name":"BuildBuddy","email":"notifications@buildbuddy.example.com"}' \
 //	  --usagealert.push_gateway=http://pushgateway.example.com:9091
 //
-// The buildbuddy_usage_alert_errors_total metric is pushed to a configured
+// Usage alert metrics and the common default metrics are pushed to a configured
 // prometheus push gateway.
 package main
 
@@ -132,7 +132,8 @@ func run() error {
 		clockwork.NewRealClock(),
 		metrics,
 	)
-	result, err := runEvaluator(ctx, evaluator, &pushGatewayPusher{gatherer: metrics.registry})
+	pusher := &pushGatewayPusher{gatherer: newPushGatewayGatherer(metrics)}
+	result, err := runEvaluator(ctx, evaluator, pusher)
 	if result != nil {
 		log.Infof("Evaluated %d usage alerting rules and sent %d alert emails.", result.RulesEvaluated, result.AlertsSent)
 	}
@@ -160,6 +161,11 @@ type metricsPusher interface {
 	Push() error
 }
 
+// usageReader queries aggregate usage values for alert evaluation.
+type usageReader interface {
+	QueryUsage(ctx context.Context, field *usage_service.UsageField, groupID string, start, end time.Time) (int64, error)
+}
+
 // runEvaluator runs the evaluator and then pushes metrics even if evaluation fails.
 func runEvaluator(ctx context.Context, evaluator *Evaluator, pusher metricsPusher) (*EvaluationResult, error) {
 	result, evalErr := evaluator.Run(ctx)
@@ -173,7 +179,7 @@ func runEvaluator(ctx context.Context, evaluator *Evaluator, pusher metricsPushe
 // Evaluator checks usage alerting rules and emails admins for newly fired alerts.
 type Evaluator struct {
 	dbh     interfaces.DBHandle
-	usage   *usageQuerier
+	usage   usageReader
 	email   emailSender
 	clock   clockwork.Clock
 	metrics *evaluatorMetrics
@@ -193,6 +199,7 @@ type alertRule struct {
 	groupName          string
 	groupURLIdentifier string
 	recipients         []email.Address
+	recipientEmails    map[string]struct{}
 }
 
 // NewEvaluator constructs an evaluator using explicit dependencies for tests.
@@ -262,54 +269,68 @@ type ruleEvaluationResult struct {
 // evaluateRule evaluates an alert rule and sends emails if it newly fires.
 func (e *Evaluator) evaluateRule(ctx context.Context, now time.Time, alert *alertRule) (int, error) {
 	rule := alert.rule
+	// Resolve the user-selected metric into the email metadata and Usage API
+	// field that should be queried.
 	metric, ok := metricDefinitions[rule.UsageAlertingMetric]
-	usageField, fieldOK := usage_service.UsageFieldForAlertingMetric(rule.UsageAlertingMetric)
-	if !ok || !fieldOK {
+	if !ok {
 		e.recordError(errorStageMissingMetric)
 		return 0, fmt.Errorf("rule %q has unsupported metric %s", rule.UsageAlertingRuleID, rule.UsageAlertingMetric)
 	}
+	usageField, ok := usage_service.UsageFieldForAlertingMetric(rule.UsageAlertingMetric)
+	if !ok {
+		e.recordError(errorStageMissingMetric)
+		return 0, fmt.Errorf("rule %q has unsupported metric %s", rule.UsageAlertingRuleID, rule.UsageAlertingMetric)
+	}
+	// Evaluate each rule against the complete current day, week, or month
+	// window containing now.
 	start, end, err := windowRange(now, rule.Window)
 	if err != nil {
 		e.recordError(errorStageUnsupportedWindow)
 		return 0, fmt.Errorf("rule %q has unsupported window %s", rule.UsageAlertingRuleID, rule.Window)
 	}
 
+	// Query the aggregate usage value for the rule's group and window.
 	value, err := e.usage.QueryUsage(ctx, usageField, rule.GroupID, start, end)
 	if err != nil {
 		e.recordError(errorStageQueryUsage)
 		return 0, fmt.Errorf("query usage for rule %q: %w", rule.UsageAlertingRuleID, err)
 	}
 
+	// Fire only when usage exceeds the threshold and this rule has not already
+	// fired in the current window.
 	if value <= rule.AbsoluteThreshold || usecInRange(rule.LastFiredUsec, start, end) {
 		return 0, nil
 	}
 
-	alertsSent := 0
-	var retErr error
-	for _, recipient := range alert.recipients {
-		msg, err := buildAlertEmail(alert, metric, recipient, value, start, end)
-		if err != nil {
-			e.recordError(errorStageSendEmail)
-			retErr = errors.Join(retErr, fmt.Errorf("build usage alert email for rule %q to %q: %w", rule.UsageAlertingRuleID, recipient.Email, err))
-			continue
-		}
-		if err := e.email.Send(ctx, msg); err != nil {
-			e.recordError(errorStageSendEmail)
-			retErr = errors.Join(retErr, fmt.Errorf("send usage alert email for rule %q to %q: %w", rule.UsageAlertingRuleID, recipient.Email, err))
-			continue
-		}
-		alertsSent++
+	msg, err := buildAlertEmail(alert, metric, alert.recipients, value, start, end)
+	if err != nil {
+		e.recordError(errorStageSendEmail)
+		return 0, fmt.Errorf("build usage alert email for rule %q: %w", rule.UsageAlertingRuleID, err)
 	}
-	if retErr != nil {
-		return alertsSent, retErr
+	// Send before recording the fired timestamp so we do not miss alerts if
+	// this process exits before delivery. Kubernetes CronJobs can overlap (even
+	// with concurrencyPolicy `Forbid`), so this can send duplicate emails
+	// before one run records that the rule fired.
+	//
+	// TODO: Maybe have a separate email outbox table so delivery can be retried
+	// without this duplicate-send tradeoff, or use an email provider that
+	// supports idempotent delivery.
+	if err := e.email.Send(ctx, msg); err != nil {
+		e.recordError(errorStageSendEmail)
+		return 0, fmt.Errorf("send usage alert email for rule %q: %w", rule.UsageAlertingRuleID, err)
 	}
-
+	// After the email send succeeds, remember that this rule fired for the
+	// window so future runs can skip it.
 	lastFiredUsec := now.UnixMicro()
-	if err := e.updateRuleFired(ctx, rule.UsageAlertingRuleID, lastFiredUsec); err != nil {
+	recorded, err := e.recordRuleFired(ctx, rule.UsageAlertingRuleID, lastFiredUsec, start, end)
+	if err != nil {
 		e.recordError(errorStageUpdateRule)
-		return alertsSent, fmt.Errorf("update usage alerting rule %q status: %w", rule.UsageAlertingRuleID, err)
+		return len(alert.recipients), fmt.Errorf("record usage alerting rule %q fired: %w", rule.UsageAlertingRuleID, err)
 	}
-	return alertsSent, nil
+	if !recorded {
+		return len(alert.recipients), nil
+	}
+	return len(alert.recipients), nil
 }
 
 // recordError increments the evaluator error counter for stage.
@@ -361,25 +382,42 @@ func (e *Evaluator) queryRulesAndRecipients(ctx context.Context) ([]*alertRule, 
 				rule:               &r,
 				groupName:          row.GroupName,
 				groupURLIdentifier: row.GroupURLIdentifier,
+				recipientEmails:    make(map[string]struct{}),
 			}
 			byID[row.UsageAlertingRuleID] = rule
 			rules = append(rules, rule)
 		}
+		recipientEmail := strings.TrimSpace(row.RecipientEmail)
+		recipientKey := strings.ToLower(recipientEmail)
+		if _, ok := rule.recipientEmails[recipientKey]; ok {
+			continue
+		}
+		rule.recipientEmails[recipientKey] = struct{}{}
 		rule.recipients = append(rule.recipients, email.Address{
 			Name:  strings.TrimSpace(row.RecipientFirstName + " " + row.RecipientLastName),
-			Email: row.RecipientEmail,
+			Email: recipientEmail,
 		})
 	}
 	return rules, nil
 }
 
-// updateRuleFired records that an alert rule fired.
-func (e *Evaluator) updateRuleFired(ctx context.Context, ruleID string, lastFiredUsec int64) error {
-	return e.dbh.NewQuery(ctx, "usage_alert_update_fired_rule").Raw(`
+// recordRuleFired records that an alert rule fired if it has not already fired
+// in the evaluated window.
+func (e *Evaluator) recordRuleFired(ctx context.Context, ruleID string, lastFiredUsec int64, start, end time.Time) (bool, error) {
+	result := e.dbh.NewQuery(ctx, "usage_alert_record_fired_rule").Raw(`
 		UPDATE "UsageAlertingRules"
 		SET last_fired_usec = ?
 		WHERE usage_alerting_rule_id = ?
-	`, lastFiredUsec, ruleID).Exec().Error
+		AND (
+			last_fired_usec = 0 OR
+			last_fired_usec < ? OR
+			last_fired_usec >= ?
+		)
+	`, lastFiredUsec, ruleID, start.UnixMicro(), end.UnixMicro()).Exec()
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // usageQuerier queries usage rows from ClickHouse.
@@ -420,6 +458,7 @@ type metricUnit string
 const (
 	countMetricUnit         metricUnit = "count"
 	bytesMetricUnit         metricUnit = "bytes"
+	durationUsecMetricUnit  metricUnit = "duration_usec"
 	durationNanosMetricUnit metricUnit = "duration_nanos"
 )
 
@@ -436,10 +475,10 @@ var metricDefinitions = map[usagepb.UsageAlertingMetric_Value]*metricDefinition{
 		Display: "Action cache hits",
 		Unit:    countMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+	usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC,
 		Display: "Cached build minutes",
-		Unit:    durationNanosMetricUnit,
+		Unit:    durationUsecMetricUnit,
 	},
 	usagepb.UsageAlertingMetric_CAS_CACHE_HITS: {
 		Metric:  usagepb.UsageAlertingMetric_CAS_CACHE_HITS,
@@ -451,18 +490,18 @@ var metricDefinitions = map[usagepb.UsageAlertingMetric_Value]*metricDefinition{
 		Display: "Total bytes downloaded from cache (All)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_EXTERNAL_DOWNLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_EXTERNAL_DOWNLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES,
 		Display: "Total bytes downloaded from cache (External)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_INTERNAL_DOWNLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_INTERNAL_DOWNLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_INTERNAL_DOWNLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_INTERNAL_DOWNLOAD_SIZE_BYTES,
 		Display: "Total bytes downloaded from cache (Internal)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES,
 		Display: "Total bytes downloaded from cache (Workflows)",
 		Unit:    bytesMetricUnit,
 	},
@@ -471,48 +510,48 @@ var metricDefinitions = map[usagepb.UsageAlertingMetric_Value]*metricDefinition{
 		Display: "Total bytes uploaded to cache (All)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_EXTERNAL_UPLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_EXTERNAL_UPLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES,
 		Display: "Total bytes uploaded to cache (External)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_INTERNAL_UPLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_INTERNAL_UPLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_INTERNAL_UPLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_INTERNAL_UPLOAD_SIZE_BYTES,
 		Display: "Total bytes uploaded to cache (Internal)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_WORKFLOW_UPLOAD_SIZE_BYTES: {
-		Metric:  usagepb.UsageAlertingMetric_WORKFLOW_UPLOAD_SIZE_BYTES,
+	usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES,
 		Display: "Total bytes uploaded to cache (Workflows)",
 		Unit:    bytesMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION,
+	usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC: {
+		Metric:  usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC,
 		Display: "Linux remote execution duration (All)",
-		Unit:    durationNanosMetricUnit,
+		Unit:    durationUsecMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION,
+	usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION_USEC: {
+		Metric:  usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION_USEC,
 		Display: "Linux remote execution duration (Cloud RBE)",
-		Unit:    durationNanosMetricUnit,
+		Unit:    durationUsecMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION,
+	usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION_USEC: {
+		Metric:  usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION_USEC,
 		Display: "Linux remote execution duration (Workflows)",
-		Unit:    durationNanosMetricUnit,
+		Unit:    durationUsecMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_LINUX_CPU_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_LINUX_CPU_DURATION,
+	usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS: {
+		Metric:  usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS,
 		Display: "Linux CPU duration (All)",
 		Unit:    durationNanosMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+	usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS: {
+		Metric:  usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS,
 		Display: "Linux CPU duration (Cloud RBE)",
 		Unit:    durationNanosMetricUnit,
 	},
-	usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_CPU_DURATION: {
-		Metric:  usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_CPU_DURATION,
+	usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_CPU_NANOS: {
+		Metric:  usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_CPU_NANOS,
 		Display: "Linux CPU duration (Workflows)",
 		Unit:    durationNanosMetricUnit,
 	},
@@ -547,25 +586,24 @@ func usecInRange(usec int64, start, end time.Time) bool {
 }
 
 // buildAlertEmail builds the HTML notification for a fired alert.
-func buildAlertEmail(alert *alertRule, metric *metricDefinition, recipient email.Address, value int64, start, end time.Time) (*email.Message, error) {
+func buildAlertEmail(alert *alertRule, metric *metricDefinition, recipients []email.Address, value int64, start, end time.Time) (*email.Message, error) {
+	if len(recipients) == 0 {
+		return nil, status.InvalidArgumentError("at least one recipient is required")
+	}
 	rule := alert.rule
-	groupName := strings.TrimSpace(alert.groupName)
-	groupDisplayName := groupName
+	// Group display name: prefer group name, slug, then group ID.
+	groupDisplayName := strings.TrimSpace(alert.groupName)
+	if groupDisplayName == "" {
+		groupDisplayName = alert.groupURLIdentifier
+	}
 	if groupDisplayName == "" {
 		groupDisplayName = rule.GroupID
-	}
-	subjectGroupName := groupName
-	if subjectGroupName == "" {
-		subjectGroupName = strings.TrimSpace(alert.groupURLIdentifier)
-	}
-	if subjectGroupName == "" {
-		subjectGroupName = rule.GroupID
 	}
 	usageURL := build_buddy_url.WithPath("/usage").String()
 	if alert.groupURLIdentifier != "" && subdomain.Enabled() {
 		usageURL = subdomain.ReplaceURLSubdomainForGroup(usageURL, &tables.Group{URLIdentifier: alert.groupURLIdentifier})
 	}
-	subject := fmt.Sprintf("[BuildBuddy Usage Alert] [%s] %s %s threshold reached", subjectGroupName, usageAlertingWindowLabel(rule.Window), metric.Display)
+	subject := fmt.Sprintf("[BuildBuddy Usage Alert] [%s] %s %s threshold reached", groupDisplayName, usageAlertingWindowLabel(rule.Window), metric.Display)
 	bodyTemplate, err := alertEmailBodyTemplate()
 	if err != nil {
 		return nil, fmt.Errorf("load email body template: %w", err)
@@ -593,9 +631,9 @@ func buildAlertEmail(alert *alertRule, metric *metricDefinition, recipient email
 		return nil, fmt.Errorf("render email body template: %w", err)
 	}
 	return &email.Message{
-		To:      recipient,
-		Subject: subject,
-		Body:    body.String(),
+		ToAddresses: recipients,
+		Subject:     subject,
+		Body:        body.String(),
 	}, nil
 }
 
@@ -618,6 +656,9 @@ func formatMetricValue(metric *metricDefinition, value int64) string {
 	switch metric.Unit {
 	case bytesMetricUnit:
 		return formatBytes(value)
+	case durationUsecMetricUnit:
+		minutes := int64(math.Round(float64(value) / 60e6))
+		return formatCount(minutes) + " " + pluralize("minute", minutes)
 	case durationNanosMetricUnit:
 		minutes := int64(math.Round(float64(value) / 60e9))
 		return formatCount(minutes) + " " + pluralize("minute", minutes)
@@ -662,7 +703,7 @@ func pluralize(singular string, count int64) string {
 	return singular + "s"
 }
 
-// evaluatorMetrics owns the registry pushed by this binary.
+// evaluatorMetrics owns evaluator-specific metrics.
 type evaluatorMetrics struct {
 	registry *prometheus.Registry
 	errors   *prometheus.CounterVec
@@ -682,6 +723,14 @@ func newEvaluatorMetrics() (*evaluatorMetrics, error) {
 		registry: registry,
 		errors:   errors,
 	}, nil
+}
+
+// newPushGatewayGatherer combines common process metrics with evaluator metrics.
+func newPushGatewayGatherer(metrics *evaluatorMetrics) prometheus.Gatherer {
+	if metrics == nil {
+		return prometheus.DefaultGatherer
+	}
+	return prometheus.Gatherers{prometheus.DefaultGatherer, metrics.registry}
 }
 
 // pushGatewayPusher pushes metrics to Prometheus Pushgateway when configured.

@@ -2,6 +2,7 @@ package usage_service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,8 +152,6 @@ func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {
 	seenUsageFields := map[string]struct{}{}
 	seenAlertingMetrics := map[usagepb.UsageAlertingMetric_Value]struct{}{}
 	for _, field := range usage_service.UsageFields {
-		// Every usage field should provide both query expressions because GetUsage
-		// reads primary DB rows and usage alert evaluation reads RawUsage rows.
 		require.NotEmpty(t, field.PrimaryDBExpression)
 		require.NotEmpty(t, field.OLAPExpression)
 		require.NotEmpty(t, field.Name)
@@ -164,6 +163,7 @@ func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {
 
 		assert.NotEqual(t, usagepb.UsageAlertingMetric_UNKNOWN, field.AlertingMetric)
 		assert.Contains(t, alertingMetrics, field.AlertingMetric)
+		assert.Equal(t, strings.ToUpper(field.Name), field.AlertingMetric.String())
 		assert.NotContains(t, seenAlertingMetrics, field.AlertingMetric)
 		seenAlertingMetrics[field.AlertingMetric] = struct{}{}
 	}
