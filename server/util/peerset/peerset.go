@@ -2,6 +2,8 @@ package peerset
 
 import (
 	"math/rand"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 )
 
 const maxFailedFallbackPeers = 3
@@ -11,7 +13,12 @@ type PeerSet struct {
 	FallbackPeers       []string
 	FailedPeers         []string
 	FailedFallbackPeers []string
-	i                   int // next peer index
+	// BackfillSet, if non-nil, restricts GetBackfillTargets to peers in this
+	// set. Used when PreferredPeers contains peers that should be consulted
+	// for reads but should not be written to as part of a backfill (e.g.
+	// non-canonical same-zone peers that may hold a read-through cached copy).
+	BackfillSet set.Set[string]
+	i           int // next peer index
 }
 
 func New(preferredPeers, fallbackPeers []string) *PeerSet {
@@ -139,9 +146,13 @@ func (p *PeerSet) GetBackfillTargets() (string, []string) {
 				break
 			}
 		}
-		if !isFailed {
-			filteredTargets = append(filteredTargets, t)
+		if isFailed {
+			continue
 		}
+		if p.BackfillSet != nil && !p.BackfillSet.Contains(t) {
+			continue
+		}
+		filteredTargets = append(filteredTargets, t)
 	}
 	return source, filteredTargets
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -823,6 +824,13 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 // Self is only hoisted when it is a primary. When self is not a primary,
 // remoteReader's read-through check (c.local.Reader) already runs on every
 // attempt, so a dedicated self slot would be redundant.
+//
+// The returned PeerSet restricts backfill targets to canonical primaries
+// (self-as-primary, szP, ozP). Same-zone non-primaries are consulted on reads
+// because they may hold a read-through cached copy, but they are not backfill
+// destinations — otherwise a miss that falls through to an other-zone primary
+// would trigger a cross-zone write to every same-zone non-primary we tried,
+// amplifying cross-zone egress on every cold read.
 func orderReadPeersReadThrough(
 	primaryPeers, secondaryPeers []string,
 	self string, myZone string,
@@ -866,7 +874,20 @@ func orderReadPeersReadThrough(
 	preferred = append(preferred, szP...)
 	preferred = append(preferred, szN...)
 	preferred = append(preferred, ozP...)
-	return peerset.New(preferred, ozN)
+
+	backfillSet := make(set.Set[string], len(szP)+len(ozP)+1)
+	if selfPrimary != "" {
+		backfillSet.Add(selfPrimary)
+	}
+	for _, p := range szP {
+		backfillSet.Add(p)
+	}
+	for _, p := range ozP {
+		backfillSet.Add(p)
+	}
+	ps := peerset.New(preferred, ozN)
+	ps.BackfillSet = backfillSet
+	return ps
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {

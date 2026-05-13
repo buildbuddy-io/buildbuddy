@@ -3,6 +3,7 @@ package peerset_test
 import (
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/stretchr/testify/assert"
 )
@@ -181,5 +182,65 @@ func TestGetBackfillTargets(t *testing.T) {
 		}
 		_, backfillHosts := test.p.GetBackfillTargets()
 		assert.Equal(t, test.expectedBackfillHosts, backfillHosts)
+	}
+}
+
+func TestGetBackfillTargetsWithBackfillSet(t *testing.T) {
+	// PreferredPeers contains a mix of canonical primaries (a, c) and
+	// non-primaries (b, d) that should be readable but not backfill targets.
+	// Source is the last peer consumed; targets must be filtered to only the
+	// canonical primaries appearing before the source.
+	for _, tc := range []struct {
+		name        string
+		preferred   []string
+		fallback    []string
+		backfillSet set.Set[string]
+		consume     int // number of peers to consume via GetNextPeer before computing backfill
+		wantSource  string
+		wantTargets []string
+	}{
+		{
+			name:        "hit on canonical primary skips non-primary targets",
+			preferred:   []string{"a", "b", "c", "d"},
+			backfillSet: set.From("a", "c"),
+			consume:     3, // hit on "c"
+			wantSource:  "c",
+			wantTargets: []string{"a"},
+		},
+		{
+			name:        "hit on non-primary returns empty targets",
+			preferred:   []string{"a", "b", "c", "d"},
+			backfillSet: set.From("a", "c"),
+			consume:     2, // hit on "b" (non-primary)
+			wantSource:  "b",
+			wantTargets: []string{"a"},
+		},
+		{
+			name:        "nil backfill set = current behavior (no filter)",
+			preferred:   []string{"a", "b", "c", "d"},
+			backfillSet: nil,
+			consume:     3,
+			wantSource:  "c",
+			wantTargets: []string{"a", "b"},
+		},
+		{
+			name:        "empty backfill set filters everything out",
+			preferred:   []string{"a", "b", "c", "d"},
+			backfillSet: set.From[string](),
+			consume:     3,
+			wantSource:  "c",
+			wantTargets: []string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := peerset.New(tc.preferred, tc.fallback)
+			p.BackfillSet = tc.backfillSet
+			for i := 0; i < tc.consume; i++ {
+				p.GetNextPeer()
+			}
+			source, targets := p.GetBackfillTargets()
+			assert.Equal(t, tc.wantSource, source)
+			assert.Equal(t, tc.wantTargets, targets)
+		})
 	}
 }
