@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -242,12 +243,52 @@ func TestActionFromRunRequest(t *testing.T) {
 	}
 }
 
+// validatingGitHubApp is a test-only GitHubApp that checks its arguments against
+// pre-seeded expectations before returning the fake token. Unlike FakeGitHubApp,
+// it verifies that groupID, repoURL, and the parsed owner all match what was
+// inserted in the DB, mirroring the validation that the real GitHubApp performs.
+type validatingGitHubApp struct {
+	testgit.FakeGitHubApp
+	t            *testing.T
+	wantGroupID  string
+	wantRepoURL  string
+	wantOwner    string
+	dbh          interfaces.DBHandle
+}
+
+func (a *validatingGitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
+	require.Equal(a.t, a.wantGroupID, groupID, "groupID passed to GetRepositoryInstallationToken")
+	require.Equal(a.t, a.wantRepoURL, repoURL, "repoURL passed to GetRepositoryInstallationToken")
+
+	// Confirm that a GitRepositories row exists for this group+repo (as production requires).
+	gitRepo := &tables.GitRepository{}
+	err := a.dbh.NewQuery(ctx, "validate_git_repo").Raw(
+		`SELECT * FROM "GitRepositories" WHERE group_id = ? AND repo_url = ?`,
+		groupID, repoURL,
+	).Take(gitRepo)
+	require.NoError(a.t, err, "GitRepositories row must exist for group %q and repo %q", groupID, repoURL)
+
+	// Confirm that a GitHubAppInstallation row exists for this group+owner (as production requires).
+	install := &tables.GitHubAppInstallation{}
+	err = a.dbh.NewQuery(ctx, "validate_gh_installation").Raw(
+		`SELECT * FROM "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`,
+		groupID, a.wantOwner,
+	).Take(install)
+	require.NoError(a.t, err, "GitHubAppInstallation row must exist for group %q and owner %q", groupID, a.wantOwner)
+
+	return a.Token, nil
+}
+
 func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 	const (
-		mockAppID   = int64(1234)
-		fakeToken   = "fake-github-token"
-		repoURL     = "https://github.com/test-org/test-repo"
-		groupID     = "GR1" // singleUserGroup replaces "US" with "GR" for user "US1"
+		mockAppID       = int64(1234)
+		fakeToken       = "fake-github-token"
+		// repoURL is the raw input; normalizedURL is what git.NormalizeRepoURL produces
+		// (they are the same here, but keeping them distinct documents the expectation).
+		repoURL       = "https://github.com/test-org/test-repo"
+		normalizedURL = "https://github.com/test-org/test-repo"
+		repoOwner       = "test-org"
+		installationID  = int64(1)
 	)
 
 	// Enable the read-write GitHub app flag so that IsReadWriteAppEnabled() returns true.
@@ -255,25 +296,50 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 
 	te, ctx := getEnv(t)
 
-	// Set up FakeGitHubApp with a known token and mock app ID.
-	fakeApp := &testgit.FakeGitHubApp{Token: fakeToken, MockAppID: mockAppID}
-	gh, err := githubapp.NewAppService(te, fakeApp, nil)
+	// Derive groupID from the authenticated user context rather than hard-coding it.
+	u, err := te.GetAuthenticator().AuthenticatedUser(ctx)
 	require.NoError(t, err)
-	te.SetGitHubAppService(gh)
+	groupID := u.GetGroupID()
+	require.NotEmpty(t, groupID)
 
-	// Insert a GitHubAppInstallation row so that GetGitHubAppForAuthenticatedUser
-	// finds the app for groupID "GR1" and routes to fakeApp via its AppID.
 	dbh := te.GetDBHandle()
 	require.NotNil(t, dbh)
+
+	// Insert a GitHubAppInstallation row (required by production GetRepositoryInstallationToken).
 	err = dbh.NewQuery(ctx, "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
 		UserID:         "US1",
 		GroupID:        groupID,
 		AppID:          mockAppID,
-		Owner:          "test-org",
-		InstallationID: 1,
+		Owner:          repoOwner,
+		InstallationID: installationID,
 		Perms:          1,
 	})
 	require.NoError(t, err)
+
+	// Insert a GitRepositories row (required by production GetRepositoryInstallationToken).
+	err = dbh.NewQuery(ctx, "create_git_repo_for_test").Create(&tables.GitRepository{
+		UserID:  "US1",
+		GroupID: groupID,
+		RepoURL: normalizedURL,
+		AppID:   mockAppID,
+		Perms:   1,
+	})
+	require.NoError(t, err)
+
+	// Set up a validating GitHubApp that asserts the correct groupID, repoURL, and owner
+	// are passed through, and that both the GitRepositories and GitHubAppInstallations
+	// rows required by production are present.
+	vApp := &validatingGitHubApp{
+		FakeGitHubApp: testgit.FakeGitHubApp{Token: fakeToken, MockAppID: mockAppID},
+		t:            t,
+		wantGroupID:  groupID,
+		wantRepoURL:  normalizedURL,
+		wantOwner:    repoOwner,
+		dbh:          dbh,
+	}
+	gh, err := githubapp.NewAppService(te, vApp, nil)
+	require.NoError(t, err)
+	te.SetGitHubAppService(gh)
 
 	// Build the runner service.
 	r, err := New(te)
