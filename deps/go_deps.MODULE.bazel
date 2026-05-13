@@ -7,7 +7,7 @@ inject_repo(
     go_deps,
     "com_github_buildbuddy_io_buildbuddy",
     "googleapis",
-    "rules_proto",
+    "rules_proto",  # io_kythe BUILD files load @rules_proto//proto:defs.bzl
     "zlib",
 )
 
