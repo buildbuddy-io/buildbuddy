@@ -89,15 +89,20 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
 	}
 
-	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
-		Ref:            req.GetRef(),
-		Credentials:    req.GetCredentials(),
-		BypassRegistry: req.GetBypassRegistry(),
-	})
-	if err != nil {
-		return err
+	// Use size from the request when available to avoid a round-trip
+	// FetchBlobMetadata call to the upstream.
+	size := req.GetSize()
+	if size == 0 {
+		metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+			Ref:            req.GetRef(),
+			Credentials:    req.GetCredentials(),
+			BypassRegistry: req.GetBypassRegistry(),
+		})
+		if err != nil {
+			return err
+		}
+		size = metaResp.GetSize()
 	}
-	size := metaResp.GetSize()
 
 	// Fast path: serve from local BS cache.
 	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})

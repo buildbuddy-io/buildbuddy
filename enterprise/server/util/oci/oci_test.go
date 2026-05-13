@@ -1589,7 +1589,9 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
 	// - 1 GET manifest
 	// - 1 HEAD + 1 GET for config blob
-	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	// - 1 GET for each layer blob
+	//   Note: No HEAD for layer blobs; size and media type come from the manifest
+	//   descriptor and are passed in FetchBlobRequest, skipping remote metadata calls.
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
 		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
@@ -1599,7 +1601,6 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
-		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}

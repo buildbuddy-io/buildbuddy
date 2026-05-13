@@ -154,7 +154,10 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
+	// Use size from the request when available to skip the AC metadata lookup.
+	reqSize := req.GetSize()
+	reqMediaType := req.GetMediaType()
+	err = s.fetchBlobFromCache(ctx, stream, repo, hash, reqSize, reqMediaType)
 	if err == nil {
 		return nil
 	}
@@ -175,7 +178,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream)
+		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), stream, reqSize, reqMediaType)
 		return blobFetchResult{contentLength: contentLength}, fetchErr
 	})
 
@@ -441,20 +444,37 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 
 // fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo gcrname.Repository, hash gcr.Hash) error {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
-	if err != nil {
-		return err
+//
+// When size is non-zero, it is used directly and the AC metadata lookup is skipped.
+// mediaType is unused for the cache fetch itself but accepted for symmetry.
+func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo gcrname.Repository, hash gcr.Hash, size int64, mediaType string) error {
+	skippedACLookup := size != 0
+	if !skippedACLookup {
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+		if err != nil {
+			return err
+		}
+		size = metadata.GetContentLength()
 	}
 	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
+	err := ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, size)
+	// When we skipped the AC lookup, cachetools.GetBlob wraps cache misses
+	// as FailedPrecondition. Normalize to NotFound so FetchBlob falls through
+	// to the upstream registry.
+	if skippedACLookup && status.IsFailedPreconditionError(err) {
+		return status.NotFoundErrorf("blob %s not in cache: %s", hash, err)
+	}
+	return err
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
+//
+// hintSize and hintMediaType are optional hints from the request that allow
+// skipping the remote MediaType and Size calls when already known.
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer, hintSize int64, hintMediaType string) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -464,6 +484,9 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	// They are best-effort: failures are logged but don't prevent
 	// streaming the blob data. Caching is skipped when metadata is
 	// unavailable.
+	//
+	// When hints are provided from the request, the remote metadata calls
+	// are skipped, saving two HTTP round-trips per blob fetch.
 	var mediaType string
 	var size int64
 	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
@@ -471,13 +494,16 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		if err != nil {
 			return nil, err
 		}
-		// Best-effort metadata for read-through caching.
-		if mt, err := layer.MediaType(); err != nil {
+		if hintMediaType != "" {
+			mediaType = hintMediaType
+		} else if mt, err := layer.MediaType(); err != nil {
 			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
 		} else {
 			mediaType = string(mt)
 		}
-		if sz, err := layer.Size(); err != nil {
+		if hintSize != 0 {
+			size = hintSize
+		} else if sz, err := layer.Size(); err != nil {
 			log.CtxWarningf(ctx, "Could not get size for layer: %s", err)
 		} else {
 			size = sz

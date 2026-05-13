@@ -204,9 +204,9 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 		mediaType *string
 	}{
 		{name: "NoSizeOrMediaType"},
-		{name: "SizeOnly", size: gproto.Int64(12345)},
+		{name: "SizeOnly", size: gproto.Int64(int64(len(blobData)))},
 		{name: "MediaTypeOnly", mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
-		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "SizeAndMediaType", size: gproto.Int64(int64(len(blobData))), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
