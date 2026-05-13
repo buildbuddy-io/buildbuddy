@@ -7,6 +7,7 @@ go_library(
     srcs = ["executorplatform.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform",
     deps = [
+        "//enterprise/server/remote_execution/oidc",
         "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -25,11 +26,14 @@ go_test(
     srcs = ["executorplatform_test.go"],
     embed = [":executorplatform"],
     deps = [
+        "//enterprise/server/remote_execution/oidc",
         "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
+        "//server/util/claims",
         "//server/util/platform",
         "//server/util/testing/flags",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

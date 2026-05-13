@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	rbeoidc "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
@@ -348,6 +349,9 @@ func main() {
 	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := rbeoidc.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

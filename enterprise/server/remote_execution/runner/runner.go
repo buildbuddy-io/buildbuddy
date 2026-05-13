@@ -924,7 +924,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task)
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, platProps); err != nil {
 			return err
@@ -1079,7 +1079,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task); err != nil {
 		return nil, err
 	}
 	if *resolveImageDigests {

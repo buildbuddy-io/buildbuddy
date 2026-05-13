@@ -1,15 +1,24 @@
 package executorplatform
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
+	rbeoidc "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	authclaims "github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +33,10 @@ var (
 	docker               = &ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.DockerContainerType}}
 	podmanAndFirecracker = &ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.PodmanContainerType, platform.FirecrackerContainerType}}
 )
+
+func taskForCommand(command *repb.Command) *repb.ExecutionTask {
+	return &repb.ExecutionTask{Command: command}
+}
 
 func TestParse_ContainerImage_Success(t *testing.T) {
 	flags.Set(t, "executor.container_registry_region", "us-test1")
@@ -59,7 +72,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, testCase.execProps, platformProps, taskForCommand(&repb.Command{}))
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -84,7 +97,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, testCase.execProps, platformProps, taskForCommand(&repb.Command{}))
 		assert.Error(t, err)
 	}
 }
@@ -273,7 +286,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err = ApplyOverrides(env, execProps, platformProps, command)
+		err = ApplyOverrides(context.Background(), env, execProps, platformProps, taskForCommand(command))
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -301,7 +314,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err = ApplyOverrides(env, execProps, platformProps, command)
+	err = ApplyOverrides(context.Background(), env, execProps, platformProps, taskForCommand(command))
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -327,6 +340,63 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	commandText, err := prototext.Marshal(command)
 	require.NoError(t, err)
 	require.Equal(t, expectedCmdText, commandText)
+}
+
+func TestOIDCTokenEnv(t *testing.T) {
+	key := setOIDCSigningKey(t)
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: platform.OIDCTokenAudiencePropertyName, Value: "sts.amazonaws.com"},
+	}}
+	platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	command := &repb.Command{
+		Arguments: []string{"./some_cmd"},
+		Platform:  plat,
+	}
+	task := &repb.ExecutionTask{
+		Command:      command,
+		InvocationId: "INV123",
+		ExecutionId:  "EXEC123",
+		RequestMetadata: &repb.RequestMetadata{
+			ActionId:       "ACTION123",
+			TargetId:       "//pkg:target",
+			ActionMnemonic: "Genrule",
+		},
+	}
+	ctx := authclaims.AuthContext(context.Background(), &authclaims.Claims{
+		GroupID: "GR123",
+		UserID:  "US456",
+	})
+	env := testenv.GetTestEnv(t)
+	setBuildBuddyURL(t, "https://buildbuddy.example.com")
+	err = ApplyOverrides(ctx, env, bare, platformProps, task)
+	require.NoError(t, err)
+
+	requestURL, ok := envValue(command, rbeoidc.TokenRequestURLEnvVar)
+	require.True(t, ok)
+	require.Equal(t, "https://buildbuddy.example.com/oidc/token?api-version=2", requestURL)
+
+	requestToken, ok := envValue(command, rbeoidc.TokenRequestTokenEnvVar)
+	require.True(t, ok)
+	requestClaims := jwt.MapClaims{}
+	parsed, err := jwt.ParseWithClaims(requestToken, requestClaims, func(token *jwt.Token) (interface{}, error) {
+		return &key.PublicKey, nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	require.Equal(t, "buildbuddy:group:GR123", requestClaims["sub"])
+	require.Equal(t, "sts.amazonaws.com", requestClaims["default_audience"])
+	require.Equal(t, "GR123", requestClaims["buildbuddy_group_id"])
+	require.Equal(t, "US456", requestClaims["buildbuddy_user_id"])
+	require.Equal(t, "INV123", requestClaims["buildbuddy_invocation_id"])
+	require.Equal(t, "EXEC123", requestClaims["buildbuddy_execution_id"])
+	require.Equal(t, "ACTION123", requestClaims["buildbuddy_action_id"])
+	require.Equal(t, "//pkg:target", requestClaims["buildbuddy_target_id"])
+	require.Equal(t, "Genrule", requestClaims["buildbuddy_action_mnemonic"])
+
+	redactedNames, ok := envValue(command, ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction)
+	require.True(t, ok)
+	require.JSONEq(t, `["BUILDBUDDY_OIDC_TOKEN_REQUEST_TOKEN"]`, redactedNames)
 }
 
 func TestRunUnder(t *testing.T) {
@@ -369,11 +439,40 @@ func TestRunUnder(t *testing.T) {
 			require.NoError(t, err)
 			command := &repb.Command{Arguments: tc.initialArgs}
 			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(env, bare, platformProps, command)
+			err = ApplyOverrides(context.Background(), env, bare, platformProps, taskForCommand(command))
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
 		})
 	}
+}
+
+func envValue(command *repb.Command, name string) (string, bool) {
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if envVar.GetName() == name {
+			return envVar.GetValue(), true
+		}
+	}
+	return "", false
+}
+
+func setOIDCSigningKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der := x509.MarshalPKCS1PrivateKey(key)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: der,
+	})
+	flags.Set(t, "remote_execution.oidc.private_key", string(pemBytes))
+	return key
+}
+
+func setBuildBuddyURL(t *testing.T, rawURL string) {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *u)
 }
 
 func TestExtraEnvVars(t *testing.T) {
@@ -411,7 +510,7 @@ func TestExtraEnvVars(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			cmd := &repb.Command{}
 			platformProps := &platform.Properties{}
-			ApplyOverrides(env, podmanAndFirecracker, platformProps, cmd)
+			ApplyOverrides(context.Background(), env, podmanAndFirecracker, platformProps, taskForCommand(cmd))
 			require.Empty(t, cmp.Diff(
 				tc.expectedEnvVars,
 				cmd.EnvironmentVariables,
@@ -514,7 +613,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, podmanAndFirecracker, platformProps, taskForCommand(&repb.Command{}))
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}

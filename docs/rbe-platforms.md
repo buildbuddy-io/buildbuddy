@@ -403,6 +403,52 @@ just a historical artifact.)
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
 
+### OpenID Connect tokens
+
+BuildBuddy RBE can expose an OpenID Connect token request flow to an action.
+This is useful for fetching short-lived cloud credentials without passing
+long-lived secrets into the action environment.
+
+To enable this for an action, set `oidc-token-audience` to the default audience
+that requested ID tokens should use. For AWS STS, use `sts.amazonaws.com`:
+
+```python title="BUILD"
+sh_binary(
+    name = "deploy",
+    srcs = ["deploy.sh"],
+    exec_properties = {
+        "oidc-token-audience": "sts.amazonaws.com",
+    },
+)
+```
+
+When the property is set, BuildBuddy injects
+`BUILDBUDDY_OIDC_TOKEN_REQUEST_URL` and
+`BUILDBUDDY_OIDC_TOKEN_REQUEST_TOKEN` into the action environment. The request
+token is redacted from action cache entries and workflow logs. The token
+endpoint accepts an optional `audience` query parameter; if omitted, it uses the
+`oidc-token-audience` value.
+
+Self-hosted BuildBuddy deployments must configure
+`remote_execution.oidc.private_key` on the app and executors to enable this
+feature. The OIDC issuer is `https://YOUR_BUILDBUDDY_URL/oidc`; discovery and
+JWKS are published below that issuer.
+
+For AWS IAM, configure an OIDC identity provider for the BuildBuddy issuer and
+scope the role trust policy to the BuildBuddy group subject. In IAM condition
+keys, use the issuer host and path without the `https://` prefix:
+
+```json
+{
+  "Condition": {
+    "StringEquals": {
+      "buildbuddy.example.com/oidc:aud": "sts.amazonaws.com",
+      "buildbuddy.example.com/oidc:sub": "buildbuddy:group:GR123"
+    }
+  }
+}
+```
+
 ### Docker daemon support
 
 For `firecracker` isolation, we support starting a [Docker daemon](https://docs.docker.com/config/daemon/)
