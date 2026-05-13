@@ -43,29 +43,23 @@ type Sender struct {
 	// Keeps track of connections to other machines.
 	apiClient *client.APIClient
 
-	mu                     sync.Mutex
-	proposeSessionsByRange map[uint64]*client.Session
-	proposeLocker          lockmap.Locker
+	// proposeSession is a single base session shared across all ranges.
+	// Per-range isolation is provided by stamping range_id on each batch's
+	// rfpb.Session in runPropose; the replica's dedup record is keyed by
+	// (id, range_id), so cross-range retries (e.g. after a split) do not
+	// collide. proposeLocker still serializes proposes per range so that
+	// indices arrive in order on each range.
+	proposeSession *client.Session
+	proposeLocker  lockmap.Locker
 }
 
 func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender {
 	return &Sender{
-		rangeCache:             rangeCache,
-		apiClient:              apiClient,
-		proposeSessionsByRange: make(map[uint64]*client.Session),
-		proposeLocker:          lockmap.New(),
+		rangeCache:     rangeCache,
+		apiClient:      apiClient,
+		proposeSession: client.NewSession(),
+		proposeLocker:  lockmap.New(),
 	}
-}
-
-func (s *Sender) sessionForRange(rangeID uint64) *client.Session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if session, ok := s.proposeSessionsByRange[rangeID]; ok {
-		return session
-	}
-	session := client.NewSession()
-	s.proposeSessionsByRange[rangeID] = session
-	return session
 }
 
 func scanKVs(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.KV, error) {
@@ -543,8 +537,17 @@ func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.Batc
 			lockedRangeID = rangeDescriptor.GetRangeId()
 			lockStart = time.Now()
 			unlockFn = s.proposeLocker.Lock(strconv.FormatUint(lockedRangeID, 10))
-			batchCmd.Session = s.sessionForRange(lockedRangeID).NextRequestSession()
+			batchCmd.Session = s.proposeSession.NextRequestSession()
 			sessionAssigned = true
+		}
+		// Stamp range_id once, on the first successful range lookup. We do
+		// not re-stamp on retries: if a retry crosses ranges (e.g. on a
+		// split), the destination's dedup record is keyed by (id, range_id)
+		// and the old range_id will miss — that is the desired behavior.
+		// Sender owns this field on the propose path; pre-attached sessions
+		// (e.g. txn coordinator) leave it at 0 and get stamped here.
+		if batchCmd.Session.GetRangeId() == 0 {
+			batchCmd.Session.RangeId = rangeDescriptor.GetRangeId()
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
 		if err == nil {
