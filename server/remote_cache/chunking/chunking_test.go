@@ -129,12 +129,12 @@ func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
 	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 1024))
 }
 
-func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
+func TestValidateConfigRejectsReadFallbackThresholdAboveMaxChunkSize(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
 
-	require.NoError(t, chunking.ValidateConfig())
-	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MinChunkedReadFallbackSizeBytes())
+	err := chunking.ValidateConfig()
+	require.ErrorContains(t, err, "cache.min_chunked_read_fallback_size_bytes")
 }
 
 func TestChunker_DeterministicChunking(t *testing.T) {
