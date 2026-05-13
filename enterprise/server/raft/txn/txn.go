@@ -60,7 +60,13 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	if err != nil {
 		return err
 	}
+	return tc.RunTxnWithProto(ctx, txnProto)
+}
 
+// RunTxnWithProto runs a pre-built transaction proto. Prefer RunTxn for normal
+// use; this entry point exists so tests can pin the txn_id before submission
+// (e.g. for fault-injection harnesses that match on transaction_id).
+func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRequest) error {
 	txnID := txnProto.GetTransactionId()
 	txnRecord := &rfpb.TxnRecord{
 		TxnRequest:    txnProto,
@@ -68,7 +74,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		CreatedAtUsec: time.Now().UnixMicro(),
 	}
 
-	if err = tc.WriteTxnRecord(ctx, txnRecord); err != nil {
+	if err := tc.WriteTxnRecord(ctx, txnRecord); err != nil {
 		return err
 	}
 
@@ -103,7 +109,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
-	if err = tc.WriteTxnRecord(ctx, txnRecord); err != nil {
+	if err := tc.WriteTxnRecord(ctx, txnRecord); err != nil {
 		return status.WrapErrorf(err, "failed to write txn record (txid=%q)", txnID)
 	}
 
@@ -131,6 +137,14 @@ func txnSessionID(txnID []byte, phase string) []byte {
 	return []byte(fmt.Sprintf("txn/%x/%s", txnID, phase))
 }
 
+// txnRequestSession builds a deterministic idempotency session for a txn
+// statement. The ID is derived from (txn_id, phase) and the index is fixed,
+// so any retry of the same logical statement carries the same session and
+// the replica's session dedup replays the original response instead of
+// re-applying. This is only safe because RunTxn enforces at most one
+// statement per range per txn (see the range-collision check there); two
+// statements with the same phase on the same range would collide on this
+// session ID.
 func (tc *Coordinator) txnRequestSession(txnID []byte, phase string) *rfpb.Session {
 	return &rfpb.Session{
 		Id:            txnSessionID(txnID, phase),

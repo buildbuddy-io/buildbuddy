@@ -324,13 +324,28 @@ type txnFaultRule struct {
 }
 
 type txnFaultHarness struct {
-	mu    sync.Mutex
-	txnID []byte
-	rules []txnFaultRule
+	mu       sync.Mutex
+	txnID    []byte
+	rules    []txnFaultRule
+	injected int
 }
 
 func newTxnFaultHarness(rules ...txnFaultRule) *txnFaultHarness {
 	return &txnFaultHarness{rules: rules}
+}
+
+// assertFired asserts that every configured rule fired its expected number of
+// times (remaining hit zero) and that at least one fault was injected. This
+// guards against tests passing trivially when the harness fails to match the
+// in-flight request (e.g. txn-id mismatch, route bypassing the interceptor).
+func (h *txnFaultHarness) assertFired(t *testing.T) {
+	t.Helper()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	require.Greater(t, h.injected, 0, "no faults were injected; harness never matched a request")
+	for i, rule := range h.rules {
+		require.Zerof(t, rule.remaining, "rule %d did not fully fire (remaining=%d): rangeID=%d op=%s timing=%v", i, rule.remaining, rule.rangeID, rule.op, rule.timing)
+	}
 }
 
 func (h *txnFaultHarness) setTxnID(txnID []byte) {
@@ -360,6 +375,7 @@ func (h *txnFaultHarness) match(req *rfpb.SyncProposeRequest) *txnFaultRule {
 		if rule.remaining > 0 {
 			rule.remaining--
 		}
+		h.injected++
 		return rule
 	}
 	return nil
@@ -557,39 +573,6 @@ func verifyDirectReadNotFound(t *testing.T, ctx context.Context, s *sender.Sende
 	require.True(t, status.IsNotFoundError(err))
 }
 
-func verifyTxnRecordNotExistInFaultTest(t *testing.T, ctx context.Context, s *sender.Sender, txid []byte) {
-	t.Helper()
-	key := keys.MakeKey(constants.TxnRecordPrefix, txid)
-	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-		Key: key,
-	}).ToProto()
-	require.NoError(t, err)
-	readRsp, err := s.SyncRead(ctx, key, readReq, sender.WithConsistencyMode(rfpb.Header_LINEARIZABLE))
-	require.NoError(t, err)
-	readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
-	_, err = readBatch.DirectReadResponse(0)
-	require.True(t, status.IsNotFoundError(err))
-}
-
-func verifyRangeDescriptorInMetaRangeEqualsInFaultTest(t *testing.T, ctx context.Context, s *sender.Sender, expectedRD *rfpb.RangeDescriptor) {
-	t.Helper()
-	key := keys.RangeMetaKey(expectedRD.GetEnd())
-	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-		Key: key,
-	}).ToProto()
-	require.NoError(t, err)
-	readRsp, err := s.SyncRead(ctx, key, readReq)
-	require.NoError(t, err)
-	readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
-	require.NoError(t, readBatch.AnyError())
-	directRead, err := readBatch.DirectReadResponse(0)
-	require.NoError(t, err)
-	gotRD := &rfpb.RangeDescriptor{}
-	err = proto.Unmarshal(directRead.GetKv().GetValue(), gotRD)
-	require.NoError(t, err)
-	require.True(t, proto.Equal(expectedRD, gotRD))
-}
-
 func TestSplitTxnRetryMatrix(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -636,16 +619,17 @@ func TestSplitTxnRetryMatrix(t *testing.T) {
 			harness.setTxnID(txnProto.GetTransactionId())
 
 			tc := txn.NewCoordinator(s, s.APIClient(), clockwork.NewFakeClock())
-			require.NoError(t, tc.RunTxn(ctx, splitRangeTxn.TxnBuilder))
+			require.NoError(t, tc.RunTxnWithProto(ctx, txnProto))
 
-			verifyTxnRecordNotExistInFaultTest(t, ctx, s.Sender(), txnProto.GetTransactionId())
-			verifyRangeDescriptorInMetaRangeEqualsInFaultTest(t, ctx, s.Sender(), splitRangeTxn.UpdatedLeftRange)
-			verifyRangeDescriptorInMetaRangeEqualsInFaultTest(t, ctx, s.Sender(), splitRangeTxn.NewRightRange)
+			verifyTxnRecordNotExist(t, ctx, s.Sender(), txnProto.GetTransactionId())
+			verifyRangeDescriptorInMetaRangeEquals(t, ctx, s.Sender(), splitRangeTxn.UpdatedLeftRange)
+			verifyRangeDescriptorInMetaRangeEquals(t, ctx, s.Sender(), splitRangeTxn.NewRightRange)
 
 			leftStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 			require.True(t, proto.Equal(splitRangeTxn.UpdatedLeftRange, leftStore.GetRange(2)))
 			rightStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 			require.True(t, proto.Equal(splitRangeTxn.NewRightRange, rightStore.GetRange(3)))
+			harness.assertFired(t)
 		})
 	}
 }
@@ -706,12 +690,13 @@ func TestTxnRollbackRetryIsIdempotent(t *testing.T) {
 	harness.setTxnID(txnProto.GetTransactionId())
 
 	tc := txn.NewCoordinator(s1, s1.APIClient(), clockwork.NewFakeClock())
-	err = tc.RunTxn(ctx, tb)
+	err = tc.RunTxnWithProto(ctx, txnProto)
 	require.Error(t, err)
 
-	verifyTxnRecordNotExistInFaultTest(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
 	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("before"))
 	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
+	harness.assertFired(t)
 }
 
 func TestRecoverSplitTxnRetryMatrix(t *testing.T) {
@@ -741,14 +726,15 @@ func TestRecoverSplitTxnRetryMatrix(t *testing.T) {
 
 			require.NoError(t, coordinator.ProcessTxnRecord(ctx, txnRecord))
 
-			verifyTxnRecordNotExistInFaultTest(t, ctx, store.Sender(), txnProto.GetTransactionId())
-			verifyRangeDescriptorInMetaRangeEqualsInFaultTest(t, ctx, store.Sender(), updatedLeftRange)
-			verifyRangeDescriptorInMetaRangeEqualsInFaultTest(t, ctx, store.Sender(), newRightRange)
+			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
+			verifyRangeDescriptorInMetaRangeEquals(t, ctx, store.Sender(), updatedLeftRange)
+			verifyRangeDescriptorInMetaRangeEquals(t, ctx, store.Sender(), newRightRange)
 
 			leftStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 			require.True(t, proto.Equal(updatedLeftRange, leftStore.GetRange(2)))
 			rightStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 			require.True(t, proto.Equal(newRightRange, rightStore.GetRange(3)))
+			harness.assertFired(t)
 		})
 	}
 }
@@ -773,9 +759,10 @@ func TestRecoverRollbackTxnRetryMatrix(t *testing.T) {
 
 			require.NoError(t, coordinator.ProcessTxnRecord(ctx, txnRecord))
 
-			verifyTxnRecordNotExistInFaultTest(t, ctx, store.Sender(), txnProto.GetTransactionId())
+			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
 			verifyDirectReadValue(t, ctx, store.Sender(), userKey, []byte("before"))
 			verifyDirectReadNotFound(t, ctx, store.Sender(), metaKey)
+			harness.assertFired(t)
 		})
 	}
 }

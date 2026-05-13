@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -20,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -495,22 +498,39 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	return status.UnavailableErrorf("sender.run retries exceeded for key: %q err: %s", key, lastError)
 }
 
-func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, fn runFunc) (returnedErr error) {
+// runPropose is the SyncPropose-specific variant of run: it assigns the
+// batch's idempotency session once, before the first proposal attempt, and
+// preserves it across every retry to a different replica or range. This makes
+// retries idempotent so that a post-apply transport failure cannot cause the
+// state machine to apply the same logical write twice. If the batch already
+// carries a session (e.g. a coordinator-derived txn session) we honor it and
+// skip sender-side session allocation.
+func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, fn runFunc, mods ...Option) (returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
 
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
 	var lastError error
 	var unlockFn func()
+	var lockStart time.Time
+	var lockedRangeID uint64
 	sessionAssigned := batchCmd.GetSession() != nil
 	defer func() {
-		if unlockFn != nil {
-			unlockFn()
+		if unlockFn == nil {
+			return
 		}
+		unlockFn()
+		metrics.RaftSenderRangeLockDurationMsec.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.FormatUint(lockedRangeID, 10),
+		}).Observe(float64(time.Since(lockStart).Milliseconds()))
 	}()
 
 	for retrier.Next() {
@@ -520,11 +540,13 @@ func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.Batc
 			continue
 		}
 		if !sessionAssigned {
-			unlockFn = s.proposeLocker.Lock(strconv.FormatUint(rangeDescriptor.GetRangeId(), 10))
-			batchCmd.Session = s.sessionForRange(rangeDescriptor.GetRangeId()).NextRequestSession()
+			lockedRangeID = rangeDescriptor.GetRangeId()
+			lockStart = time.Now()
+			unlockFn = s.proposeLocker.Lock(strconv.FormatUint(lockedRangeID, 10))
+			batchCmd.Session = s.sessionForRange(lockedRangeID).NextRequestSession()
 			sessionAssigned = true
 		}
-		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
+		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
 		if err == nil {
 			if i != 0 {
 				replica := rangeDescriptor.GetReplicas()[i]

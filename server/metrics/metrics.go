@@ -3004,6 +3004,16 @@ var (
 		RaftRangeIDLabel,
 	})
 
+	RaftSenderRangeLockDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "sender_range_lock_duration_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "Time spent waiting for and holding the sender-side per-range propose lock, which serializes proposes across the full retry lifecycle of a single logical request to keep retries idempotent.",
+	}, []string{
+		RaftRangeIDLabel,
+	})
+
 	RaftNodeHostMethodErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",

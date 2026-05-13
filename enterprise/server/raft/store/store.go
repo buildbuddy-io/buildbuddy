@@ -112,14 +112,11 @@ type Store struct {
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 	// This session is used by most of the SyncPropose traffic
+	// session is used for batches that arrive at gRPC Store.SyncPropose
+	// without a pre-attached session. Sender and the txn Coordinator always
+	// pre-attach sessions, so this is reached only by direct gRPC callers
+	// (e.g. usagetracker eviction deletes, metadata atime updates).
 	session *client.Session
-	// The following sessions are created so that we can seperate background
-	// traffic such as eviction, startShard, splitRange from the main write
-	// traffic.
-	// session for transactions; used by split, add and remove replica.
-	txnSession *client.Session
-	// session for eviction
-	evictionSession *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session
 
@@ -339,8 +336,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
-	txnSession := client.NewSessionWithClock(clock)
-	evictionSession := client.NewSessionWithClock(clock)
 	shardStarterSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
 
@@ -364,8 +359,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
-		txnSession:          txnSession,
-		evictionSession:     evictionSession,
 		shardStarterSession: shardStarterSession,
 		log:                 nhLog,
 
@@ -1894,17 +1887,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		rangeID = r.RangeID()
 	}
 
-	session := s.session
-	if len(req.GetBatch().GetTransactionId()) > 0 {
-		session = s.txnSession
-	} else {
-		// use eviction session for delete requests
-		unions := req.GetBatch().GetUnion()
-		if len(unions) > 0 && unions[0].GetDelete() != nil {
-			session = s.evictionSession
-		}
-	}
-	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
+	batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeNotFoundMsg, rangeID)
