@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +21,7 @@ const (
 	// root of the Bazel workspace in which the CLI is invoked.
 	WorkspaceRelativeConfigPath = "buildbuddy.yaml"
 
-	// Path where we expect to find the user's plugin configuration, relative
-	// to the user's home directory.
+	// Filename where we expect to find the user's plugin configuration.
 	HomeRelativeUserConfigPath = "buildbuddy.yaml"
 
 	// Environment variable that is set to "1" if we are a sidecar.
@@ -69,13 +69,55 @@ func loadWorkspaceConfig(workspaceDir string) (*File, error) {
 	return LoadFile(filepath.Join(workspaceDir, WorkspaceRelativeConfigPath))
 }
 
-func loadUserConfig() (*File, error) {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		log.Debugf("not reading ~/%s: $HOME environment variable is not set", HomeRelativeUserConfigPath)
-		return nil, nil
+// userConfigCandidates returns paths to check for an existing user config, in
+// precedence order. The first candidate is also where a new config should be
+// created when none already exists.
+func userConfigCandidates() ([]string, error) {
+	home := os.Getenv("HOME")
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" && home != "" {
+		xdg = filepath.Join(home, ".config")
 	}
-	return LoadFile(filepath.Join(homeDir, HomeRelativeUserConfigPath))
+
+	var paths []string
+	if xdg != "" {
+		paths = append(paths, filepath.Join(xdg, HomeRelativeUserConfigPath))
+	}
+	if home != "" {
+		paths = append(paths, filepath.Join(home, HomeRelativeUserConfigPath))
+	}
+	if len(paths) == 0 {
+		msg := "cannot determine user config path: $HOME and $XDG_CONFIG_HOME are unset"
+		log.Debugf(msg)
+		return nil, errors.New(msg)
+	}
+
+	return paths, nil
+}
+
+func loadUserConfig() (*File, error) {
+	path, err := UserConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	return LoadFile(path)
+}
+
+func UserConfigPath() (string, error) {
+	paths, err := userConfigCandidates()
+	if err != nil {
+		return "", err
+	}
+	for _, p := range paths {
+		_, err := os.Stat(p)
+		if err == nil {
+			return p, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	return paths[0], nil
 }
 
 // LoadFile loads a single buildbuddy.yaml from the given path.
