@@ -23,6 +23,9 @@ func TestLoadAllFiles_NoUserConfigFilesDoesNotFail(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, HomeRelativeUserConfigPath)); !os.IsNotExist(err) {
 		t.Fatalf("expected no user config to be created, stat err=%v", err)
 	}
+	if _, err := os.Stat(filepath.Join(home, ".config", XDGRelativeUserConfigPath)); !os.IsNotExist(err) {
+		t.Fatalf("expected no XDG user config to be created, stat err=%v", err)
+	}
 }
 
 func TestLoadAllFiles_NoUserConfigCandidatesDoesNotFail(t *testing.T) {

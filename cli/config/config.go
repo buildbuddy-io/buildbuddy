@@ -20,8 +20,13 @@ const (
 	// root of the Bazel workspace in which the CLI is invoked.
 	WorkspaceRelativeConfigPath = "buildbuddy.yaml"
 
-	// Filename where we expect to find the user's plugin configuration.
+	// Path where we historically stored the user's plugin configuration,
+	// relative to the user's home directory.
 	HomeRelativeUserConfigPath = "buildbuddy.yaml"
+
+	// Path where we store the user's plugin configuration, relative to the
+	// user's XDG config directory.
+	XDGRelativeUserConfigPath = "buildbuddy/bb.yaml"
 
 	// Environment variable that is set to "1" if we are a sidecar.
 	BbIsSidecar = "_BB_IS_SIDECAR"
@@ -80,7 +85,7 @@ func userConfigCandidates() []string {
 
 	var paths []string
 	if xdg != "" {
-		paths = append(paths, filepath.Join(xdg, HomeRelativeUserConfigPath))
+		paths = append(paths, filepath.Join(xdg, XDGRelativeUserConfigPath))
 	}
 	if home != "" {
 		paths = append(paths, filepath.Join(home, HomeRelativeUserConfigPath))
