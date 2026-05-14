@@ -179,14 +179,14 @@ plugins:
 
 func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
 	_, home := setup(t)
-	testfs.MakeDirAll(t, home, ".config/test-plugin")
+	testfs.MakeDirAll(t, home, ".config/buildbuddy/test-plugin")
 
 	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
-	config := testfs.ReadFileAsString(t, home, ".config/buildbuddy.yaml")
+	config := testfs.ReadFileAsString(t, home, ".config/buildbuddy/bb.yaml")
 	expectedConfig := `plugins:
   - path: ./test-plugin
 `
@@ -207,8 +207,8 @@ plugins:
 `,
 	})
 	testfs.WriteAllFileContents(t, xdg, map[string]string{
-		"xdg-only/.empty": "",
-		"buildbuddy.yaml": `
+		"buildbuddy/xdg-only/.empty": "",
+		"buildbuddy/bb.yaml": `
 plugins:
   - path: ./xdg-only
 `,
@@ -223,7 +223,7 @@ plugins:
 		require.NoError(t, err)
 		ids = append(ids, id)
 	}
-	require.Equal(t, []string{filepath.Join(xdg, "xdg-only")}, ids)
+	require.Equal(t, []string{filepath.Join(xdg, "buildbuddy", "xdg-only")}, ids)
 }
 
 func TestGetConfiguredPlugins_FallsBackToHomeWhenXDGConfigMissing(t *testing.T) {
@@ -254,8 +254,8 @@ func TestGetConfiguredPlugins_DefaultsXDGConfigHomeToDotConfig(t *testing.T) {
 	ws, home := setup(t)
 	// Leave XDG_CONFIG_HOME unset; loader should default to ~/.config.
 	testfs.WriteAllFileContents(t, home, map[string]string{
-		".config/dot-config-only/.empty": "",
-		".config/buildbuddy.yaml": `
+		".config/buildbuddy/dot-config-only/.empty": "",
+		".config/buildbuddy/bb.yaml": `
 plugins:
   - path: ./dot-config-only
 `,
@@ -270,21 +270,21 @@ plugins:
 		require.NoError(t, err)
 		ids = append(ids, id)
 	}
-	require.Equal(t, []string{filepath.Join(home, ".config", "dot-config-only")}, ids)
+	require.Equal(t, []string{filepath.Join(home, ".config", "buildbuddy", "dot-config-only")}, ids)
 }
 
 func TestInstall_ToUserConfig_PreferExistingXDGConfig(t *testing.T) {
 	_, home := setup(t)
 	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
 	setTestXDGConfigHome(t, xdg)
-	testfs.MakeDirAll(t, xdg, "test-plugin")
-	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy.yaml": ""})
+	testfs.MakeDirAll(t, xdg, "buildbuddy/test-plugin")
+	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy/bb.yaml": ""})
 
 	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy.yaml"))
+	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy/bb.yaml"))
 	_, err = os.Stat(filepath.Join(home, "buildbuddy.yaml"))
 	require.True(t, os.IsNotExist(err), "expected ~/buildbuddy.yaml not to be created, stat err=%v", err)
 }
@@ -293,16 +293,16 @@ func TestInstall_ToUserConfig_WriteToExistingXDGConfigWhenHomeConfigExists(t *te
 	_, home := setup(t)
 	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
 	setTestXDGConfigHome(t, xdg)
-	testfs.MakeDirAll(t, xdg, "test-plugin")
+	testfs.MakeDirAll(t, xdg, "buildbuddy/test-plugin")
 	testfs.WriteAllFileContents(t, home, map[string]string{"buildbuddy.yaml": ""})
-	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy.yaml": ""})
+	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy/bb.yaml": ""})
 
 	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 	require.Empty(t, testfs.ReadFileAsString(t, home, "buildbuddy.yaml"))
-	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy.yaml"))
+	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy/bb.yaml"))
 }
 
 func TestParsePluginSpec(t *testing.T) {
