@@ -29,6 +29,8 @@ ts_library(
     name = "usage_alerts_model",
     srcs = ["usage_alerts_model.ts"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
         "//proto:usage_ts_proto",
     ],
 )
@@ -62,6 +64,8 @@ ts_jasmine_node_test(
     srcs = ["usage_alerts_model_test.ts"],
     deps = [
         ":usage_alerts_model",
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
         "//:node_modules/tslib",
         "//proto:usage_ts_proto",
     ],
