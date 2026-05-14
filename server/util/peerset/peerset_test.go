@@ -98,46 +98,6 @@ func TestGetNextPeer(t *testing.T) {
 	}
 }
 
-func TestNewRead(t *testing.T) {
-	localhost := "a"
-
-	tests := []struct {
-		preferred []string
-		fallback  []string
-	}{
-		{
-			[]string{localhost},
-			[]string{"b", "c"},
-		},
-		{
-			[]string{"b", "c", localhost},
-			[]string{},
-		},
-		{
-			[]string{"b", localhost, "c"},
-			[]string{"d", "e", "f", "g"},
-		},
-	}
-
-	for _, test := range tests {
-		p := peerset.NewRead("a", test.preferred, test.fallback)
-		i := 0
-		for peer, handoff := p.GetNextPeerAndHandoff(); peer != ""; peer, handoff = p.GetNextPeerAndHandoff() {
-			// Test that hinted handoffs only refer to preferred nodes.
-			if handoff != "" {
-				assert.Contains(t, test.preferred, handoff)
-			}
-			// Test that if localhost was a peer, it was returned first.
-			if i == 0 && contains(localhost, test.preferred) {
-				assert.Equal(t, localhost, peer)
-			}
-			// Test that the peer came from preferred or fallback.
-			assert.Contains(t, append(test.preferred, test.fallback...), peer)
-			i += 1
-		}
-	}
-}
-
 func TestGetBackfillTargets(t *testing.T) {
 	tests := []struct {
 		p                     *peerset.PeerSet

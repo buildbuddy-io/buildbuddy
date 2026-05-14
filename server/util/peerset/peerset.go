@@ -1,7 +1,6 @@
 package peerset
 
 import (
-	"math/rand"
 	"slices"
 )
 
@@ -23,36 +22,15 @@ type PeerSet struct {
 
 func New(preferredPeers, fallbackPeers []string) *PeerSet {
 	return &PeerSet{
-		i:                   0,
-		PreferredPeers:      preferredPeers,
-		FallbackPeers:       fallbackPeers,
-		FailedPeers:         nil,
-		FailedFallbackPeers: nil,
+		PreferredPeers: preferredPeers,
+		FallbackPeers:  fallbackPeers,
 	}
-}
-
-func NewRead(localhost string, preferredPeers, fallbackPeers []string) *PeerSet {
-	rest := make([]string, 0, len(preferredPeers))
-	first := make([]string, 0, 1)
-	for _, p := range preferredPeers {
-		if p == localhost {
-			first = append(first, p)
-		} else {
-			rest = append(rest, p)
-		}
-	}
-	rand.Shuffle(len(rest), func(i, j int) {
-		rest[i], rest[j] = rest[j], rest[i]
-	})
-	return New(append(first, rest...), fallbackPeers)
 }
 
 func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
-	for _, peer := range p.PreferredPeers {
-		if peer == failedPeer {
-			p.FailedPeers = append(p.FailedPeers, failedPeer)
-			return
-		}
+	if slices.Contains(p.PreferredPeers, failedPeer) {
+		p.FailedPeers = append(p.FailedPeers, failedPeer)
+		return
 	}
 	p.FailedFallbackPeers = append(p.FailedFallbackPeers, failedPeer)
 }
@@ -131,25 +109,13 @@ func (p *PeerSet) GetBackfillTargets() (string, []string) {
 		}
 	}
 	// Ensure no failed peers are returned.
-	for _, f := range p.FailedPeers {
-		if f == source {
-			return "", []string{}
-		}
+	if slices.Contains(p.FailedPeers, source) {
+		return "", []string{}
 	}
 
 	filteredTargets := make([]string, 0, len(targets))
 	for _, t := range targets {
-		isFailed := false
-		for _, f := range p.FailedPeers {
-			if t == f {
-				isFailed = true
-				break
-			}
-		}
-		if isFailed {
-			continue
-		}
-		if slices.Contains(p.BlockBackfills, t) {
+		if slices.Contains(p.FailedPeers, t) || slices.Contains(p.BlockBackfills, t) {
 			continue
 		}
 		filteredTargets = append(filteredTargets, t)
