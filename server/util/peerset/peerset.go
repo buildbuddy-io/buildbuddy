@@ -98,7 +98,7 @@ func (p *PeerSet) GetBackfillTargets() (string, []string) {
 	lastUsedIndex := p.i - 1
 
 	source := ""
-	targets := make([]string, 0)
+	var targets []string
 
 	if lastUsedIndex < len(p.PreferredPeers) {
 		source, targets = p.PreferredPeers[lastUsedIndex], p.PreferredPeers[:lastUsedIndex]
