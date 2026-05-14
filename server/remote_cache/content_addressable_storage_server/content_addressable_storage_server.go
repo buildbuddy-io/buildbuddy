@@ -128,7 +128,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes() {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
 				stillMissing = append(stillMissing, d)
 				continue
 			}

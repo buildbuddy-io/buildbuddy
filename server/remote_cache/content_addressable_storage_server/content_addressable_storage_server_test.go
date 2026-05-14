@@ -1140,6 +1140,65 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.Equal(t, regularDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
 }
 
+func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, cache))
+
+	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, rsp.MissingBlobDigests, 1)
+	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+}
+
 func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string

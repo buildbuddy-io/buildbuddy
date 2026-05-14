@@ -1012,7 +1012,8 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		compressor = repb.Compressor_ZSTD
 	}
 
-	// Note: With the default chunk size, all chunk-eligible blobs are
+	// Note: BatchUploadLimitBytes (2 MiB) is lower than the default max chunk
+	// size (avgChunkSizeBytes*4 = 4 MiB), so all chunk-eligible blobs are
 	// routed to bytestream.
 	if d.GetSizeBytes() > BatchUploadLimitBytes {
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
